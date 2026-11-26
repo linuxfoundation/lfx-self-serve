@@ -9,6 +9,7 @@ import {
   MKTG_FAMILY_PRINT_COPY,
   MKTG_FAMILY_PRINT_BOOK_CLASS,
   MKTG_FAMILY_PRINT_COVER_LOCKUP_HEIGHT,
+  MKTG_FAMILY_PRINT_COVER_TEXT,
   MKTG_FAMILY_PRINT_HEAD_TIGHT_CLASS,
   MKTG_FAMILY_PRINT_HEAD_KIND,
   MKTG_FAMILY_PRINT_LABELS,
@@ -36,6 +37,7 @@ import {
   frameworkPortraitPlan,
   mktgFamilyPrintContentsLayout,
   mktgFamilyPrintCoverStrip,
+  mktgFamilyPrintCoverTagline,
   mktgFamilyPrintCutNote,
   mktgFamilyPrintDate,
   mktgFamilyPrintFaqGroups,
@@ -144,6 +146,12 @@ export class MktgFamilyPrintComponent {
     this.inset[1],
   ]);
   public readonly coverPurpose: Signal<string> = this.initCoverPurpose();
+  /** The cover's text stack's y's and type (the styles' values), the budget the tagline is fitted to. */
+  public readonly coverText = MKTG_FAMILY_PRINT_COVER_TEXT;
+  /** The tagline as it fits over the title and the purpose in the book's face: whole, or shortened at a word with an ellipsis before it would meet the tiles. */
+  public readonly coverTagline: Signal<string> = computed(() =>
+    mktgFamilyPrintCoverTagline(this.view().tagline, this.familyName(), this.coverPurpose(), this.inset[1], this.look().fontStack)
+  );
   public readonly contentsIntro: Signal<string> = this.initContentsIntro();
   public readonly contentsNote: Signal<string> = this.initContentsNote();
   /** The contents page's two columns, filled by height (a chapter continues under a repeated row; a cut is counted, never clipped). */

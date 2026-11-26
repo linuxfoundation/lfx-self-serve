@@ -4,9 +4,12 @@
 import { describe, expect, it } from 'vitest';
 import { MKTG_KIT_POSITIONING_FAMILY_ID } from '../constants/mktg-kit.constants';
 import {
+  MKTG_FAMILY_PRINT_BOILERPLATE_CARDS_LAYOUT,
   MKTG_FAMILY_PRINT_BOILERPLATE_CARD_SIZES,
   MKTG_FAMILY_PRINT_CONTENTS_LAYOUT,
   MKTG_FAMILY_PRINT_COVER_STRIP_MEASURE,
+  MKTG_FAMILY_PRINT_COVER_TEXT,
+  MKTG_FAMILY_PRINT_FAQ_CHIP,
   MKTG_FAMILY_PRINT_FAQ_LAYOUT,
   MKTG_FAMILY_PRINT_HEAD_CAPS,
   MKTG_FAMILY_PRINT_INTERNAL_SOURCE_TERMS,
@@ -33,6 +36,7 @@ import {
   mktgFamilyPrintCutFromEnd,
   mktgFamilyPrintCapsWidth,
   mktgFamilyPrintCoverStrip,
+  mktgFamilyPrintCoverTagline,
   mktgFamilyPrintCutNote,
   mktgFamilyPrintDate,
   mktgFamilyPrintDocument,
@@ -40,6 +44,7 @@ import {
   mktgFamilyPrintFaqEntryHeight,
   mktgFamilyPrintFaqGroups,
   mktgFamilyPrintFaqPages,
+  mktgFamilyPrintFaqSourceChip,
   mktgFamilyPrintFaqSourceLabel,
   mktgFamilyPrintFill,
   mktgFamilyPrintFitBoilerplateCards,
@@ -51,6 +56,7 @@ import {
   mktgFamilyPrintNumberConflicts,
   mktgFamilyPrintOpenItemText,
   mktgFamilyPrintOneStop,
+  mktgFamilyPrintKitOpenItems,
   mktgFamilyPrintOpenItems,
   mktgFamilyPrintPageRange,
   mktgFamilyPrintPlan,
@@ -409,10 +415,9 @@ describe('the fixed blocks', () => {
     expect(layout.conflictsCut).toBe(2);
     expect(layout.openItems).toEqual(openItems.slice(0, 8));
     expect(layout.openCut).toBe(4);
-    // A full conflicts block (less than one row free): the Still open block sits within a row of where the board draws it, never lower.
+    // A full conflicts block (less than one row free): the Still open block sits within a row of where the board draws it.
     const { openTop, conflict: conflictType } = MKTG_FAMILY_PRINT_SOURCES_LAYOUT;
-    expect(layout.openTop).toBeLessThanOrEqual(openTop);
-    expect(layout.openTop).toBeGreaterThan(openTop - conflictType.padding - conflictType.size * conflictType.line);
+    expect(Math.abs(layout.openTop - openTop)).toBeLessThan(conflictType.padding + conflictType.size * conflictType.line);
     // One short conflict: the Still open block follows it, the block gap under its row, and holds the rows the dead space held before.
     const tight = mktgFamilyPrintSourcesLayout([conflict], openItems);
     expect(tight.conflicts).toEqual([conflict]);
@@ -422,6 +427,24 @@ describe('the fixed blocks', () => {
     );
     expect(tight.openItems).toEqual(openItems);
     expect(tight.openCut).toBe(0);
+    // Conflicts that fill their block to the line (five two-line rows, 254 px): the block gap carries the Still open block past
+    // the board's y, and its budget starts there, so the open list keeps one row fewer than a budget from the board's y kept
+    // (the Bugbot finding on the family PR: that row collided with the footer). Four such rows: the same output as before.
+    const sourcesLayout = MKTG_FAMILY_PRINT_SOURCES_LAYOUT;
+    const twoLine = (count: number) => Array.from({ length: count }, (_, index) => ({ ...conflict, id: `Members · ${index}` }));
+    const over = mktgFamilyPrintSourcesLayout(twoLine(5), openItems);
+    expect(over.conflicts).toHaveLength(5);
+    expect(over.conflictsCut).toBe(0);
+    expect(over.openTop).toBe(
+      sourcesLayout.conflictsTop + sourcesLayout.heading + 5 * (conflictType.padding + 2 * conflictType.size * conflictType.line) + sourcesLayout.blockGap
+    );
+    expect(over.openTop).toBeGreaterThan(sourcesLayout.openTop);
+    expect(over.openItems).toEqual(openItems.slice(0, 7));
+    expect(over.openCut).toBe(5);
+    const under = mktgFamilyPrintSourcesLayout(twoLine(4), openItems);
+    expect(under.openTop).toBeCloseTo(655.2, 5);
+    expect(under.openItems).toEqual(openItems.slice(0, 9));
+    expect(under.openCut).toBe(3);
     const alone = mktgFamilyPrintSourcesLayout([], openItems);
     expect(alone.conflicts).toEqual([]);
     expect(alone.openItems).toEqual(openItems);
@@ -608,6 +631,33 @@ describe('mktgFamilyPrintOpenItemText', () => {
   });
 });
 
+describe('mktgFamilyPrintKitOpenItems', () => {
+  const report = { sources_read: [], sources_failed: [], gaps: [], notes: '' };
+
+  it('lists the missing-asset reasons, then the gaps no missing asset already states, once each', () => {
+    // A gap that restates a missing asset in other words (its label's or its reason's content words) prints once, in the reason's words;
+    // a gap about something else stands on its own, so a kit with gaps but no missing asset is never "nothing left open" (#5344 :179).
+    const findings = {
+      sources_failed: [],
+      missing_assets: [
+        { asset: 'logo_stacked' as const, reason: 'Not in the record', fix: 'Upload the stacked file as SVG.' },
+        { asset: 'palette_accent' as const, reason: 'No second colour is stated on the site.' },
+      ],
+      warnings: [],
+    };
+    const gaps = ['No stacked logo was provided.', 'The accent color is not stated.', 'No font weights were found.', 'The symbol was not uploaded.', ' '];
+    expect(mktgFamilyPrintKitOpenItems({ ...report, findings, gaps })).toEqual([
+      'Not in the record',
+      'No second colour is stated on the site.',
+      'No font weights were found.',
+      'The symbol was not uploaded.',
+    ]);
+    expect(mktgFamilyPrintKitOpenItems({ ...report, gaps: ['No symbol file.', ''] })).toEqual(['No symbol file.']);
+    expect(mktgFamilyPrintKitOpenItems({ ...report, findings: { ...findings, missing_assets: [] }, gaps: [] })).toEqual([]);
+    expect(mktgFamilyPrintKitOpenItems(null)).toEqual([]);
+  });
+});
+
 describe('mktgFamilyPrintOpenItems', () => {
   it('lists each chapter’s open items with its document, in chapter order, an item a record states twice once', () => {
     const plan = mktgFamilyPrintPlan(members());
@@ -751,6 +801,34 @@ describe('mktgFamilyPrintFitBoilerplateCards', () => {
     const fitted = mktgFamilyPrintFitBoilerplateCards([sentence, long, sentence, long].map(card), MKTG_PORTRAIT_PAGE.contentWidth);
     expect(fitted.map((entry) => entry.text.length > 0)).toEqual([true, true, true, true]);
     expect(fitted.filter((entry) => entry.cutWords > 0).length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('cuts until the measured heights fit the room, however many sentences that takes, and counts every omitted word', () => {
+    // #5344 :394: a final card of 200 copies of one sentence kept 80 of them under a cap of 120 cuts and overran the Built from
+    // block. The loop is bounded by the room: the card ends where the heights fit, the words beyond it all counted.
+    const layout = MKTG_FAMILY_PRINT_BOILERPLATE_CARDS_LAYOUT;
+    const texts = [sentence, sentence, sentence, Array.from({ length: 200 }, () => sentence).join(' ')];
+    const cards = texts.map(card);
+    const fitted = mktgFamilyPrintFitBoilerplateCards(cards, MKTG_PORTRAIT_PAGE.contentWidth);
+    const measure = MKTG_PORTRAIT_PAGE.contentWidth - layout.inset - layout.metaWidth - layout.metaGap;
+    const heights = fitted.map((entry, index) => {
+      const note = entry.cutWords > 0 ? cards[index].fontSize * layout.line : 0;
+      const lines = mktgFamilyPrintMeasuredLines(entry.text, measure, cards[index].fontSize, {});
+      return Math.max(cards[index].minHeight, layout.padding + note + lines * cards[index].fontSize * layout.line);
+    });
+    const guard = Math.max(...cards.map((entry) => entry.fontSize * layout.line));
+    expect(heights.reduce((sum, height) => sum + height, 0)).toBeLessThanOrEqual(layout.bottom - layout.top - layout.gap * 3 - guard);
+    expect(fitted[3].text.length).toBeGreaterThan(0);
+    expect(fitted[3].text.endsWith('members.')).toBe(true);
+    expect(fitted[3].cutWords).toBe(200 * 11 - fitted[3].text.split(/\s+/).length);
+    expect(fitted[3].cutWords / 11).toBeGreaterThan(120);
+    expect(fitted.slice(0, 3)).toEqual(texts.slice(0, 3).map((text) => ({ text, cutWords: 0 })));
+    // A room the minimum heights alone overrun: every text is cut to nothing, every word counted, and the loop ends.
+    const tiny = mktgFamilyPrintFitBoilerplateCards([sentence, sentence].map(card), MKTG_PORTRAIT_PAGE.contentWidth, { ...layout, bottom: layout.top + 10 });
+    expect(tiny).toEqual([
+      { text: '', cutWords: 11 },
+      { text: '', cutWords: 11 },
+    ]);
   });
 
   it('prints a text whole when it fits its card in the book’s face, where the flat average would have cut it (the editor’s overfull p30)', () => {
@@ -905,6 +983,44 @@ describe('mktgFamilyPrintHeadTight', () => {
   });
 });
 
+describe('mktgFamilyPrintCoverTagline', () => {
+  const width = MKTG_PORTRAIT_PAGE.width - 2 * MKTG_PORTRAIT_PAGE.coverInset;
+  const title = 'Positioning & brand';
+  const purpose =
+    'The living documents of Synthetic project in one reference: what we say, how it looks, the approved descriptions, and the answers to common questions.';
+  const cover = MKTG_FAMILY_PRINT_COVER_TEXT;
+  const stack = (tagline: string, family: string): number =>
+    mktgPortraitParaHeight({ text: tagline, ...cover.tagline, family }, width) +
+    mktgPortraitParaHeight({ text: title, ...cover.title, family }, width) +
+    mktgPortraitParaHeight({ text: purpose, size: cover.purpose.size, line: cover.purpose.line, above: cover.purpose.above, family }, cover.purpose.maxWidth);
+
+  it('keeps a tagline whose stack fits over the tiles, and cuts a long one at a word with an ellipsis until it does, never to nothing', () => {
+    // #5344 :25: no length rule binds an approved tagline, so the three lines share one measured budget, the 300 px over the tiles.
+    const short = 'Open standards for confidential computing.';
+    expect(mktgFamilyPrintCoverTagline(short, title, purpose, width)).toBe(short);
+    expect(mktgFamilyPrintCoverTagline('  ', title, purpose, width)).toBe('');
+    const long = Array.from({ length: 30 }, () => short).join(' ');
+    for (const family of ['', "'Montserrat', sans-serif"]) {
+      const cut = mktgFamilyPrintCoverTagline(long, title, purpose, width, family);
+      expect(cut.endsWith('…')).toBe(true);
+      expect(long.startsWith(cut.slice(0, -1))).toBe(true);
+      expect(stack(cut, family)).toBeLessThanOrEqual(cover.bottom - cover.top + 0.01);
+      // One word more and the stack would meet the tiles: the cut is at the last word that fits.
+      const next = long
+        .slice(cut.length - 1)
+        .trim()
+        .split(' ')[0];
+      expect(stack(`${cut.slice(0, -1)} ${next}…`, family)).toBeGreaterThan(cover.bottom - cover.top + 0.01);
+    }
+    // A wider face takes more lines of the same words, so it keeps fewer of them.
+    expect(mktgFamilyPrintCoverTagline(long, title, purpose, width, "'Montserrat', sans-serif").length).toBeLessThanOrEqual(
+      mktgFamilyPrintCoverTagline(long, title, purpose, width).length
+    );
+    // A title that fills the room on its own leaves the tagline its one word and the ellipsis, so the shortening shows.
+    expect(mktgFamilyPrintCoverTagline(short, Array.from({ length: 6 }, () => title).join(' '), purpose, width)).toBe('Open…');
+  });
+});
+
 describe('mktgFamilyPrintOneStop', () => {
   it('drops the sentence’s stop after a quote that ends on its own, and keeps it after one that does not', () => {
     expect(mktgFamilyPrintOneStop('The tagline is “Build on them.”.')).toBe('The tagline is “Build on them.”');
@@ -915,15 +1031,15 @@ describe('mktgFamilyPrintOneStop', () => {
 });
 
 describe('mktgFamilyPrintFigure', () => {
-  it('reads a key number whole, with its magnitude, and refuses what it cannot interpret', () => {
+  it('reads a key number whole, with its magnitude and its plus as a lower bound, and refuses what it cannot interpret', () => {
     expect(['299', '7,181', '10,000+', '1.2M', '2bn', '3 thousand', 'over 300', '$10,000', '12%', '1.2M a day', 'many'].map(mktgFamilyPrintFigure)).toEqual([
-      299,
-      7181,
-      10000,
-      1200000,
-      2000000000,
-      3000,
-      300,
+      { value: 299, lowerBound: false },
+      { value: 7181, lowerBound: false },
+      { value: 10000, lowerBound: true },
+      { value: 1200000, lowerBound: false },
+      { value: 2000000000, lowerBound: false },
+      { value: 3000, lowerBound: false },
+      { value: 300, lowerBound: false },
       null,
       null,
       null,
@@ -1008,6 +1124,58 @@ describe('mktgFamilyPrintNumberConflicts', () => {
         [{ number: '10,000+', label: 'Published MCP servers at launch' }],
         [{ title: 'FAQ', texts: ['There were 9,500 published MCP servers at launch.'] }]
       )
+    ).toHaveLength(1);
+  });
+
+  it('reads a year from its writing, four bare digits, so a count written with a comma or a magnitude in the years is a count', () => {
+    // #5368 review: the year filter read `2,000` with its comma stripped as a year and let `7,181` code contributors pass
+    // against it. A date is four bare digits as written; a figure with a comma or a magnitude word is a count.
+    const contributors = [{ number: '7,181', label: 'Code contributors, last 12 months' }];
+    expect(mktgFamilyPrintNumberConflicts(contributors, [{ title: 'FAQ', texts: ['The project has 2,000 code contributors.'] }])).toMatchObject([
+      { text: 'The framework’s key numbers say 7,181 code contributors, last 12 months; the FAQ says “The project has 2,000 code contributors.”' },
+    ]);
+    expect(mktgFamilyPrintNumberConflicts(contributors, [{ title: 'FAQ', texts: ['The project has 2 thousand code contributors.'] }])).toHaveLength(1);
+    expect(mktgFamilyPrintNumberConflicts(contributors, [{ title: 'FAQ', texts: ['The project has 2k code contributors.'] }])).toHaveLength(1);
+    // Four bare digits before the measure are still a date, not a count.
+    expect(mktgFamilyPrintNumberConflicts(contributors, [{ title: 'FAQ', texts: ['In 2024 code contributors met twice.'] }])).toEqual([]);
+  });
+
+  it('meets the measure’s count noun in the singular as in the plural, so a count of one is another count', () => {
+    // #5368 review: `s?` after the label's plural matched `member organizations` but not `member organization`, so an FAQ
+    // with 1 member organization agreed with the framework's 299. The last word is read as a stem with its endings.
+    const members = [{ number: '299', label: 'Member organizations' }];
+    expect(mktgFamilyPrintNumberConflicts(members, [{ title: 'FAQ', texts: ['The foundation has 1 member organization today.'] }])).toMatchObject([
+      { text: 'The framework’s key numbers say 299 member organizations; the FAQ says “The foundation has 1 member organization today.”' },
+    ]);
+    expect(mktgFamilyPrintNumberConflicts([{ number: '12', label: 'Member companies' }], [{ title: 'FAQ', texts: ['It has 1 member company.'] }])).toHaveLength(
+      1
+    );
+    expect(
+      mktgFamilyPrintNumberConflicts([{ number: '3', label: 'Regional branches' }], [{ title: 'FAQ', texts: ['It runs 1 regional branch.'] }])
+    ).toHaveLength(1);
+    expect(
+      mktgFamilyPrintNumberConflicts([{ number: '3', label: 'Regional branch' }], [{ title: 'FAQ', texts: ['It runs 4 regional branches.'] }])
+    ).toHaveLength(1);
+    // The same count in either form agrees; a word that only starts with the noun is still not the measure.
+    expect(
+      mktgFamilyPrintNumberConflicts(members, [{ title: 'FAQ', texts: ['299 member organizations.', 'Its 299 member organization count holds.'] }])
+    ).toEqual([]);
+    expect(mktgFamilyPrintNumberConflicts(members, [{ title: 'FAQ', texts: ['It has 5 member organizational charts.'] }])).toEqual([]);
+  });
+
+  it('reads a framework figure with a plus as a lower bound: a count at or above it agrees, only a smaller one is another count', () => {
+    // The live AAIF record: `10,000+` published MCP servers at launch is a floor, so a document counting more of them
+    // (review threads :733 and :735) is no disagreement; one counting fewer still is; an exact figure stays exact.
+    const launch = [{ number: '10,000+', label: 'Published MCP servers at launch' }];
+    expect(mktgFamilyPrintNumberConflicts(launch, [{ title: 'FAQ', texts: ['There are 12,000 published MCP servers at launch.'] }])).toEqual([]);
+    // The lfx-one review's own figure: `10,500` over the framework's `10,000+` is compatible, not a re-run.
+    expect(mktgFamilyPrintNumberConflicts(launch, [{ title: 'FAQ', texts: ['It launched with 10,500 published MCP servers at launch.'] }])).toEqual([]);
+    expect(mktgFamilyPrintNumberConflicts(launch, [{ title: 'FAQ', texts: ['There are 10,000 published MCP servers at launch.'] }])).toEqual([]);
+    expect(mktgFamilyPrintNumberConflicts(launch, [{ title: 'FAQ', texts: ['There were 9,500 published MCP servers at launch.'] }])).toMatchObject([
+      { text: 'The framework’s key numbers say 10,000+ published MCP servers at launch; the FAQ says “There were 9,500 published MCP servers at launch.”' },
+    ]);
+    expect(
+      mktgFamilyPrintNumberConflicts([{ number: '299', label: 'Member organizations' }], [{ title: 'FAQ', texts: ['AAIF has 308 member organizations.'] }])
     ).toHaveLength(1);
   });
 });
@@ -1135,6 +1303,47 @@ describe('mktgFamilyPrintContentsLayout', () => {
 
   it('lays an empty book out as two empty columns', () => {
     expect(mktgFamilyPrintContentsLayout([])).toEqual({ columns: [[], []], cut: 0 });
+  });
+});
+
+describe('mktgFamilyPrintFaqSourceChip', () => {
+  const width = (MKTG_PORTRAIT_PAGE.contentWidth - MKTG_FAMILY_PRINT_FAQ_LAYOUT.columnGap) / 2;
+  const measured = (text: string): number =>
+    mktgPortraitTextWidth(text, MKTG_FAMILY_PRINT_FAQ_CHIP.size, {
+      weight: MKTG_FAMILY_PRINT_FAQ_CHIP.weight,
+      caps: true,
+      tracking: MKTG_FAMILY_PRINT_FAQ_CHIP.tracking,
+      family: 'Montserrat',
+    }) + MKTG_FAMILY_PRINT_FAQ_CHIP.inset;
+
+  it('keeps a short label, reads a URL as its host, cuts a long label at a word and a long word at a character, never to nothing', () => {
+    // #5344 :22: the grammar's chip is nowrap, so a source written as a URL or a sentence ran past the 336 px column; the chip's text is
+    // bounded to the column at the chip's type in the widest face, so it keeps the one line mktgFamilyPrintFaqEntryHeight counts.
+    expect(mktgFamilyPrintFaqSourceChip('Framework', width)).toBe('Framework');
+    expect(mktgFamilyPrintFaqSourceChip('Notes', width)).toBe('');
+    expect(mktgFamilyPrintFaqSourceChip('https://www.one.example.org/about/team', width)).toBe('one.example.org');
+    const sentence = Array.from({ length: 12 }, () => 'synthetic brand guidelines').join(' ');
+    const cut = mktgFamilyPrintFaqSourceChip(sentence, width);
+    expect(cut.endsWith('…')).toBe(true);
+    expect(sentence.startsWith(cut.slice(0, -1))).toBe(true);
+    expect(cut.slice(0, -1).endsWith('guidelines') || cut.slice(0, -1).endsWith('brand') || cut.slice(0, -1).endsWith('synthetic')).toBe(true);
+    expect(measured(cut)).toBeLessThanOrEqual(width);
+    expect(
+      measured(
+        `${cut.slice(0, -1)} ${
+          sentence
+            .slice(cut.length - 1)
+            .trim()
+            .split(' ')[0]
+        }…`
+      )
+    ).toBeGreaterThan(width);
+    const word = 'x'.repeat(200);
+    const cutWord = mktgFamilyPrintFaqSourceChip(word, width);
+    expect(cutWord.endsWith('…')).toBe(true);
+    expect(cutWord.length).toBeGreaterThan(1);
+    expect(measured(cutWord)).toBeLessThanOrEqual(width);
+    expect(mktgFamilyPrintFaqSourceChip('Wide', 1)).toBe('W…');
   });
 });
 
