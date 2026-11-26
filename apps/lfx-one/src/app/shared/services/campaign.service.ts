@@ -111,6 +111,7 @@ import {
   HubSpotUtmLookupResult,
   KeywordMetricsResponse,
   MetaCustomAudiencesResult,
+  RedditCustomAudiencesResult,
   MetaLeadFormsResult,
   MetaTargetingSearchResult,
   MetaTargetingSearchType,
@@ -805,6 +806,15 @@ export class CampaignService {
    */
   public getMetaCustomAudiences(projectSlug: string): Observable<MetaCustomAudiencesResult> {
     return this.http.get<MetaCustomAudiencesResult>('/api/campaigns/meta/custom-audiences', { params: { project: projectSlug } });
+  }
+
+  /**
+   * The custom audiences on the Reddit ad account a create for this project uses, for the Implement tab's picker
+   * (#6108 row 1). A coded 403 without `global_marketing_ops` on the project, a coded 503 when that check cannot be made,
+   * and a 404 while Reddit custom audiences are off.
+   */
+  public getRedditCustomAudiences(projectSlug: string): Observable<RedditCustomAudiencesResult> {
+    return this.http.get<RedditCustomAudiencesResult>('/api/campaigns/reddit/custom-audiences', { params: { project: projectSlug } });
   }
 
   /**

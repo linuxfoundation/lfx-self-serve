@@ -489,6 +489,10 @@ export interface RedditCreateRefusalInput {
   videoPostError: string | null;
   /** Why the conversion event cannot be sent yet (`redditConversionEventBlock`), or `null`. */
   conversionEventBlock: string | null;
+  /** Why the custom audiences cannot be sent yet (`redditCustomAudiencesBlock`), or `null`. */
+  customAudiencesBlock: string | null;
+  /** Why the custom audience lists break campaign-service's rules (`redditCustomAudiencesRefusal`), or `null`. */
+  customAudiencesRefusal: string | null;
 }
 
 /** The three inputs needed to author a promoted post, once a creator has decided to author one. */
@@ -1500,6 +1504,12 @@ export interface CampaignImplementationDraft {
    * only the REQUEST is gated on them. A non-default event the capability no longer confirms holds Create, never dropped.
    */
   redditConversionEvent?: RedditConversionEvent;
+  /**
+   * The Reddit custom audiences to target and to exclude (#6108 row 1), kept whatever the capability says; only the
+   * REQUEST is gated on it. Picks the capability no longer confirms hold Create, never dropped.
+   */
+  redditCustomAudienceIds?: string[];
+  redditExcludedCustomAudienceIds?: string[];
   /**
    * The Meta ad image, on the same terms as the Reddit image fields above: a pasted URL, or an
    * upload made for ONE brief (its asset id, file name and brief), plus an upload still in flight
@@ -3693,6 +3703,8 @@ export type RedditDraftSnapshot = Pick<
   | 'redditImageUploadFailedBriefId'
   | 'redditVideoGoal'
   | 'redditConversionEvent'
+  | 'redditCustomAudienceIds'
+  | 'redditExcludedCustomAudienceIds'
 >;
 
 /** The Reddit values `redditDraftFields` snapshots into the draft (#5980): the typed fields, the pixel and the image upload slot. */
@@ -3712,6 +3724,7 @@ export interface RedditDraftState {
   uploadFailedBriefId: string;
   videoGoal: RedditVideoGoal | '';
   conversionEvent: RedditConversionEvent;
+  customAudiences: RedditCustomAudiencesDraft;
 }
 
 /** What a restored draft does to the Reddit section (#5980): values to set, and at most one upload step for the component to run. */
@@ -3729,6 +3742,7 @@ export interface RedditDraftRestore {
   pendingUpload?: { name: string; briefId: string };
   videoGoal?: RedditVideoGoal | '';
   conversionEvent?: RedditConversionEvent;
+  customAudiences?: RedditCustomAudiencesDraft;
 }
 
 /** The Reddit lists a brief seeds (#5980): the variants and the four targeting lists. */
@@ -3748,6 +3762,7 @@ export interface RedditBriefReset extends RedditBriefSeed {
   objective: RedditObjective;
   videoGoal: '';
   conversionEvent: RedditConversionEvent;
+  customAudiences: RedditCustomAudiencesDraft;
   budgetUsd: number;
 }
 
@@ -3825,6 +3840,51 @@ export interface RedditCustomAudiencesResult {
   accountId: string;
   audiences: RedditCustomAudienceOption[];
   truncated: boolean;
+}
+
+/** The two Reddit custom-audience lists, keyed as `redditConfig` spells them (`REDDIT_CUSTOM_AUDIENCE_KEYS`). */
+export type RedditCustomAudienceListKey = 'customAudienceIds' | 'excludedCustomAudienceIds';
+
+/** The Reddit custom audiences the Implement tab holds (#6108 row 1): the ids to target and to exclude, as picked or typed. */
+export type RedditCustomAudiencesDraft = Record<RedditCustomAudienceListKey, string[]>;
+
+/** One Reddit custom-audience list as the Implement tab renders it. */
+export interface RedditCustomAudienceListView {
+  key: RedditCustomAudienceListKey;
+  label: string;
+}
+
+/** One Reddit custom-audience list with its current picks: the box's label with the count against the cap, and the chips. */
+export interface RedditCustomAudienceListState extends RedditCustomAudienceListView {
+  heading: string;
+  chips: MetaCustomAudienceChipView[];
+}
+
+/** Where the Reddit custom-audience picker stands; `unavailable` carries the sentence the typed boxes are offered with. */
+export interface RedditCustomAudiencePickerState {
+  status: 'idle' | 'loading' | 'loaded' | 'unavailable';
+  audiences: RedditCustomAudienceOption[];
+  truncated: boolean;
+  reason: string | null;
+}
+
+/**
+ * Why Create is held for Reddit custom audiences the draft holds but the request cannot carry (#6108 row 1).
+ * `restricted` when the answer is no (`redditCustomAudiencesEnabled === false`: the deployment or the caller's
+ * `global_marketing_ops`, one answer), and the capability read's own states while it is unanswered.
+ */
+export interface CampaignRedditCustomAudiencesBlock {
+  kind: 'pending' | 'failed' | 'unsaved' | 'restricted';
+  message: string;
+}
+
+/** The state `redditCustomAudiencesBlock` (`campaign-reddit-custom-audiences.utils.ts`) reads, as plain values. */
+export interface RedditCustomAudiencesBlockInput {
+  audiences: RedditCustomAudiencesDraft;
+  enabled: boolean | null;
+  createCapabilityRead: CampaignCapabilityReadState;
+  /** The open brief's id, or `null` while the brief is unsaved. */
+  briefId: string | null;
 }
 
 /** One Instant Form of the Page a Meta create uses (#5940). Only an ACTIVE form passes a create. */

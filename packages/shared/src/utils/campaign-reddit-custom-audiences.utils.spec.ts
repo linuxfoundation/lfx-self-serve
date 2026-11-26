@@ -3,9 +3,21 @@
 
 import { describe, expect, it } from 'vitest';
 
-import type { RedditConfigRefusal, RedditCustomAudiencesResult } from '../interfaces/campaign.interface';
+import type {
+  CampaignCapabilityReadState,
+  CampaignRedditCustomAudiencesBlock,
+  RedditConfigRefusal,
+  RedditCustomAudiencesDraft,
+  RedditCustomAudiencesResult,
+} from '../interfaces/campaign.interface';
 import {
   redditConfigNamesCustomAudiences,
+  redditCustomAudienceAddRefusal,
+  redditCustomAudienceIdsFromDraft,
+  redditCustomAudiencesBlock,
+  redditCustomAudiencesCapability,
+  redditCustomAudiencesDraftRefusal,
+  redditCustomAudiencesField,
   redditCustomAudienceQuery,
   redditCustomAudiencesFromPayload,
   redditCustomAudiencesRefusal,
@@ -136,5 +148,90 @@ describe('redditCustomAudiencesFromPayload', () => {
     ],
   ])('%s', (_name, payload, q, expected) => {
     expect(redditCustomAudiencesFromPayload(payload, q)).toEqual(expected);
+  });
+});
+
+const picks = (customAudienceIds: string[], excludedCustomAudienceIds: string[] = []): RedditCustomAudiencesDraft => ({
+  customAudienceIds,
+  excludedCustomAudienceIds,
+});
+
+describe('redditCustomAudiencesCapability', () => {
+  it.each<[boolean | null, boolean]>([
+    [true, true],
+    [false, false],
+    [null, false],
+  ])('%j reads as %j', (enabled, expected) => {
+    expect(redditCustomAudiencesCapability(enabled)).toBe(expected);
+  });
+});
+
+describe('redditCustomAudiencesField', () => {
+  it.each<[string, RedditCustomAudiencesDraft, boolean | null, Record<string, string[]>]>([
+    ['both lists, enabled', picks(['a1'], ['b1']), true, { customAudienceIds: ['a1'], excludedCustomAudienceIds: ['b1'] }],
+    ['an empty list is left out', picks([], ['b1']), true, { excludedCustomAudienceIds: ['b1'] }],
+    ['nothing picked', picks([]), true, {}],
+    ['not confirmed (held by the block instead)', picks(['a1']), null, {}],
+    ['answered no', picks(['a1']), false, {}],
+  ])('%s', (_name, audiences, enabled, expected) => {
+    expect(redditCustomAudiencesField(audiences, enabled)).toEqual(expected);
+  });
+});
+
+describe('redditCustomAudiencesDraftRefusal', () => {
+  it.each<[string, RedditCustomAudiencesDraft, string | null]>([
+    ['valid lists', picks(['a1'], ['b1']), null],
+    ['nothing picked', picks([]), null],
+    ['an id in both lists', picks(['a1'], ['a1']), 'Entry 1 is also a targeted custom audience. An audience cannot be both targeted and excluded.'],
+    ['a malformed restored id', picks(['a1', 'bad id']), BAD_ID],
+    ['too many ids', picks(ids(101)), 'Pick at most 100 custom audiences.'],
+  ])('%s', (_name, audiences, expected) => {
+    expect(redditCustomAudiencesDraftRefusal(audiences)).toBe(expected);
+  });
+});
+
+describe('redditCustomAudienceAddRefusal', () => {
+  it.each<[string, RedditCustomAudiencesDraft, 'customAudienceIds' | 'excludedCustomAudienceIds', string, string | null]>([
+    ['a new id', picks([]), 'customAudienceIds', 'a1', null],
+    ['an id already in the same list', picks(['a1']), 'customAudienceIds', 'a1', null],
+    ['an id with a space', picks([]), 'customAudienceIds', 'a 1', 'Enter a Reddit custom audience id: 1 to 64 letters, digits or underscores.'],
+    [
+      'an id in the other list',
+      picks(['a1']),
+      'excludedCustomAudienceIds',
+      'a1',
+      'Audience a1 is already in the other list. An audience cannot be both targeted and excluded.',
+    ],
+    ['a full list', picks(ids(100)), 'customAudienceIds', 'new_one', 'At most 100 audiences per list.'],
+  ])('%s', (_name, audiences, key, id, expected) => {
+    expect(redditCustomAudienceAddRefusal(audiences, key, id)).toBe(expected);
+  });
+});
+
+describe('redditCustomAudiencesBlock', () => {
+  it.each<[string, RedditCustomAudiencesDraft, boolean | null, CampaignCapabilityReadState, string | null, CampaignRedditCustomAudiencesBlock['kind'] | null]>([
+    ['nothing picked, unanswered', picks([]), null, 'pending', 'b1', null],
+    ['picks, confirmed', picks(['a1']), true, 'ready', 'b1', null],
+    ['picks, answered no', picks(['a1']), false, 'ready', 'b1', 'restricted'],
+    ['exclusions only, answered no', picks([], ['b1']), false, 'ready', 'b1', 'restricted'],
+    ['picks, read in flight', picks(['a1']), null, 'pending', 'b1', 'pending'],
+    ['picks, unanswered, brief unsaved', picks(['a1']), null, 'unknown', null, 'unsaved'],
+    ['picks, unanswered, brief saved', picks(['a1']), null, 'failed', 'b1', 'failed'],
+  ])('%s', (_name, audiences, enabled, createCapabilityRead, briefId, expected) => {
+    expect(redditCustomAudiencesBlock({ audiences, enabled, createCapabilityRead, briefId })?.kind ?? null).toBe(expected);
+  });
+});
+
+describe('redditCustomAudienceIdsFromDraft', () => {
+  it.each<[unknown, string[] | undefined]>([
+    [
+      ['a1', 2, 'b1'],
+      ['a1', 'b1'],
+    ],
+    [[], []],
+    ['a1', undefined],
+    [undefined, undefined],
+  ])('%j restores as %j', (stored, expected) => {
+    expect(redditCustomAudienceIdsFromDraft(stored)).toEqual(expected);
   });
 });

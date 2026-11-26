@@ -5590,6 +5590,32 @@
               </div>
             }
 
+            <!-- Custom audiences (#6108 row 1): the picker only on an explicit yes
+                 (LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_CUSTOM_AUDIENCES and global_marketing_ops); picks held
+                 without it stay listed with Remove and hold Create below rather than being dropped. -->
+            <lfx-reddit-custom-audiences
+              [projectSlug]="activeFoundationSlug()"
+              [enabled]="redditCustomAudiencesAvailable()"
+              [audiences]="redditCustomAudiences()"
+              (audiencesChange)="onRedditCustomAudiencesChange($event)" />
+            @if (redditCustomAudiencesBlock(); as block) {
+              <div
+                role="alert"
+                class="flex flex-col items-start gap-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800"
+                [attr.data-testid]="'implementation-reddit-custom-audiences-block-' + block.kind">
+                <p>{{ block.message }}</p>
+                @if (block.kind === 'failed') {
+                  <lfx-button
+                    label="Retry"
+                    size="small"
+                    severity="secondary"
+                    [outlined]="true"
+                    (onClick)="retryCreateCapabilities.emit()"
+                    data-testid="implementation-reddit-custom-audiences-block-retry" />
+                }
+              </div>
+            }
+
             <!-- Conversion pixel override (#3484). Optional and normally blank: campaign-service
                  falls back to the connection's own pixel. Offered only on an explicit yes from
                  `redditConversionPixelAvailable()`, because the legacy creator never reads the field

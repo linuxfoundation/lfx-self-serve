@@ -2,7 +2,15 @@
 // SPDX-License-Identifier: MIT
 
 import { MAX_REDDIT_CUSTOM_AUDIENCE_IDS, REDDIT_CUSTOM_AUDIENCE_ID_PATTERN, REDDIT_CUSTOM_AUDIENCE_KEYS } from '../constants/campaign.constants';
-import type { RedditConfigRefusal, RedditCustomAudienceOption, RedditCustomAudiencesResult } from '../interfaces/campaign.interface';
+import type {
+  CampaignRedditCustomAudiencesBlock,
+  RedditConfigRefusal,
+  RedditCustomAudienceListKey,
+  RedditCustomAudienceOption,
+  RedditCustomAudiencesBlockInput,
+  RedditCustomAudiencesDraft,
+  RedditCustomAudiencesResult,
+} from '../interfaces/campaign.interface';
 import { foldKey } from './campaign-linkedin-config.utils';
 
 /**
@@ -163,4 +171,82 @@ export function redditCustomAudiencesFromPayload(payload: unknown, q?: string): 
     audiences,
     truncated: body['truncated'] === true,
   };
+}
+
+/** Whether the Implement tab offers the picker and sends the lists: only on an explicit yes, so an unanswered (`null`) read withholds it like a no. */
+export function redditCustomAudiencesCapability(enabled: boolean | null): boolean {
+  return enabled === true;
+}
+
+/** Whether the draft holds any pick in either list. */
+export function redditCustomAudiencesPicked(audiences: RedditCustomAudiencesDraft): boolean {
+  return audiences.customAudienceIds.length + audiences.excludedCustomAudienceIds.length > 0;
+}
+
+/**
+ * The `redditConfig` keys a create carries: each list only when the capability is an explicit yes and the list holds a
+ * pick, so an empty list is never sent. Picks the capability does not confirm are held by {@link redditCustomAudiencesBlock}
+ * instead, never dropped here unseen.
+ */
+export function redditCustomAudiencesField(
+  audiences: RedditCustomAudiencesDraft,
+  enabled: boolean | null
+): Partial<Record<RedditCustomAudienceListKey, string[]>> {
+  if (!redditCustomAudiencesCapability(enabled)) return {};
+  const field: Partial<Record<RedditCustomAudienceListKey, string[]>> = {};
+  for (const key of REDDIT_CUSTOM_AUDIENCE_KEYS) {
+    if (audiences[key].length > 0) field[key] = [...audiences[key]];
+  }
+  return field;
+}
+
+/** Why the held lists break campaign-service's rules (count, id shape, repeats, overlap), or `null`: {@link redditCustomAudiencesRefusal} with the flag on. */
+export function redditCustomAudiencesDraftRefusal(audiences: RedditCustomAudiencesDraft): string | null {
+  return redditCustomAudiencesRefusal(audiences, true)?.message ?? null;
+}
+
+/**
+ * Why a picked or typed id is not added to one list, or `null`: an id a create would refuse, one already in the other
+ * list, or a full list. An id already in the same list is not an error (adding it again changes nothing).
+ */
+export function redditCustomAudienceAddRefusal(audiences: RedditCustomAudiencesDraft, key: RedditCustomAudienceListKey, id: string): string | null {
+  if (!REDDIT_CUSTOM_AUDIENCE_ID_PATTERN.test(id)) return 'Enter a Reddit custom audience id: 1 to 64 letters, digits or underscores.';
+  const other = key === 'customAudienceIds' ? audiences.excludedCustomAudienceIds : audiences.customAudienceIds;
+  if (other.includes(id)) return `Audience ${id} is already in the other list. An audience cannot be both targeted and excluded.`;
+  if (!audiences[key].includes(id) && audiences[key].length >= MAX_REDDIT_CUSTOM_AUDIENCE_IDS) {
+    return `At most ${MAX_REDDIT_CUSTOM_AUDIENCE_IDS} audiences per list.`;
+  }
+  return null;
+}
+
+/**
+ * Why Create is held for Reddit custom audiences the draft holds but the request cannot carry, or `null`. Held rather
+ * than dropped, because they change who the campaign reaches. An explicit no (`restricted`: the deployment or the
+ * caller's `global_marketing_ops`, which the BFF answers as one) leaves the picks listed with Remove; while the answer
+ * is out or failed, Create waits or offers Retry, as `metaAudienceTargetingBlock` does.
+ */
+export function redditCustomAudiencesBlock(input: RedditCustomAudiencesBlockInput): CampaignRedditCustomAudiencesBlock | null {
+  if (!redditCustomAudiencesPicked(input.audiences) || redditCustomAudiencesCapability(input.enabled)) return null;
+  if (input.enabled === false) {
+    return {
+      kind: 'restricted',
+      message:
+        'Reddit custom audiences can only be sent by the LF marketing team, on a deployment where they are on, because every foundation shares one Reddit ad account. Remove them to create the campaign.',
+    };
+  }
+  if (input.createCapabilityRead === 'pending') {
+    return { kind: 'pending', message: 'Checking whether you can send Reddit custom audiences. Create waits so they are not dropped.' };
+  }
+  if (!input.briefId) {
+    return { kind: 'unsaved', message: "Reddit custom audiences can't be checked until this brief is saved. Save the brief, or remove them." };
+  }
+  return {
+    kind: 'failed',
+    message: 'Could not confirm that you can send Reddit custom audiences, so Create waits rather than dropping them. Retry the check, or remove them.',
+  };
+}
+
+/** A stored draft list as the picker holds it: the strings of an array, else `undefined` (the reset empty list stands). */
+export function redditCustomAudienceIdsFromDraft(value: unknown): string[] | undefined {
+  return Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string') : undefined;
 }
