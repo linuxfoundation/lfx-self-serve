@@ -12,6 +12,4 @@ import { ValidExternalUrlPipe } from '@pipes/valid-external-url.pipe';
 })
 export class PublicProfileBadgesComponent {
   public readonly badges = input<PublicProfileBadge[]>([]);
-  /** False under the profile redesign, where the page's section header names the block (#6088). */
-  public readonly showHeading = input<boolean>(true);
 }

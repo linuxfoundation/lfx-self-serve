@@ -9,7 +9,7 @@ import { ProfilePillComponent } from './profile-pill.component';
 
 // The host template is set in the TestBed below: inline templates are capped at three lines.
 const HOST_TEMPLATE = `
-    <lfx-profile-pill [name]="name()" [imageUrl]="image()" [href]="href()" [hoverCard]="withCard() ? card : null" tile="image">
+    <lfx-profile-pill [name]="name()" [imageUrl]="image()" [href]="href()" [hoverCard]="withCard() ? card : null" [imageOnly]="imageOnly()" tile="image">
       <span data-testid="detail">The Linux Foundation</span>
     </lfx-profile-pill>
     <ng-template #card><p>Issued May 2024</p></ng-template>
@@ -24,6 +24,7 @@ class TestHostComponent {
   public readonly image = signal('https://images.example.test/badge.png');
   public readonly href = signal<string | null>('https://www.credly.example.test/badges/1');
   public readonly withCard = signal(false);
+  public readonly imageOnly = signal(false);
 }
 
 describe('ProfilePillComponent', () => {
@@ -69,5 +70,17 @@ describe('ProfilePillComponent', () => {
 
     expect(pill().querySelector('img')).toBeNull();
     expect(pill().textContent).toContain('K');
+  });
+
+  it('shows the picture alone, named for assistive tech, when it is image only', () => {
+    fixture.componentInstance.imageOnly.set(true);
+    fixture.detectChanges();
+
+    expect(pill().getAttribute('aria-label')).toBe('kubernetes Contributor');
+    expect((fixture.nativeElement.querySelector('[data-testid="profile-pill-name"]') as HTMLElement).parentElement?.classList).toContain('hidden');
+
+    fixture.componentInstance.href.set(null);
+    fixture.detectChanges();
+    expect(pill().getAttribute('role')).toBe('img');
   });
 });

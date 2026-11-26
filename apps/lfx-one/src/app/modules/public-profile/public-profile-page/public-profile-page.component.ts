@@ -25,6 +25,7 @@ import { PublicProfileHeroComponent } from '../components/public-profile-hero/pu
 import { PublicProfileTopbarRedesignComponent } from '../components/public-profile-topbar-redesign/public-profile-topbar-redesign.component';
 import { PublicProfileTopbarComponent } from '../components/public-profile-topbar/public-profile-topbar.component';
 import { PublicProfileTrainingsComponent } from '../components/public-profile-trainings/public-profile-trainings.component';
+import { PublicProfileRecognitionsComponent } from '../components/public-profile-recognitions/public-profile-recognitions.component';
 import { PublicProfileNotFoundComponent } from '../public-profile-not-found/public-profile-not-found.component';
 import { PublicProfileThemeService } from '../services/public-profile-theme.service';
 import { PublicProfileService } from '../services/public-profile.service';
@@ -46,6 +47,7 @@ import { PublicProfileService } from '../services/public-profile.service';
     PublicProfileCertificationsComponent,
     PublicProfileTrainingsComponent,
     PublicProfileNotFoundComponent,
+    PublicProfileRecognitionsComponent,
   ],
   // The visitor's light or dark theme under the redesign (#6091).
   providers: [PublicProfileThemeService],

@@ -118,3 +118,11 @@ export interface PublicProfileBadge {
 
 /** A visitor's theme for the redesigned public profile (#6091). */
 export type PublicProfileTheme = 'light' | 'dark';
+
+/** A badge on the redesigned public profile's Recognitions (#6092). */
+export interface PublicProfileBadgeItem {
+  id: string;
+  image: string;
+  /** The Credly link, or null when it isn't an http(s) URL. */
+  href: string | null;
+}

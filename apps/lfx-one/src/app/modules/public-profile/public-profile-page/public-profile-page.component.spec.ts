@@ -22,8 +22,8 @@ const PROFILE: PublicProfile = {
   basic: { Name: 'Ada Lovelace', Title: 'Engineer' },
   badges: [{ Image: 'https://images.example/badge.png', Url: 'https://www.credly.example/badges/b1' }],
   technical_contribution: { projects: [] },
-  certification_activities: [],
-  training_activities: [],
+  certification_activities: [{ Name: 'Kubernetes Admin' }],
+  training_activities: [{ Name: 'Intro to Linux' }],
 } as PublicProfile;
 
 describe('PublicProfilePageComponent', () => {
@@ -75,6 +75,9 @@ describe('PublicProfilePageComponent', () => {
 
     expect(query('public-profile-involvement')).toBeNull();
     expect(query('public-profile-blocks')?.children).toHaveLength(1);
+    // Certifications and Training enrollment have no place in the redesign (#6092).
+    expect(query('public-profile-certifications')).toBeNull();
+    expect(query('public-profile-trainings')).toBeNull();
   });
 
   it('keeps the involvement block’s year select on the right once its heading gives way to the section header', async () => {

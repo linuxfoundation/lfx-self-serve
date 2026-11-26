@@ -43,7 +43,7 @@
               [heading]="sectionCopy.recognitions"
               [description]="owner() ? sectionCopy.recognitionsDescriptionOwner : sectionCopy.recognitionsDescription"
               testId="public-profile-recognitions">
-              <lfx-public-profile-badges [badges]="badges()" [showHeading]="false" data-testid="public-profile-badges"></lfx-public-profile-badges>
+              <lfx-public-profile-recognitions [badges]="badges()" data-testid="public-profile-badges"></lfx-public-profile-recognitions>
             </lfx-profile-section>
           }
           @if (hasContributions()) {
@@ -57,14 +57,7 @@
                 data-testid="public-profile-contributions"></lfx-public-profile-contributions>
             </lfx-profile-section>
           }
-          @if (hasCertifications()) {
-            <lfx-public-profile-certifications
-              [certifications]="certifications()"
-              data-testid="public-profile-certifications"></lfx-public-profile-certifications>
-          }
-          @if (hasTrainings()) {
-            <lfx-public-profile-trainings [trainings]="trainings()" data-testid="public-profile-trainings"></lfx-public-profile-trainings>
-          }
+          <!-- Certifications and Training enrollment are left out of the redesign (#6092). -->
         </div>
 
         <ng-container *ngTemplateOutlet="footer; context: { $implicit: true }" />
