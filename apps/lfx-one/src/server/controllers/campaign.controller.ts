@@ -5,9 +5,9 @@
 // re-exports `form.utils`, which imports `@angular/forms`. A server spec that pulls the
 // barrel in dies with "PlatformLocation needs to be compiled using the JIT compiler".
 // Verified by switching to the barrel and watching the suite fail.
-import { emailLinkDestinations, hasVisibleHtmlText, sanitizeDisplayText, stripResourceLoadingHtml } from '@lfx-one/shared/utils/html-utils';
+import { emailLinkDestinations, emailLinkMatchKey, hasVisibleHtmlText, sanitizeDisplayText, stripResourceLoadingHtml } from '@lfx-one/shared/utils/html-utils';
 import { canonicalHttpUrl } from '@lfx-one/shared/utils/url.utils';
-import { campaignSurveySourceTextTooLong, normalizeSponsors } from '@lfx-one/shared/utils/campaign.utils';
+import { campaignSurveySourceTextTooLong, deriveNewsletterSlug, normalizeSponsors } from '@lfx-one/shared/utils/campaign.utils';
 import { twitterTweetTextError } from '@lfx-one/shared/utils/campaign-twitter.utils';
 import { resolveLinkedInTargetingProfileId, roundUsdToCentsLikeGo } from '@lfx-one/shared/utils/campaign-linkedin.utils';
 import { correctLinkedInGeoTargets, linkedInConfigKeyRefusal } from '@lfx-one/shared/utils/campaign-linkedin-config.utils';
@@ -140,6 +140,7 @@ import type {
   CampaignBudgetUpdateResult,
   CampaignCreateRequest,
   CampaignDeliveryType,
+  CampaignNewsletterSuggestionsRequest,
   CampaignListResult,
   CampaignMetricsWindow,
   CampaignNegativeKeywordInput,
@@ -212,12 +213,18 @@ import {
   CAMPAIGN_BUDGET_X_CONFLICT_MESSAGE,
   CAMPAIGN_DELIVERY_TYPES,
   CAMPAIGN_EMAIL_STAGES,
+  CAMPAIGN_EVENT_URL_MAX_LENGTH,
   CAMPAIGN_SEND_STAGES,
   CAMPAIGN_SEND_WORKFLOW_DATE_PATTERN,
   CAMPAIGN_SEND_WORKFLOW_MAX_SENDS,
   CAMPAIGN_SEND_WORKFLOW_NAME_MAX_CHARS,
   CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS,
   CAMPAIGN_SURVEY_STAGES,
+  CAMPAIGN_HUBSPOT_EMAIL_ID_PATTERN,
+  CAMPAIGN_NEWSLETTER_REFERENCE_LIMIT,
+  CAMPAIGN_NEWSLETTER_SUGGESTION_BRAND_MAX_LENGTH,
+  CAMPAIGN_NEWSLETTER_SUGGESTION_MAX_URLS,
+  CAMPAIGN_NEWSLETTER_STAGES,
   CAMPAIGN_ETAG_HEADER_PATTERN,
   CAMPAIGN_METRICS_WINDOWS,
   CAMPAIGN_PLATFORMS,
@@ -410,6 +417,8 @@ import {
   META_LEAD_FORMS_OFF_MESSAGE,
   META_LEAD_FORMS_RESTRICTED_CODE,
   META_LEAD_FORMS_RESTRICTED_MESSAGE,
+  EMAIL_TEMPLATE_SCOPE_MAX_PHRASE_LENGTH,
+  EMAIL_TEMPLATE_SCOPE_MAX_PHRASES,
 } from '@lfx-one/shared/constants';
 
 import { META_ACCOUNTS, REDDIT_ACCOUNTS } from '../constants';
@@ -566,7 +575,23 @@ export class CampaignController {
 
     const body = req.body as CampaignBriefRequest;
 
-    if (!body.url || typeof body.url !== 'string' || !body.url.trim()) {
+    // The NEWSLETTER surface has no page and no link: an issue is planned from the brand, the
+    // issue name and the operator's notes, and styled on the brand's previous issues. Validated as
+    // its own branch, before the url rule every other surface shares.
+    if (body.deliveryType === 'newsletter') {
+      const newsletterProblem = newsletterBriefRequestProblem(body);
+      if (newsletterProblem !== null) {
+        _next(
+          ServiceValidationError.forField(newsletterProblem.field, newsletterProblem.message, {
+            operation: 'campaign_generate_brief',
+            service: 'campaign_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+      body.url = '';
+    } else if (!body.url || typeof body.url !== 'string' || !body.url.trim()) {
       const validationError = ServiceValidationError.forField('url', 'url is required', {
         operation: 'campaign_generate_brief',
         service: 'campaign_controller',
@@ -585,7 +610,9 @@ export class CampaignController {
     // and a resolver that could not answer for a perfectly ordinary public host ("DNS resolution
     // failed — cannot verify host safety") blocked the whole flow for a page nobody was going to
     // request. The link is still checked for shape below, so a malformed one cannot reach a draft.
-    if (body.deliveryType === 'survey') {
+    if (body.deliveryType === 'newsletter') {
+      // Validated above; nothing to fetch.
+    } else if (body.deliveryType === 'survey') {
       // Parsed here rather than run through `validateAndSanitizeUrl`, which prefixes a
       // protocol-less value with the PCC base URL and so accepts `surveys.example.com/x` or a
       // relative path as a link on the PCC host. The link becomes the brief's slug and the email's
@@ -684,6 +711,54 @@ export class CampaignController {
       if (!clientDisconnected) {
         res.end();
       }
+    }
+  }
+
+  /**
+   * Offers and news on the brand's site for the next newsletter issue (POST /newsletter/suggestions).
+   * Read-only: it fetches public pages and writes nothing.
+   */
+  public async suggestNewsletterItems(req: Request, res: Response, next: NextFunction): Promise<void> {
+    // Up to CAMPAIGN_NEWSLETTER_SUGGESTION_MAX_URLS page fetches and as many model calls: not work
+    // to start on a server that is draining, as the other generation routes already refuse it.
+    if (isShuttingDown()) {
+      res.status(503).json({ status: 'shutting_down' });
+      return;
+    }
+    const body = (req.body ?? {}) as Partial<CampaignNewsletterSuggestionsRequest>;
+    const urls = Array.isArray(body.urls) ? body.urls.filter((u): u is string => typeof u === 'string' && u.trim() !== '').map((u) => u.trim()) : [];
+    const brand = typeof body.brand === 'string' ? body.brand.trim() : '';
+    const fail = (field: string, message: string): void =>
+      next(ServiceValidationError.forField(field, message, { operation: 'campaign_newsletter_suggestions', service: 'campaign_controller', path: req.path }));
+    if (urls.length === 0 || urls.length > CAMPAIGN_NEWSLETTER_SUGGESTION_MAX_URLS) {
+      fail('urls', `urls must hold 1 to ${CAMPAIGN_NEWSLETTER_SUGGESTION_MAX_URLS} page links`);
+      return;
+    }
+    if (urls.some((u) => u.length > CAMPAIGN_EVENT_URL_MAX_LENGTH)) {
+      fail('urls', `each page link must be ${CAMPAIGN_EVENT_URL_MAX_LENGTH} characters or fewer`);
+      return;
+    }
+    if (brand === '') {
+      fail('brand', 'brand is required');
+      return;
+    }
+    if (brand.length > CAMPAIGN_NEWSLETTER_SUGGESTION_BRAND_MAX_LENGTH) {
+      fail('brand', `brand must be ${CAMPAIGN_NEWSLETTER_SUGGESTION_BRAND_MAX_LENGTH} characters or fewer`);
+      return;
+    }
+    const startTime = logger.startOperation(req, 'campaign_newsletter_suggestions', { pages: urls.length });
+    const abortController = new AbortController();
+    res.on('close', () => abortController.abort());
+    try {
+      const result = await this.proxyService.suggestNewsletterItems(
+        req,
+        { urls, brand, ...(typeof body.notBefore === 'string' ? { notBefore: body.notBefore } : {}) },
+        abortController.signal
+      );
+      logger.success(req, 'campaign_newsletter_suggestions', startTime, { items: result.items.length, failed: result.failedUrls.length });
+      res.json(result);
+    } catch (error) {
+      next(error);
     }
   }
 
@@ -1526,7 +1601,18 @@ export class CampaignController {
       const metaDelivery = this.metaDeliveryOptionsToForward(body);
       // The Meta Instant Form of a `leads` create (#5940), or none. See `metaLeadFormToForward`.
       const metaLeadFormIdToSend = await this.metaLeadFormToForward(req, projectSlug, body);
-      const configEnvelope = this.createConfigEnvelope(body, linkedInAdAccountId, metaTargeting, metaAdOptions, metaLeadFormIdToSend, metaDelivery);
+      // The addresses a NEWSLETTER brief's notes carry, or null for every other create. See
+      // `emailNoteLinksToVouch`.
+      const emailNoteLinks = await this.emailNoteLinksToVouch(req, projectSlug, briefId, body);
+      const configEnvelope = this.createConfigEnvelope(
+        body,
+        linkedInAdAccountId,
+        metaTargeting,
+        metaAdOptions,
+        metaLeadFormIdToSend,
+        metaDelivery,
+        emailNoteLinks
+      );
 
       // The channel the Google config resolved to, read ONCE for every channel fence below rather
       // than re-read and re-cast by each of them. `unknown`, not the channel union: it is whatever
@@ -3337,7 +3423,7 @@ export class CampaignController {
     // paid -- which would answer a survey caller with the event's paid brief.
     const deliveryType: CampaignDeliveryType = CAMPAIGN_DELIVERY_TYPES.find((d) => d.id === deliveryTypeParam)?.id ?? 'paid-marketing';
     // Each send surface has its OWN stage vocabulary, and upstream refuses a cross-surface pair.
-    const surfaceStages: readonly string[] = deliveryType === 'survey' ? CAMPAIGN_SURVEY_STAGES : CAMPAIGN_EMAIL_STAGES;
+    const surfaceStages: readonly string[] = sendSurfaceStages(deliveryType);
     // The PAIR, matching campaign-service exactly. Each value is valid alone and the COMBINATION
     // is not: paid has no series, so its stage must be empty, and an email send is always some
     // stage. Upstream refuses both with a 400 (`campaign_briefs_delivery_stage_pair_valid` and the
@@ -4004,10 +4090,38 @@ export class CampaignController {
 
     const rawQuery = req.query['q'];
     const query = typeof rawQuery === 'string' ? rawQuery.trim() : '';
-    const startTime = logger.startOperation(req, 'hubspot_email_search', { projectSlug });
+
+    // `?match=` (repeatable) is the picker's brand-and-event scope. Express hands a repeated param
+    // over as an array and a single one as a string, so both shapes are read. Blank phrases are
+    // dropped and the set is capped at upstream's limits (8 phrases of 120 characters) here, so
+    // an over-long scope degrades to its first phrases instead of failing the whole search.
+    const rawMatch = req.query['match'];
+    let matchValues: unknown[] = [];
+    if (Array.isArray(rawMatch)) {
+      matchValues = rawMatch;
+    } else if (rawMatch !== undefined) {
+      matchValues = [rawMatch];
+    }
+    const match = matchValues
+      .filter((value): value is string => typeof value === 'string')
+      .map((value) => value.trim().slice(0, EMAIL_TEMPLATE_SCOPE_MAX_PHRASE_LENGTH))
+      .filter((value) => value !== '')
+      .slice(0, EMAIL_TEMPLATE_SCOPE_MAX_PHRASES);
+    if (match.length > 0 && query !== '') {
+      next(
+        ServiceValidationError.forField('match', 'match and q cannot be combined', {
+          operation: 'hubspot_email_search',
+          service: 'campaign_controller',
+          path: req.path,
+        })
+      );
+      return;
+    }
+
+    const startTime = logger.startOperation(req, 'hubspot_email_search', { projectSlug, scoped: match.length > 0 });
 
     try {
-      const result = await this.campaignServiceClient.searchHubSpotEmails(req, projectSlug, query);
+      const result = await this.campaignServiceClient.searchHubSpotEmails(req, projectSlug, query, match);
       logger.success(req, 'hubspot_email_search', startTime, { enabled: result.enabled, count: result.emails.length });
       res.json(result);
     } catch (error) {
@@ -7718,7 +7832,8 @@ export class CampaignController {
     metaTargeting: MetaTargeting | null = null,
     metaAdOptions: MetaAdOptions = {},
     metaLeadFormIdToSend: string | null = null,
-    metaDelivery: MetaDeliveryOptions = {}
+    metaDelivery: MetaDeliveryOptions = {},
+    emailNoteLinks: readonly string[] | null = null
   ): Record<string, unknown> {
     const envelope: Record<string, unknown> = {};
     if (body?.hsToken) envelope['hsToken'] = body.hsToken;
@@ -7739,10 +7854,35 @@ export class CampaignController {
     const twitterConfig = this.buildTwitterConfig(body);
     if (twitterConfig) envelope['twitterConfig'] = twitterConfig;
 
-    const hubspotConfig = this.buildHubSpotConfig(body);
+    const hubspotConfig = this.buildHubSpotConfig(body, emailNoteLinks);
     if (hubspotConfig) envelope['hubspotConfig'] = hubspotConfig;
 
     return envelope;
+  }
+
+  /**
+   * The addresses a staged NEWSLETTER issue may link to: the ones in its brief's notes, read from
+   * the stored brief. `null` for every other create, which keeps the host rule it always had.
+   *
+   * A newsletter's links are on whatever sites its items live on, so the host rule (the button's
+   * host, or an LF-owned domain) took the href off every one of them at this boundary, after the
+   * preview had shown them. The stored notes are the authority rather than a list the request
+   * carries: they are what campaign-service wrote the issue from, and a caller cannot widen them.
+   *
+   * Asked only for a create that stages a HubSpot email with a body, and only when the request
+   * names its brief: nothing else has a body to judge. A brief that cannot be read answers `[]`,
+   * so the body loses every link and its button rather than falling back to the host rule.
+   */
+  private async emailNoteLinksToVouch(req: Request, projectSlug: string, briefId: string, body: CampaignCreateRequest): Promise<string[] | null> {
+    const stagesEmail = Array.isArray(body?.platforms) && body.platforms.includes('hubspot');
+    const rawBody: unknown = body?.hubspotConfig?.bodyHtml;
+    if (!stagesEmail || typeof rawBody !== 'string' || rawBody.trim() === '' || projectSlug === '' || !isCampaignServiceJobId(briefId)) {
+      return null;
+    }
+    if (!isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceBriefs)) {
+      return null;
+    }
+    return this.campaignServiceClient.newsletterNoteLinks(req, projectSlug, briefId);
   }
 
   /**
@@ -10687,7 +10827,7 @@ export class CampaignController {
    * The legacy path does NOT fail loudly on `hubspot`: it records "Unsupported platform(s)" in an
    * errors array and then completes with nothing created, which is why the refusal is explicit.
    */
-  private buildHubSpotConfig(body: CampaignCreateRequest): Record<string, unknown> | null {
+  private buildHubSpotConfig(body: CampaignCreateRequest, noteLinks: readonly string[] | null = null): Record<string, unknown> | null {
     // Type-checked at runtime, not just by the `CampaignCreateRequest` cast. This route has no
     // body validator — `req.body` is asserted, not parsed — so a caller sending
     // `sourceEmailId: 123` reaches here as a number and `.trim()` throws a TypeError, answering a
@@ -10746,10 +10886,22 @@ export class CampaignController {
     const secondaryLinkUrls = Array.isArray(rawSecondary)
       ? rawSecondary.slice(0, EMAIL_SECONDARY_LINK_LIMIT).filter((url): url is string => typeof url === 'string')
       : [];
-    const allowedBodyDestinations = emailLinkDestinations(buttonUrl, secondaryLinkUrls);
+    //
+    // A NEWSLETTER brief (`noteLinks` non-null, see `emailNoteLinksToVouch`) is judged by its notes
+    // instead: each address in them is vouched for one by one, and no host is. Its button, when it
+    // has one, must point at one of those addresses too.
+    const allowedBodyDestinations = noteLinks === null ? emailLinkDestinations(buttonUrl, secondaryLinkUrls) : [];
+    const exactBodyDestinations = noteLinks ?? undefined;
+    const buttonKey = emailLinkMatchKey(buttonUrl);
+    const buttonIsVouched = noteLinks === null || (buttonKey !== '' && noteLinks.some((link) => emailLinkMatchKey(link) === buttonKey));
 
     const rawBody = body.hubspotConfig?.bodyHtml;
-    const bodyHtml = stripResourceLoadingHtml(typeof rawBody === 'string' ? rawBody : '', allowedBodyDestinations, buttonUrl).trim();
+    const bodyHtml = stripResourceLoadingHtml(
+      typeof rawBody === 'string' ? rawBody : '',
+      allowedBodyDestinations,
+      noteLinks === null ? buttonUrl : '',
+      exactBodyDestinations
+    ).trim();
 
     // Same allow-list gap as subject/bodyHtml above, but for the preheader: unnamed here, it
     // would stay dropped even after the AI generates one, and a staged draft would keep the
@@ -10774,7 +10926,12 @@ export class CampaignController {
     // `onGenerateAbTestCopy` calls the same `/email-copy` endpoint and writes the result straight
     // into the control, so a scraped page can steer a phishing href into B exactly as it can
     // into A. The client preview judges B against this same list, so preview and draft agree.
-    const bodyHtmlB = stripResourceLoadingHtml(typeof rawBodyB === 'string' ? rawBodyB : '', allowedBodyDestinations, buttonUrl).trim();
+    const bodyHtmlB = stripResourceLoadingHtml(
+      typeof rawBodyB === 'string' ? rawBodyB : '',
+      allowedBodyDestinations,
+      noteLinks === null ? buttonUrl : '',
+      exactBodyDestinations
+    ).trim();
     const rawPreheaderB = body.hubspotConfig?.preheaderB;
     const preheaderB = sanitizeDisplayText(typeof rawPreheaderB === 'string' ? rawPreheaderB.trim() : '');
 
@@ -10824,7 +10981,7 @@ export class CampaignController {
       // `bodyHtml` yet still attach a hero and sponsors to it.
       ...(hasVisibleHtmlText(bodyHtml)
         ? {
-            ...(buttonUrl ? { buttonUrl, ...(buttonText ? { buttonText } : {}) } : {}),
+            ...(buttonUrl && buttonIsVouched ? { buttonUrl, ...(buttonText ? { buttonText } : {}) } : {}),
             ...(heroImageUrl ? { heroImageUrl, ...(heroLinkUrl ? { heroLinkUrl } : {}) } : {}),
             ...(sponsors.length > 0 ? { sponsors } : {}),
           }
@@ -10905,4 +11062,56 @@ export class CampaignController {
     }
     return assetId;
   }
+}
+
+/** The stage vocabulary of a send surface; upstream refuses a stage from another surface. */
+function sendSurfaceStages(deliveryType: CampaignDeliveryType): readonly string[] {
+  if (deliveryType === 'survey') {
+    return CAMPAIGN_SURVEY_STAGES;
+  }
+  if (deliveryType === 'newsletter') {
+    return CAMPAIGN_NEWSLETTER_STAGES;
+  }
+  return CAMPAIGN_EMAIL_STAGES;
+}
+
+/**
+ * Why a newsletter brief request cannot be generated, as a field and a message, or null.
+ *
+ * Brand and issue together name and key the brief (`deriveNewsletterSlug`), so both are required;
+ * the notes are the issue's only source of fact, so they are required and held to the source-text
+ * limit campaign-service enforces; reference ids must be HubSpot email ids, at most
+ * `CAMPAIGN_NEWSLETTER_REFERENCE_LIMIT` of them, because upstream reads no more than that.
+ */
+function newsletterBriefRequestProblem(body: CampaignBriefRequest): { field: string; message: string } | null {
+  const brand = typeof body.newsletterBrand === 'string' ? body.newsletterBrand.trim() : '';
+  const issue = typeof body.newsletterIssue === 'string' ? body.newsletterIssue.trim() : '';
+  if (brand === '') {
+    return { field: 'newsletterBrand', message: 'newsletterBrand is required' };
+  }
+  if (issue === '') {
+    return { field: 'newsletterIssue', message: 'newsletterIssue is required' };
+  }
+  if (deriveNewsletterSlug(brand, issue) === '') {
+    return { field: 'newsletterIssue', message: 'newsletterBrand and newsletterIssue must contain letters or digits' };
+  }
+  if (typeof body.sourceText !== 'string' || body.sourceText.trim() === '') {
+    return { field: 'sourceText', message: 'sourceText is required: the notes the issue is written from' };
+  }
+  if (campaignSurveySourceTextTooLong(body.sourceText)) {
+    return { field: 'sourceText', message: `sourceText is longer than the ${CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS}-character limit` };
+  }
+  if (body.referenceEmailIds !== undefined) {
+    if (
+      !Array.isArray(body.referenceEmailIds) ||
+      body.referenceEmailIds.length > CAMPAIGN_NEWSLETTER_REFERENCE_LIMIT ||
+      body.referenceEmailIds.some((id) => typeof id !== 'string' || !CAMPAIGN_HUBSPOT_EMAIL_ID_PATTERN.test(id))
+    ) {
+      return {
+        field: 'referenceEmailIds',
+        message: `referenceEmailIds must be at most ${CAMPAIGN_NEWSLETTER_REFERENCE_LIMIT} HubSpot email ids`,
+      };
+    }
+  }
+  return null;
 }

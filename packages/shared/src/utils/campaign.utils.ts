@@ -251,12 +251,16 @@ export function campaignSurveySourceTextTooLong(sourceText: string): boolean {
 
 /** A value as a brief slug: lowercase ASCII words joined by hyphens, at most 100 characters. */
 function slugifyForBrief(value: string): string {
-  return value
-    .toLowerCase()
-    .normalize('NFKD')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 100);
+  return (
+    value
+      .toLowerCase()
+      .normalize('NFKD')
+      .replace(/[^a-z0-9]+/g, '-')
+      // One hyphen at most at each end: the line above collapses every run to one. `-+` here was
+      // polynomial on a long run (CodeQL js/polynomial-redos) for no difference in the result.
+      .replace(/^-|-$/g, '')
+      .slice(0, 100)
+  );
 }
 
 /**
@@ -280,6 +284,28 @@ export function deriveSurveySlug(url: string, sourceText: string): string {
     return pageSegment;
   }
   return slugifyForBrief(surveySourceTitle(sourceText));
+}
+
+/**
+ * The slug a NEWSLETTER issue's brief is keyed on: `<brand>-newsletter-<issue>`, e.g.
+ * `openssf-newsletter-november-2026`. '' when either half is blank, because a brief keyed on the
+ * brand alone would hold every issue in one row and each new issue would overwrite the last.
+ */
+export function deriveNewsletterSlug(brand: string, issue: string): string {
+  const brandSlug = slugifyForBrief(brand);
+  const issueSlug = slugifyForBrief(issue);
+  if (brandSlug === '' || issueSlug === '') {
+    return '';
+  }
+  return `${brandSlug}-newsletter-${issueSlug}`;
+}
+
+/**
+ * The operator-facing name of a newsletter issue's brief, "OpenSSF Newsletter - November 2026".
+ * It becomes the brief's event name, which campaign-service requires before it writes copy.
+ */
+export function newsletterBriefName(brand: string, issue: string): string {
+  return `${brand.trim()} Newsletter - ${issue.trim()}`;
 }
 
 /**

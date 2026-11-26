@@ -6,6 +6,7 @@ export * from './avatar.constants';
 export * from './api.constants';
 export * from './browser-assets.constants';
 export * from './campaign.constants';
+export * from './campaign-email-template.constants';
 export * from './campaign-optimize.constants';
 export * from './calendar-colors.constants';
 export * from './chunk-load.constants';

@@ -3342,6 +3342,119 @@ describe('CampaignServiceClient.generateEmailCopy upstream messages', () => {
   });
 });
 
+/**
+ * A NEWSLETTER issue links to the addresses in its notes, on whatever sites its items live on.
+ * Judged by the host rule every other email gets (the button's host, or an LF-owned domain), all
+ * of them lost their href and the issue reached the preview with no links at all.
+ */
+describe('CampaignServiceClient.generateEmailCopy for a newsletter issue', () => {
+  const newsletterBrief = (sourceText: string): unknown =>
+    storedBrief({
+      delivery_type: 'newsletter',
+      stage: 'Newsletter',
+      event_slug: 'acme-newsletter-november-2026',
+      event_details: { name: 'Acme Newsletter - November 2026', slug: 'acme-newsletter-november-2026', sourceText, newsletterBrand: 'Acme' },
+    });
+  const issue = {
+    subject: 'Acme Newsletter: the guide is out',
+    preheader: 'New members too',
+    sections: [
+      { type: 'rich_text', html: '<h1>Acme Newsletter</h1><p>Read <a href="https://acme.example/blog/guide/">the guide</a>.</p>' },
+      {
+        type: 'rich_text',
+        html: '<h2>Members</h2><p><a href="https://acme.example/blog/invented">Meet them</a> or <a href="https://linuxfoundation.org/x">here</a>.</p>',
+      },
+    ],
+  };
+
+  beforeEach(() => {
+    proxyRequestWithResponse.mockReset();
+    isServerFeatureEnabled.mockReturnValue(true);
+  });
+
+  it("keeps the links the brief's notes carry and drops every other link's href", async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(issue));
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(newsletterBrief('Guide is out: https://acme.example/blog/guide/.\nNew members joined')));
+
+    const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1', 'Newsletter');
+
+    expect(result.copy?.body).toContain('<a href="https://acme.example/blog/guide/">the guide</a>');
+    expect(result.copy?.body).toContain('<a>Meet them</a>');
+    // An LF-owned host is not vouched for either: a newsletter's links are its notes' and no others.
+    expect(result.copy?.body).toContain('<a>here</a>');
+    // The notes are read from the stored brief, by id.
+    expect(proxyRequestWithResponse.mock.calls[1]?.slice(1, 4)).toEqual(['LFX_V2_CAMPAIGN_SERVICE', '/projects/tlf/briefs/b-1', 'GET']);
+  });
+
+  it('vouches for nothing when the brief cannot be read, rather than failing the generation', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(issue));
+    proxyRequestWithResponse.mockRejectedValueOnce(new MicroserviceError('upstream timed out', 503, 'UNAVAILABLE'));
+
+    const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1', 'Newsletter');
+
+    expect(result.error).toBeUndefined();
+    expect(result.copy?.body).toContain('<a>the guide</a>');
+  });
+
+  it('takes the link rule from the stored brief, not the requested stage: a newsletter asked for with no stage keeps its note links', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(issue));
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(newsletterBrief('Guide is out: https://acme.example/blog/guide/.')));
+
+    const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
+
+    expect(result.copy?.body).toContain('<a href="https://acme.example/blog/guide/">the guide</a>');
+    expect(result.copy?.body).toContain('<a>Meet them</a>');
+  });
+
+  it('keeps the host rule for a brief that is read and is not a newsletter, whatever stage is named', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(issue));
+    proxyRequestWithResponse.mockResolvedValueOnce(
+      apiResponse(
+        storedBrief({ delivery_type: 'email', stage: 'Final Countdown', event_details: { name: 'E', sourceText: 'https://acme.example/blog/guide/' } })
+      )
+    );
+
+    const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1', 'Newsletter');
+
+    // The notes do not vouch for an event email: the brand's link loses its href under the host rule.
+    expect(result.copy?.body).toContain('<a>the guide</a>');
+  });
+});
+
+describe('CampaignServiceClient.newsletterNoteLinks', () => {
+  beforeEach(() => {
+    proxyRequestWithResponse.mockReset();
+  });
+
+  it("returns the addresses in a newsletter brief's notes", async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(
+      apiResponse(
+        storedBrief({
+          delivery_type: 'newsletter',
+          stage: 'Newsletter',
+          event_details: { name: 'N', sourceText: 'A: https://acme.example/a, B: https://acme.example/b.' },
+        })
+      )
+    );
+
+    await expect(new CampaignServiceClient().newsletterNoteLinks(req, 'tlf', 'b-1')).resolves.toEqual(['https://acme.example/a', 'https://acme.example/b']);
+  });
+
+  it('answers null for a brief that is not a newsletter, so its body keeps the host rule', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(
+      apiResponse(storedBrief({ delivery_type: 'email', stage: 'Final Countdown', event_details: { name: 'E', sourceText: 'https://acme.example/a' } }))
+    );
+
+    await expect(new CampaignServiceClient().newsletterNoteLinks(req, 'tlf', 'b-1')).resolves.toBeNull();
+  });
+
+  it('vouches for nothing when the read fails: a brief that may be a newsletter must not fall back to the looser host rule', async () => {
+    proxyRequestWithResponse.mockRejectedValueOnce(new MicroserviceError('upstream timed out', 503, 'UNAVAILABLE'));
+
+    await expect(new CampaignServiceClient().newsletterNoteLinks(req, 'tlf', 'b-1')).resolves.toEqual([]);
+  });
+});
+
 describe('CampaignServiceClient.generateEmailCopy', () => {
   // Upstream's real wire shape (LFXV2-2775): `sections`, not `body`/`cta`.
   const copy = {
@@ -3379,6 +3492,10 @@ describe('CampaignServiceClient.generateEmailCopy', () => {
       })
     );
 
+    proxyRequestWithResponse.mockResolvedValueOnce(
+      apiResponse(storedBrief({ delivery_type: 'email', stage: 'Final Countdown', event_details: { name: 'E' } }))
+    );
+
     const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
 
     expect(result.copy?.body).toContain('href="https://events.linuxfoundation.org/x"');
@@ -3402,6 +3519,10 @@ describe('CampaignServiceClient.generateEmailCopy', () => {
           },
         ],
       })
+    );
+
+    proxyRequestWithResponse.mockResolvedValueOnce(
+      apiResponse(storedBrief({ delivery_type: 'email', stage: 'Final Countdown', event_details: { name: 'E' } }))
     );
 
     const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
@@ -3840,6 +3961,26 @@ describe('CampaignServiceClient.searchHubSpotEmails', () => {
     // vanishing: `undefined` fifth with `{ q: '' }` sixth would send it as a discarded body.
     expect(call[4]).toBeUndefined();
     expect(call[5]).toBeUndefined();
+  });
+
+  it('sends a brand scope as repeated match params, never with q, and with the long search budget', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce({ data: { emails: [] } });
+
+    await new CampaignServiceClient().searchHubSpotEmails(req, 'tlf', '', ['kubecon', 'cloudnativecon']);
+
+    const call = proxyRequestWithResponse.mock.calls[0];
+    expect(call[4]).toEqual({ match: ['kubecon', 'cloudnativecon'] });
+    expect(call[5]).toBeUndefined();
+    expect(call[7]).toEqual({ timeoutMs: 45_000 });
+  });
+
+  it('never flags a scoped listing as the capped first screen, however long it is', async () => {
+    const emails = Array.from({ length: 500 }, (_, i) => ({ id: String(i + 1), name: `KubeCon ${i}` }));
+    proxyRequestWithResponse.mockResolvedValueOnce({ data: { emails } });
+
+    const result = await new CampaignServiceClient().searchHubSpotEmails(req, 'tlf', '', ['kubecon']);
+
+    expect(result.possiblyTruncated).toBe(false);
   });
 
   it('maps the wire shape onto the shared interface', async () => {

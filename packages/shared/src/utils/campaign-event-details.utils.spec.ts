@@ -316,3 +316,18 @@ describe('coerceCampaignEventDetails', () => {
     });
   });
 });
+
+describe('coerceCampaignEventDetails newsletter fields', () => {
+  it('keeps the newsletter brand, issue and reference ids', () => {
+    const details = coerceCampaignEventDetails({ newsletterBrand: 'OpenSSF', newsletterIssue: 'November 2026', referenceEmailIds: ['123', 4, '456'] });
+    expect(details.newsletterBrand).toBe('OpenSSF');
+    expect(details.newsletterIssue).toBe('November 2026');
+    expect(details.referenceEmailIds).toEqual(['123', '456']);
+  });
+
+  it('leaves an event brief without them', () => {
+    const details = coerceCampaignEventDetails({ name: 'KubeCon' });
+    expect('newsletterBrand' in details).toBe(false);
+    expect('referenceEmailIds' in details).toBe(false);
+  });
+});

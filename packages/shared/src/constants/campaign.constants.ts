@@ -6,6 +6,7 @@ import type {
   AudienceCustomOperator,
   AudienceCustomReuseRecommendation,
   AudienceLastSentMatchReason,
+  AudienceListDescriptionStatus,
   AudienceOptInLookup,
   AudienceOptInSignal,
   AudienceSignal,
@@ -21,6 +22,9 @@ import type {
   CampaignDeliveryTypeOption,
   CampaignEmailSegment,
   CampaignEmailTypeOption,
+  CampaignNewsletterSuggestionKind,
+  CampaignNewsletterTypeOption,
+  CampaignProgramPickerOption,
   CampaignFunnelStage,
   CampaignGoalOption,
   CampaignKeyword,
@@ -203,6 +207,9 @@ export const CAMPAIGN_DELIVERY_TYPES: readonly CampaignDeliveryTypeOption[] = [
   { id: 'paid-marketing', label: 'Paid Marketing', breadcrumbLabel: 'Paid Marketing' },
   { id: 'email', label: 'Email', breadcrumbLabel: 'Email' },
   { id: 'survey', label: 'Survey & Report', breadcrumbLabel: 'Survey & Report' },
+  // The wire value of the newsletter surface. Never offered in the delivery picker: the page
+  // reaches it through the first selector's Newsletter entry (CAMPAIGN_NEWSLETTER_PROGRAM_OPTION).
+  { id: 'newsletter', label: 'Newsletter', breadcrumbLabel: 'Newsletter Campaigns' },
 ] as const;
 
 export const CAMPAIGN_PROGRAM_TYPES: readonly CampaignProgramTypeOption[] = [
@@ -5103,6 +5110,72 @@ export const CAMPAIGN_SURVEY_TYPES: readonly CampaignSurveyTypeOption[] = [
   },
 ] as const;
 
+/**
+ * Every stage a NEWSLETTER campaign can occupy: one. A newsletter brief is ONE ISSUE of a brand's
+ * recurring newsletter, and issues are told apart by their slug (brand + issue), not by stage.
+ * Upstream keeps it as its own vocabulary, so `(newsletter, 'Final Countdown')` is refused.
+ */
+export const CAMPAIGN_NEWSLETTER_STAGES = ['Newsletter'] as const;
+
+/** The newsletter surface's type picker: a single entry, so the picker reads the same on every surface. */
+export const CAMPAIGN_NEWSLETTER_TYPES: readonly CampaignNewsletterTypeOption[] = [
+  { id: 'newsletter-issue', label: 'Newsletter Issue', stage: 'Newsletter', keywords: ['newsletter'] },
+] as const;
+
+/** The newsletter type a fresh selection starts on. */
+export const DEFAULT_CAMPAIGN_NEWSLETTER_TYPE_ID = 'newsletter-issue';
+
+/**
+ * The Newsletter entry of the campaigns page's first selector. Offered only while
+ * CAMPAIGNS_NEWSLETTER_ENABLED_FLAG is on; choosing it switches the send surface to newsletter.
+ */
+export const CAMPAIGN_NEWSLETTER_PROGRAM_OPTION: CampaignProgramPickerOption = { id: 'newsletter', label: 'Newsletter Campaigns' };
+
+/** How many pages of the brand's site one suggestions request may read. */
+export const CAMPAIGN_NEWSLETTER_SUGGESTION_MAX_URLS = 3;
+
+/** Longest newsletter brand name the BFF accepts; campaign-service's `MaxLength(120)` on `brand`. */
+export const CAMPAIGN_NEWSLETTER_BRAND_MAX_LENGTH = 120;
+
+/** Longest brand name a suggestions request may carry; the same bound the brand-newsletter listing uses. */
+export const CAMPAIGN_NEWSLETTER_SUGGESTION_BRAND_MAX_LENGTH = CAMPAIGN_NEWSLETTER_BRAND_MAX_LENGTH;
+
+/** Response types a suggestions page may answer with. Anything else is not a web page to read. */
+export const CAMPAIGN_NEWSLETTER_SUGGESTION_CONTENT_TYPES = ['text/html', 'application/xhtml+xml'] as const;
+
+/** How many suggestions are returned at most, newest deadline-bound offers first. */
+export const CAMPAIGN_NEWSLETTER_SUGGESTION_LIMIT = 12;
+
+/** Operator-facing label per suggestion kind. */
+export const CAMPAIGN_NEWSLETTER_SUGGESTION_KIND_LABELS: Readonly<Record<CampaignNewsletterSuggestionKind, string>> = {
+  offer: 'Offer',
+  cfp: 'Call for papers',
+  event: 'Event',
+  report: 'Free report',
+  post: 'Post',
+};
+
+/**
+ * How long the campaigns page reuses a brand's previous-issue read and the newsletter-brand list.
+ * Long enough to cover the planner and Implement asking for the same brand in one sitting, short
+ * enough that an issue sent in HubSpot meanwhile appears without a browser reload.
+ */
+export const CAMPAIGN_NEWSLETTER_CACHE_TTL_MS = 5 * 60 * 1000;
+
+/** The suggestion kinds a newsletter suggestion may carry, derived from the labels so the two cannot drift; anything else is dropped. */
+export const CAMPAIGN_NEWSLETTER_SUGGESTION_KINDS: ReadonlySet<CampaignNewsletterSuggestionKind> = new Set(
+  Object.keys(CAMPAIGN_NEWSLETTER_SUGGESTION_KIND_LABELS) as CampaignNewsletterSuggestionKind[]
+);
+
+/** localStorage key prefix for the pages last checked for a brand's suggestions (per viewer, per brand). */
+export const CAMPAIGN_NEWSLETTER_SOURCE_STORAGE_PREFIX = 'lfx-campaign-newsletter-sources:';
+
+/** How many previous issues the newsletter planner offers as references (upstream reads at most three). */
+export const CAMPAIGN_NEWSLETTER_REFERENCE_LIMIT = 3;
+
+/** A HubSpot marketing-email id: digits only. Anything else cannot name an email upstream reads. */
+export const CAMPAIGN_HUBSPOT_EMAIL_ID_PATTERN = /^\d{1,20}$/;
+
 /** The survey type a fresh selection starts on. */
 export const DEFAULT_CAMPAIGN_SURVEY_TYPE_ID = 'survey-promo';
 
@@ -5110,7 +5183,7 @@ export const DEFAULT_CAMPAIGN_SURVEY_TYPE_ID = 'survey-promo';
  * Every stage a SEND surface can carry, email and survey together. For the places that only
  * CARRY a stage (restoring a stored brief); a picker offers its own surface's list instead.
  */
-export const CAMPAIGN_SEND_STAGES = [...CAMPAIGN_EMAIL_STAGES, ...CAMPAIGN_SURVEY_STAGES] as const;
+export const CAMPAIGN_SEND_STAGES = [...CAMPAIGN_EMAIL_STAGES, ...CAMPAIGN_SURVEY_STAGES, ...CAMPAIGN_NEWSLETTER_STAGES] as const;
 
 /**
  * Last URL path segments that name a survey tool's PAGE rather than the survey (Google Forms ends
@@ -5397,6 +5470,12 @@ export const AUDIENCE_CUSTOM_REUSE_RECOMMENDATIONS: Readonly<Record<AudienceCust
   unrelated: 'Probably a different audience',
 };
 
+/**
+ * Every outcome a list description can report, as a runtime list, so the BFF can refuse a status a
+ * newer campaign-service adds before the UI has copy for it.
+ */
+export const AUDIENCE_LIST_DESCRIPTION_STATUSES: readonly AudienceListDescriptionStatus[] = ['described', 'static', 'not_found', 'unreadable'];
+
 /** Why a prior send is listed, with its label; brand-only and related-word rows are weaker precedent. */
 export const AUDIENCE_LAST_SENT_MATCH_REASONS: Readonly<Record<AudienceLastSentMatchReason, string>> = {
   event_name: 'Matched on the event name',
@@ -5498,6 +5577,14 @@ export const LF_OWNED_EMAIL_LINK_DOMAINS: readonly string[] = ['linuxfoundation.
 export const EMAIL_SECONDARY_LINK_LIMIT = 4;
 
 /**
+ * At most this many addresses are read from a newsletter issue's notes as the links its body may
+ * keep (`extractHttpLinks`). Far above any real issue: the notes are held to
+ * `CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS` characters, and an address with its item's words takes
+ * well over thirty of them.
+ */
+export const EMAIL_NOTE_LINK_LIMIT = 100;
+
+/**
  * The inline-style properties a generated email body may keep (#3306). campaign-service styles every
  * generated section inline (`internal/service/email_body_style.go`), because mail clients drop most
  * other CSS, so stripping `style` previewed and staged the email unstyled. Only typography, colour,
@@ -5582,6 +5669,28 @@ export const AUDIENCE_ATTACH_MAX_LIST_IDS = 50;
 
 /** The most list ids campaign-service's preview-count unions in one request (a 400 past it). */
 export const AUDIENCE_PREVIEW_MAX_LIST_IDS = 50;
+
+/**
+ * How many lists one describe request may carry: campaign-service's `list_ids` MaxLength. Each id
+ * is a HubSpot read plus the lookups its rules need, so the bound is a fan-out budget.
+ */
+export const AUDIENCE_DESCRIBE_MAX_LIST_IDS = 25;
+
+/**
+ * How long the Audience tab waits after the selection last changed before asking what the newly
+ * selected lists mean. Ticking several lists in a row is one request, not one per tick.
+ */
+export const AUDIENCE_DESCRIBE_DEBOUNCE_MS = 400;
+
+/**
+ * HubSpot's processingType in the words HubSpot's own UI uses: a DYNAMIC list is an "active" list
+ * whose members change as contacts start or stop matching its rules.
+ */
+export const AUDIENCE_LIST_PROCESSING_TYPE_LABELS: Readonly<Record<string, string>> = {
+  DYNAMIC: 'Active list',
+  MANUAL: 'Static list',
+  SNAPSHOT: 'Snapshot list',
+};
 
 /** The longest `inclusionSummary` the BFF accepts on an attach; it is stored on the audience row. */
 export const AUDIENCE_INCLUSION_SUMMARY_MAX_LENGTH = 2_000;
