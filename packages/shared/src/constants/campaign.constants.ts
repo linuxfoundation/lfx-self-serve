@@ -882,8 +882,8 @@ export const LINKEDIN_TEXT_AD_REQUEST_KEYS = ['headline', 'description', 'imageU
 /**
  * LinkedIn carousel limits (linuxfoundation/lfx-v2-campaign-service#665), campaign-service's `MinCarouselCards`,
  * `MaxCarouselCards`, `CarouselHeadlineMaxChars`, `CarouselIntroTextMaxChars` and `MaxCarouselLandingPageChars`
- * (`internal/platform/linkedin/carousel.go`): cards per carousel, characters after the creative normalization, and
- * bytes of a card's destination link.
+ * (`internal/platform/linkedin/carousel.go`): cards per carousel, characters after the creative normalization, bytes
+ * of a card's destination link, and a card image's bytes and longest side (`MaxCarouselImageBytes`, `carouselImageMaxSide`).
  */
 export const LINKEDIN_CAROUSEL_LIMITS = {
   minCards: 2,
@@ -891,6 +891,8 @@ export const LINKEDIN_CAROUSEL_LIMITS = {
   headline: 45,
   introText: 255,
   destinationBytes: 2000,
+  imageBytes: 10_000_000,
+  imageMaxSide: 4320,
 } as const;
 
 /** The keys one LinkedIn carousel card may carry, spelled exactly (`LinkedInCarouselCard`). */

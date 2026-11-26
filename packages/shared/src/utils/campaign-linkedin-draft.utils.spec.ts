@@ -51,6 +51,8 @@ describe('linkedInDraftFields', () => {
     uploadFailedBriefId: '',
     format: 'text',
     textAds: [{ key: 'text-ad-1', headline: 'h', description: 'd' }],
+    carouselCards: [{ key: 'card-1', imageAssetId: 'img', imageAssetBriefId: 'b1', headline: 'Keynote', destinationUrl: '' }],
+    carouselIntroText: 'Meet the speakers',
     customTargeting: true,
     targetingDraft: { clauses: [{ skills: [{ urn: 'urn:li:skill:1', name: 'Go' }] }], exclude: {}, segmentsAccountId: null },
     objectiveDraft: { objective: 'conversions', conversions: ['104012'], conversionsOwner: 'tlf|' },
@@ -72,6 +74,12 @@ describe('linkedInDraftFields', () => {
     const fields = linkedInDraftFields(state);
     expect(fields).toMatchObject({ linkedInFormat: 'text', linkedInTextAds: state.textAds });
     expect(fields.linkedInTextAds?.[0]).not.toBe(state.textAds[0]);
+  });
+
+  it('carries the carousel intro and a copy of each card', () => {
+    const fields = linkedInDraftFields(state);
+    expect(fields).toMatchObject({ linkedInCarouselIntroText: 'Meet the speakers', linkedInCarouselCards: state.carouselCards });
+    expect(fields.linkedInCarouselCards?.[0]).not.toBe(state.carouselCards[0]);
   });
 
   it('carries the budget pair and cap as held, and copies each variant', () => {
@@ -99,10 +107,27 @@ describe('linkedInDraftRestore', () => {
     ['text', 'text'],
     ['single_image', 'single_image'],
     ['video', 'video'],
-    ['carousel', undefined],
+    ['carousel', 'carousel'],
+    ['document', undefined],
   ])('restores a stored format %s as %s', (stored, expected) => {
     // A stored draft is replayed from JSON, so an unknown format is possible.
     expect(linkedInDraftRestore(draft({ linkedInFormat: stored as LinkedInDraftSnapshot['linkedInFormat'] })).format).toBe(expected);
+  });
+
+  it('restores carousel cards whose fields are text, and the intro text, present-only', () => {
+    const restore = linkedInDraftRestore(
+      draft({
+        linkedInCarouselCards: [
+          { key: 'card-1', imageAssetId: 'img', imageAssetBriefId: 'b1', headline: 'Keynote', destinationUrl: 7 },
+          { headline: 'no key' },
+          { key: 'card-1', headline: 'a repeated key' },
+        ] as unknown as LinkedInDraftSnapshot['linkedInCarouselCards'],
+        linkedInCarouselIntroText: 'Hi',
+      })
+    );
+    expect(restore.carouselCards).toEqual([{ key: 'card-1', imageAssetId: 'img', imageAssetBriefId: 'b1', headline: 'Keynote', destinationUrl: '' }]);
+    expect(restore.carouselIntroText).toBe('Hi');
+    expect(linkedInDraftRestore(draft({}))).not.toHaveProperty('carouselCards');
   });
 
   it.each([

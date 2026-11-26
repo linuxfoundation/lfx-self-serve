@@ -386,6 +386,7 @@ import type {
   LinkedInObjectiveDraft,
   LinkedInTargetCostOfferInput,
   LinkedInTextAdDraft,
+  LinkedInCarouselCardDraft,
   LinkedInTextAdImageInput,
   LinkedInVariantView,
   MetaAdVariant,
@@ -499,6 +500,8 @@ import {
   linkedInTextAdImageSizeRefusal,
   linkedInTextAdViews,
   linkedInTextAdsForCreate,
+  linkedInCarouselCreateRefusal,
+  linkedInCarouselFieldsForCreate,
   emptyLinkedInTargetingDraft,
   emptyLinkedInObjectiveDraft,
   linkedInLeadGenChosen,
@@ -514,6 +517,7 @@ import {
   linkedInTargetingSegmentsAccountRefusal,
   linkedInSegmentsOwnerKey,
   newLinkedInTextAdDraft,
+  newLinkedInCarouselCardDraft,
   linkedInCanAddVariant,
   linkedInCanRemoveVariant,
   linkedInImageFileRefusal,
@@ -636,6 +640,7 @@ import { CampaignGoogleDemographicTargetingComponent } from '../campaign-google-
 import { LinkedInObjectivePickerComponent } from '../linkedin-objective-picker/linkedin-objective-picker.component';
 import { LinkedInTargetingEditorComponent } from '../linkedin-targeting-editor/linkedin-targeting-editor.component';
 import { LinkedInTextAdsEditorComponent } from '../linkedin-text-ads-editor/linkedin-text-ads-editor.component';
+import { LinkedInCarouselEditorComponent } from '../linkedin-carousel-editor/linkedin-carousel-editor.component';
 import { MetaAudienceTargetingComponent } from '../meta-audience-targeting/meta-audience-targeting.component';
 import { MetaDeliveryOptionsComponent } from '../meta-delivery-options/meta-delivery-options.component';
 import { MetaDeviceOsOptionsComponent } from '../meta-device-os-options/meta-device-os-options.component';
@@ -743,6 +748,7 @@ let linkedInVariantKeySequence = 0;
     LinkedInObjectivePickerComponent,
     LinkedInTargetingEditorComponent,
     LinkedInTextAdsEditorComponent,
+    LinkedInCarouselEditorComponent,
   ],
   // Component-scoped so the "create another" confirmation (#4983) needs nothing from the host; the app
   // also provides one at root, and this instance behaves the same.
@@ -1056,6 +1062,12 @@ export class ImplementationTabComponent implements OnInit {
 
   /** @see linkedInLeadGenEnabled — an explicit yes, never a `null`. */
   protected readonly linkedInLeadGenAvailable = computed<boolean>(() => this.linkedInLeadGenEnabled() === true);
+
+  /** Whether the LinkedIn section offers carousel ads (`CampaignListResult.linkedInCarouselEnabled`, linuxfoundation/lfx-v2-campaign-service#665). */
+  public readonly linkedInCarouselEnabled = input<boolean | null>(null);
+
+  /** @see linkedInCarouselEnabled — an explicit yes, never a `null`. */
+  protected readonly linkedInCarouselAvailable = computed<boolean>(() => this.linkedInCarouselEnabled() === true);
 
   /**
    * Whether a LinkedIn create's automatic bidding may carry a target cost (`CampaignListResult.linkedInTargetCostEnabled`,
@@ -1990,10 +2002,16 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly linkedInTextAds = signal<LinkedInTextAdDraft[]>([]);
   /** Whether this create is a Text Ads campaign: chosen, and offered by this deployment. */
   protected readonly linkedInTextAdsSelected = computed<boolean>(() => this.linkedInTextAdsAvailable() && this.linkedInFormat() === 'text');
+  /** The LinkedIn carousel cards and intro text as edited (campaign-service#665), carried in the draft. */
+  protected readonly linkedInCarouselCards = signal<LinkedInCarouselCardDraft[]>([]);
+  protected readonly linkedInCarouselIntroText = signal('');
+  /** Whether this create is a carousel (campaign-service#665): chosen, and offered by this deployment. */
+  protected readonly linkedInCarouselSelected = computed<boolean>(() => this.linkedInCarouselAvailable() && this.linkedInFormat() === 'carousel');
   /** The Ad format picker's hint: what the chosen format needs (#5764 rows 18–19). */
   protected readonly linkedInFormatHint = computed<string>(() => {
     if (this.linkedInFormat() === 'text') return "Text ads are a headline and description on LinkedIn's desktop right rail. They need a manual bid.";
     if (this.linkedInFormat() === 'video') return 'Video ads play an MP4 in the feed. Every ad needs its own video, and video ads have no description.';
+    if (this.linkedInFormat() === 'carousel') return 'A carousel is one post of 2 to 10 swipeable square image cards, each with its own headline and link.';
     return 'Single image ads show an image with the intro text and headline in the feed.';
   });
   /**
@@ -2256,11 +2274,13 @@ export class ImplementationTabComponent implements OnInit {
    * keys) while it ran, or it is for the other format (#5764 row 19). It is not cancelled, because a draft
    * restore that follows the re-seed brings that variant back, or a switch back to its format brings its
    * editor back, and the upload lands on it; until then it holds no picker and not Create. The same rule the
-   * variant and text ad views apply, each to its own list, so a picker that looks enabled always takes a pick.
+   * variant and text ad views apply, each to its own list, so a picker that looks enabled always takes a pick. A carousel
+   * (campaign-service#665) holds no upload, so while one is chosen any upload is orphaned and holds nothing.
    */
-  private readonly linkedInImageUploadOrphaned = computed(() =>
-    linkedInImageUploadOrphaned(this.linkedInImageSlot(), this.linkedInTextAdsSelected() ? this.linkedInTextAds() : this.linkedInVariants())
-  );
+  private readonly linkedInImageUploadOrphaned = computed(() => {
+    if (this.linkedInCarouselSelected()) return linkedInImageUploadOrphaned(this.linkedInImageSlot(), []);
+    return linkedInImageUploadOrphaned(this.linkedInImageSlot(), this.linkedInTextAdsSelected() ? this.linkedInTextAds() : this.linkedInVariants());
+  });
   protected readonly linkedInImageUploadStatus = signal<CreativeAssetUploadStatus>('idle');
   private readonly linkedInImageUploadPendingName = signal('');
   private readonly linkedInImageUploadPendingBriefId = signal('');
@@ -4076,13 +4096,14 @@ export class ImplementationTabComponent implements OnInit {
   /**
    * Why Create is blocked for an uploaded LinkedIn image this tab still holds but cannot send, or
    * `null` — `metaImageAssetBlock`'s sibling, less the pasted URL LinkedIn does not have. The first
-   * blocked variant's, or text ad's while Text Ads are chosen (#5764 row 19); each shows its own beside its picker.
+   * blocked variant's, or text ad's while Text Ads are chosen (#5764 row 19); each shows its own beside its picker. None
+   * while a carousel is chosen (campaign-service#665): its cards pick stored images, and the hidden variants send nothing.
    */
-  protected readonly linkedInImageAssetBlock: Signal<CampaignLinkedInImageAssetBlock | null> = computed(
-    () =>
-      (this.linkedInTextAdsSelected() ? this.linkedInTextAdImageViews() : this.linkedInVariantViews()).find((view) => view.imageBlock !== null)?.imageBlock ??
-      null
-  );
+  protected readonly linkedInImageAssetBlock: Signal<CampaignLinkedInImageAssetBlock | null> = computed(() => {
+    if (this.linkedInCarouselSelected()) return null;
+    const views = this.linkedInTextAdsSelected() ? this.linkedInTextAdImageViews() : this.linkedInVariantViews();
+    return views.find((view) => view.imageBlock !== null)?.imageBlock ?? null;
+  });
   protected readonly linkedInImageAssetBlockMessage = computed(() => this.linkedInImageAssetBlock()?.message ?? '');
   /** Why the daily cap (#5774) cannot be sent, or null; see `initLinkedInDailyCapError`. */
   protected readonly linkedInDailyCapError: Signal<string | null> = this.initLinkedInDailyCapError();
@@ -4462,8 +4483,8 @@ export class ImplementationTabComponent implements OnInit {
     if (this.redditImageAssetBlock() !== null) return 'Reddit Ads: resolve the image notice.';
     if (this.metaImageAssetBlock() !== null) return 'Meta Ads: resolve the image notice.';
     if (this.googleImageAssetBlock() !== null) return 'Google Ads: resolve the image notice.';
-    // The first variant's image block, or text ad's while Text Ads are chosen (#5764 row 19); an image for the ads the
-    // chosen format hides is not sent and holds nothing (see `linkedInImageAssetBlock`).
+    // The first variant's image block, or text ad's while Text Ads are chosen (#5764 row 19), and none for a carousel; an
+    // image for the ads the chosen format hides is not sent and holds nothing (see `linkedInImageAssetBlock`).
     if (this.linkedInImageAssetBlock() !== null) return 'LinkedIn Ads: resolve the image notice.';
     if (this.twitterImageAssetBlock() !== null) return 'X: resolve the image notice.';
     if (this.microsoftImageAssetBlock() !== null) return 'Microsoft Ads: resolve the image notice.';
@@ -5700,7 +5721,7 @@ export class ImplementationTabComponent implements OnInit {
 
   /** The Ad format picker's value as a format: anything else reads as single image ads. */
   protected onLinkedInFormatSelect(value: unknown): void {
-    this.onLinkedInFormatChange(value === 'text' || value === 'video' ? value : 'single_image');
+    this.onLinkedInFormatChange(value === 'text' || value === 'video' || value === 'carousel' ? value : 'single_image');
   }
 
   /**
@@ -5711,7 +5732,35 @@ export class ImplementationTabComponent implements OnInit {
     if ((format === 'video') !== (this.linkedInFormat() === 'video')) this.clearLinkedInImageUpload();
     this.linkedInFormat.set(format);
     if (format === 'text' && this.linkedInTextAds().length === 0) this.linkedInTextAds.set([newLinkedInTextAdDraft([])]);
+    // The first switch to a carousel (campaign-service#665) starts the two empty cards it needs at least.
+    if (format === 'carousel' && this.linkedInCarouselCards().length === 0) {
+      const first = newLinkedInCarouselCardDraft([]);
+      this.linkedInCarouselCards.set([first, newLinkedInCarouselCardDraft([first])]);
+    }
     this.emitDraft();
+  }
+
+  /** The carousel editor's cards as edited (campaign-service#665). */
+  protected onLinkedInCarouselCardsChange(cards: LinkedInCarouselCardDraft[]): void {
+    this.linkedInCarouselCards.set(cards);
+    this.emitDraft();
+  }
+
+  /** The carousel editor's intro text as edited (campaign-service#665). */
+  protected onLinkedInCarouselIntroTextChange(introText: string): void {
+    this.linkedInCarouselIntroText.set(introText);
+    this.emitDraft();
+  }
+
+  /**
+   * Images chosen in the carousel editor (campaign-service#665), queued into the brief's library the way the library
+   * upload below queues them, so they are listed there and offered to every card once stored (`onCreativeLibraryChanged`).
+   */
+  protected onLinkedInCarouselUpload(files: File[]): void {
+    const briefId = this.briefPersistence().briefId ?? '';
+    const projectSlug = this.activeFoundationSlug();
+    if (!briefId || !projectSlug) return;
+    this.campaignService.enqueueCreativeAssetUploads(files, projectSlug, briefId);
   }
 
   /** Turn custom targeting on in place of the targeting profile (#5764 rows 8–11). */
@@ -9059,10 +9108,12 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
-   * The LinkedIn creatives for the request (#5764 row 19): `format: 'text'`, the text ads and no variants while Text Ads
-   * are chosen and offered, else the variants exactly as before (no `format` key).
+   * The LinkedIn creatives for the request (#5764 row 19, campaign-service#665): `format: 'text'`, the text ads and no
+   * variants while Text Ads are chosen and offered; `format: 'carousel'`, the cards, the intro text and no variants while a
+   * carousel is chosen and offered; else the variants exactly as before (no `format` key), each with its video while video
+   * ads are chosen.
    */
-  private linkedInCreativesField(): Pick<LinkedInCampaignCreateRequest, 'variants' | 'format' | 'textAds'> {
+  private linkedInCreativesField(): Pick<LinkedInCampaignCreateRequest, 'variants' | 'format' | 'textAds' | 'carouselCards' | 'carouselIntroText'> {
     // Video ads (#5764 row 18) are the single-image request with a video on each variant, and no image or description.
     if (this.linkedInVideoSelected()) {
       return {
@@ -9072,9 +9123,19 @@ export class ImplementationTabComponent implements OnInit {
         }),
       };
     }
+    // A carousel (campaign-service#665) is one creative built from its cards, and sends no variants.
+    if (this.linkedInCarouselSelected()) {
+      return linkedInCarouselFieldsForCreate(this.linkedInCarouselCards(), this.linkedInCarouselIntroText(), this.briefPersistence().briefId ?? '');
+    }
     if (!this.linkedInTextAdsSelected()) return { variants: this.linkedInVariantsSent() };
     const textAds = linkedInTextAdsForCreate(this.linkedInTextAds(), this.linkedInAssetUploadAvailable(), this.briefPersistence().briefId ?? '');
     return { format: 'text', textAds, variants: [] };
+  }
+
+  /** The request `format` the objective checks are run against: Text Ads or a carousel while chosen and offered, else none. */
+  private linkedInFormatSent(): 'text' | 'carousel' | undefined {
+    if (this.linkedInTextAdsSelected()) return 'text';
+    return this.linkedInCarouselSelected() ? 'carousel' : undefined;
   }
 
   /** Why the LinkedIn section holds Create now, or `null`; see `linkedInCreateRefusal`. */
@@ -9103,6 +9164,27 @@ export class ImplementationTabComponent implements OnInit {
       textAdsWithLeadGen: this.linkedInFormat() === 'text' && this.linkedInLeadGenSelected(),
       // Likewise video ads (#5764 row 18); while chosen, every ad needs its video for this brief.
       videoAdsUnavailable: this.linkedInFormat() === 'video' && !this.linkedInVideoAdsAvailable(),
+      // Likewise a carousel (campaign-service#665).
+      carouselUnavailable: this.linkedInFormat() === 'carousel' && !this.linkedInCarouselAvailable(),
+      // A carousel beside lead generation, which campaign-service builds none of: change the format or the objective.
+      carouselWithLeadGen: this.linkedInFormat() === 'carousel' && this.linkedInLeadGenSelected(),
+      // While a carousel is chosen, its cards replace the variant checks. Not while the brief saves: the tab has no brief
+      // id then, and the save's own hold ("Waiting for the brief to finish saving.") is the one to show.
+      ...(this.linkedInCarouselSelected()
+        ? {
+            carousel: {
+              refusal:
+                this.briefSaveInFlight() || this.briefPersistence().status === 'saving'
+                  ? null
+                  : linkedInCarouselCreateRefusal(
+                      this.linkedInCarouselCards(),
+                      this.linkedInCarouselIntroText(),
+                      this.googleCreativeLibrary(),
+                      this.briefPersistence().briefId ?? ''
+                    ),
+            },
+          }
+        : {}),
       ...(this.linkedInVideoSelected() ? { videoMissing: linkedInVideoMissing(this.linkedInVariants(), this.briefPersistence().briefId ?? '') } : {}),
       customTargetingUnavailable: this.linkedInCustomTargeting() && !this.linkedInTargetingAvailable(),
       // Custom targeting (#5764 rows 8–11) holds Create while its clauses cannot be sent, and replaces the profile checks.
@@ -9114,7 +9196,7 @@ export class ImplementationTabComponent implements OnInit {
         owner: this.linkedInSegmentsOwner(),
         bidding: this.biddingField('linkedin-ads').bidding,
         leadGenAvailable: this.linkedInLeadGenAvailable(),
-        format: this.linkedInTextAdsSelected() ? 'text' : undefined,
+        format: this.linkedInFormatSent(),
       }),
       // The target cost (campaign-service#674): held while offered and refused; hidden, it is not sent and holds nothing.
       targetCostRefusal: linkedInTargetCostCreateRefusal(
@@ -9558,6 +9640,9 @@ export class ImplementationTabComponent implements OnInit {
     // The format and Text Ads as edited (#5764 row 19), present-only.
     if (linkedInRestore.format) this.linkedInFormat.set(linkedInRestore.format);
     if (linkedInRestore.textAds) this.linkedInTextAds.set(linkedInRestore.textAds);
+    // The carousel cards and intro text as edited (campaign-service#665), present-only.
+    if (linkedInRestore.carouselCards) this.linkedInCarouselCards.set(linkedInRestore.carouselCards);
+    if (linkedInRestore.carouselIntroText !== undefined) this.linkedInCarouselIntroText.set(linkedInRestore.carouselIntroText);
     // Custom targeting and its clauses as edited (#5764 rows 8–11), present-only.
     if (linkedInRestore.customTargeting !== undefined) this.linkedInCustomTargeting.set(linkedInRestore.customTargeting);
     if (linkedInRestore.targetingDraft) this.linkedInTargetingDraft.set(linkedInRestore.targetingDraft);
@@ -10085,6 +10170,8 @@ export class ImplementationTabComponent implements OnInit {
         uploadFailedBriefId: this.linkedInImageUploadFailedBriefId(),
         format: this.linkedInFormat(),
         textAds: this.linkedInTextAds(),
+        carouselCards: this.linkedInCarouselCards(),
+        carouselIntroText: this.linkedInCarouselIntroText(),
         customTargeting: this.linkedInCustomTargeting(),
         targetingDraft: this.linkedInTargetingDraft(),
         objectiveDraft: this.linkedInObjectiveDraft(),
@@ -10427,6 +10514,8 @@ export class ImplementationTabComponent implements OnInit {
     this.linkedInVariants.set([]);
     this.linkedInFormat.set('single_image');
     this.linkedInTextAds.set([]);
+    this.linkedInCarouselCards.set([]);
+    this.linkedInCarouselIntroText.set('');
     this.linkedInCustomTargeting.set(false);
     this.linkedInTargetingDraft.set(emptyLinkedInTargetingDraft());
     this.linkedInObjectiveDraft.set(emptyLinkedInObjectiveDraft());
@@ -11076,7 +11165,8 @@ export class ImplementationTabComponent implements OnInit {
         projectSlug: this.activeFoundationSlug(),
         briefId: this.briefPersistence().briefId ?? '',
         revision: this.creativeLibraryRevision(),
-        wanted: this.googleAssetUploadAvailable() && this.googleCreativeSections().length > 0,
+        // Also while a LinkedIn carousel is chosen (campaign-service#665): its cards pick from the same library.
+        wanted: (this.googleAssetUploadAvailable() && this.googleCreativeSections().length > 0) || this.linkedInCarouselSelected(),
       }),
       {
         equal: (a, b) => a.projectSlug === b.projectSlug && a.briefId === b.briefId && a.revision === b.revision && a.wanted === b.wanted,

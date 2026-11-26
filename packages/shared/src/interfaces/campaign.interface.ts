@@ -1504,6 +1504,12 @@ export interface CampaignImplementationDraft {
   linkedInFormat?: LinkedInAdFormatChoice;
   linkedInTextAds?: LinkedInTextAdDraft[];
   /**
+   * The LinkedIn carousel cards and intro text as edited (campaign-service#665). Restored only when present; the tab sends
+   * them only while `linkedInCarouselEnabled` is on and the carousel format is chosen.
+   */
+  linkedInCarouselCards?: LinkedInCarouselCardDraft[];
+  linkedInCarouselIntroText?: string;
+  /**
    * Whether custom targeting replaces the targeting profile (#5764 rows 8–11), and the clauses as edited. Restored only
    * when present; the tab sends `targeting` only while `linkedInTargetingEnabled` is on.
    */
@@ -2133,6 +2139,34 @@ export interface LinkedInCreativeVariant {
   callToAction?: string;
 }
 
+/** One LinkedIn carousel card as the Implement tab edits it (campaign-service#665). `key` is the tab's own and is never sent. */
+export interface LinkedInCarouselCardDraft {
+  key: string;
+  /** A stored image picked from the brief's library, `''` for none, and the brief it was picked for. */
+  imageAssetId: string;
+  imageAssetBriefId: string;
+  headline: string;
+  /** `''` sends none: the card links to the registration URL. */
+  destinationUrl: string;
+}
+
+/** One stored image a carousel card's picker offers. */
+export interface LinkedInCarouselImageOption {
+  value: string;
+  label: string;
+}
+
+/** One carousel card as the editor shows it: its 1-based position, its counter, the error under each field (`''` for none) and its image picker. */
+export interface LinkedInCarouselCardView extends LinkedInCarouselCardDraft {
+  position: number;
+  headlineLength: number;
+  headlineError: string;
+  destinationError: string;
+  /** Why the picked image cannot be used (not square, too large, another brief, deleted), or `''`. */
+  imageProblem: string;
+  imageOptions: LinkedInCarouselImageOption[];
+}
+
 /** One LinkedIn Text Ad as the Implement tab edits it (#5764 row 19). `key` is the tab's own and is never sent. */
 export interface LinkedInTextAdDraft {
   key: string;
@@ -2517,6 +2551,12 @@ export interface LinkedInCreateRefusalInput {
   textAdsWithLeadGen?: boolean;
   /** Video ads are chosen but this deployment no longer offers them (#5764 row 18). */
   videoAdsUnavailable?: boolean;
+  /** A carousel is chosen but this deployment no longer offers it (campaign-service#665). */
+  carouselUnavailable?: boolean;
+  /** A carousel is chosen beside the lead generation objective, which builds none (campaign-service#665). */
+  carouselWithLeadGen?: boolean;
+  /** Present only while a carousel is chosen (campaign-service#665): why its cards cannot be sent, or `null`. They replace the variant checks. */
+  carousel?: { refusal: string | null };
   /** Present only while video ads are chosen (#5764 row 18): an ad with no video for the open brief. */
   videoMissing?: boolean;
   /**
@@ -3532,6 +3572,8 @@ export type LinkedInDraftSnapshot = Pick<
   | 'linkedInImageUploadFailedBriefId'
   | 'linkedInFormat'
   | 'linkedInTextAds'
+  | 'linkedInCarouselCards'
+  | 'linkedInCarouselIntroText'
   | 'linkedInCustomTargeting'
   | 'linkedInTargetingDraft'
   | 'linkedInObjectiveDraft'
@@ -3551,6 +3593,9 @@ export interface LinkedInDraftState {
   /** The ad format chosen (#5764 rows 18–19) and the Text Ads as edited. */
   format: LinkedInAdFormatChoice;
   textAds: readonly LinkedInTextAdDraft[];
+  /** The carousel cards and intro text as edited (campaign-service#665). */
+  carouselCards: readonly LinkedInCarouselCardDraft[];
+  carouselIntroText: string;
   /** Whether custom targeting is on, and its clauses as edited (#5764 rows 8–11). */
   customTargeting: boolean;
   targetingDraft: LinkedInTargetingDraft;
@@ -3571,6 +3616,8 @@ export interface LinkedInDraftRestore {
   pendingUpload?: { name: string; briefId: string };
   format?: LinkedInAdFormatChoice;
   textAds?: LinkedInTextAdDraft[];
+  carouselCards?: LinkedInCarouselCardDraft[];
+  carouselIntroText?: string;
   customTargeting?: boolean;
   targetingDraft?: LinkedInTargetingDraft;
   objectiveDraft?: LinkedInObjectiveDraft;
