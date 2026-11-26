@@ -8,6 +8,7 @@ import {
   REDDIT_TARGETING_EXCLUSION_LIMITS,
 } from '../constants/campaign.constants';
 import type { RedditConfigRefusal, RedditTargetingExclusionKey } from '../interfaces/campaign.interface';
+import { googleAdsToUpperCode } from './campaign-google-assets.utils';
 import { foldKey } from './campaign-linkedin-config.utils';
 import { goTrimSpace } from './campaign-linkedin.utils';
 
@@ -60,11 +61,12 @@ function subredditName(raw: string): string {
 }
 
 /**
- * The country codes the create would target, campaign-service's `effectiveGeoSet`: the trimmed, upper-cased non-blank
- * `geoTargets`, or `US` when there are none and no sub-country locations replace the default.
+ * The country codes the create would target, campaign-service's `effectiveGeoSet`: the trimmed non-blank
+ * `geoTargets`, upper-cased as Go does (`googleAdsToUpperCode`: `ß` stays `ß`), or `US` when there are none and no
+ * sub-country locations replace the default.
  */
 function effectiveGeoSet(config: Record<string, unknown>): Set<string> {
-  const targeted = new Set((stringList(decodedValue(config, 'geoTargets')) ?? []).map((g) => goTrimSpace(g).toUpperCase()).filter((g) => g !== ''));
+  const targeted = new Set((stringList(decodedValue(config, 'geoTargets')) ?? []).map((g) => googleAdsToUpperCode(goTrimSpace(g))).filter((g) => g !== ''));
   const subCountry = stringList(decodedValue(config, 'subCountryGeoTargets')) ?? [];
   if (targeted.size === 0 && subCountry.length === 0) targeted.add('US');
   return targeted;
@@ -100,7 +102,7 @@ function geoRefusal(excluded: string[], config: Record<string, unknown>): Reddit
   if (excluded.length === 0) return null;
   const targeted = effectiveGeoSet(config);
   for (const [i, raw] of excluded.entries()) {
-    const code = goTrimSpace(raw).toUpperCase();
+    const code = googleAdsToUpperCode(goTrimSpace(raw));
     if (code === '') return { field, message: `Excluded country ${i + 1} is blank.` };
     if (!/^[A-Z]{2}$/.test(code) || !ASSIGNED_COUNTRY_CODES.has(code)) {
       return { field, message: `Excluded country ${i + 1} is not an ISO 3166-1 alpha-2 country code.` };
@@ -127,8 +129,8 @@ function geoRefusal(excluded: string[], config: Record<string, unknown>): Reddit
  * - subreddits: more than 100, a blank entry, a name that is not 2–21 letters, digits or underscores once an `r/` prefix
  *   is removed, or one also in `subreddits` (case-insensitive);
  * - countries: more than 50, a blank entry, a code that is not an assigned ISO 3166-1 alpha-2 code once trimmed and
- *   upper-cased, or one also targeted (`geoTargets`, or the US default when neither `geoTargets` nor
- *   `subCountryGeoTargets` is given).
+ *   upper-cased as Go does (`googleAdsToUpperCode`, so `ß` is not `SS`), or one also targeted (`geoTargets`, or the US
+ *   default when neither `geoTargets` nor `subCountryGeoTargets` is given).
  *
  * Duplicates are not refused: campaign-service drops them. Messages name entries by position and never echo a caller value.
  */

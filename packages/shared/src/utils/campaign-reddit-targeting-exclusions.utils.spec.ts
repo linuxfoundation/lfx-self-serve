@@ -24,6 +24,7 @@ describe('redditTargetingExclusionsRefusal', () => {
     ['a repeated country', { geoTargets: ['US'], excludedGeoTargets: ['CA', 'ca'] }, true],
     // campaign-service decodes keys ignoring case, so a case variant of geoTargets is the targeting it compares against.
     ['US excluded beside a case-variant geoTargets', { GeoTargets: ['CA'], excludedGeoTargets: ['US'] }, true],
+    ['SS excluded beside a geo target of ß, which Go leaves as it is', { geoTargets: ['ß'], excludedGeoTargets: ['SS'] }, true],
   ])('accepts %s', (_name, raw, enabled) => {
     expect(redditTargetingExclusionsRefusal(raw, enabled)).toBeNull();
   });
@@ -48,6 +49,9 @@ describe('redditTargetingExclusionsRefusal', () => {
     ['a blank country', { excludedGeoTargets: [' '] }, true, GEOS, '1 is blank'],
     ['a three-letter code', { excludedGeoTargets: ['CAN'] }, true, GEOS, 'ISO 3166-1'],
     ['an unassigned code', { excludedGeoTargets: ['XX'] }, true, GEOS, 'ISO 3166-1'],
+    // Go upper-cases code point by code point, so ß and ﬅ are not SS and ST there.
+    ['ß, which JavaScript would upper-case to SS', { excludedGeoTargets: ['ß'] }, true, GEOS, 'ISO 3166-1'],
+    ['ﬅ, which JavaScript would upper-case to ST', { excludedGeoTargets: ['ﬅ'] }, true, GEOS, 'ISO 3166-1'],
     ['a country also targeted', { geoTargets: ['us', 'CA'], excludedGeoTargets: ['ca'] }, true, GEOS, 'also targeted'],
     ['US with no geo targets, the default', { excludedGeoTargets: ['US'] }, true, GEOS, 'also targeted'],
     // The subreddit list is checked before the country list, as campaign-service does.
