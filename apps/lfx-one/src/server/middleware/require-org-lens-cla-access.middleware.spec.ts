@@ -8,12 +8,14 @@ import '@angular/compiler';
 import type { NextFunction, Request, Response } from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getAccessAwareOrgs, checkSingleAccessStrict, getEffectiveUsername, isImpersonating, gatewayFetch } = vi.hoisted(() => ({
+const { getAccessAwareOrgs, checkSingleAccessStrict, getEffectiveUsername, isImpersonating, gatewayFetch, withCache, setJson } = vi.hoisted(() => ({
   getAccessAwareOrgs: vi.fn(),
   checkSingleAccessStrict: vi.fn(),
   getEffectiveUsername: vi.fn(),
   isImpersonating: vi.fn(() => false),
   gatewayFetch: vi.fn(),
+  withCache: vi.fn(),
+  setJson: vi.fn(),
 }));
 
 // Only the upstreams are mocked: the read gate, the CLA gate and the scopes parser all run for real,
@@ -31,8 +33,8 @@ vi.mock('../services/access-check.service', () => ({
 vi.mock('../helpers/gateway-fetch.helper', () => ({ gatewayFetch }));
 vi.mock('../helpers/api-gateway.helper', () => ({ getUserServiceBaseUrl: () => 'https://gw.test/user-service/v1' }));
 vi.mock('../services/valkey.service', () => ({
-  buildUserCacheKey: () => null,
-  valkeyService: { withCache: (_key: unknown, _ttl: unknown, fetcher: () => Promise<unknown>) => fetcher() },
+  buildUserCacheKey: (namespace: string, username: string) => `${namespace}:${username}`,
+  valkeyService: { withCache, setJson, del: vi.fn() },
 }));
 vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername: () => getEffectiveUsername(), isImpersonating: () => isImpersonating() }));
 vi.mock('../services/logger.service', () => ({
@@ -88,6 +90,7 @@ beforeEach(() => {
   getAccessAwareOrgs.mockResolvedValue(noGrants());
   checkSingleAccessStrict.mockResolvedValue(false);
   gatewayFetch.mockResolvedValue(permissions());
+  withCache.mockImplementation((_key: unknown, _ttl: unknown, fetcher: () => Promise<unknown>) => fetcher());
   resolveEmployeeView.mockResolvedValue({ eligible: false, reason: 'no-employer' });
 });
 
@@ -156,6 +159,51 @@ describe('requireOrgLensClaAccess', () => {
       gatewayFetch.mockResolvedValue(permissions(scope('cla-manager', OWN)));
 
       expect(statusOf(await run(OWN))).toBe('allow');
+    });
+
+    it('is admitted when the cached scopes predate the grant and the uncached re-check names the company', async () => {
+      withCache.mockResolvedValue([OTHER]);
+      gatewayFetch.mockResolvedValue(permissions(scope('cla-manager-designee', OWN)));
+
+      expect(statusOf(await run(OWN))).toBe('allow');
+      expect(gatewayFetch).toHaveBeenCalledTimes(2);
+      expect(setJson).toHaveBeenCalledWith('org-cla-manager-scopes:v1:contributor', [OWN], 60);
+    });
+
+    it('is still refused when the uncached re-check does not name the company either', async () => {
+      withCache.mockResolvedValue([OWN]);
+      gatewayFetch.mockResolvedValue(permissions(scope('cla-manager', OWN)));
+
+      const next = await run(OTHER);
+
+      expect(statusOf(next)).toBe(403);
+      expect(next.mock.calls[0][0]).toMatchObject({ code: 'FORBIDDEN' });
+      expect(gatewayFetch).toHaveBeenCalledTimes(2);
+    });
+
+    it("keeps the read gate's 403 when the uncached re-check fails", async () => {
+      withCache.mockResolvedValue([OTHER]);
+      gatewayFetch.mockRejectedValue(new Error('user-service down'));
+
+      const next = await run(OWN);
+
+      expect(statusOf(next)).toBe(403);
+      expect(next.mock.calls[0][0]).toMatchObject({ code: 'FORBIDDEN' });
+    });
+
+    it('keeps the roster 503 when the roster is down and the uncached re-check fails', async () => {
+      getAccessAwareOrgs.mockResolvedValue(noGrants(true));
+      withCache.mockResolvedValue([OTHER]);
+      gatewayFetch.mockRejectedValue(new Error('user-service down'));
+
+      expect(statusOf(await run(OWN))).toBe(503);
+    });
+
+    it('makes no second user-service call when the refusal came from a live answer', async () => {
+      gatewayFetch.mockResolvedValue(permissions(scope('cla-manager', OWN)));
+
+      expect(statusOf(await run(OTHER))).toBe(403);
+      expect(gatewayFetch).toHaveBeenCalledTimes(2);
     });
 
     it('keeps the roster 503 when both lookups fail', async () => {

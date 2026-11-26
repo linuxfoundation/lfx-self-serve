@@ -259,6 +259,13 @@ export const ORG_CLA_EASYCLA_ROLE_MISSING_COPY = {
   signClaAriaLabel: "Sign a corporate CLA — you don't have an EasyCLA role at this company",
 } as const;
 
+export const ORG_CLA_ACCESS_REFUSED_COPY = {
+  title: "You don't have access to this company's CLAs",
+  retryLead: 'Just added as a CLA manager? Access can take up to a minute.',
+  retryLabel: 'Try again',
+  signClaAriaLabel: "Sign a corporate CLA — you don't have access to this company's CLAs",
+} as const;
+
 /**
  * The leftover EasyCLA address, `/org/easycla` (#1983). Still routed for three consumers:
  * corporate-signing returns minted before lfx-self-serve#2743 deployed, returns minted by any

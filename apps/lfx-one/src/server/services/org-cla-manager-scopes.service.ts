@@ -108,6 +108,7 @@ function isCachedSfidList(value: unknown): value is string[] {
  */
 export class OrgClaManagerScopesService {
   private static readonly byRequest = new WeakMap<Request, Promise<ReadonlySet<string>>>();
+  private static readonly fetchedLive = new WeakSet<Request>();
 
   public getCompanySfids(req: Request): Promise<ReadonlySet<string>> {
     let pending = OrgClaManagerScopesService.byRequest.get(req);
@@ -116,6 +117,29 @@ export class OrgClaManagerScopesService {
       OrgClaManagerScopesService.byRequest.set(req, pending);
     }
     return pending;
+  }
+
+  public async refreshCompanySfids(req: Request): Promise<ReadonlySet<string>> {
+    const memo = OrgClaManagerScopesService.byRequest.get(req);
+    if (memo) {
+      await memo.catch(() => undefined);
+      if (OrgClaManagerScopesService.fetchedLive.has(req)) return memo;
+    }
+
+    const username = getEffectiveUsername(req);
+    if (!username) {
+      return new Set();
+    }
+
+    const fresh = this.refresh(req, username);
+    OrgClaManagerScopesService.byRequest.set(req, fresh);
+    try {
+      return await fresh;
+    } catch (error) {
+      if (memo) OrgClaManagerScopesService.byRequest.set(req, memo);
+      else OrgClaManagerScopesService.byRequest.delete(req);
+      throw error;
+    }
   }
 
   private async resolve(req: Request): Promise<ReadonlySet<string>> {
@@ -127,10 +151,26 @@ export class OrgClaManagerScopesService {
     const sfids = await valkeyService.withCache<string[]>(
       buildUserCacheKey(ORG_CLA_MANAGER_SCOPES_NAMESPACE, username),
       ORG_CLA_MANAGER_SCOPES_TTL_SECONDS,
-      () => this.fetch(req),
+      async () => {
+        const fetched = await this.fetch(req);
+        OrgClaManagerScopesService.fetchedLive.add(req);
+        return fetched;
+      },
       isCachedSfidList,
       (value) => value.length > 0
     );
+    return new Set(sfids);
+  }
+
+  private async refresh(req: Request, username: string): Promise<ReadonlySet<string>> {
+    const sfids = await this.fetch(req);
+    OrgClaManagerScopesService.fetchedLive.add(req);
+    const key = buildUserCacheKey(ORG_CLA_MANAGER_SCOPES_NAMESPACE, username);
+    if (key !== null && sfids.length > 0) {
+      await valkeyService.setJson(key, sfids, ORG_CLA_MANAGER_SCOPES_TTL_SECONDS);
+    } else {
+      await valkeyService.del(key);
+    }
     return new Set(sfids);
   }
 
