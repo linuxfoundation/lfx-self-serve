@@ -8,6 +8,7 @@ import type {
   MeetingTypeConfig,
   MeetingComposerPreviewFeature,
   MeetingComposerSectionId,
+  MeetingTimeSlot,
   RsvpResponse,
   ShowMeetingAttendeesLockOptions,
 } from '../interfaces';
@@ -919,6 +920,14 @@ export const EARLY_JOIN_CHIP_OPTIONS = [
  * Tooltip text explaining the early-join window
  */
 export const EARLY_JOIN_TOOLTIP = 'Allow guests to join the meeting early. Useful for informal networking before the official start time.';
+
+/** Start-time rows for the redesigned composer: every 15 minutes from 12:00 AM to 11:45 PM. */
+export const MEETING_START_TIME_SLOTS: readonly MeetingTimeSlot[] = Array.from({ length: 96 }, (_, index) => {
+  const minuteOfDay = index * 15;
+  const hours = Math.floor(minuteOfDay / 60);
+  const label = `${hours % 12 || 12}:${String(minuteOfDay % 60).padStart(2, '0')} ${hours < 12 ? 'AM' : 'PM'}`;
+  return { label, value: label, minuteOfDay };
+});
 
 // ============================================================================
 // Template Re-exports

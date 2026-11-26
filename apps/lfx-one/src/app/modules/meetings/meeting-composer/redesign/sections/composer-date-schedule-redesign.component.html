@@ -1,0 +1,192 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-7" [formGroup]="form()" data-testid="composer-date-schedule">
+  <div class="flex flex-col gap-4">
+    <!-- Design: date and time stack at 972px and below. -->
+    <div class="grid grid-cols-1 gap-4 min-[973px]:grid-cols-2">
+      <div class="flex flex-col gap-2">
+        <span id="composer-start-date-label" class="flex items-center gap-1.5 text-sm font-medium text-gray-900">
+          Start date <span class="text-red-600" aria-hidden="true">*</span>
+        </span>
+        <!-- Design: 10px trigger radius. -->
+        <button
+          type="button"
+          class="flex h-10 w-full items-center gap-2 rounded-[10px] border border-gray-300 bg-white px-3 text-left text-sm hover:border-gray-400"
+          [class.border-red-500]="startDateRequiredError()"
+          aria-labelledby="composer-start-date-label composer-start-date-value"
+          [attr.aria-invalid]="startDateRequiredError() ? 'true' : null"
+          [lfxUiPopover]="calendarTpl"
+          lfxUiPopoverLabel="Choose date"
+          [lfxUiPopoverWidth]="300"
+          data-testid="composer-start-date">
+          <i class="fa-light fa-calendar text-gray-500" aria-hidden="true"></i>
+          @if (startDateLabel()) {
+            <span id="composer-start-date-value" class="flex-1 truncate text-gray-900" data-testid="composer-start-date-value">{{ startDateLabel() }}</span>
+          } @else {
+            <span id="composer-start-date-value" class="flex-1 truncate text-gray-500">Select date</span>
+          }
+          <i class="fa-light fa-chevron-down text-xs text-gray-500" aria-hidden="true"></i>
+        </button>
+        <ng-template #calendarTpl let-close="close">
+          <lfx-ui-calendar
+            ariaLabel="Start date"
+            [value]="startDate()"
+            [isDateDisabled]="isDateDisabled()"
+            (valueChange)="pickStartDate($event, close)"
+            data-testid="composer-start-date-calendar" />
+        </ng-template>
+        @if (startDateRequiredError()) {
+          <lfx-ui-error size="field" [announce]="false" data-testid="composer-start-date-required-error">Start date is required</lfx-ui-error>
+        }
+      </div>
+
+      <div class="flex flex-col gap-2">
+        <span class="flex items-center gap-1.5 text-sm font-medium text-gray-900"> Start time <span class="text-red-600" aria-hidden="true">*</span> </span>
+        <lfx-ui-select
+          formControlName="startTime"
+          ariaLabel="Start time"
+          placeholder="Select time"
+          prefixIcon="fa-light fa-clock"
+          [required]="true"
+          [error]="startTimeRequiredError() ? 'Start time is required' : ''"
+          data-testid="composer-start-time">
+          @for (slot of timeSlots(); track slot.minuteOfDay) {
+            <lfx-ui-option [value]="slot.value" [label]="slot.label" />
+          }
+        </lfx-ui-select>
+      </div>
+    </div>
+
+    @if (futureDateTimeError()) {
+      <lfx-ui-error size="field" [announce]="false" data-testid="composer-future-date-error">Pick a date and time in the future.</lfx-ui-error>
+    }
+    @if (nonexistentWallTimeError()) {
+      <lfx-ui-error size="field" [announce]="false" data-testid="composer-nonexistent-time-error">
+        This time doesn't exist in the series timezone on that date (clocks move forward). Pick another time.
+      </lfx-ui-error>
+    }
+  </div>
+
+  <div class="flex flex-col gap-2">
+    <span class="flex items-center gap-1.5 text-sm font-medium text-gray-900"> Duration <span class="text-red-600" aria-hidden="true">*</span> </span>
+    <lfx-ui-switch
+      class="flex flex-wrap"
+      ariaLabel="Duration"
+      name="composer-duration"
+      [value]="durationChoice()"
+      (valueChange)="setDuration($event)"
+      data-testid="composer-duration-chips">
+      @for (option of durationOptions; track option.value) {
+        <lfx-ui-switch-option [value]="'' + option.value" [label]="option.label" />
+      }
+    </lfx-ui-switch>
+    @if (durationHint(); as hint) {
+      <p class="text-xs text-gray-500" data-testid="composer-duration-hint">{{ hint }}</p>
+    }
+    @if (isCustomDuration()) {
+      <div class="flex items-center gap-2">
+        <!-- Design: 120px custom-duration field. -->
+        <lfx-ui-input
+          class="w-[120px]"
+          inputmode="numeric"
+          size="small"
+          ariaLabel="Custom duration in minutes"
+          [placeholder]="minCustomDuration + '–' + maxCustomDuration"
+          [value]="customDurationText()"
+          (valueChange)="setCustomDuration($event)"
+          data-testid="composer-custom-duration" />
+        <span class="text-sm text-gray-600">minutes</span>
+      </div>
+      @if (customDurationError()) {
+        <lfx-ui-error size="field" [announce]="false" data-testid="composer-custom-duration-error">{{ customDurationError() }}</lfx-ui-error>
+      }
+    }
+  </div>
+
+  @if (!showSeriesSchedule()) {
+    <p class="flex items-center gap-1.5 text-xs text-gray-500" data-testid="composer-series-timezone">
+      <i class="fa-light fa-globe" aria-hidden="true"></i>
+      <span>Times are in the series timezone, {{ seriesTimezone() }}.</span>
+    </p>
+  } @else {
+    <div class="flex flex-col gap-2">
+      <span class="flex items-center gap-1.5 text-sm font-medium text-gray-900"> Timezone <span class="text-red-600" aria-hidden="true">*</span> </span>
+      <lfx-ui-combobox
+        formControlName="timezone"
+        ariaLabel="Timezone"
+        placeholder="Select timezone"
+        emptyText="No timezones match"
+        [required]="true"
+        [error]="timezoneRequiredError() ? 'Timezone is required' : ''"
+        data-testid="composer-timezone-select">
+        @for (zone of timezoneOptions(); track zone.label) {
+          <lfx-ui-option [value]="zone.value" [label]="zone.label" />
+        }
+      </lfx-ui-combobox>
+    </div>
+  }
+
+  @if (showEarlyJoin()) {
+    <div class="flex flex-col gap-2">
+      <span class="flex items-center gap-1.5 text-sm font-medium text-gray-900">
+        Early join
+        <i
+          class="fa-light fa-circle-info cursor-help text-[13px] text-gray-400"
+          tabindex="0"
+          [attr.aria-label]="earlyJoinTooltip"
+          [lfxUiTooltip]="earlyJoinTooltip"></i>
+      </span>
+      <lfx-ui-switch
+        class="flex flex-wrap"
+        ariaLabel="Early join"
+        name="composer-early-join"
+        [value]="earlyJoinChoice()"
+        (valueChange)="setEarlyJoin($event)"
+        data-testid="composer-early-join-chips">
+        @for (option of earlyJoinOptions(); track option.value) {
+          <lfx-ui-switch-option [value]="'' + option.value" [label]="option.label" />
+        }
+      </lfx-ui-switch>
+      @if (earlyJoinMinError() || earlyJoinMaxError()) {
+        <lfx-ui-error size="field" [announce]="false" data-testid="composer-early-join-error">
+          Early join must be between {{ minEarlyJoinTime }} and {{ maxEarlyJoinTime }} minutes
+        </lfx-ui-error>
+      }
+    </div>
+  }
+
+  @if (showSeriesSchedule() && startDate()) {
+    <hr class="h-px border-0 bg-gray-200" />
+    <div class="flex flex-col rounded-xl border border-gray-200 bg-white px-4 py-3" data-testid="composer-recurring-card">
+      <div class="flex items-center gap-3">
+        <!-- Design: 13px feature glyph. -->
+        <span class="grid h-8 w-8 flex-none place-items-center rounded-lg border border-gray-100 bg-gray-50 text-[13px] text-gray-700">
+          <i class="fa-light fa-repeat" aria-hidden="true"></i>
+        </span>
+        <span class="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span class="text-sm font-medium text-gray-900">Recurring meeting</span>
+          <span class="text-xs text-gray-500">This meeting repeats on a schedule</span>
+        </span>
+        <lfx-ui-toggle size="medium" ariaLabel="Recurring meeting" formControlName="isRecurring" data-testid="composer-recurring-toggle" />
+      </div>
+
+      @if (isRecurring()) {
+        <div class="ml-11 mt-3 flex flex-col gap-3 border-t border-gray-100 pt-3">
+          <span class="flex items-center gap-1.5 text-sm font-medium text-gray-900"> Cadence <span class="text-red-600" aria-hidden="true">*</span> </span>
+          <lfx-ui-select formControlName="recurrenceType" ariaLabel="Cadence" [required]="true" data-testid="composer-cadence-select">
+            @for (option of cadenceOptions(); track option.value) {
+              <lfx-ui-option [value]="option.value" [label]="option.label" />
+            }
+          </lfx-ui-select>
+          @if (showCustomRecurrence()) {
+            <!-- Design: 10px panel radius. -->
+            <div class="rounded-[10px] bg-gray-50 p-3">
+              <lfx-meeting-recurrence-pattern [form]="form()" appendTo="self" data-testid="composer-custom-recurrence" />
+            </div>
+          }
+        </div>
+      }
+    </div>
+  }
+</div>

@@ -7,7 +7,8 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ReactiveFormsModule } from '@angular/forms';
 import { MEETING_TITLE_MAX_LENGTH } from '@lfx-one/shared/constants';
 import type { UserSearchResult } from '@lfx-one/shared/interfaces';
-import { composeFullName, rankUserSearchResults } from '@lfx-one/shared/utils';
+import { rankUserSearchResults } from '@lfx-one/shared/utils';
+import { FullNamePipe } from '@pipes/full-name.pipe';
 import { SearchService } from '@services/search.service';
 import { controlValueSignal } from '@shared/utils/form-control-signals.util';
 import { UiAvatarComponent } from '@shared/uikit/avatar/avatar.component';
@@ -33,6 +34,7 @@ import { ComposerDetailsAccessComponent } from '../../sections/composer-details-
   selector: 'lfx-composer-details-access-redesign',
   imports: [
     NgClass,
+    FullNamePipe,
     ReactiveFormsModule,
     UiAvatarComponent,
     UiButtonComponent,
@@ -72,10 +74,6 @@ export class ComposerDetailsAccessRedesignComponent extends ComposerDetailsAcces
     return restricted === null ? null : String(restricted);
   });
 
-  protected fullName(user: UserSearchResult): string {
-    return composeFullName(user.first_name, user.last_name) || user.email;
-  }
-
   protected setRestricted(value: string | null): void {
     const control = this.form().get('restricted');
     control?.setValue(value === 'true');
@@ -111,7 +109,13 @@ export class ComposerDetailsAccessRedesignComponent extends ComposerDetailsAcces
         return 'Meeting title is required';
       }
 
-      return this.titleMaxlengthError() ? `Meeting title cannot exceed ${this.youtubeTitleLimit} characters while YouTube uploads are enabled.` : '';
+      if (!this.titleMaxlengthError()) {
+        return '';
+      }
+
+      return this.titleMaxlength() === null
+        ? `Meeting title cannot exceed ${MEETING_TITLE_MAX_LENGTH} characters.`
+        : `Meeting title cannot exceed ${this.youtubeTitleLimit} characters while YouTube uploads are enabled.`;
     });
   }
 
@@ -127,6 +131,8 @@ export class ComposerDetailsAccessRedesignComponent extends ComposerDetailsAcces
             return of([]);
           }
 
+          // Set here, after switchMap has finalized the request this one replaces.
+          this.organizerLoading.set(true);
           // SearchService already maps a failed request to an empty list.
           return this.searchService.searchUsers(term, 'committee_member').pipe(
             map((users) => rankUserSearchResults(users, term).slice(0, 6)),

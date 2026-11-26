@@ -2340,6 +2340,16 @@ export type MeetingComposerSectionId = (typeof MEETING_COMPOSER_SECTIONS)[number
  */
 export type MeetingComposerSection = (typeof MEETING_COMPOSER_SECTIONS)[number];
 
+/** One row of the redesigned composer's start-time list. */
+export interface MeetingTimeSlot {
+  /** 12-hour label, e.g. `9:30 AM`. */
+  label: string;
+  /** Value written to `startTime`; a stored time keeps its own spelling. */
+  value: string;
+  /** Minutes after midnight, for ordering and matching. */
+  minuteOfDay: number;
+}
+
 /**
  * A rail row's derived display state for one composer section.
  * @description `complete` is "visited and valid", for every section including the optional ones. The
