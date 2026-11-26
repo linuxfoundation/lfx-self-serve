@@ -151,7 +151,7 @@ export type RedditCallToAction = (typeof REDDIT_CALL_TO_ACTIONS)[number];
 /** An image type a creative-asset upload accepts — see `CREATIVE_ASSET_MIME_TYPES`. */
 export type CreativeAssetMimeType = (typeof CREATIVE_ASSET_MIME_TYPES)[number];
 
-/** A type the creative-asset upload route accepts: an image, or the MP4 video (#5764 row 18) — see `CREATIVE_ASSET_UPLOAD_MIME_TYPES`. */
+/** A type the creative-asset upload route accepts: an image, the MP4 video (#5764 row 18) or the PDF (campaign-service#665) — see `CREATIVE_ASSET_UPLOAD_MIME_TYPES`. */
 export type CreativeAssetUploadMimeType = (typeof CREATIVE_ASSET_UPLOAD_MIME_TYPES)[number];
 
 /** Where an image upload in the create form stands; a finished upload is its asset id being set. */

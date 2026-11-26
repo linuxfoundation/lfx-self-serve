@@ -172,7 +172,7 @@ router.post('/brief/:briefId/approve', (req, res, next) => campaignController.ap
 // campaign-service arm, which reads only the project's own campaigns (#4837).
 router.get('/brief/metrics', (req, res, next) => campaignController.getBriefMetrics(req, res, next));
 router.post('/create', (req, res, next) => campaignController.createCampaign(req, res, next));
-// An image or video for the brief, stored by campaign-service and named by asset id in a platform's
+// An image, video or PDF for the brief, stored by campaign-service and named by asset id in a platform's
 // creative config — `redditConfig.imageAssetId` (decision D3), the Google creative fields, and a
 // LinkedIn video ad's `videoAssetId` (#5764 row 18), and a LinkedIn document ad's PDF `documentAssetId`
 // (campaign-service#665). The body is the raw bytes, buffered here so the upstream JSON body can be sent
