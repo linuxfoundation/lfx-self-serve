@@ -67,9 +67,7 @@ describe('redditTargetingExclusionsRefusal', () => {
   ])('two spellings of %s', (_key, earlier, later, colliding, clear, exclusions, field) => {
     it.each([true, false])('the later spelling decides (later sent last: %s)', (laterLast) => {
       const config = (earlierValue: unknown, laterValue: unknown): Record<string, unknown> =>
-        laterLast
-          ? { [earlier]: earlierValue, [later]: laterValue, ...exclusions }
-          : { [later]: laterValue, [earlier]: earlierValue, ...exclusions };
+        laterLast ? { [earlier]: earlierValue, [later]: laterValue, ...exclusions } : { [later]: laterValue, [earlier]: earlierValue, ...exclusions };
       expect(redditTargetingExclusionsRefusal(config(colliding, clear), true)).toBeNull();
       expect(redditTargetingExclusionsRefusal(config(clear, colliding), true)?.field).toBe(field);
     });
