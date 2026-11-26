@@ -42,18 +42,24 @@ export function metaAcceptedGeos(codes: readonly string[]): string[] {
 
 /**
  * The geo list a Meta create actually sends: the eligible chips, or else the eligible `countryCode`.
- * Empty means nothing usable was supplied; Create blocks on it rather than letting the server pick a
- * country (it would pick `US`).
+ * The `countryCode` fallback is dropped when the create sends region or city picks
+ * (`hasSentLocations`, #5904): those are then the whole targeting, and the fallback country would
+ * both target a country nobody picked and overlap a location inside it, which campaign-service
+ * refuses. Empty with no locations means nothing usable was supplied; Create blocks on it rather
+ * than letting the server pick a country (it would pick `US`).
  */
-export function metaEffectiveGeoTargets(chips: readonly string[], countryCode: string): string[] {
+export function metaEffectiveGeoTargets(chips: readonly string[], countryCode: string, hasSentLocations = false): string[] {
   const eligibleChips = metaAcceptedGeos(chips);
-  if (eligibleChips.length > 0) return eligibleChips;
+  if (eligibleChips.length > 0 || hasSentLocations) return eligibleChips;
   return metaAcceptedGeos([countryCode]);
 }
 
-/** The targeted countries that make Meta require the EU DSA disclosures, in request order. */
-export function metaDsaCountries(geos: readonly string[]): string[] {
-  return geos.filter((c) => META_DSA_TERRITORIES.has(c));
+/**
+ * The targeted countries that make Meta require the EU DSA disclosures, in request order: the geo
+ * targets, then the countries of the sent region and city picks (#5904), de-duplicated.
+ */
+export function metaDsaCountries(geos: readonly string[], locationCountries: readonly string[] = []): string[] {
+  return [...new Set([...geos, ...locationCountries])].filter((c) => META_DSA_TERRITORIES.has(c));
 }
 
 /** Whether `key` is one the operator may toggle; `messengerInbox` is not, as campaign-service rejects it. */
@@ -191,13 +197,14 @@ export function metaBriefSeed(brief: Pick<CampaignBriefOutput, 'structuredCopy' 
 }
 
 /**
- * Why a Meta create is refused before the per-platform form checks, or `null`: the budget, then a geo
- * list with nothing usable in it (which would let the server default to `US`). Split from
- * {@link metaCreateRefusal} because `createBlockedReason` checks Reddit's budget and geo between the two.
+ * Why a Meta create is refused before the per-platform form checks, or `null`: the budget, then no
+ * location at all, neither a usable country nor a sent region or city pick (which would let the
+ * server default to `US`). Split from {@link metaCreateRefusal} because `createBlockedReason` checks
+ * Reddit's budget and geo between the two.
  */
-export function metaBasicsRefusal(budgetUsd: number, effectiveGeoTargets: readonly string[]): string | null {
+export function metaBasicsRefusal(budgetUsd: number, effectiveGeoTargets: readonly string[], hasSentLocations = false): string | null {
   if (budgetUsd < 1) return 'Meta Ads: set a budget of at least $1.';
-  if (effectiveGeoTargets.length === 0) return 'Meta Ads: add a location, or a country code.';
+  if (effectiveGeoTargets.length === 0 && !hasSentLocations) return 'Meta Ads: add a location, or a country code.';
   return null;
 }
 

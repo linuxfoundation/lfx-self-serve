@@ -6,6 +6,7 @@ import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import type { CampaignBriefOutput } from '@lfx-one/shared/interfaces';
+import { emptyMetaDetailedTargetingPicks } from '@lfx-one/shared/utils';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
@@ -337,6 +338,14 @@ describe('ImplementationTabComponent Meta objective, placements and pixel', () =
     expect(c['metaEffectiveGeoTargets']()).toEqual([]);
     expect(canSubmit()).toBe(false);
     expect(query('implementation-meta-geo-none')).not.toBeNull();
+
+    // A sent city pick is a location on its own (#5904): the line says so instead of the error.
+    fixture.componentRef.setInput('metaRegionTargetingEnabled', true);
+    c['onMetaDetailedTargetingChange']({ ...emptyMetaDetailedTargetingPicks(), cities: [{ id: '2420379', name: 'Austin, Texas, US', countryCode: 'US' }] });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(query('implementation-meta-geo-none')).toBeNull();
+    expect(query('implementation-meta-geo-locations')).not.toBeNull();
   });
 
   /** Display and dispatch must name the SAME country when the fallback does apply. */

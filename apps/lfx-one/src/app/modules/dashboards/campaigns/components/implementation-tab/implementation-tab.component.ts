@@ -607,6 +607,8 @@ import {
   metaFoundationChange,
   metaGeoIsIneligible,
   metaHasPlacement,
+  metaLocationPickCountries,
+  metaLocationPicksSent,
   metaImageAssetBlock,
   metaImageAssetForBrief,
   metaImageAssetWithheld,
@@ -2995,7 +2997,12 @@ export class ImplementationTabComponent implements OnInit {
    * Empty is a real answer, not a bug: it means nothing usable was supplied, and `canSubmit`
    * blocks on it rather than letting the server pick a country on the operator's behalf.
    */
-  protected readonly metaEffectiveGeoTargets = computed<string[]>(() => metaEffectiveGeoTargets(this.metaGeoTargets(), this.countryCodeValue()));
+  protected readonly metaEffectiveGeoTargets = computed<string[]>(() =>
+    metaEffectiveGeoTargets(this.metaGeoTargets(), this.countryCodeValue(), this.metaLocationPicksSent().length > 0)
+  );
+
+  /** The region and city picks the create sends (#5904): with any, they replace the `countryCode` fallback. */
+  protected readonly metaLocationPicksSent = computed(() => metaLocationPicksSent(this.metaDetailedTargeting(), this.metaDetailedTargetingEnabled()));
 
   /**
    * The geo list a Google create would ACTUALLY send — one value for the preview and for `submit()`,
@@ -3816,7 +3823,9 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly metaUsesInstagram = computed(() => metaUsesInstagram(this.metaPlacements()));
 
   /** The targeted countries that make Meta require the EU DSA disclosures, in request order. */
-  protected readonly metaDsaCountries = computed<string[]>(() => metaDsaCountries(this.metaEffectiveGeoTargets()));
+  protected readonly metaDsaCountries = computed<string[]>(() =>
+    metaDsaCountries(this.metaEffectiveGeoTargets(), metaLocationPickCountries(this.metaLocationPicksSent()))
+  );
 
   /**
    * Why the Instagram account id cannot be sent, or `null`. Required only when the capability is on
@@ -4416,7 +4425,7 @@ export class ImplementationTabComponent implements OnInit {
     if (linkedInRefusal !== null) return linkedInRefusal;
     // Budget, then no usable geo at all (which would let the server default to US). Reddit's budget
     // and geo come next, before the rest of the Meta form, so the Meta checks are split in two.
-    const metaBasics = metaSelected ? metaBasicsRefusal(this.metaBudgetUsd(), this.metaEffectiveGeoTargets()) : null;
+    const metaBasics = metaSelected ? metaBasicsRefusal(this.metaBudgetUsd(), this.metaEffectiveGeoTargets(), this.metaLocationPicksSent().length > 0) : null;
     if (metaBasics !== null) return metaBasics;
     // Reddit's client rejects a non-positive budget at dispatch (client.go: "invalid budget:
     // must be a positive number"), and because creation is async that surfaces as a dead job
