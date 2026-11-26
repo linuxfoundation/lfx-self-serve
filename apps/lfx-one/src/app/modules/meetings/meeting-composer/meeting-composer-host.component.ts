@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { DialogRef } from '@angular/cdk/dialog';
 import { Component, computed, DestroyRef, inject, type Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router } from '@angular/router';
@@ -18,13 +19,14 @@ import type {
   UiToastConfig,
   UiToastRef,
 } from '@lfx-one/shared/interfaces';
-import { combineDateTime, formatMeetingOccurrenceLabel, formatMeetingToastWhen } from '@lfx-one/shared/utils';
+import { combineDateTime, formatMeetingOccurrenceLabel, formatMeetingToastWhen, resolveMeetingBaseCount } from '@lfx-one/shared/utils';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { IntercomService } from '@services/intercom.service';
 import { LensService } from '@services/lens.service';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
+import { UiModalService } from '@shared/uikit/modal/modal.service';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
 import { syncEntityProjectContext, syncEntityProjectContextFallback } from '@shared/utils/entity-project-context.util';
 import { MessageService } from 'primeng/api';
@@ -36,6 +38,7 @@ import { MeetingComposerPreviewComponent } from './meeting-composer-preview.comp
 import { MeetingComposerRailComponent } from './meeting-composer-rail.component';
 import { MeetingComposerService } from './meeting-composer.service';
 import { QuickCreateDialogComponent } from './quick-create-dialog.component';
+import { MeetingComposerDeleteDialogComponent } from './redesign/meeting-composer-delete-dialog.component';
 import { MeetingComposerModalComponent } from './redesign/meeting-composer-modal.component';
 import { ComposerAgendaResourcesComponent } from './sections/composer-agenda-resources.component';
 import { ComposerDateScheduleComponent } from './sections/composer-date-schedule.component';
@@ -81,6 +84,9 @@ export class MeetingComposerHostComponent {
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
   private readonly featureFlagService = inject(FeatureFlagService);
+  private readonly modal = inject(UiModalService);
+
+  private deleteDialog: DialogRef<boolean, MeetingComposerDeleteDialogComponent> | null = null;
 
   protected readonly composer = inject(MeetingComposerService);
   protected readonly formService = inject(MeetingComposerFormService);
@@ -271,7 +277,11 @@ export class MeetingComposerHostComponent {
         filter(([wasOpen, isOpen]) => wasOpen && !isOpen),
         takeUntilDestroyed()
       )
-      .subscribe(() => this.lensService.clearContextLens());
+      .subscribe(() => {
+        this.lensService.clearContextLens();
+        // Goes with the composer; a delete already running keeps it open until it settles.
+        this.deleteDialog?.close();
+      });
 
     // Intercom's launcher bubble floats over the drawer's footer and covers its actions, so it is hidden
     // while the composer is open and restored when it closes or this host goes away.
@@ -415,15 +425,27 @@ export class MeetingComposerHostComponent {
     this.composer.close();
   }
 
-  protected onDeleted({ meeting, guestCount }: MeetingComposerDeleteDialogData): void {
-    const description = [`“${meeting.title}”`];
-    if (guestCount !== null) {
-      description.push(`${guestCount} ${guestCount === 1 ? 'guest' : 'guests'} notified`);
+  /** Opened here, not in the modal, so a delete that settles after the composer closes still reports. */
+  protected onDeleteRequested(): void {
+    const meeting = this.formService.meeting();
+    if (!meeting) {
+      return;
     }
 
-    this.toast.show({ variant: 'dark', message: 'Meeting deleted', description: description.join(' · ') });
-    this.composer.notifySaved();
-    this.composer.close();
+    // The saved count, as the meetings list's delete reads it; the draft roster includes unsaved guests.
+    const data: MeetingComposerDeleteDialogData = { meeting, guestCount: meeting.rsvp_summary?.invited ?? resolveMeetingBaseCount(meeting) ?? null };
+    const ref = this.modal.open<boolean, MeetingComposerDeleteDialogData, MeetingComposerDeleteDialogComponent>(
+      MeetingComposerDeleteDialogComponent,
+      { data, role: 'alertdialog', describedBy: true, autoFocus: '[data-autofocus] button' },
+      { closePredicate: (_result, _config, dialog) => !(dialog instanceof MeetingComposerDeleteDialogComponent && dialog.busy()) }
+    );
+    this.deleteDialog = ref;
+    ref.closed.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((done) => {
+      this.deleteDialog = null;
+      if (done) {
+        this.onDeleted(data);
+      }
+    });
   }
 
   /**
@@ -581,5 +603,19 @@ export class MeetingComposerHostComponent {
         { label: 'View meeting', run: () => void this.router.navigateByUrl(data.meetingUrl, { state: data.meetingLinkState }) },
       ],
     });
+  }
+
+  private onDeleted({ meeting, guestCount }: MeetingComposerDeleteDialogData): void {
+    const description = [`“${meeting.title}”`];
+    if (guestCount !== null) {
+      description.push(`${guestCount} ${guestCount === 1 ? 'guest' : 'guests'} notified`);
+    }
+
+    this.toast.show({ variant: 'dark', message: 'Meeting deleted', description: description.join(' · ') });
+    this.composer.notifySaved();
+    // A late result must not close a composer opened since for another meeting.
+    if (!this.composer.isOpen() || this.formService.meeting()?.id === meeting.id) {
+      this.composer.close();
+    }
   }
 }

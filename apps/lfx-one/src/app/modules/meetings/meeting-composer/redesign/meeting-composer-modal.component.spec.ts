@@ -416,6 +416,26 @@ describe('MeetingComposerModalComponent (through the host, meetings-redesign on)
       expect(composer.isOpen()).toBe(false);
     });
 
+    it('still reports a delete that settles after the composer closed', async () => {
+      const request = new Subject<void>();
+      deleteMeeting.mockReturnValue(request);
+      await openEdit({ registrant_count: 3 });
+
+      button('meeting-composer-delete')?.click();
+      await flush();
+      fromDocument('meeting-composer-delete-confirm')?.click();
+      await flush();
+      composer.close();
+      await flush();
+
+      request.next();
+      request.complete();
+      await flush();
+
+      expect(lastToast()).toMatchObject({ variant: 'dark', message: 'Meeting deleted', description: '“Weekly sync” · 3 guests notified' });
+      expect(composer.saveCount()).toBe(1);
+    });
+
     it('keeps the meeting and the composer when the organizer backs out of the delete', async () => {
       await openEdit();
 
