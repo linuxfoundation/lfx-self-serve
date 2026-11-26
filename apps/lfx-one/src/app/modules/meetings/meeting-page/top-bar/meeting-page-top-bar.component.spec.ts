@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { signal } from '@angular/core';
+import { Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
 import { Meeting, MeetingHomeRow } from '@lfx-one/shared/interfaces';
@@ -12,6 +12,13 @@ import { OpenIntercomDirective } from '@shared/directives/open-intercom.directiv
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingPageTopBarComponent } from './meeting-page-top-bar.component';
+
+@Component({
+  selector: 'lfx-projected-title-host',
+  imports: [MeetingPageTopBarComponent],
+  template: `<lfx-meeting-page-top-bar [width]="1280" [revealAt]="110"><span data-testid="projected-title">Public Calendar</span></lfx-meeting-page-top-bar>`,
+})
+class ProjectedTitleHostComponent {}
 
 const ROW = {
   key: '123-1700000000000',
@@ -74,6 +81,39 @@ describe('MeetingPageTopBarComponent', () => {
         .map((id) => el.querySelector(`#${id}`)?.textContent?.trim())
     ).toEqual(['Pat Viewer', 'account menu']);
     expect(el.querySelector('#meeting-page-account-name')!.closest('[data-dd-privacy="mask"]')).not.toBeNull();
+  });
+
+  it('keeps the meeting page width by default', () => {
+    const { el } = render();
+
+    const bar = el.querySelector('[data-testid="meeting-page-top-bar"]')!.classList;
+    expect(bar.contains('max-w-[1016px]')).toBe(true);
+    expect(bar.contains('min-[1081px]:px-0')).toBe(true);
+  });
+
+  it('shows a projected compact title at the wide width once the page scrolls past revealAt', async () => {
+    const fixture = TestBed.createComponent(ProjectedTitleHostComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const el = fixture.nativeElement as HTMLElement;
+    const slot = el.querySelector('[data-testid="meeting-page-top-bar-meeting"]') as HTMLElement;
+
+    const bar = el.querySelector('[data-testid="meeting-page-top-bar"]')!.classList;
+    expect(bar.contains('max-w-[1280px]')).toBe(true);
+    // Gutters stay until 1280 + 2 × 32px fits.
+    expect(bar.contains('min-[1345px]:px-0')).toBe(true);
+    expect(bar.contains('min-[1081px]:px-0')).toBe(false);
+    expect(slot.querySelector('[data-testid="projected-title"]')?.textContent).toBe('Public Calendar');
+    expect(slot.querySelector('[data-testid="meeting-page-top-bar-title"]')).toBeNull();
+    expect(slot.getAttribute('aria-hidden')).toBe('true');
+
+    const scrollY = vi.spyOn(window, 'scrollY', 'get').mockReturnValue(111);
+    window.dispatchEvent(new Event('scroll'));
+    fixture.detectChanges();
+
+    expect(slot.getAttribute('aria-hidden')).toBeNull();
+    expect(slot.hasAttribute('inert')).toBe(false);
+    scrollY.mockRestore();
   });
 
   it('opens My Meetings on the Me lens', () => {

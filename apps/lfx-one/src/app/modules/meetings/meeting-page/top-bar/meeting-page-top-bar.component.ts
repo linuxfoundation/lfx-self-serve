@@ -20,10 +20,10 @@ import { UiMenuComponent } from '@shared/uikit/menu/menu.component';
 import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
 
 /**
- * Sticky top bar of the standalone meeting page: the LF logo, the meeting's compact date, title and project once the page's
- * h1 scrolls under the bar, My Meetings and the account menu.
- * @description A signed-out visitor gets Sign in and Create LFX account instead of the account menu. The bar sticks below
- * the impersonation banner through `--mp-offset`.
+ * Sticky top bar of the standalone public pages: the LF logo, a compact title revealed on scroll, My Meetings and the account menu.
+ * @description The compact title is projected content; without any, it is the meeting's date, title and project from `row`.
+ * A signed-out visitor gets Sign in and Create LFX account instead of the account menu. The bar sticks below the
+ * impersonation banner through `--mp-offset`.
  */
 @Component({
   selector: 'lfx-meeting-page-top-bar',
@@ -57,8 +57,12 @@ export class MeetingPageTopBarComponent {
   public readonly row = input<MeetingHomeRow | null>(null);
   /** Greys the date tile's month band for a date that has passed. */
   public readonly past = input<boolean>(false);
+  /** Max content width in px: the meeting page's 1016 or the calendar's 1280. */
+  public readonly width = input<1016 | 1280>(1016);
+  /** Scroll offset in px past which the compact title shows; when null, once the page's h1 scrolls under the bar. */
+  public readonly revealAt = input<number | null>(null);
 
-  /** The page has scrolled past its title, so the compact meeting line shows. */
+  /** The page has scrolled far enough, so the compact title shows. */
   protected readonly scrolled = signal(false);
   protected readonly projectName: Signal<string> = computed(() => {
     const row = this.row();
@@ -72,8 +76,13 @@ export class MeetingPageTopBarComponent {
   public constructor() {
     const destroyRef = inject(DestroyRef);
     afterNextRender(() => {
-      // The page's h1 has scrolled under the bar's bottom edge, whatever the bar's height or the banner above it.
+      // Past revealAt, or else once the page's h1 scrolls under the bar, whatever the bar's height or the banner above it.
       const onScroll = (): void => {
+        const revealAt = this.revealAt();
+        if (revealAt !== null) {
+          this.scrolled.set(window.scrollY > revealAt);
+          return;
+        }
         const title = this.host.nativeElement.parentElement?.querySelector('main h1');
         this.scrolled.set(!!title && title.getBoundingClientRect().bottom <= this.host.nativeElement.getBoundingClientRect().bottom);
       };
