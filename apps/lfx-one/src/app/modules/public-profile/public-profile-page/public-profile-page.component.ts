@@ -19,6 +19,7 @@ import { catchError, distinctUntilChanged, filter, map, of, startWith, switchMap
 import { PublicProfileBadgesComponent } from '../components/public-profile-badges/public-profile-badges.component';
 import { PublicProfileCertificationsComponent } from '../components/public-profile-certifications/public-profile-certifications.component';
 import { PublicProfileContributionsComponent } from '../components/public-profile-contributions/public-profile-contributions.component';
+import { PublicProfileHeroRedesignComponent } from '../components/public-profile-hero-redesign/public-profile-hero-redesign.component';
 import { PublicProfileHeroComponent } from '../components/public-profile-hero/public-profile-hero.component';
 import { PublicProfileTopbarComponent } from '../components/public-profile-topbar/public-profile-topbar.component';
 import { PublicProfileTrainingsComponent } from '../components/public-profile-trainings/public-profile-trainings.component';
@@ -35,6 +36,7 @@ import { PublicProfileService } from '../services/public-profile.service';
     UiSkeletonComponent,
     PublicProfileTopbarComponent,
     PublicProfileHeroComponent,
+    PublicProfileHeroRedesignComponent,
     PublicProfileContributionsComponent,
     PublicProfileBadgesComponent,
     PublicProfileCertificationsComponent,
