@@ -104,14 +104,24 @@ describe('PublicProfileHeroRedesignComponent', () => {
 
   it('keeps a loaded logo when a late error arrives from the uploaded photo', async () => {
     const { fixture, query } = await render({ ...BASIC, avatarUrl: 'https://cdn.example/ada.png', LogoURL: 'https://cdn.example/logo.png' });
-    query('hero-avatar-image')?.dispatchEvent(new Event('error'));
-    await fixture.whenStable();
-
-    // A replayed error for the uploaded photo, after the swap to the logo.
-    const hero = fixture.debugElement.children[0].componentInstance as { onPhotoError(url: string): void };
-    hero.onPhotoError('https://cdn.example/ada.png');
+    const uploaded = query('hero-avatar-image');
+    uploaded?.dispatchEvent(new Event('error'));
     await fixture.whenStable();
     expect(query('hero-avatar-image')?.getAttribute('src')).toBe('https://cdn.example/logo.png');
+
+    // A replayed error from the replaced photo's element, after the swap to the logo.
+    uploaded?.dispatchEvent(new Event('error'));
+    await fixture.whenStable();
+    expect(query('hero-avatar-image')?.getAttribute('src')).toBe('https://cdn.example/logo.png');
+  });
+
+  it('shows the person icon at once when the photo and the logo share a failing URL', async () => {
+    const { fixture, query } = await render({ ...BASIC, avatarUrl: 'https://cdn.example/same.png', LogoURL: 'https://cdn.example/same.png' });
+
+    query('hero-avatar-image')?.dispatchEvent(new Event('error'));
+    await fixture.whenStable();
+    expect(query('hero-avatar-image')).toBeNull();
+    expect(query('hero-avatar-fallback')).not.toBeNull();
   });
 
   it('shows the person icon when there is no photo', async () => {

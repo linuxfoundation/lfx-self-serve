@@ -45,7 +45,8 @@ export class PublicProfileHeroRedesignComponent extends PublicProfileHeroCompone
   protected onPhotoError(url: string): void {
     if (url === this.basic()?.avatarUrl?.trim()) {
       this.handleAvatarError();
-      return;
+      // A logo at the same URL would fail the same way, so the person icon shows at once.
+      if (this.avatarImage() !== url) return;
     }
     this.failedImage.set(url);
   }

@@ -8,7 +8,10 @@
 
   <div class="relative z-[1] -mt-[96px] ml-[24px] size-[120px] rounded-full bg-white p-[6px] max-[640px]:ml-0" data-testid="hero-avatar">
     @if (photo()) {
-      <img [src]="photo()" [alt]="name()" class="block size-full rounded-full object-cover" (error)="onPhotoError(photo())" data-testid="hero-avatar-image" />
+      <!-- One element per URL, each reporting its own URL, so a late or replayed error from a replaced photo names that photo. -->
+      @for (url of [photo()]; track url) {
+        <img [src]="url" [alt]="name()" class="block size-full rounded-full object-cover" (error)="onPhotoError(url)" data-testid="hero-avatar-image" />
+      }
     } @else {
       <div
         role="img"
@@ -69,7 +72,10 @@
 
   <!-- The long-form About when there is one, else the short Bio. -->
   @if (about()) {
-    <div class="mt-[16px] max-w-[75%] text-[14px] leading-[1.55] text-gray-700 max-[640px]:max-w-full" data-testid="hero-bio">
+    <!-- The renderer's own prose sizing gives way here, so About reads at the design's 14px/1.55, like the Bio. -->
+    <div
+      class="mt-[16px] max-w-[75%] text-[14px] leading-[1.55] text-gray-700 max-[640px]:max-w-full [&_.prose]:!text-[14px] [&_.prose]:!leading-[1.55] [&_.prose_p]:!leading-[1.55]"
+      data-testid="hero-bio">
       <lfx-markdown-renderer [content]="about()"></lfx-markdown-renderer>
     </div>
   } @else if (bio()) {
