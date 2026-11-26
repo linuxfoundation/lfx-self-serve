@@ -200,6 +200,9 @@ jobs:
   frontend-tests:
     name: Frontend Tests (${{ matrix.shard }}/30)
     runs-on: ubuntu-latest
+    # The Angular compiler worker building the spec bundle outgrows Node's default heap (#6280); it inherits this, as in build.
+    env:
+      NODE_OPTIONS: --max-old-space-size=8192
     strategy:
       fail-fast: false
       matrix:
