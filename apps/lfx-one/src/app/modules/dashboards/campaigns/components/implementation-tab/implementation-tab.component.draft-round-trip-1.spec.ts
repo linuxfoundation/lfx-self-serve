@@ -627,6 +627,48 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     expect(at(f).canSubmit()).toBe(true);
   });
 
+  // Reddit custom audiences (#6108 row 1): the rules are in `campaign-reddit-custom-audiences.utils.spec.ts`; these test the wiring.
+  async function mountWithCustomAudiences(
+    draft: CampaignImplementationDraft | null,
+    enabled: boolean | null
+  ): Promise<{ fixture: ComponentFixture<ImplementationTabComponent>; latest: () => CampaignImplementationDraft | null }> {
+    const mounted = await mount(draft);
+    mounted.fixture.componentRef.setInput('redditCustomAudiencesEnabled', enabled);
+    mounted.fixture.componentRef.setInput('createCapabilityRead', 'ready');
+    at(mounted.fixture).selectedPlatforms.set(['reddit-ads']);
+    mounted.fixture.detectChanges();
+    await mounted.fixture.whenStable();
+    return mounted;
+  }
+
+  it('carries picked custom audiences from the picker through a tab round-trip and into the request', async () => {
+    const first = await mountWithCustomAudiences(null, true);
+    first.fixture.debugElement
+      .query(By.css('lfx-reddit-custom-audiences'))
+      .triggerEventHandler('audiencesChange', { customAudienceIds: ['aud_in'], excludedCustomAudienceIds: ['aud_out'] });
+    expect(first.latest()).toMatchObject({ redditCustomAudienceIds: ['aud_in'], redditExcludedCustomAudienceIds: ['aud_out'] });
+    const draft = first.latest();
+    first.fixture.destroy();
+
+    const second = await mountWithCustomAudiences(draft, true);
+    expect(submitReddit(second.fixture)).toMatchObject({ customAudienceIds: ['aud_in'], excludedCustomAudienceIds: ['aud_out'] });
+  });
+
+  it('holds Create for remembered custom audiences the capability answered no to, and shows why', async () => {
+    const first = await mountWithCustomAudiences(null, true);
+    first.fixture.debugElement
+      .query(By.css('lfx-reddit-custom-audiences'))
+      .triggerEventHandler('audiencesChange', { customAudienceIds: ['aud_in'], excludedCustomAudienceIds: [] });
+    const draft = first.latest();
+    first.fixture.destroy();
+
+    const f = (await mountWithCustomAudiences(draft, false)).fixture;
+    makeSubmittable(f);
+
+    expect(at(f).canSubmit()).toBe(false);
+    expect(f.nativeElement.querySelector('[data-testid="implementation-reddit-custom-audiences-block-restricted"]')).not.toBeNull();
+  });
+
   // === The other platforms on the same live brief switch (#4624) ===
 
   /** The next brief: another event, same platforms. `strip` removes copy blocks the conditional resets key on. */

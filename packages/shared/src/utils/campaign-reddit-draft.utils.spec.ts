@@ -26,6 +26,7 @@ describe('redditDraftFields', () => {
     uploadFailedBriefId: '',
     videoGoal: 'VIDEO_VIEW_15S',
     conversionEvent: 'SIGN_UP',
+    customAudiences: { customAudienceIds: ['aud_in'], excludedCustomAudienceIds: ['aud_out'] },
   };
 
   it('carries every typed value, the pixel and the upload slot as held', () => {
@@ -45,6 +46,8 @@ describe('redditDraftFields', () => {
       redditImageUploadFailedBriefId: '',
       redditVideoGoal: 'VIDEO_VIEW_15S',
       redditConversionEvent: 'SIGN_UP',
+      redditCustomAudienceIds: ['aud_in'],
+      redditExcludedCustomAudienceIds: ['aud_out'],
     });
   });
 
@@ -141,6 +144,28 @@ describe('redditDraftRestore', () => {
   });
 });
 
+describe('redditDraftRestore: custom audiences', () => {
+  it.each<[string, Partial<RedditDraftSnapshot>, unknown]>([
+    [
+      'both lists',
+      { redditCustomAudienceIds: ['a1'], redditExcludedCustomAudienceIds: ['b1'] },
+      { customAudienceIds: ['a1'], excludedCustomAudienceIds: ['b1'] },
+    ],
+    ['one list, the other empty', { redditExcludedCustomAudienceIds: ['b1'] }, { customAudienceIds: [], excludedCustomAudienceIds: ['b1'] }],
+    ['neither key (an older draft)', {}, undefined],
+  ])('restores %s', (_name, over, expected) => {
+    expect(redditDraftRestore(draft(over)).customAudiences).toEqual(expected);
+  });
+
+  it.each([
+    ['only the strings of a stored list', ['a1', 7, null], { customAudienceIds: ['a1'], excludedCustomAudienceIds: [] }],
+    ['a list stored as text', 'a1', undefined],
+  ])('restores %s', (_name, stored, expected) => {
+    // @ts-expect-error -- a draft is replayed from stored JSON whose inner shape is not validated
+    expect(redditDraftRestore(draft({ redditCustomAudienceIds: stored })).customAudiences).toEqual(expected);
+  });
+});
+
 describe('redditBriefReset', () => {
   it('sets every typed value to its default and empties the brief lists', () => {
     expect(redditBriefReset()).toEqual({
@@ -150,6 +175,7 @@ describe('redditBriefReset', () => {
       objective: DEFAULT_REDDIT_OBJECTIVE,
       videoGoal: '',
       conversionEvent: 'PURCHASE',
+      customAudiences: { customAudienceIds: [], excludedCustomAudienceIds: [] },
       budgetUsd: DEFAULT_REDDIT_BUDGET_USD,
       variants: [],
       subreddits: [],

@@ -88,6 +88,8 @@ import type {
   NegativeKeywordCampaignPlatform,
   ParsedCampaignName,
   RedditConversionEvent,
+  RedditCustomAudienceListView,
+  RedditCustomAudiencesDraft,
   RedditObjective,
   RedditObjectiveParams,
   RedditVideoGoal,
@@ -4818,6 +4820,23 @@ export const REDDIT_CUSTOM_AUDIENCE_ID_PATTERN = /^[A-Za-z0-9_]{1,64}$/;
 
 /** At most this many ids in EACH list: campaign-service's `MaxCustomAudienceIDs` (#549). */
 export const MAX_REDDIT_CUSTOM_AUDIENCE_IDS = 100;
+
+/** The Reddit custom-audience lists the Implement tab offers, in order (#6108 row 1). */
+export const REDDIT_CUSTOM_AUDIENCE_LISTS: readonly RedditCustomAudienceListView[] = [
+  { key: 'customAudienceIds', label: 'Target custom audiences' },
+  { key: 'excludedCustomAudienceIds', label: 'Exclude custom audiences' },
+];
+/** The Reddit custom audiences a fresh form starts from, which sends nothing. */
+export const DEFAULT_REDDIT_CUSTOM_AUDIENCES: Readonly<RedditCustomAudiencesDraft> = { customAudienceIds: [], excludedCustomAudienceIds: [] };
+/** What the Reddit custom-audience picker says while it loads, finds none, lists only part, or cannot read the account. */
+export const REDDIT_CUSTOM_AUDIENCE_PICKER_LOADING = "Loading the Reddit ad account's custom audiences…";
+export const REDDIT_CUSTOM_AUDIENCE_PICKER_EMPTY = 'The Reddit ad account has no custom audiences to pick from. Enter audience ids instead.';
+export const REDDIT_CUSTOM_AUDIENCE_PICKER_TRUNCATED =
+  "The Reddit ad account has more custom audiences than the picker shows. If one isn't listed, enter its id.";
+export const REDDIT_CUSTOM_AUDIENCE_PICKER_REASONS = {
+  unavailable: "The Reddit ad account's custom audiences can't be listed here. Enter audience ids instead.",
+  failed: "Couldn't load the Reddit ad account's custom audiences. Enter audience ids instead, or reload the page to try again.",
+} as const;
 
 /**
  * The error `code` (HTTP 403) of a Reddit custom-audience read, or a create naming custom audiences, refused because the

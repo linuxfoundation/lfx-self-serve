@@ -253,6 +253,7 @@ import { catchError, filter, from, map, merge, Observable, of, pairwise, scan, s
 import type { Signal } from '@angular/core';
 import type {
   CampaignBiddingCapabilityBlock,
+  CampaignRedditCustomAudiencesBlock,
   CampaignBiddingConfig,
   CampaignBiddingContext,
   CampaignBiddingControlView,
@@ -398,6 +399,7 @@ import type {
   RedditBriefSeed,
   RedditCallToAction,
   RedditConversionEvent,
+  RedditCustomAudiencesDraft,
   RedditObjective,
   RedditVideoGoal,
   StoredCreativeAsset,
@@ -533,6 +535,10 @@ import {
   redditConversionEventFromDraft,
   redditConversionEventOffered,
   redditCreateRefusal,
+  redditCustomAudiencesBlock,
+  redditCustomAudiencesCapability,
+  redditCustomAudiencesDraftRefusal,
+  redditCustomAudiencesField,
   redditDraftFields,
   redditDraftRestore,
   redditEffectiveGeoTargets,
@@ -642,6 +648,7 @@ import { LinkedInTargetingEditorComponent } from '../linkedin-targeting-editor/l
 import { LinkedInTextAdsEditorComponent } from '../linkedin-text-ads-editor/linkedin-text-ads-editor.component';
 import { LinkedInCarouselEditorComponent } from '../linkedin-carousel-editor/linkedin-carousel-editor.component';
 import { MetaAudienceTargetingComponent } from '../meta-audience-targeting/meta-audience-targeting.component';
+import { RedditCustomAudiencesComponent } from '../reddit-custom-audiences/reddit-custom-audiences.component';
 import { MetaDeliveryOptionsComponent } from '../meta-delivery-options/meta-delivery-options.component';
 import { MetaDeviceOsOptionsComponent } from '../meta-device-os-options/meta-device-os-options.component';
 import { MetaDetailedTargetingComponent } from '../meta-detailed-targeting/meta-detailed-targeting.component';
@@ -728,6 +735,7 @@ let linkedInVariantKeySequence = 0;
     CampaignBiddingControlComponent,
     CampaignGoogleDemographicTargetingComponent,
     MetaAudienceTargetingComponent,
+    RedditCustomAudiencesComponent,
     MetaDetailedTargetingComponent,
     MetaDeliveryOptionsComponent,
     MetaDeviceOsOptionsComponent,
@@ -976,6 +984,15 @@ export class ImplementationTabComponent implements OnInit {
    * #6108 row 2). `null` until the parent has an answer, which withholds the picker and holds a non-default event.
    */
   public readonly redditConversionEventEnabled = input<boolean | null>(null);
+
+  /**
+   * Whether THIS caller may pick and send Reddit custom audiences (`CampaignListResult.redditCustomAudiencesEnabled`,
+   * #6108 row 1): the deployment AND `global_marketing_ops` on the project. `null` until the parent has an answer, which
+   * withholds the picker and holds any picks.
+   */
+  public readonly redditCustomAudiencesEnabled = input<boolean | null>(null);
+  /** @see redditCustomAudiencesEnabled — an explicit yes, never a `null`. */
+  protected readonly redditCustomAudiencesAvailable = computed<boolean>(() => redditCustomAudiencesCapability(this.redditCustomAudiencesEnabled()));
 
   /**
    * Whether the Meta section may offer an image UPLOAD (`CampaignListResult.metaAssetUploadEnabled`).
@@ -2147,6 +2164,17 @@ export class ImplementationTabComponent implements OnInit {
    * which a create leaves out, and is remembered across objective changes like the video goal; only the request is gated.
    */
   protected readonly redditConversionEvent = signal<RedditConversionEvent>(DEFAULT_REDDIT_CONVERSION_EVENT);
+  /** The Reddit custom audiences to target and to exclude (#6108 row 1), kept whatever the capability says; only the request is gated. */
+  protected readonly redditCustomAudiences = signal<RedditCustomAudiencesDraft>(redditBriefReset().customAudiences);
+  /** Why Create is held for picks the capability has not confirmed, or `null` — held, never dropped. */
+  protected readonly redditCustomAudiencesBlock = computed<CampaignRedditCustomAudiencesBlock | null>(() =>
+    redditCustomAudiencesBlock({
+      audiences: this.redditCustomAudiences(),
+      enabled: this.redditCustomAudiencesEnabled(),
+      createCapabilityRead: this.createCapabilityRead(),
+      briefId: this.briefPersistence().briefId,
+    })
+  );
   /** Whether the picker shows: an explicit yes, on the conversions objective. */
   protected readonly redditConversionEventOffered = computed<boolean>(() =>
     redditConversionEventOffered(this.redditConversionEventEnabled(), this.redditObjective())
@@ -4404,6 +4432,8 @@ export class ImplementationTabComponent implements OnInit {
           videoGoalError: this.redditVideoGoalError(),
           videoPostError: this.redditVideoPostError(),
           conversionEventBlock: this.redditConversionEventBlock()?.message ?? null,
+          customAudiencesBlock: this.redditCustomAudiencesBlock()?.message ?? null,
+          customAudiencesRefusal: redditCustomAudiencesDraftRefusal(this.redditCustomAudiences()),
         })
       : null;
     if (redditRefusal !== null) return redditRefusal;
@@ -5604,6 +5634,12 @@ export class ImplementationTabComponent implements OnInit {
     const event = redditConversionEventFromDraft(value);
     if (event === undefined) return;
     this.redditConversionEvent.set(event);
+    this.emitDraft();
+  }
+
+  /** The picker's lists, kept in the draft. */
+  protected onRedditCustomAudiencesChange(audiences: RedditCustomAudiencesDraft): void {
+    this.redditCustomAudiences.set(audiences);
     this.emitDraft();
   }
 
@@ -7407,6 +7443,8 @@ export class ImplementationTabComponent implements OnInit {
               ...this.redditVideoGoalPayload(),
               // Only offered, on conversions, and other than the default; a held one blocks Create instead (#6108 row 2).
               ...redditConversionEventField(this.redditConversionEvent(), this.redditObjective(), this.redditConversionEventEnabled()),
+              // Only on an explicit yes, and only non-empty lists; held picks block Create instead (#6108 row 1).
+              ...redditCustomAudiencesField(this.redditCustomAudiences(), this.redditCustomAudiencesEnabled()),
               // Omitted when blank rather than sent empty: upstream treats an empty `postUrl` as
               // "author a post instead", and an empty `callToAction` as "use the default" — both
               // the same decision an absent key makes, so a blank string would only add a value
@@ -9624,6 +9662,7 @@ export class ImplementationTabComponent implements OnInit {
     if (redditRestore.pendingUpload) this.resumeRedditImageUpload(redditRestore.pendingUpload.name, redditRestore.pendingUpload.briefId);
     if (redditRestore.videoGoal !== undefined) this.redditVideoGoal.set(redditRestore.videoGoal);
     if (redditRestore.conversionEvent !== undefined) this.redditConversionEvent.set(redditRestore.conversionEvent);
+    if (redditRestore.customAudiences !== undefined) this.redditCustomAudiences.set(redditRestore.customAudiences);
     // The Meta image, on the Reddit image's terms above.
     const metaImageRestore = metaImageDraftRestore(draft);
     if (metaImageRestore.imageUrl !== undefined) this.metaImageUrl.set(metaImageRestore.imageUrl);
@@ -10195,6 +10234,7 @@ export class ImplementationTabComponent implements OnInit {
         uploadFailedBriefId: this.redditImageUploadFailedBriefId(),
         videoGoal: this.redditVideoGoal(),
         conversionEvent: this.redditConversionEvent(),
+        customAudiences: this.redditCustomAudiences(),
       }),
       ...metaImageDraftFields({
         imageUrl: this.metaImageUrl(),
@@ -10250,6 +10290,7 @@ export class ImplementationTabComponent implements OnInit {
     this.redditObjective.set(redditReset.objective);
     this.redditVideoGoal.set(redditReset.videoGoal);
     this.redditConversionEvent.set(redditReset.conversionEvent);
+    this.redditCustomAudiences.set(redditReset.customAudiences);
     this.redditBudgetUsd.set(redditReset.budgetUsd);
     this.setRedditBriefLists(redditReset);
     // The other platforms on the same terms (#4624): every value the brief does not derive, or derives
