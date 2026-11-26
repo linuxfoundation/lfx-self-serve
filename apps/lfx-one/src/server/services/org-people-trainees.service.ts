@@ -20,7 +20,6 @@ import type {
   OrgPeopleTrainingPairRow,
   OrgTraineeDateRow,
   OrgTraineeDetailRow,
-  OrgTraineeFormerOnPeopleListCounts,
   OrgTraineeOutsideLearner,
   OrgTraineePair,
   OrgTraineeRow,
