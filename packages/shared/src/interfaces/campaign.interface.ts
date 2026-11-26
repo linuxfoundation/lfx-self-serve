@@ -3029,6 +3029,13 @@ export interface RedditCampaignCreateRequest {
    */
   customAudienceIds?: string[];
   excludedCustomAudienceIds?: string[];
+  /**
+   * Communities and countries the ad group excludes (#6108 row 3, campaign-service #549): subreddit names (an `r/` prefix
+   * is allowed) and ISO 3166-1 alpha-2 codes. Neither may also be targeted. Only while
+   * `CampaignListResult.redditTargetingExclusionsEnabled`: the create route refuses them otherwise, never dropping them.
+   */
+  excludedSubreddits?: string[];
+  excludedGeoTargets?: string[];
   /** Optional bidding choice (#3299) — see {@link CampaignBiddingConfig}. Omitted means automatic. */
   bidding?: CampaignBiddingConfig;
 }
@@ -8748,6 +8755,12 @@ export interface CampaignListResult {
    * `null` when that check cannot be made. Optional, so a BFF that predates it reads as unanswered.
    */
   redditCustomAudiencesEnabled?: boolean | null;
+  /**
+   * Whether a Reddit create may carry `redditConfig.excludedSubreddits` and `excludedGeoTargets` (#6108 row 3): the
+   * campaign-service create path AND `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_TARGETING_EXCLUSIONS`, which follows
+   * campaign-service's own `REDDIT_TARGETING_EXCLUSIONS_ENABLED`. Optional, so a BFF that predates it reads as unanswered.
+   */
+  redditTargetingExclusionsEnabled?: boolean;
   /**
    * Whether a Meta create may carry `metaConfig.callToAction`, `conversionEvent` and `optimizationGoal`
    * (#5934), one flag each: `cutoverOwnsCreate()` AND `LFX_CUTOVER_CAMPAIGN_SERVICE_META_CALL_TO_ACTION`,

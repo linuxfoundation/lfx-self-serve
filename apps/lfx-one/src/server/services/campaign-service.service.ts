@@ -749,6 +749,16 @@ export function canSetRedditCustomAudiences(): boolean {
 }
 
 /**
+ * Whether a Reddit create may carry `excludedSubreddits` / `excludedGeoTargets` (#6108 row 3, campaign-service #549).
+ * Needs the campaign-service create path AND `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_TARGETING_EXCLUSIONS`, which follows
+ * campaign-service's own `REDDIT_TARGETING_EXCLUSIONS_ENABLED`: campaign-service refuses both while that is off, and the
+ * legacy creator ignores them.
+ */
+export function canSetRedditTargetingExclusions(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceRedditTargetingExclusions);
+}
+
+/**
  * Whether a Google create may reference uploaded images by asset id.
  *
  * Needs the campaign-service create path to serve the create AND the Google-assets flag. Unlike its
@@ -1326,6 +1336,7 @@ export class CampaignServiceClient {
         redditAssetUploadEnabled: canUseRedditCreativeAssets(),
         redditConversionPixelEnabled: canSetRedditConversionPixel(),
         redditConversionEventEnabled: canSetRedditConversionEvent(),
+        redditTargetingExclusionsEnabled: canSetRedditTargetingExclusions(),
         googleAssetUploadEnabled: canUseGoogleCreativeAssets(),
         metaCreativeEnabled: cutoverOwnsCreate(),
         metaAssetUploadEnabled: canUseMetaCreativeAssets(),
@@ -1424,6 +1435,7 @@ export class CampaignServiceClient {
       redditAssetUploadEnabled: canUseRedditCreativeAssets(),
       redditConversionPixelEnabled: canSetRedditConversionPixel(),
       redditConversionEventEnabled: canSetRedditConversionEvent(),
+      redditTargetingExclusionsEnabled: canSetRedditTargetingExclusions(),
       googleAssetUploadEnabled: canUseGoogleCreativeAssets(),
       metaCreativeEnabled: cutoverOwnsCreate(),
       metaAssetUploadEnabled: canUseMetaCreativeAssets(),

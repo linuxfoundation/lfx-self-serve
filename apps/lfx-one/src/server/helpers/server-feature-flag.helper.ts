@@ -338,6 +338,19 @@ export enum ServerFeatureFlag {
   CampaignServiceRedditCustomAudiences = 'LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_CUSTOM_AUDIENCES',
 
   /**
+   * Reddit targeting exclusions (#6108 row 3, linuxfoundation/lfx-v2-campaign-service#549): accept
+   * `redditConfig.excludedSubreddits` and `redditConfig.excludedGeoTargets`, the ad group's excluded communities and
+   * countries.
+   *
+   * A CAPABILITY flag of the Bidding kind: REQUIRES campaign-service DEPLOYED with `REDDIT_TARGETING_EXCLUSIONS_ENABLED`
+   * on, since campaign-service refuses the fields with a 400 otherwise, and is only meaningful on the campaign-service
+   * create path (`cutoverOwnsCreate`): the legacy creator ignores them. Off (the default), the create route refuses them
+   * with a 400, never dropping them. Keep it off until campaign-service's flag is on and probed. Request fields only, so
+   * flipping it back strands nothing. Same accepted values as the flags above.
+   */
+  CampaignServiceRedditTargetingExclusions = 'LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_TARGETING_EXCLUSIONS',
+
+  /**
    * Offers a stored-image LIBRARY in each Google creative image slot — upload an image into the
    * brief's library, or pick a stored one that fits the slot — sent as `{ imageAssetId }` entries in
    * the slot's own array beside any pasted image URLs (`demandGenCreative.logoImages`,
