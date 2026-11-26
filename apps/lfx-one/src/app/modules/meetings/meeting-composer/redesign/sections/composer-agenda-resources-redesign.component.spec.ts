@@ -97,11 +97,12 @@ describe('ComposerAgendaResourcesRedesignComponent', () => {
       formService.form().get('title')?.setValue('Release sync');
       expect(agendaField['canGenerate']()).toBe(true);
 
-      formService.form().get('aiPrompt')?.setValue('Agree on the release date');
+      agendaField['aiPrompt'].set('Agree on the release date');
       agendaField['generate'](close);
 
       expect(generateAgenda).toHaveBeenCalledWith(expect.objectContaining({ context: 'Agree on the release date' }));
       expect(formService.form().get('description')?.value).toBe('Generated agenda');
+      expect(agendaField['aiPrompt']()).toBe('');
       expect(formService.form().get('aiPrompt')?.value).toBe('');
       expect(close).toHaveBeenCalled();
     });
@@ -142,6 +143,67 @@ describe('ComposerAgendaResourcesRedesignComponent', () => {
 
       expect(TestBed.inject(Dialog).openDialogs).toHaveLength(0);
       expect(query('composer-agenda-links')?.textContent).toContain('https://example.org/notes');
+    });
+
+    it('queues picked files and removes a pending one', () => {
+      const input = query('composer-agenda-file-input') as HTMLInputElement;
+      Object.defineProperty(input, 'files', { value: [new File(['x'], 'plan.pdf', { type: 'application/pdf' })], configurable: true });
+      input.dispatchEvent(new Event('change'));
+      fixture.detectChanges();
+
+      const pending = formService.form().get('attachments')?.value as { id: string }[];
+      expect(pending).toHaveLength(1);
+
+      (query(`composer-agenda-remove-attachment-${pending[0].id}`)!.querySelector('button') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      expect(formService.form().get('attachments')?.value).toHaveLength(0);
+    });
+
+    it('queues a saved file for deletion and undoes it', () => {
+      formService.attachments.set([{ uid: 'att-1', type: 'file', name: 'brief.pdf', file_size: 10 } as never]);
+      fixture.detectChanges();
+
+      (query('composer-agenda-delete-att-1')!.querySelector('button') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      expect(formService.pendingAttachmentDeletions()).toEqual(['att-1']);
+
+      (query('composer-agenda-undo-delete-att-1')!.querySelector('button') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      expect(formService.pendingAttachmentDeletions()).toEqual([]);
+    });
+
+    it('removes a link row', () => {
+      fixture.componentInstance['linkForm'].setValue({ title: 'Notes', url: 'https://example.org/notes' });
+      fixture.componentInstance['submitLink']({ close: vi.fn() } as never);
+      fixture.detectChanges();
+      expect(query('composer-agenda-links')).not.toBeNull();
+
+      (query('composer-agenda-remove-link-0')!.querySelector('button') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      expect(query('composer-agenda-links')).toBeNull();
+    });
+
+    it('keeps the drop highlight while the pointer moves onto the zone itself', () => {
+      const zone = query('composer-agenda-dropzone')!;
+      zone.dispatchEvent(new Event('dragover', { cancelable: true }));
+      const inner = new Event('dragleave') as DragEvent;
+      Object.defineProperty(inner, 'relatedTarget', { value: zone.querySelector('i') });
+      zone.dispatchEvent(inner);
+      expect(fixture.componentInstance['dragOver']()).toBe(true);
+
+      const outer = new Event('dragleave') as DragEvent;
+      Object.defineProperty(outer, 'relatedTarget', { value: document.body });
+      zone.dispatchEvent(outer);
+      expect(fixture.componentInstance['dragOver']()).toBe(false);
+    });
+
+    it('closes an open Add link modal when the section goes away', async () => {
+      (query('composer-agenda-add-link')!.querySelector('button') as HTMLButtonElement).click();
+      await fixture.whenStable();
+      expect(TestBed.inject(Dialog).openDialogs).toHaveLength(1);
+
+      fixture.destroy();
+      expect(TestBed.inject(Dialog).openDialogs).toHaveLength(0);
     });
 
     it('hides documents and links in an occurrence edit', () => {

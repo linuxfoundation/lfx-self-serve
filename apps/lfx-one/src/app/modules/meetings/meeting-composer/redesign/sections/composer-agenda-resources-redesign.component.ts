@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DialogRef } from '@angular/cdk/dialog';
-import { Component, computed, inject, signal, type Signal, TemplateRef, viewChild } from '@angular/core';
+import { Component, computed, DestroyRef, inject, signal, type Signal, TemplateRef, viewChild } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormArray, FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { MAX_FILE_SIZE_MB } from '@lfx-one/shared/constants';
@@ -29,6 +29,7 @@ import { ComposerAgendaFieldRedesignComponent } from './composer-agenda-field-re
 })
 export class ComposerAgendaResourcesRedesignComponent extends ComposerAgendaResourcesComponent {
   private readonly modalService = inject(UiModalService);
+  private linkDialog: DialogRef | null = null;
 
   protected readonly linkForm = new FormGroup({
     title: new FormControl('', [Validators.required, trimmedRequired()]),
@@ -45,9 +46,15 @@ export class ComposerAgendaResourcesRedesignComponent extends ComposerAgendaReso
 
   private readonly addLinkTemplate = viewChild.required<TemplateRef<unknown>>('addLinkModal');
 
+  public constructor() {
+    super();
+    // The composer can close under an open Add link (lost write access), which must not outlive the section.
+    inject(DestroyRef).onDestroy(() => this.linkDialog?.close());
+  }
+
   protected override onAddLink(): void {
     this.linkForm.reset({ title: '', url: '' });
-    this.modalService.open(this.addLinkTemplate(), { autoFocus: 'first-tabbable' });
+    this.linkDialog = this.modalService.open(this.addLinkTemplate(), { autoFocus: 'first-tabbable' });
   }
 
   protected submitLink(ref: DialogRef): void {
@@ -76,6 +83,13 @@ export class ComposerAgendaResourcesRedesignComponent extends ComposerAgendaReso
   protected onDragOver(event: DragEvent): void {
     event.preventDefault();
     this.dragOver.set(true);
+  }
+
+  /** Ignores a leave onto the zone's own children, which would otherwise flicker the highlight. */
+  protected onDragLeave(event: DragEvent): void {
+    if (!(event.currentTarget as Node).contains(event.relatedTarget as Node | null)) {
+      this.dragOver.set(false);
+    }
   }
 
   protected onDrop(event: DragEvent): void {

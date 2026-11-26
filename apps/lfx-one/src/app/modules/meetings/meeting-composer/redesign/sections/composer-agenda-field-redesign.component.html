@@ -35,7 +35,7 @@
   </ng-template>
 
   <ng-template #aiPopover let-close="close">
-    <div class="flex flex-col gap-3" [formGroup]="form()" data-testid="composer-agenda-ai-panel">
+    <div class="flex flex-col gap-3" data-testid="composer-agenda-ai-panel">
       <div class="flex items-start gap-2.5">
         <span class="grid h-7 w-7 flex-none place-items-center rounded-lg bg-violet-100 text-xs text-violet-600" aria-hidden="true">
           <i class="fa-light fa-lightbulb"></i>
@@ -46,7 +46,8 @@
         </div>
       </div>
       <lfx-ui-textarea
-        formControlName="aiPrompt"
+        [value]="aiPrompt()"
+        (valueChange)="aiPrompt.set($event)"
         ariaLabel="Meeting goal"
         placeholder="e.g. Review Q3 roadmap progress and agree on the release date"
         [maxlength]="promptMaxLength"
