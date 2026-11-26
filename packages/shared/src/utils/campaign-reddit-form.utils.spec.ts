@@ -122,6 +122,8 @@ describe('redditCreateRefusal', () => {
     conversionEventBlock: null,
     customAudiencesBlock: null,
     customAudiencesRefusal: null,
+    targetingExclusionsBlock: null,
+    targetingExclusionsRefusal: null,
   };
 
   it.each([
@@ -134,6 +136,8 @@ describe('redditCreateRefusal', () => {
     ['held custom audiences', { customAudiencesBlock: 'Remove them.' }, 'Reddit Ads: Remove them.'],
     ['refused custom audiences', { customAudiencesRefusal: 'Entry 2 repeats.' }, 'Reddit Ads: Entry 2 repeats.'],
     ['held and refused custom audiences, the hold first', { customAudiencesBlock: 'Held.', customAudiencesRefusal: 'Refused.' }, 'Reddit Ads: Held.'],
+    ['held exclusions', { targetingExclusionsBlock: 'Remove them.' }, 'Reddit Ads: Remove them.'],
+    ['refused exclusions, after a held one', { targetingExclusionsBlock: 'Held.', targetingExclusionsRefusal: 'Refused.' }, 'Reddit Ads: Held.'],
     ['a budget and a geo error, budget first', { budgetUsd: 0, geoTargetCount: 0 }, 'Reddit Ads: set a budget Reddit accepts.'],
   ])('%s', (_name, over, expected) => {
     expect(redditCreateRefusal({ ...ok, ...over })).toBe(expected);

@@ -95,5 +95,9 @@ export function redditCreateRefusal(input: RedditCreateRefusalInput): string | n
   if (input.customAudiencesBlock !== null) return `Reddit Ads: ${input.customAudiencesBlock}`;
   // Lists campaign-service would refuse (`redditCustomAudiencesRefusal`).
   if (input.customAudiencesRefusal !== null) return `Reddit Ads: ${input.customAudiencesRefusal}`;
+  // Exclusions the deployment has not confirmed: held, never dropped (`redditTargetingExclusionsBlock`).
+  if (input.targetingExclusionsBlock !== null) return `Reddit Ads: ${input.targetingExclusionsBlock}`;
+  // Exclusions campaign-service would refuse, including one the targeting now overlaps (`redditTargetingExclusionsDraftRefusal`).
+  if (input.targetingExclusionsRefusal !== null) return `Reddit Ads: ${input.targetingExclusionsRefusal}`;
   return null;
 }

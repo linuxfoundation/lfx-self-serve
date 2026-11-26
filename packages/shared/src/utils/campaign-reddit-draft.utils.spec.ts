@@ -27,6 +27,7 @@ describe('redditDraftFields', () => {
     videoGoal: 'VIDEO_VIEW_15S',
     conversionEvent: 'SIGN_UP',
     customAudiences: { customAudienceIds: ['aud_in'], excludedCustomAudienceIds: ['aud_out'] },
+    targetingExclusions: { excludedSubreddits: ['politics'], excludedGeoTargets: ['CA'] },
   };
 
   it('carries every typed value, the pixel and the upload slot as held', () => {
@@ -48,6 +49,8 @@ describe('redditDraftFields', () => {
       redditConversionEvent: 'SIGN_UP',
       redditCustomAudienceIds: ['aud_in'],
       redditExcludedCustomAudienceIds: ['aud_out'],
+      redditExcludedSubreddits: ['politics'],
+      redditExcludedGeoTargets: ['CA'],
     });
   });
 
@@ -166,6 +169,18 @@ describe('redditDraftRestore: custom audiences', () => {
   });
 });
 
+describe('redditDraftRestore: targeting exclusions', () => {
+  it.each<[string, unknown, unknown, unknown]>([
+    ['both lists', ['politics'], ['CA'], { excludedSubreddits: ['politics'], excludedGeoTargets: ['CA'] }],
+    ['one list, the other empty', undefined, ['CA'], { excludedSubreddits: [], excludedGeoTargets: ['CA'] }],
+    ['only the strings of a stored list', ['politics', 7], undefined, { excludedSubreddits: ['politics'], excludedGeoTargets: [] }],
+    ['neither key (an older draft)', undefined, undefined, undefined],
+  ])('restores %s', (_name, subs, geos, expected) => {
+    // @ts-expect-error -- a draft is replayed from stored JSON whose inner shape is not validated
+    expect(redditDraftRestore(draft({ redditExcludedSubreddits: subs, redditExcludedGeoTargets: geos })).targetingExclusions).toEqual(expected);
+  });
+});
+
 describe('redditBriefReset', () => {
   it('sets every typed value to its default and empties the brief lists', () => {
     expect(redditBriefReset()).toEqual({
@@ -176,6 +191,7 @@ describe('redditBriefReset', () => {
       videoGoal: '',
       conversionEvent: 'PURCHASE',
       customAudiences: { customAudienceIds: [], excludedCustomAudienceIds: [] },
+      targetingExclusions: { excludedSubreddits: [], excludedGeoTargets: [] },
       budgetUsd: DEFAULT_REDDIT_BUDGET_USD,
       variants: [],
       subreddits: [],

@@ -3,7 +3,16 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { redditTargetingExclusionsRefusal } from './campaign-reddit-targeting-exclusions.utils';
+import type { RedditTargetingExclusionsDraft } from '../interfaces/campaign.interface';
+import {
+  redditTargetingExclusionAddRefusal,
+  redditTargetingExclusionEntry,
+  redditTargetingExclusionHeld,
+  redditTargetingExclusionsBlock,
+  redditTargetingExclusionsDraftRefusal,
+  redditTargetingExclusionsField,
+  redditTargetingExclusionsRefusal,
+} from './campaign-reddit-targeting-exclusions.utils';
 
 const SUBS = 'redditConfig.excludedSubreddits';
 const GEOS = 'redditConfig.excludedGeoTargets';
@@ -79,5 +88,90 @@ describe('redditTargetingExclusionsRefusal', () => {
 
   it('never echoes a caller value', () => {
     expect(redditTargetingExclusionsRefusal({ excludedSubreddits: ['<script>'] }, true)?.message).not.toContain('<script>');
+  });
+});
+
+const NONE: RedditTargetingExclusionsDraft = { excludedSubreddits: [], excludedGeoTargets: [] };
+const HELD: RedditTargetingExclusionsDraft = { excludedSubreddits: ['politics'], excludedGeoTargets: ['CA'] };
+const TARGETED = { subreddits: ['r/kubernetes'], geoTargets: ['US', 'gb'] };
+
+describe('redditTargetingExclusionsField', () => {
+  it.each<[string, RedditTargetingExclusionsDraft, boolean | null, unknown]>([
+    ['both lists on an explicit yes', HELD, true, { excludedSubreddits: ['politics'], excludedGeoTargets: ['CA'] }],
+    ['only the non-empty list', { ...NONE, excludedGeoTargets: ['CA'] }, true, { excludedGeoTargets: ['CA'] }],
+    ['nothing on a no', HELD, false, {}],
+    ['nothing while unanswered', HELD, null, {}],
+  ])('sends %s', (_name, exclusions, enabled, expected) => {
+    expect(redditTargetingExclusionsField(exclusions, enabled)).toEqual(expected);
+  });
+});
+
+describe('redditTargetingExclusionsDraftRefusal', () => {
+  it.each<[string, RedditTargetingExclusionsDraft, string | null]>([
+    ['lists clear of the targeting', HELD, null],
+    ['a subreddit the targeting now holds', { ...NONE, excludedSubreddits: ['Kubernetes'] }, 'also targeted'],
+    ['a country the targeting now holds', { ...NONE, excludedGeoTargets: ['GB'] }, 'also targeted'],
+  ])('%s', (_name, exclusions, message) => {
+    const refusal = redditTargetingExclusionsDraftRefusal(exclusions, TARGETED);
+    if (message === null) expect(refusal).toBeNull();
+    else expect(refusal).toContain(message);
+  });
+});
+
+describe('redditTargetingExclusionEntry and redditTargetingExclusionHeld', () => {
+  it.each<[string, 'excludedSubreddits' | 'excludedGeoTargets', string, string]>([
+    ['a subreddit after r/', 'excludedSubreddits', ' r/Politics ', 'Politics'],
+    ['a country code', 'excludedGeoTargets', ' ca ', 'CA'],
+    ['ß, which Go does not upper-case to SS', 'excludedGeoTargets', 'ß', 'ß'],
+  ])('reads %s', (_name, key, raw, entry) => {
+    expect(redditTargetingExclusionEntry(key, raw)).toBe(entry);
+  });
+
+  it('matches subreddits ignoring case and codes exactly', () => {
+    expect(redditTargetingExclusionHeld(HELD, 'excludedSubreddits', 'POLITICS')).toBe(true);
+    expect(redditTargetingExclusionHeld(HELD, 'excludedGeoTargets', 'GB')).toBe(false);
+  });
+});
+
+describe('redditTargetingExclusionAddRefusal', () => {
+  const full = (key: 'excludedSubreddits' | 'excludedGeoTargets', n: number): RedditTargetingExclusionsDraft => ({
+    ...NONE,
+    [key]: Array.from({ length: n }, (_, i) => (key === 'excludedSubreddits' ? `sub_${i}` : 'CA')),
+  });
+
+  it.each<[string, RedditTargetingExclusionsDraft, 'excludedSubreddits' | 'excludedGeoTargets', string, string | null]>([
+    ['a new subreddit', HELD, 'excludedSubreddits', 'news', null],
+    ['a subreddit the list holds, in another case', HELD, 'excludedSubreddits', 'Politics', null],
+    ['a blank subreddit', HELD, 'excludedSubreddits', '', 'Enter a subreddit name.'],
+    ['a hyphenated name', HELD, 'excludedSubreddits', 'cloud-native', '2 to 21 letters'],
+    ['a targeted subreddit', HELD, 'excludedSubreddits', 'KUBERNETES', 'r/KUBERNETES is targeted'],
+    ['a 101st subreddit', full('excludedSubreddits', 100), 'excludedSubreddits', 'news', 'at most 100 subreddits'],
+    ['a new country', HELD, 'excludedGeoTargets', 'DE', null],
+    ['a blank country', HELD, 'excludedGeoTargets', '', 'Enter a country.'],
+    ['an unassigned code', HELD, 'excludedGeoTargets', 'XX', 'two-letter ISO'],
+    ['ß', HELD, 'excludedGeoTargets', 'ß', 'two-letter ISO'],
+    ['a targeted country', HELD, 'excludedGeoTargets', 'GB', 'GB is targeted'],
+    ['a 51st country', full('excludedGeoTargets', 50), 'excludedGeoTargets', 'DE', 'at most 50 countries'],
+  ])('%s', (_name, exclusions, key, entry, message) => {
+    const refusal = redditTargetingExclusionAddRefusal(exclusions, key, entry, TARGETED);
+    if (message === null) expect(refusal).toBeNull();
+    else expect(refusal).toContain(message);
+  });
+
+  it('counts the US default as targeted when there are no geo targets', () => {
+    expect(redditTargetingExclusionAddRefusal(NONE, 'excludedGeoTargets', 'US', { subreddits: [], geoTargets: [] })).toContain('US is targeted');
+  });
+});
+
+describe('redditTargetingExclusionsBlock', () => {
+  it.each<[string, RedditTargetingExclusionsDraft, boolean | null, 'ready' | 'pending' | 'failed', string | null, string | null]>([
+    ['nothing held', NONE, false, 'ready', 'b1', null],
+    ['held on an explicit yes', HELD, true, 'ready', 'b1', null],
+    ['held on a no', HELD, false, 'ready', 'b1', 'restricted'],
+    ['held while the read is out', HELD, null, 'pending', 'b1', 'pending'],
+    ['held on an unsaved brief', HELD, null, 'failed', null, 'unsaved'],
+    ['held after a failed read', HELD, null, 'failed', 'b1', 'failed'],
+  ])('%s', (_name, exclusions, enabled, createCapabilityRead, briefId, kind) => {
+    expect(redditTargetingExclusionsBlock({ exclusions, enabled, createCapabilityRead, briefId })?.kind ?? null).toBe(kind);
   });
 });
