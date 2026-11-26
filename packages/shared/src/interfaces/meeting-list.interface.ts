@@ -541,6 +541,18 @@ export interface MeetingCalendarEntry {
   past: boolean;
 }
 
+/** One meeting date on the calendar grid, whatever feed it comes from. */
+export interface MeetingCalendarGridEntry {
+  key: string;
+  title: string;
+  /** Meeting type, such as "Board"; a missing or unknown type shows as Other. */
+  type: string | null;
+  /** ISO start time. */
+  startTime: string;
+  durationMinutes: number;
+  past: boolean;
+}
+
 /** One day cell of the meetings home mini calendar. */
 export interface MeetingMiniCalendarDay {
   /** Local day key, `YYYY-MM-DD`; list rows carry it as `data-day`. */
@@ -596,7 +608,7 @@ export interface MeetingCalendarTypeColor {
 /** One meeting on the calendar dialog, coloured by type and by whether it is past. */
 export interface MeetingCalendarChip {
   key: string;
-  entry: MeetingCalendarEntry;
+  entry: MeetingCalendarGridEntry;
   /** "10:00 AM". */
   time: string;
   title: string;

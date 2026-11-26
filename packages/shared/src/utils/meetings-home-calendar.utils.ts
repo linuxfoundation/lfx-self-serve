@@ -11,6 +11,7 @@ import type {
   MeetingCalendarChip,
   MeetingCalendarDialogDay,
   MeetingCalendarEntry,
+  MeetingCalendarGridEntry,
   MeetingCalendarWeekEvent,
   MeetingHomeRow,
   MeetingMiniCalendarWeek,
@@ -61,6 +62,21 @@ export function groupMeetingCalendarEntries(upcoming: readonly MeetingHomeRow[],
   return days;
 }
 
+/** A home calendar entry as a calendar grid entry. */
+export function toMeetingCalendarGridEntry({ row, past }: MeetingCalendarEntry): MeetingCalendarGridEntry {
+  return { key: row.key, title: row.title, type: row.meeting.meeting_type ?? null, startTime: row.startTime, durationMinutes: row.durationMinutes, past };
+}
+
+/** Calendar grid entries by local day, each day's soonest first. */
+export function groupMeetingCalendarGridEntries(entries: readonly MeetingCalendarGridEntry[]): Map<string, MeetingCalendarGridEntry[]> {
+  const days = new Map<string, MeetingCalendarGridEntry[]>();
+  for (const entry of [...entries].sort((a, b) => Date.parse(a.startTime) - Date.parse(b.startTime))) {
+    const key = getLocalDayKey(entry.startTime);
+    days.set(key, [...(days.get(key) ?? []), entry]);
+  }
+  return days;
+}
+
 /** Every date of the full Sunday-first weeks covering the month of `month`. */
 export function getMeetingCalendarMonthDates(month: Date): Date[] {
   const first = new Date(month.getFullYear(), month.getMonth(), 1);
@@ -90,20 +106,20 @@ export function getMeetingCalendarTypeColor(type: string | null | undefined): st
 }
 
 /** A calendar dialog chip: strong type tints for an upcoming meeting, faded ones for a past meeting. */
-export function toMeetingCalendarChip(entry: MeetingCalendarEntry): MeetingCalendarChip {
-  const color = getMeetingCalendarTypeColor(entry.row.meeting.meeting_type);
+export function toMeetingCalendarChip(entry: MeetingCalendarGridEntry): MeetingCalendarChip {
+  const color = getMeetingCalendarTypeColor(entry.type);
   const mix = (share: number, base: string): string => `color-mix(in srgb, ${color} ${share}%, ${base})`;
-  const time = formatMeetingCalendarTime(entry.row.startTime);
-  const type = entry.row.meeting.meeting_type?.trim() || 'Other';
+  const time = formatMeetingCalendarTime(entry.startTime);
+  const type = entry.type?.trim() || 'Other';
   return {
-    key: entry.row.key,
+    key: entry.key,
     entry,
     time,
-    title: entry.row.title,
+    title: entry.title,
     background: entry.past ? mix(7, 'var(--ui-white)') : mix(16, 'var(--ui-white)'),
     ink: entry.past ? mix(75, 'var(--ui-white)') : mix(75, 'var(--ui-black)'),
     bar: entry.past ? mix(35, 'var(--ui-white)') : color,
-    detail: `${formatMeetingCalendarDay(entry.row.startTime)} · ${time} · ${type}${entry.past ? ' · Past' : ''}`,
+    detail: `${formatMeetingCalendarDay(entry.startTime)} · ${time} · ${type}${entry.past ? ' · Past' : ''}`,
   };
 }
 
@@ -126,11 +142,11 @@ function getWallMinutesFrom(instant: Date, dayMidnight: number): number {
  * Wall-clock start and end minutes of a meeting from the local midnight of `day`; the end is read at the real end instant,
  * so a clock change inside the meeting moves it, and is at least `minimum` minutes after the start.
  */
-function getMeetingCalendarDayMinutes(entry: MeetingCalendarEntry, day: Date, minimum = 30): { start: number; end: number } {
-  const start = new Date(entry.row.startTime);
+function getMeetingCalendarDayMinutes(entry: MeetingCalendarGridEntry, day: Date, minimum = 30): { start: number; end: number } {
+  const start = new Date(entry.startTime);
   const dayMidnight = new Date(day.getFullYear(), day.getMonth(), day.getDate()).getTime();
   const startMinutes = getWallMinutesFrom(start, dayMidnight);
-  const end = new Date(start.getTime() + (entry.row.durationMinutes || 60) * 60_000);
+  const end = new Date(start.getTime() + (entry.durationMinutes || 60) * 60_000);
   return { start: startMinutes, end: Math.max(getWallMinutesFrom(end, dayMidnight), startMinutes + minimum) };
 }
 
@@ -140,10 +156,10 @@ function getMeetingCalendarDayMinutes(entry: MeetingCalendarEntry, day: Date, mi
  * cluster that shares one lane count, so every one of them is as wide as the cluster's narrowest lane.
  * @param day Day of the column; a meeting running into it from the day before shows from midnight. Defaults to each start's day.
  */
-export function layoutMeetingCalendarWeekDay(entries: readonly MeetingCalendarEntry[], day?: Date): MeetingCalendarWeekEvent[] {
+export function layoutMeetingCalendarWeekDay(entries: readonly MeetingCalendarGridEntry[], day?: Date): MeetingCalendarWeekEvent[] {
   const placed = entries
     .map((entry) => {
-      const minutes = getMeetingCalendarDayMinutes(entry, day ?? new Date(entry.row.startTime), 0);
+      const minutes = getMeetingCalendarDayMinutes(entry, day ?? new Date(entry.startTime), 0);
       const start = Math.max(0, minutes.start);
       // The 30-minute floor is for meetings that start this day; a carry-over keeps its real end.
       const end = minutes.start < 0 ? minutes.end : Math.max(minutes.end, start + 30);
@@ -187,7 +203,7 @@ export function layoutMeetingCalendarWeekDay(entries: readonly MeetingCalendarEn
 /** Calendar dialog days for `dates`: month cells keep `chipLimit` chips and count the rest; week columns also place every meeting. */
 export function buildMeetingCalendarDialogDays(
   dates: readonly Date[],
-  days: ReadonlyMap<string, MeetingCalendarEntry[]>,
+  days: ReadonlyMap<string, MeetingCalendarGridEntry[]>,
   now: Date,
   shownMonth: number | null,
   chipLimit: number
