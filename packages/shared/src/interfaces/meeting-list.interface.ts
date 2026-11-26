@@ -16,11 +16,12 @@ import type {
   OccurrenceNavItem,
   PastMeeting,
   PastMeetingSummary,
+  PublicCalendarMeeting,
   PublicProjectMeetingsResponse,
   RsvpResponse,
   RsvpScope,
 } from './meeting.interface';
-import type { UiAvatarStatus, UiBadgeTone } from './uikit.interface';
+import type { UiAvatarStatus, UiBadgeTone, UiBadgeVariant, UiButtonVariant } from './uikit.interface';
 
 /** One row of the meetings home list: a single date of a meeting. */
 export interface MeetingHomeRow {
@@ -601,6 +602,76 @@ export type MeetingCalendarView = 'month' | 'week';
 
 /** Where the calendar grid sits: filling a dialog that scrolls it, or in a page's flow. */
 export type MeetingCalendarGridLayout = 'dialog' | 'page';
+
+/** One date of the public project calendar and the feed meeting it comes from. */
+export interface PublicCalendarItem {
+  meeting: PublicCalendarMeeting;
+  entry: MeetingCalendarGridEntry;
+}
+
+/** What a public calendar meeting modal opens with. */
+export interface PublicCalendarMeetingModalData {
+  meeting: PublicCalendarMeeting;
+  /** The date that was clicked. */
+  entry: MeetingCalendarGridEntry;
+  /** Names of the meeting's public groups. */
+  groups: string[];
+}
+
+/** A call to action in the public calendar meeting modal. */
+export type PublicCalendarModalAction =
+  | 'join'
+  | 'register'
+  | 'sign-in'
+  | 'sign-in-register'
+  | 'sign-in-summary'
+  | 'sign-in-watch'
+  | 'view-summary'
+  | 'watch-recording';
+
+/** How a public calendar modal action button looks. */
+export interface PublicCalendarModalActionStyle {
+  label: string;
+  variant: UiButtonVariant;
+  icon: string;
+}
+
+/** What the viewer is and what is known about one meeting date, for the public calendar modal. */
+export interface PublicCalendarModalFacts {
+  signedIn: boolean;
+  past: boolean;
+  live: boolean;
+  restricted: boolean;
+  /** Signed in: invited to a restricted meeting, or registered for a public one. */
+  invited: boolean;
+  /** Past: a recording exists (signed in) or is enabled (signed out). */
+  recording: boolean;
+  /** Past: a summary exists (signed in) or is enabled (signed out). */
+  summary: boolean;
+  /** Past, signed in: the viewer may see the meeting's recording and summary. */
+  access: boolean;
+}
+
+/** What the public calendar modal loads about the viewer and the date once it opens. */
+export interface PublicCalendarModalDetails {
+  loading: boolean;
+  invited: boolean;
+  /** Past, signed in: the viewer may see the meeting's recording and summary. */
+  access: boolean;
+  recording: boolean;
+  summary: boolean;
+  /** Signed in with access: the recording's share link. */
+  shareUrl: string | null;
+  /** Signed in: the agenda, which the feed leaves out of restricted meetings. */
+  description: string;
+}
+
+/** The public calendar modal's badge, note and actions for one set of facts. */
+export interface PublicCalendarModalState {
+  badge: { label: string; tone: UiBadgeTone; variant: UiBadgeVariant } | null;
+  note: { text: string; warning: boolean } | null;
+  actions: PublicCalendarModalAction[];
+}
 
 /** The public project calendar's meetings feed while it loads, after it fails, or once loaded. */
 export interface PublicCalendarFeedState {

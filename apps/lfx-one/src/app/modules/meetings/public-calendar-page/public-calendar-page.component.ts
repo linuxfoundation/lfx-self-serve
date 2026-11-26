@@ -2,33 +2,43 @@
 // SPDX-License-Identifier: MIT
 
 import { afterNextRender, ChangeDetectionStrategy, Component, computed, DestroyRef, inject, Signal, signal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ImpersonationBannerComponent } from '@components/impersonation-banner/impersonation-banner.component';
 import { PHONE_MEDIA_QUERY } from '@lfx-one/shared/constants';
-import { MeetingCalendarGridEntry, MeetingCalendarView, PublicCalendarFeedState, PublicGroupSummary } from '@lfx-one/shared/interfaces';
-import { isUuid, publicMeetingToCalendarGridEntries } from '@lfx-one/shared/utils';
+import {
+  MeetingCalendarGridEntry,
+  MeetingCalendarView,
+  PublicCalendarFeedState,
+  PublicCalendarItem,
+  PublicCalendarMeetingModalData,
+  PublicGroupSummary,
+} from '@lfx-one/shared/interfaces';
+import { isUuid, toPublicCalendarItems } from '@lfx-one/shared/utils';
 import { GroupService } from '@services/group.service';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiEmptyStateComponent } from '@shared/uikit/empty-state/empty-state.component';
+import { UiModalService } from '@shared/uikit/modal/modal.service';
 import { UiOptionComponent } from '@shared/uikit/select/option.component';
 import { UiSelectValueDirective } from '@shared/uikit/select/select-value.directive';
 import { UiSelectComponent } from '@shared/uikit/select/select.component';
 import { UiSkeletonComponent } from '@shared/uikit/skeleton/skeleton.component';
-import { catchError, combineLatest, distinctUntilChanged, map, of, startWith, switchMap } from 'rxjs';
+import { catchError, combineLatest, distinctUntilChanged, finalize, map, of, startWith, switchMap } from 'rxjs';
 
 import { MeetingPageFooterComponent } from '../meeting-page/footer/meeting-page-footer.component';
 import { MeetingPageTopBarComponent } from '../meeting-page/top-bar/meeting-page-top-bar.component';
 import { MeetingsCalendarGridComponent } from '../meetings-redesign/components/meetings-calendar-grid/meetings-calendar-grid.component';
+import { PublicCalendarMeetingModalComponent } from './meeting-modal/public-calendar-meeting-modal.component';
 
 /**
  * Redesigned `/projects/:projectSlug/calendar`, matched by `publicCalendarRedesignGuard`: a project's public meetings on a
  * month or week grid, filtered to one group by `?committee=<uid>`, with the week view in `?view=week`.
  * @description The feed loads once, unfiltered, and the group filter applies on the client, so it only lists groups with
  * public meetings and never empties itself. Cancelled occurrences stay off the grid. The grid renders in the browser only,
- * since its days and times follow the viewer's time zone; phones get the month view only.
+ * since its days and times follow the viewer's time zone; phones get the month view only. A chip opens the meeting modal
+ * through `?meeting=<entry key>`.
  */
 @Component({
   selector: 'lfx-public-calendar-page',
@@ -52,6 +62,7 @@ export class PublicCalendarPageComponent {
   private readonly router = inject(Router);
   private readonly meetingService = inject(MeetingService);
   private readonly groupService = inject(GroupService);
+  private readonly modal = inject(UiModalService);
   protected readonly userService = inject(UserService);
 
   /** A date in the shown month or week. */
@@ -71,6 +82,9 @@ export class PublicCalendarPageComponent {
   protected readonly committeeUid: Signal<string | null> = toSignal(this.route.queryParamMap.pipe(map((params) => params.get('committee'))), {
     initialValue: null,
   });
+  private readonly meetingKey: Signal<string | null> = toSignal(this.route.queryParamMap.pipe(map((params) => params.get('meeting'))), {
+    initialValue: null,
+  });
   protected readonly view: Signal<MeetingCalendarView> = toSignal(
     this.route.queryParamMap.pipe(map((params): MeetingCalendarView => (params.get('view') === 'week' ? 'week' : 'month'))),
     { initialValue: 'month' }
@@ -79,7 +93,12 @@ export class PublicCalendarPageComponent {
   /** The public group directory; null until it loads, empty when it fails. */
   private readonly directory: Signal<PublicGroupSummary[] | null> = this.initDirectory();
 
-  protected readonly loading: Signal<boolean> = computed(() => this.feed().status === 'loading' || !this.browser());
+  /** The server renders loading too, so hydration starts from the same markup; a selected group also waits for its name. */
+  protected readonly loading: Signal<boolean> = computed(
+    () => !this.browser() || this.feed().status === 'loading' || (!!this.committeeUid() && this.directory() === null)
+  );
+  /** Every date in the feed, each once. */
+  private readonly items: Signal<PublicCalendarItem[]> = computed(() => toPublicCalendarItems(this.feed().response?.meetings ?? [], this.now()));
   protected readonly projectName: Signal<string> = computed(() => this.feed().response?.project.name ?? '');
   protected readonly logoUrl: Signal<string> = computed(() => this.feed().response?.project.logo_url ?? '');
   protected readonly initials: Signal<string> = computed(() =>
@@ -94,6 +113,8 @@ export class PublicCalendarPageComponent {
   protected readonly groups: Signal<PublicGroupSummary[]> = this.initGroups();
   protected readonly unknownGroup: Signal<boolean> = this.initUnknownGroup();
   protected readonly entries: Signal<MeetingCalendarGridEntry[]> = this.initEntries();
+  /** The meeting date in `?meeting=`, ready to open in the modal once the grid shows. */
+  private readonly openMeeting: Signal<PublicCalendarMeetingModalData | null> = this.initOpenMeeting();
   protected readonly calendarView: Signal<MeetingCalendarView> = computed(() => (this.phone() ? 'month' : this.view()));
 
   public constructor() {
@@ -111,6 +132,28 @@ export class PublicCalendarPageComponent {
       );
       this.browser.set(true);
     });
+    // `?meeting=` drives the modal, so a link or the return from sign-in reopens it.
+    toObservable(this.openMeeting)
+      .pipe(
+        distinctUntilChanged((a, b) => a?.entry.key === b?.entry.key),
+        switchMap((data) => {
+          if (!data) return of(null);
+          const ref = this.modal.open(PublicCalendarMeetingModalComponent, { data });
+          // Leaving the date in the URL, or the page, closes its modal.
+          return ref.closed.pipe(
+            map(() => data),
+            finalize(() => ref.close())
+          );
+        }),
+        takeUntilDestroyed()
+      )
+      .subscribe((closed) => {
+        if (closed && this.meetingKey() === closed.entry.key) this.updateQuery({ meeting: null });
+      });
+  }
+
+  protected openEntry(entry: MeetingCalendarGridEntry): void {
+    this.updateQuery({ meeting: entry.key });
   }
 
   protected retry(): void {
@@ -183,10 +226,22 @@ export class PublicCalendarPageComponent {
   private initEntries(): Signal<MeetingCalendarGridEntry[]> {
     return computed(() => {
       const uid = this.committeeUid();
-      const now = this.now();
-      return (this.feed().response?.meetings ?? [])
-        .filter((meeting) => !uid || meeting.committee_uids?.includes(uid))
-        .flatMap((meeting) => publicMeetingToCalendarGridEntries(meeting, now));
+      return this.items()
+        .filter((item) => !uid || item.meeting.committee_uids?.includes(uid))
+        .map((item) => item.entry);
+    });
+  }
+
+  private initOpenMeeting(): Signal<PublicCalendarMeetingModalData | null> {
+    return computed(() => {
+      const key = this.meetingKey();
+      // Waits for the group names too: the open modal keeps the data it opened with.
+      if (!key || !this.browser() || this.directory() === null) return null;
+      const item = this.items().find(({ entry }) => entry.key === key);
+      if (!item) return null;
+      const uids = item.meeting.committee_uids ?? [];
+      const groups = (this.directory() ?? []).filter((group) => uids.includes(group.uid)).map((group) => group.name);
+      return { ...item, groups };
     });
   }
 

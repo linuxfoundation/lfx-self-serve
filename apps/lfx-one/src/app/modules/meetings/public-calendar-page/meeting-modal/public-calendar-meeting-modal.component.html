@@ -1,0 +1,73 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact [Npx] design values: rem undershoots at the 14px root. -->
+<lfx-ui-modal [heading]="data.meeting.title" [width]="520" closable data-testid="public-calendar-modal">
+  <div modalHeaderExtra class="flex flex-wrap items-center gap-[8px] text-[12px] leading-[16px] text-gray-600" data-testid="public-calendar-modal-type">
+    <span class="inline-flex items-center gap-[6px]">
+      <span class="size-[8px] rounded-full" [style.background]="typeColor" aria-hidden="true"></span>{{ typeLabel }}
+    </span>
+    <!-- Badge, note and actions follow what loads on open, so none shows a guess before it. -->
+    @if (!details().loading && state().badge; as badge) {
+      <lfx-ui-badge size="sm" [tone]="badge.tone" [variant]="badge.variant" data-testid="public-calendar-modal-badge">{{ badge.label }}</lfx-ui-badge>
+    }
+    @if (live) {
+      <span class="inline-flex items-center gap-[6px] font-medium text-blue-600" role="status" data-testid="public-calendar-modal-live">
+        <span class="size-[6px] animate-pulse rounded-full bg-blue-600 motion-reduce:animate-none" aria-hidden="true"></span>· Meeting in progress
+      </span>
+    }
+  </div>
+
+  <ul class="m-0 flex list-none flex-col gap-[8px] p-0 text-[13px] leading-[18px] text-gray-700" data-testid="public-calendar-modal-meta">
+    <li class="flex items-center gap-[8px]">
+      <i class="fa-light fa-calendar w-[16px] text-center text-gray-500" aria-hidden="true"></i><span data-testid="public-calendar-modal-when">{{ when }}</span>
+    </li>
+    @if (cadence) {
+      <li class="flex items-center gap-[8px]">
+        <i class="fa-light fa-arrows-repeat w-[16px] text-center text-gray-500" aria-hidden="true"></i><span>{{ cadence }}</span>
+      </li>
+    }
+    @if (groupNames) {
+      <li class="flex items-center gap-[8px]">
+        <i class="fa-light fa-users w-[16px] text-center text-gray-500" aria-hidden="true"></i><span>{{ groupNames }}</span>
+      </li>
+    }
+  </ul>
+
+  <!-- The feed leaves out restricted agendas; an invited viewer's own lookup carries them. -->
+  @if (data.meeting.description || details().description; as agenda) {
+    <p
+      class="m-0 line-clamp-6 whitespace-pre-line break-words text-[14px] leading-[21px] text-gray-700"
+      [innerHTML]="agenda | linkify"
+      data-testid="public-calendar-modal-description"></p>
+  }
+
+  @if (!details().loading && state().note; as note) {
+    <lfx-ui-note
+      size="small"
+      fill
+      [variant]="note.warning ? 'warning' : 'info'"
+      [icon]="note.warning ? 'fa-light fa-lock' : ''"
+      data-testid="public-calendar-modal-note"
+      >{{ note.text }}</lfx-ui-note
+    >
+  }
+
+  <ng-container modalActions>
+    <lfx-ui-button class="mr-auto" variant="tertiary-accent" size="large" (click)="openPage()" data-testid="public-calendar-modal-page"
+      >View meeting page</lfx-ui-button
+    >
+    @if (!details().loading) {
+      @for (action of state().actions; track action) {
+        <lfx-ui-button
+          size="large"
+          [variant]="actionStyles[action].variant"
+          [icon]="actionStyles[action].icon"
+          (click)="run(action)"
+          [attr.data-testid]="'public-calendar-modal-' + action"
+          >{{ actionStyles[action].label }}</lfx-ui-button
+        >
+      }
+    }
+  </ng-container>
+</lfx-ui-modal>
