@@ -2635,12 +2635,12 @@ export class CampaignServiceClient {
         // The refusals worth naming: an invalid bid (#3299), and a Reddit community or interest Reddit does
         // not know (#6108 row 4). Matched on the service's own wording, so nothing else upstream sends is
         // rendered — see `CAMPAIGN_SERVICE_BIDDING_REFUSAL_PATTERN` and `CAMPAIGN_SERVICE_REDDIT_TARGETING_REFUSAL_PATTERN`.
-        const biddingRefusal =
+        const namedRefusal =
           error instanceof MicroserviceError && error.statusCode === 400
             ? (CAMPAIGN_SERVICE_BIDDING_REFUSAL_PATTERN.exec(error.message) ?? CAMPAIGN_SERVICE_REDDIT_TARGETING_REFUSAL_PATTERN.exec(error.message))
             : null;
-        if (biddingRefusal !== null) {
-          return { enabled: true, jobId: null, error: `Campaign creation was rejected and nothing was created: ${biddingRefusal[0]}` };
+        if (namedRefusal !== null) {
+          return { enabled: true, jobId: null, error: `Campaign creation was rejected and nothing was created: ${namedRefusal[0]}` };
         }
         return { enabled: true, jobId: null, error: 'Campaign creation was rejected and nothing was created. Please try again.' };
       }

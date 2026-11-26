@@ -2439,9 +2439,12 @@ describe('CampaignServiceClient.createCampaigns', () => {
   });
 
   /** A Reddit community or interest campaign-service could not resolve (#6108 row 4) names the entry to fix. */
-  it('names a Reddit community campaign-service could not resolve', async () => {
+  it.each([
+    'invalid campaign config: redditConfig.subreddits: entry 2 ("synth_nowhere") is not a targetable Reddit community',
+    'invalid campaign config: redditConfig.interests: entry 1 (value withheld) names 3 Reddit interests; send the interest id instead',
+    'invalid campaign config: redditConfig.interests: entry 3 is blank',
+  ])('names a Reddit community or interest campaign-service could not resolve: %s', async (message) => {
     bothFlagsOn();
-    const message = 'invalid campaign config: redditConfig.subreddits: entry 2 ("synth_nowhere") is not a targetable Reddit community';
     proxyRequestWithResponse.mockRejectedValueOnce(new MicroserviceError(message, 400, 'campaign_service'));
 
     const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['reddit-ads'], { redditConfig: { budget: 100 } });

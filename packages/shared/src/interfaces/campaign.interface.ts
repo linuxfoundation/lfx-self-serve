@@ -8767,8 +8767,8 @@ export interface CampaignListResult {
   /**
    * Whether campaign-service resolves a Reddit create's `subreddits` and `interests` before creating anything (#6108 row 4):
    * the campaign-service create path AND `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_TARGETING_RESOLUTION`, which follows
-   * campaign-service's own `REDDIT_TARGETING_RESOLUTION_ENABLED`. The Implement tab offers the two lists for editing only
-   * on a yes. Optional, so a BFF that predates it reads as unanswered.
+   * campaign-service's own `REDDIT_TARGETING_RESOLUTION_ENABLED`. Nothing reads it yet: the Implement tab's row 4 screen
+   * (a follow-up) will offer the two lists for editing only on a yes. Optional, so a BFF that predates it reads as unanswered.
    */
   redditTargetingResolutionEnabled?: boolean;
   /**
