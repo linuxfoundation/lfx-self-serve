@@ -8822,6 +8822,13 @@ export interface CampaignListResult {
    */
   redditTargetingExclusionsEnabled?: boolean;
   /**
+   * Whether campaign-service resolves a Reddit create's `subreddits` and `interests` before creating anything (#6108 row 4):
+   * the campaign-service create path AND `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_TARGETING_RESOLUTION`, which follows
+   * campaign-service's own `REDDIT_TARGETING_RESOLUTION_ENABLED`. Nothing reads it yet: the Implement tab's row 4 screen
+   * (a follow-up) will offer the two lists for editing only on a yes. Optional, so a BFF that predates it reads as unanswered.
+   */
+  redditTargetingResolutionEnabled?: boolean;
+  /**
    * Whether a Meta create may carry `metaConfig.callToAction`, `conversionEvent` and `optimizationGoal`
    * (#5934), one flag each: `cutoverOwnsCreate()` AND `LFX_CUTOVER_CAMPAIGN_SERVICE_META_CALL_TO_ACTION`,
    * `..._META_CONVERSION_EVENT`, `..._META_OPTIMIZATION_GOAL`. Optional, so a BFF that predates them reads as unanswered.

@@ -2438,7 +2438,22 @@ describe('CampaignServiceClient.createCampaigns', () => {
     );
   });
 
+  /** A Reddit community or interest campaign-service could not resolve (#6108 row 4) names the entry to fix. */
   it.each([
+    'invalid campaign config: redditConfig.subreddits: entry 2 ("synth_nowhere") is not a targetable Reddit community',
+    'invalid campaign config: redditConfig.interests: entry 1 (value withheld) names 3 Reddit interests; send the interest id instead',
+    'invalid campaign config: redditConfig.interests: entry 3 is blank',
+  ])('names a Reddit community or interest campaign-service could not resolve: %s', async (message) => {
+    bothFlagsOn();
+    proxyRequestWithResponse.mockRejectedValueOnce(new MicroserviceError(message, 400, 'campaign_service'));
+
+    const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['reddit-ads'], { redditConfig: { budget: 100 } });
+
+    expect(res.error).toBe(`Campaign creation was rejected and nothing was created: ${message}`);
+  });
+
+  it.each([
+    ['another reddit field', 400, 'invalid campaign config: redditConfig.keywords: entry 1 is blank'],
     ['another config field', 400, 'invalid campaign config: metaConfig.budget: must be positive'],
     ['a googleAdsConfig bidding refusal', 400, 'invalid campaign config: googleAdsConfig.bidding: use googleAdsConfig.biddingStrategy'],
     ['a bidding message on a 409', 409, 'invalid campaign config: metaConfig.bidding: bidAmount must be greater than zero'],
@@ -4943,6 +4958,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       redditConversionPixelEnabled: false,
       redditConversionEventEnabled: false,
       redditTargetingExclusionsEnabled: false,
+      redditTargetingResolutionEnabled: false,
       googleAssetUploadEnabled: false,
       metaCreativeEnabled: false,
       metaAssetUploadEnabled: false,
@@ -5664,6 +5680,23 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
     }
   });
 
+  /** Reddit targeting resolution (#6108 row 4): the cutover and its own flag. */
+  it.each([
+    [{ cutover: true, resolution: true }, true],
+    [{ cutover: true, resolution: false }, false],
+    [{ cutover: false, resolution: true }, false],
+  ])('reports Reddit targeting resolution (%o) as %s', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) =>
+      flag === ServerFeatureFlag.CampaignServiceRedditTargetingResolution ? flags.resolution : flags.cutover
+    );
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+    try {
+      expect((await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1')).redditTargetingResolutionEnabled).toBe(expected);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
   /** Reddit targeting exclusions (#6108 row 3): the cutover and its own flag. */
   it.each([
     [{ cutover: true, exclusions: true }, true],
@@ -5875,6 +5908,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       redditConversionPixelEnabled: false,
       redditConversionEventEnabled: false,
       redditTargetingExclusionsEnabled: false,
+      redditTargetingResolutionEnabled: false,
       googleAssetUploadEnabled: false,
       metaCreativeEnabled: false,
       metaAssetUploadEnabled: false,

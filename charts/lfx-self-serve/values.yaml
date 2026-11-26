@@ -732,6 +732,17 @@ environment:
   LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_TARGETING_EXCLUSIONS:
     value:
 
+  # Reddit community and interest resolution (#6108 row 4, linuxfoundation/lfx-v2-campaign-service#573): reported to the
+  # Implement tab, whose row 4 screen (a follow-up) will offer the Reddit section's subreddits and interests for editing;
+  # campaign-service resolves them to Reddit's names and ids, refusing an unknown one before anything is created.
+  # Changes no request field.
+  #
+  # A CAPABILITY flag: REQUIRES campaign-service DEPLOYED with `REDDIT_TARGETING_RESOLUTION_ENABLED` on, and the create
+  # pipeline on. Off (the default), the lists stay the brief's, read-only. Order: set campaign-service's flag and pass its
+  # live probe, THEN this. Same accepted values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_TARGETING_RESOLUTION:
+    value:
+
   # Offers a stored-image LIBRARY in each Google creative image slot (Demand Gen, Performance Max
   # and Display): upload a PNG/JPEG into the brief's library (the same library REDDIT_ASSETS and
   # META_ASSETS upload into), or pick a stored image that fits the slot's aspect ratio and minimum
