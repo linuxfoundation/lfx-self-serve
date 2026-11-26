@@ -55,6 +55,12 @@ export class ComposerGuestsRedesignComponent extends ComposerGuestsComponent {
     () => this.form().get(this.showMeetingAttendeesFeature.key) as FormControl<boolean>
   );
 
+  public constructor() {
+    super();
+    // Keeps a directory pick's LFID on the row for its line; the create body still drops it.
+    this.quickAddForm.addControl('username', new FormControl<string | null>(null));
+  }
+
   protected onFilterChange(value: string): void {
     this.guestFilterForm.controls.query.setValue(value);
     if (!this.showFilter()) {

@@ -770,15 +770,15 @@ export const RESTRICTED_MEETING_FEATURE = {
   color: lfxColors.red[500],
 };
 
+/** Guests past this many get a filter over the redesigned composer's guest list. */
+export const COMPOSER_GUEST_FILTER_THRESHOLD = 6;
+
 /**
  * Show meeting attendees feature configuration
  * @description Feature toggle config for sharing the guest list with guests in LFX: the guest list
  * on the meeting card and meeting page, which the BFF withholds from non-organizers when this is off.
  * Calendar invites never list other guests, whatever this is set to.
  */
-/** Guests past this many get a filter over the redesigned composer's guest list. */
-export const COMPOSER_GUEST_FILTER_THRESHOLD = 6;
-
 export const SHOW_MEETING_ATTENDEES_FEATURE = {
   key: 'show_meeting_attendees',
   icon: 'fa-light fa-users',

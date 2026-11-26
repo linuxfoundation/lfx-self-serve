@@ -137,6 +137,16 @@ describe('ComposerGuestsRedesignComponent', () => {
     expect(el('composer-guest-add-self')).toBeNull();
   });
 
+  it('marks a directory pick as an LFX member', async () => {
+    const component = fixture.componentInstance;
+    component['quickAddForm'].patchValue({ email: 'grace@acme.example', first_name: 'Grace', last_name: 'Hopper', username: 'ghopper' });
+    component['onUserSelected']();
+    await render();
+
+    const [row] = formService.guests();
+    expect(text(`composer-guest-subline-${row.tempId}`)).toBe('grace@acme.example · LFX member');
+  });
+
   it('names the group a guest came through', async () => {
     formService.setGuests([guest({ type: 'committee', committee_name: 'TSC' })]);
     await render();
