@@ -9,6 +9,7 @@ import { FormControl, FormGroup } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import {
   CCLA_SIGN_COPY,
+  ORG_CLA_ACCESS_REFUSED_COPY,
   ORG_CLA_EASYCLA_ROLE_MISSING_COPY,
   ORG_CLA_EASYCLA_ROLE_MISSING_ERROR_CODE,
   ORG_CLA_SIGN_SELECTION_STATE,
@@ -20,7 +21,7 @@ import type { OrgClaGroup, OrgClaGroupList, OrgClaSignSelection } from '@lfx-one
 import { easyclaReturnOrgParam, orgClaOpenLabel } from '@lfx-one/shared/utils';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, distinctUntilChanged, filter, of, skip, switchMap, take, tap } from 'rxjs';
+import { catchError, combineLatest, distinctUntilChanged, filter, map, of, skip, startWith, Subject, switchMap, take, tap } from 'rxjs';
 
 import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
@@ -102,6 +103,9 @@ export class OrgEasyclaComponent {
   protected readonly fetchError = signal(false);
   protected readonly easyclaRoleMissing = signal(false);
   protected readonly easyclaRoleMissingCopy = ORG_CLA_EASYCLA_ROLE_MISSING_COPY;
+  protected readonly accessRefused = signal(false);
+  protected readonly accessRefusedCopy = ORG_CLA_ACCESS_REFUSED_COPY;
+  private readonly claReload$ = new Subject<void>();
 
   private readonly claLoadingState = signal(false);
   private readonly page = signal(0);
@@ -128,6 +132,7 @@ export class OrgEasyclaComponent {
     if (!this.hasCompany()) return 'Sign a corporate CLA — select a company first';
     if (this.signingOpen()) return 'Sign a corporate CLA — a signing request is already open';
     if (this.easyclaRoleMissing()) return ORG_CLA_EASYCLA_ROLE_MISSING_COPY.signClaAriaLabel;
+    if (this.accessRefused()) return ORG_CLA_ACCESS_REFUSED_COPY.signClaAriaLabel;
     if (this.fetchError()) return 'Sign a corporate CLA — this company’s agreements could not be loaded';
     if (!this.claListReady()) return 'Sign a corporate CLA — loading the agreements this company already holds';
     return 'Sign a corporate CLA';
@@ -308,6 +313,10 @@ export class OrgEasyclaComponent {
 
   protected changePage(delta: number): void {
     this.page.set(Math.min(Math.max(this.currentPage() + delta, 0), this.pageCount() - 1));
+  }
+
+  protected retryClaLoad(): void {
+    this.claReload$.next();
   }
 
   /**
@@ -511,12 +520,14 @@ export class OrgEasyclaComponent {
   private subscribeClaData(): void {
     if (!isPlatformBrowser(this.platformId)) return;
 
-    this.orgUid$
+    combineLatest([this.orgUid$, this.claReload$.pipe(startWith(undefined))])
       .pipe(
+        map(([uid]) => uid),
         tap(() => {
           this.claLoadingState.set(true);
           this.fetchError.set(false);
           this.easyclaRoleMissing.set(false);
+          this.accessRefused.set(false);
         }),
         switchMap((uid) =>
           this.claService.getClaGroups(uid).pipe(
@@ -528,9 +539,10 @@ export class OrgEasyclaComponent {
               // one of those is a claim about the company's legal position.
               console.error('Failed to load organization CLA groups:', error);
               this.fetchError.set(true);
-              this.easyclaRoleMissing.set(
-                error instanceof HttpErrorResponse && error.status === 403 && error.error?.code === ORG_CLA_EASYCLA_ROLE_MISSING_ERROR_CODE
-              );
+              const forbidden = error instanceof HttpErrorResponse && error.status === 403;
+              const roleMissing = forbidden && error.error?.code === ORG_CLA_EASYCLA_ROLE_MISSING_ERROR_CODE;
+              this.easyclaRoleMissing.set(roleMissing);
+              this.accessRefused.set(forbidden && !roleMissing);
               this.claLoadingState.set(false);
               return of(null);
             })

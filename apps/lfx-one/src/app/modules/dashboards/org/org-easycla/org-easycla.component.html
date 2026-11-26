@@ -96,6 +96,17 @@
           {{ easyclaRoleMissingCopy.supportTail }}
         </p>
       </lfx-empty-state>
+    } @else if (accessRefused()) {
+      <lfx-empty-state data-testid="org-easycla-access-refused-state" icon="fa-light fa-lock" [title]="accessRefusedCopy.title">
+        <p class="text-sm text-gray-500" data-testid="org-easycla-access-refused-description">{{ accessRefusedCopy.retryLead }}</p>
+        <lfx-button
+          [label]="accessRefusedCopy.retryLabel"
+          icon="fa-light fa-arrow-rotate-right"
+          [outlined]="true"
+          size="small"
+          (onClick)="retryClaLoad()"
+          data-testid="org-easycla-access-refused-retry" />
+      </lfx-empty-state>
     } @else if (fetchError()) {
       <!-- Never the "signed nothing" copy: a failed load and an empty list are different facts,
            and only one of them is a statement about the organization's legal position. -->

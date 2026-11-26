@@ -36,6 +36,11 @@ vi.mock('./valkey.service', () => ({
       if (key !== null && (!storable || storable(value))) cacheStore.set(key, value);
       return value;
     },
+    setJson: async (key: string, value: unknown) => {
+      cacheStore.set(key, value);
+      return true;
+    },
+    del: async (key: string | null) => (key === null ? false : cacheStore.delete(key)),
   },
 }));
 
@@ -288,6 +293,78 @@ describe('OrgClaManagerScopesService', () => {
     const second = await service.getCompanySfids(req());
 
     expect([...second]).toEqual([COMPANY_A]);
+  });
+
+  describe('refreshCompanySfids', () => {
+    const KEY = 'org-cla-manager-scopes:v1:contributor';
+
+    it('asks user-service again when the answer came from the cache, and re-caches the fresh list', async () => {
+      cacheStore.set(KEY, [COMPANY_B]);
+      gatewayFetch.mockResolvedValue(payload(scope('cla-manager', [PROJECT_1, COMPANY_A])));
+      const one = req();
+
+      expect([...(await service.getCompanySfids(one))]).toEqual([COMPANY_B]);
+      expect(gatewayFetch).not.toHaveBeenCalled();
+      const fresh = await service.refreshCompanySfids(one);
+
+      expect([...fresh]).toEqual([COMPANY_A]);
+      expect(gatewayFetch).toHaveBeenCalledTimes(2);
+      expect(cacheStore.get(KEY)).toEqual([COMPANY_A]);
+    });
+
+    it('makes later reads in the same request see the fresh answer', async () => {
+      cacheStore.set(KEY, [COMPANY_B]);
+      gatewayFetch.mockResolvedValue(payload(scope('cla-manager', [PROJECT_1, COMPANY_A])));
+      const one = req();
+
+      await service.getCompanySfids(one);
+      await service.refreshCompanySfids(one);
+
+      expect([...(await service.getCompanySfids(one))]).toEqual([COMPANY_A]);
+    });
+
+    it('drops the cached entry when user-service now answers nothing', async () => {
+      cacheStore.set(KEY, [COMPANY_B]);
+      gatewayFetch.mockResolvedValue(payload());
+      const one = req();
+
+      await service.getCompanySfids(one);
+      const fresh = await service.refreshCompanySfids(one);
+
+      expect(fresh.size).toBe(0);
+      expect(cacheStore.has(KEY)).toBe(false);
+    });
+
+    it('makes no second call when this request already asked user-service', async () => {
+      gatewayFetch.mockResolvedValue(payload(scope('cla-manager', [PROJECT_1, COMPANY_A])));
+      const one = req();
+
+      await service.getCompanySfids(one);
+      const fresh = await service.refreshCompanySfids(one);
+
+      expect([...fresh]).toEqual([COMPANY_A]);
+      expect(gatewayFetch).toHaveBeenCalledTimes(2);
+    });
+
+    it('throws when user-service fails, leaving the cached entry and the earlier answer in place', async () => {
+      cacheStore.set(KEY, [COMPANY_B]);
+      gatewayFetch.mockRejectedValue(new Error('timeout'));
+      const one = req();
+
+      await service.getCompanySfids(one);
+      await expect(service.refreshCompanySfids(one)).rejects.toThrow();
+
+      expect(cacheStore.get(KEY)).toEqual([COMPANY_B]);
+      expect([...(await service.getCompanySfids(one))]).toEqual([COMPANY_B]);
+    });
+
+    it('asks user-service when nothing was read earlier in the request', async () => {
+      cacheStore.set(KEY, [COMPANY_B]);
+      gatewayFetch.mockResolvedValue(payload(scope('cla-manager', [PROJECT_1, COMPANY_A])));
+
+      expect([...(await service.refreshCompanySfids(req()))]).toEqual([COMPANY_A]);
+      expect(gatewayFetch).toHaveBeenCalledTimes(2);
+    });
   });
 
   it('keys the cache by the effective user, so an impersonated answer is the target', async () => {

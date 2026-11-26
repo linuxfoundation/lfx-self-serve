@@ -76,5 +76,18 @@ export async function assertOrgLensClaRead(req: Request, orgUid: string, operati
   if (companySfids.has(orgUid)) {
     return 'cla-manager-scope';
   }
+
+  try {
+    companySfids = await claManagerScopes.refreshCompanySfids(req);
+  } catch (error) {
+    logger.warning(req, operation, 'Uncached CLA manager scopes re-check failed; keeping the cached answer', {
+      org_uid: orgUid,
+      err: error instanceof Error ? error.message : String(error),
+    });
+    throw readGateError;
+  }
+  if (companySfids.has(orgUid)) {
+    return 'cla-manager-scope';
+  }
   throw readGateError;
 }

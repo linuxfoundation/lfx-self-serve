@@ -1004,15 +1004,58 @@ describe('OrgEasyclaComponent', () => {
       consoleError.mockRestore();
     });
 
-    it('keeps the load failure for a 403 without the missing-role code', async () => {
-      getClaGroups.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 403, error: { error: 'Forbidden', code: 'FORBIDDEN' } })));
-      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    describe('access refused', () => {
+      const forbidden = (): HttpErrorResponse => new HttpErrorResponse({ status: 403, error: { error: 'Forbidden', code: 'FORBIDDEN' } });
 
-      const fixture = await render();
+      it('shows the refusal with a retry line for a 403 without the missing-role code', async () => {
+        getClaGroups.mockReturnValue(throwError(() => forbidden()));
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
-      expect(byTestId(fixture, 'org-easycla-error-state')).toBeTruthy();
-      expect(byTestId(fixture, 'org-easycla-role-missing-state')).toBeNull();
-      consoleError.mockRestore();
+        const fixture = await render();
+        const state = byTestId(fixture, 'org-easycla-access-refused-state');
+
+        expect(state?.querySelector('h3')?.textContent?.trim()).toBe("You don't have access to this organization's CLAs");
+        expect(byTestId(fixture, 'org-easycla-access-refused-description')?.textContent?.trim()).toBe(
+          'Just added as a CLA manager? Access can take up to a minute.'
+        );
+        expect(byTestId(fixture, 'org-easycla-access-refused-retry')?.textContent?.trim()).toBe('Try again');
+        expect(byTestId(fixture, 'org-easycla-error-state')).toBeNull();
+        expect(byTestId(fixture, 'org-easycla-role-missing-state')).toBeNull();
+        expect(byTestId(fixture, 'org-easycla-toolbar')).toBeNull();
+        consoleError.mockRestore();
+      });
+
+      it('asks again on Try again, and shows the list once access is granted', async () => {
+        getClaGroups.mockReturnValueOnce(throwError(() => forbidden())).mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup()] }));
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const fixture = await render();
+
+        byTestId(fixture, 'org-easycla-access-refused-retry')?.querySelector('button')?.click();
+        fixture.detectChanges();
+        await fixture.whenStable();
+        fixture.detectChanges();
+
+        expect(getClaGroups).toHaveBeenCalledTimes(2);
+        expect(getClaGroups).toHaveBeenLastCalledWith(SELECTED_ACCOUNT.uid);
+        expect(byTestId(fixture, 'org-easycla-access-refused-state')).toBeNull();
+        expect(byTestId(fixture, 'org-easycla-grid')).toBeTruthy();
+        consoleError.mockRestore();
+      });
+
+      it('keeps the refusal when Try again is refused again', async () => {
+        getClaGroups.mockReturnValue(throwError(() => forbidden()));
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const fixture = await render();
+
+        byTestId(fixture, 'org-easycla-access-refused-retry')?.querySelector('button')?.click();
+        fixture.detectChanges();
+        await fixture.whenStable();
+        fixture.detectChanges();
+
+        expect(getClaGroups).toHaveBeenCalledTimes(2);
+        expect(byTestId(fixture, 'org-easycla-access-refused-state')).toBeTruthy();
+        consoleError.mockRestore();
+      });
     });
   });
 
