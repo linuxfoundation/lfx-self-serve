@@ -1234,7 +1234,7 @@ export class ProjectController {
           discoverable: false,
         });
         res.setHeader('Cache-Control', 'public, max-age=300');
-        res.json({ meetings: [], total: 0, project: { uid: projectUid, name: '' } } satisfies PublicProjectMeetingsResponse);
+        res.json({ meetings: [], total: 0, project: { uid: projectUid, name: '', logo_url: null } } satisfies PublicProjectMeetingsResponse);
         return;
       }
 
@@ -1257,7 +1257,11 @@ export class ProjectController {
           rejected_non_public_committee: true,
         });
         res.setHeader('Cache-Control', 'public, max-age=300');
-        res.json({ meetings: [], total: 0, project: { uid: projectUid, name: project.name } } satisfies PublicProjectMeetingsResponse);
+        res.json({
+          meetings: [],
+          total: 0,
+          project: { uid: projectUid, name: project.name, logo_url: project.logo_url || null },
+        } satisfies PublicProjectMeetingsResponse);
         return;
       }
 
@@ -1266,13 +1270,16 @@ export class ProjectController {
       // The projection is an allowlist, not a strip: this is an unauthenticated bulk-export endpoint, so
       // credentials (password/passcode/host_key/zoom_config) and organizer PII (created_by/owner/organizers)
       // must stay out of the payload even as new Meeting fields land upstream (LFXV2-2802).
-      const meetings: PublicCalendarMeeting[] = [...upcoming, ...past]
-        .filter((m) => m.visibility === MeetingVisibility.PUBLIC)
-        .map((m) => this.toPublicCalendarMeeting(m, publicCommitteeUids));
+      const isPublic = (m: Meeting | PastMeeting): boolean => m.visibility === MeetingVisibility.PUBLIC;
+      // Past rows are one per occurrence, so they skip the series agenda rather than repeat it per row.
+      const meetings: PublicCalendarMeeting[] = [
+        ...upcoming.filter(isPublic).map((m) => this.toPublicCalendarMeeting(m, publicCommitteeUids, true)),
+        ...past.filter(isPublic).map((m) => this.toPublicCalendarMeeting(m, publicCommitteeUids, false)),
+      ];
       const response: PublicProjectMeetingsResponse = {
         meetings,
         total: meetings.length,
-        project: { uid: projectUid, name: project.name },
+        project: { uid: projectUid, name: project.name, logo_url: project.logo_url || null },
       };
 
       logger.success(req, 'get_project_meetings', startTime, {
@@ -1457,14 +1464,31 @@ export class ProjectController {
    * by `GET /public/api/projects/:id/meetings`. Field-by-field allowlist, deliberately not a spread with
    * deletes — anything not named here can never reach an anonymous caller.
    */
-  private toPublicCalendarMeeting(meeting: Meeting | PastMeeting, publicCommitteeUids: ReadonlySet<string>): PublicCalendarMeeting {
+  private toPublicCalendarMeeting(meeting: Meeting | PastMeeting, publicCommitteeUids: ReadonlySet<string>, withDescription: boolean): PublicCalendarMeeting {
     const pastRow = meeting as Partial<PastMeeting>;
+    const recurrence = meeting.recurrence;
     return {
       id: meeting.id,
       title: meeting.title,
       start_time: meeting.start_time,
       duration: meeting.duration,
       timezone: meeting.timezone,
+      meeting_type: meeting.meeting_type ?? null,
+      restricted: !!meeting.restricted,
+      recurrence: recurrence
+        ? {
+            type: recurrence.type,
+            repeat_interval: recurrence.repeat_interval,
+            weekly_days: recurrence.weekly_days,
+            monthly_day: recurrence.monthly_day,
+            monthly_week: recurrence.monthly_week,
+            monthly_week_day: recurrence.monthly_week_day,
+            end_date_time: recurrence.end_date_time,
+            end_times: recurrence.end_times,
+          }
+        : null,
+      // Same rule as GET /public/api/meetings/:id: an invite-only agenda is for invited guests only.
+      ...(withDescription && !meeting.restricted && meeting.description ? { description: meeting.description } : {}),
       occurrences: (meeting.occurrences ?? []).map((occurrence) => ({
         occurrence_id: occurrence.occurrence_id,
         start_time: occurrence.start_time,

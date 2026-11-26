@@ -99,6 +99,9 @@ describe('publicMeetingToCalendarEvents', () => {
       start_time: new Date(Date.now() + 60 * 60_000).toISOString(),
       duration: 60,
       timezone: 'America/New_York',
+      meeting_type: null,
+      restricted: false,
+      recurrence: null,
       ...over,
     };
   }

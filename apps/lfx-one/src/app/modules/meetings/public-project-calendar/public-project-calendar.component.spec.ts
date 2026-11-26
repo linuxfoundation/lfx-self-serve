@@ -33,6 +33,9 @@ function meeting(over: Partial<PublicCalendarMeeting> = {}): PublicCalendarMeeti
     start_time: '2999-09-01T15:00:00Z',
     duration: 60,
     timezone: 'America/New_York',
+    meeting_type: null,
+    restricted: false,
+    recurrence: null,
     ...over,
   };
 }
@@ -52,7 +55,7 @@ function response(over: Partial<PublicProjectMeetingsResponse> = {}): PublicProj
   return {
     meetings: [meeting()],
     total: 1,
-    project: { uid: 'p1', name: 'Kubernetes' },
+    project: { uid: 'p1', name: 'Kubernetes', logo_url: null },
     ...over,
   };
 }
