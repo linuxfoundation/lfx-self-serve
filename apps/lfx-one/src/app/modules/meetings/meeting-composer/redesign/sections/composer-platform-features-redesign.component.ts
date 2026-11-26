@@ -62,7 +62,7 @@ export class ComposerPlatformFeaturesRedesignComponent extends ComposerPlatformF
   private initReminderError(): Signal<string> {
     return computed(() => {
       if (this.reminderHoursRequiredError() || this.reminderHoursPatternError() || this.reminderHoursMinError() || this.reminderHoursMaxError()) {
-        return `Set the reminder between ${this.minReminderHours} and ${this.maxReminderHours} hours before the meeting.`;
+        return `Set the reminder to a whole number of hours between ${this.minReminderHours} and ${this.maxReminderHours}.`;
       }
       return this.reminderMinutesError() ? `Minutes must be a whole number between ${this.minReminderMinutes} and ${this.maxReminderMinutes}.` : '';
     });

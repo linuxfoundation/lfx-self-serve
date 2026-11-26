@@ -91,6 +91,21 @@ describe('ComposerDateScheduleRedesignComponent', () => {
       expect(slots()).toHaveLength(upcoming || MEETING_START_TIME_SLOTS.length);
     });
 
+    it('lists every slot late in the day, even with a time stored', async () => {
+      await render(true);
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date(2030, 9, 8, 23, 30));
+      formService.form().get('timezone')?.setValue('');
+      formService
+        .form()
+        .get('startDate')
+        ?.setValue(new Date(2030, 9, 8));
+      formService.form().get('startTime')?.setValue('11:30 PM');
+
+      expect(slots()).toHaveLength(96);
+      vi.useRealTimers();
+    });
+
     it('keeps a stored off-grid time selectable, in order', async () => {
       await render(true);
       formService.form().get('startDate')?.setValue(futureDate());
