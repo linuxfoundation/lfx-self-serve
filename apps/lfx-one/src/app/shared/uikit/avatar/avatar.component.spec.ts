@@ -94,6 +94,7 @@ describe('UiAvatarComponent', () => {
 
       const img = host.querySelector('[data-testid="ui-avatar-image"]') as HTMLElement;
       expect(img.className).toContain('object-contain');
+      expect(img.className).toContain('inset-[4px]');
       expect(img.className).not.toContain('object-cover');
       expect(img.className).not.toContain('rounded-[inherit]');
       expect(img.getAttribute('alt')).toBe('');
@@ -179,6 +180,10 @@ describe('UiAvatarComponent', () => {
     expect(initials()).toBeUndefined();
     expect(host.className).toContain('bg-ui-neutral-100');
     expect(host.className).not.toContain('bg-ui-accent-200');
+    // Laid over the box rather than in its grid, so a tall photo can't stretch the circle (#6290).
+    expect(img?.className).toContain('absolute');
+    expect(img?.className).toContain('inset-0');
+    expect(img?.className).toContain('object-cover');
   });
 
   it('falls back to the initials when the photo fails to load', async () => {
