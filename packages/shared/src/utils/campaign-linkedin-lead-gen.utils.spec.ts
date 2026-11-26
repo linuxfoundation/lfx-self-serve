@@ -45,6 +45,8 @@ describe('linkedInLeadGenRefusal', () => {
     [{ ...leadGen, leadGenForm: 'urn:li:adForm:abc' }, true, 'linkedInConfig.leadGenForm'],
     [{ ...leadGen, leadGenCallToAction: 'register' }, true, 'linkedInConfig.leadGenCallToAction'],
     [{ ...leadGen, format: 'text' }, true, 'linkedInConfig.format'],
+    // campaign-service's `ValidateLeadGen`: a boosted post's creative carries no form (#673).
+    [{ ...leadGen, format: 'boost' }, true, 'linkedInConfig.format'],
     [{ ...leadGen, offsiteDeliveryEnabled: true }, true, 'linkedInConfig.offsiteDeliveryEnabled'],
     [{ ...leadGen, variants: [{}, { callToAction: 'LEARN_MORE' }] }, true, 'linkedInConfig.variants[1].callToAction'],
   ])('refuses %j (enabled: %s), naming %s', (raw, enabled, field) => {
