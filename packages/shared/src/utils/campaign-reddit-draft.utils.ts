@@ -20,6 +20,7 @@ import type {
 import { redditConversionEventFromDraft } from './campaign-reddit-conversion-event.utils';
 import { redditCustomAudienceIdsFromDraft } from './campaign-reddit-custom-audiences.utils';
 import { redditTargetingExclusionsFromDraft } from './campaign-reddit-targeting-exclusions.utils';
+import { redditTargetingListFromDraft } from './campaign-reddit-targeting-lists.utils';
 
 /**
  * The Implement tab's Reddit draft rules (#5980): what the draft carries, what a restore sets, what a brief switch resets
@@ -52,6 +53,12 @@ export function redditDraftFields(state: RedditDraftState): RedditDraftSnapshot 
     redditExcludedCustomAudienceIds: [...state.customAudiences.excludedCustomAudienceIds],
     redditExcludedSubreddits: [...state.targetingExclusions.excludedSubreddits],
     redditExcludedGeoTargets: [...state.targetingExclusions.excludedGeoTargets],
+    ...(state.editedTargetingLists
+      ? {
+          redditEditedSubreddits: [...state.editedTargetingLists.subreddits],
+          redditEditedInterests: [...state.editedTargetingLists.interests],
+        }
+      : {}),
   };
 }
 
@@ -62,7 +69,8 @@ export function redditDraftFields(state: RedditDraftState): RedditDraftSnapshot 
  * uploaded image whole, keyed on its id. A failed upload only with the brief it failed for; a running one is resumed.
  * The conversion event only when it is one Reddit takes; any other leaves the default standing. The custom audience lists
  * when either is an array, keeping only its strings (a list the create would refuse stays visible, and holds Create); the
- * targeting exclusion lists the same way.
+ * targeting exclusion lists the same way. The edited subreddits and interests (#6108 row 4) when either is an array, to
+ * set over the brief's seed; the draft carries them only once edited.
  */
 export function redditDraftRestore(draft: RedditDraftSnapshot): RedditDraftRestore {
   const restore: RedditDraftRestore = {};
@@ -93,6 +101,11 @@ export function redditDraftRestore(draft: RedditDraftSnapshot): RedditDraftResto
   const excludedGeoTargets = redditTargetingExclusionsFromDraft(draft.redditExcludedGeoTargets);
   if (excludedSubreddits !== undefined || excludedGeoTargets !== undefined) {
     restore.targetingExclusions = { excludedSubreddits: excludedSubreddits ?? [], excludedGeoTargets: excludedGeoTargets ?? [] };
+  }
+  const subreddits = redditTargetingListFromDraft(draft.redditEditedSubreddits);
+  const interests = redditTargetingListFromDraft(draft.redditEditedInterests);
+  if (subreddits !== undefined || interests !== undefined) {
+    restore.editedTargetingLists = { subreddits: subreddits ?? [], interests: interests ?? [] };
   }
   return restore;
 }

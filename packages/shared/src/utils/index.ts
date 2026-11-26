@@ -161,6 +161,7 @@ export * from './campaign-linkedin.utils';
 export * from './campaign-reddit-conversion-event.utils';
 export * from './campaign-reddit-custom-audiences.utils';
 export * from './campaign-reddit-targeting-exclusions.utils';
+export * from './campaign-reddit-targeting-lists.utils';
 export * from './campaign-reddit-draft.utils';
 export * from './campaign-reddit-form.utils';
 export * from './campaign-reddit-image.utils';

@@ -708,6 +708,38 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     expect(f.nativeElement.querySelector('[data-testid="implementation-reddit-targeting-exclusions-block-restricted"]')).not.toBeNull();
   });
 
+  // Editable Reddit subreddits and interests (#6108 row 4): the rules are in `campaign-reddit-targeting-lists.utils.spec.ts`; these test the wiring.
+  async function mountWithResolution(
+    draft: CampaignImplementationDraft | null,
+    enabled: boolean | null
+  ): Promise<{ fixture: ComponentFixture<ImplementationTabComponent>; latest: () => CampaignImplementationDraft | null }> {
+    const mounted = await mount(draft);
+    mounted.fixture.componentRef.setInput('redditTargetingResolutionEnabled', enabled);
+    at(mounted.fixture).selectedPlatforms.set(['reddit-ads']);
+    mounted.fixture.detectChanges();
+    await mounted.fixture.whenStable();
+    return mounted;
+  }
+
+  it('carries edited subreddits and interests through a tab round-trip and into the request', async () => {
+    const edited = { subreddits: ['synth_devops'], interests: ['technology_v3'] };
+    const first = await mountWithResolution(null, true);
+    first.fixture.debugElement.query(By.css('lfx-reddit-targeting-lists')).triggerEventHandler('listsChange', edited);
+    expect(first.latest()).toMatchObject({ redditEditedSubreddits: ['synth_devops'], redditEditedInterests: ['technology_v3'] });
+    const draft = first.latest();
+    first.fixture.destroy();
+
+    const second = await mountWithResolution(draft, true);
+    expect(submitReddit(second.fixture)).toMatchObject(edited);
+  });
+
+  it('keeps the lists read-only, and out of the draft, without the capability', async () => {
+    const { fixture, latest } = await mountWithResolution(null, false);
+
+    expect(fixture.nativeElement.querySelector('lfx-reddit-targeting-lists')).toBeNull();
+    expect(latest()).not.toHaveProperty('redditEditedSubreddits');
+  });
+
   // === The other platforms on the same live brief switch (#4624) ===
 
   /** The next brief: another event, same platforms. `strip` removes copy blocks the conditional resets key on. */

@@ -92,6 +92,7 @@ import type {
   RedditCustomAudiencesDraft,
   RedditTargetingExclusionListView,
   RedditTargetingExclusionsDraft,
+  RedditTargetingListView,
   RedditObjective,
   RedditObjectiveParams,
   RedditVideoGoal,
@@ -4845,6 +4846,17 @@ export const REDDIT_SUBREDDIT_NAME_PATTERN = /^[A-Za-z0-9_]{2,21}$/;
 export const REDDIT_TARGETING_EXCLUSION_LISTS: readonly RedditTargetingExclusionListView[] = [
   { key: 'excludedSubreddits', label: 'Exclude communities', placeholder: 'Enter a subreddit, e.g. r/politics', emptyText: 'Press Enter to add it' },
   { key: 'excludedGeoTargets', label: 'Exclude countries', placeholder: 'Search countries or enter a country code', emptyText: 'No country matches' },
+];
+/**
+ * Reddit's targeting list caps while campaign-service resolves them (#6108 row 4): `MaxResolvedSubreddits` and
+ * `MaxResolvedInterests` (lfx-v2-campaign-service `internal/platform/reddit/targeting_resolution.go`, #573).
+ */
+export const REDDIT_TARGETING_LIST_LIMITS = { subreddits: 100, interests: 200 } as const;
+
+/** The Reddit targeting lists the Implement tab can edit, in order (#6108 row 4). */
+export const REDDIT_TARGETING_LISTS: readonly RedditTargetingListView[] = [
+  { key: 'subreddits', label: 'Subreddits', placeholder: 'Enter a subreddit, e.g. r/kubernetes' },
+  { key: 'interests', label: 'Interests', placeholder: 'Enter a Reddit interest name or id' },
 ];
 /** The Reddit targeting exclusions a fresh form starts from, which sends nothing. */
 export const DEFAULT_REDDIT_TARGETING_EXCLUSIONS: Readonly<RedditTargetingExclusionsDraft> = { excludedSubreddits: [], excludedGeoTargets: [] };
