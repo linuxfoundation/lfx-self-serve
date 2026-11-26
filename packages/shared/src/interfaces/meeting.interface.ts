@@ -2477,8 +2477,8 @@ export interface MeetingComposerScopeNote {
 /** What the redesigned composer's delete dialog shows about the meeting it deletes. */
 export interface MeetingComposerDeleteDialogData {
   meeting: Meeting;
-  /** Guests the delete notifies. */
-  guestCount: number;
+  /** Registered guests the delete notifies, as saved; `null` when the meeting carries no count. */
+  guestCount: number | null;
 }
 
 /** Project the redesigned composer names above its title. */

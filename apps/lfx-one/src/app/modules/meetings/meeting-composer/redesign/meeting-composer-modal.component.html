@@ -97,20 +97,23 @@
 
               @switch (composer.activeSection()) {
                 @case ('details-access') {
-                  <lfx-composer-details-access
+                  <lfx-composer-details-access-redesign
                     [form]="formService.form()"
                     [showTypeSelect]="!isOccurrenceEdit()"
                     [showOrganizer]="!isOccurrenceEdit()"
                     [showAccess]="!isOccurrenceEdit()" />
                 }
                 @case ('date-schedule') {
-                  <lfx-composer-date-schedule [form]="formService.form()" [showEarlyJoin]="!isOccurrenceEdit()" [showSeriesSchedule]="!isOccurrenceEdit()" />
+                  <lfx-composer-date-schedule-redesign
+                    [form]="formService.form()"
+                    [showEarlyJoin]="!isOccurrenceEdit()"
+                    [showSeriesSchedule]="!isOccurrenceEdit()" />
                 }
                 @case ('platform-features') {
                   <lfx-composer-platform-features [form]="formService.form()" (goToTitleSection)="goToTitleSection.emit()" />
                 }
                 @case ('guests') {
-                  <lfx-composer-guests class="flex flex-1 flex-col" [form]="formService.form()" />
+                  <lfx-composer-guests-redesign class="flex flex-1 flex-col" [form]="formService.form()" />
                 }
                 @case ('agenda-resources') {
                   <lfx-composer-agenda-resources [form]="formService.form()" [showResources]="!isOccurrenceEdit()" />

@@ -147,7 +147,7 @@
                 icon="fa-light fa-xmark"
                 iconOnly
                 [ariaLabel]="'Remove ' + row.name"
-                (click)="removeCommittee(row.uid)"
+                (click)="onRemoveCommittee(row.uid, $index, $event)"
                 [attr.data-testid]="'meeting-committee-chip-remove-' + row.uid" />
             }
           </li>
