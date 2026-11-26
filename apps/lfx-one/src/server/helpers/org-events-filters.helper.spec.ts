@@ -70,20 +70,20 @@ describe('parseOrgEventsFilters', () => {
 
 describe('SQL fragments', () => {
   it('derives the ORG_EVENTS count columns from the participation', () => {
-    expect(orgEventsCountColumn('registered')).toBe('REGISTERED_COUNT_VERIFIED');
-    expect(orgEventsCountColumn('attended')).toBe('ATTENDED_COUNT_VERIFIED');
-    expect(orgEventsCountColumn('all')).toBe('ALL_COUNT_VERIFIED');
-    expect(orgEventsFootprintColumn()).toBe('HAS_FOOTPRINT_VERIFIED');
+    expect(orgEventsCountColumn('registered')).toBe('REGISTERED_COUNT_COMPANY_EMAIL');
+    expect(orgEventsCountColumn('attended')).toBe('ATTENDED_COUNT_COMPANY_EMAIL');
+    expect(orgEventsCountColumn('all')).toBe('ALL_COUNT_COMPANY_EMAIL');
+    expect(orgEventsFootprintColumn()).toBe('HAS_FOOTPRINT_COMPANY_EMAIL');
   });
 
   it('builds the attendee predicate as the one dbt conjunction flag of the participation', () => {
-    expect(orgEventsAttendeePredicate('registered')).toBe('IS_COUNTED_REGISTERED_VERIFIED = TRUE');
-    expect(orgEventsAttendeePredicate('attended')).toBe('IS_COUNTED_ATTENDED_VERIFIED = TRUE');
-    expect(orgEventsAttendeePredicate('all')).toBe('IS_COUNTED_ALL_VERIFIED = TRUE');
+    expect(orgEventsAttendeePredicate('registered')).toBe('IS_COUNTED_REGISTERED_COMPANY_EMAIL = TRUE');
+    expect(orgEventsAttendeePredicate('attended')).toBe('IS_COUNTED_ATTENDED_COMPANY_EMAIL = TRUE');
+    expect(orgEventsAttendeePredicate('all')).toBe('IS_COUNTED_ALL_COMPANY_EMAIL = TRUE');
   });
 
   it('builds the speaker predicate as the one dbt conjunction flag', () => {
-    expect(orgEventsSpeakerPredicate()).toBe('IS_COUNTED_SPEAKER_VERIFIED = TRUE');
+    expect(orgEventsSpeakerPredicate()).toBe('IS_COUNTED_SPEAKER_COMPANY_EMAIL = TRUE');
   });
 
   it('windows a bounded range inline and leaves all time open', () => {

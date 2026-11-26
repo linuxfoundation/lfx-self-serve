@@ -124,9 +124,9 @@ export class OrgInvolvementService {
   public async getEventAttendanceMonthly(accountId: string): Promise<OrgInvolvementEventAttendanceMonthlyResponse> {
     return withOrgCache(
       accountId,
-      // `v5` (lfx-self-serve#5315): the response no longer carries `servedAttribution` (the Overview is always Employee match);
-      // a `v4` entry holds the old shape.
-      'events:v5',
+      // `v6` (lfx-self-serve#5587): counts only registrations and speaker records made with a company email, so a `v5` entry
+      // (Employee match: company email OR roster user) must miss. (`v5`, lfx-self-serve#5315: no `servedAttribution` in the response.)
+      'events:v6',
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       () => this.fetchEventAttendanceMonthly(accountId),
       OrgInvolvementService.hasAccountId
@@ -299,8 +299,8 @@ export class OrgInvolvementService {
   }
 
   /**
-   * Overview Event Attendees / Event Speakers: pinned to the defaults (Employee match, registered or attended, 2 years). dbt
-   * computes every number; this reads the default attribution's columns (`ATTENDEES_ALL_VERIFIED` for attendees: people who
+   * Overview Event Attendees / Event Speakers: pinned to the defaults (company-email registrations and speaker records, registered or attended, 2 years). dbt
+   * computes every number; this reads the default attribution's columns (`ATTENDEES_ALL_COMPANY_EMAIL` for attendees: people who
    * registered or attended). The headline is the distinct-people total, not the sum of the monthly points.
    */
   private async fetchEventAttendanceMonthly(accountId: string): Promise<OrgInvolvementEventAttendanceMonthlyResponse> {
@@ -334,10 +334,10 @@ export class OrgInvolvementService {
     return {
       accountId: firstRow.ACCOUNT_ID,
       accountName: firstRow.ACCOUNT_NAME,
-      totalAttended: firstRow.TOTAL_ATTENDEES_ALL_VERIFIED || 0,
-      totalSpeakers: firstRow.TOTAL_SPEAKERS_VERIFIED || 0,
-      attendeesMonthlyData: result.rows.map((row) => row.ATTENDEES_ALL_VERIFIED || 0),
-      speakersMonthlyData: result.rows.map((row) => row.SPEAKERS_VERIFIED || 0),
+      totalAttended: firstRow.TOTAL_ATTENDEES_ALL_COMPANY_EMAIL || 0,
+      totalSpeakers: firstRow.TOTAL_SPEAKERS_COMPANY_EMAIL || 0,
+      attendeesMonthlyData: result.rows.map((row) => row.ATTENDEES_ALL_COMPANY_EMAIL || 0),
+      speakersMonthlyData: result.rows.map((row) => row.SPEAKERS_COMPANY_EMAIL || 0),
       monthlyLabels: result.rows.map((row) => formatMonthLabel(row.MONTH_START_DATE)),
     };
   }

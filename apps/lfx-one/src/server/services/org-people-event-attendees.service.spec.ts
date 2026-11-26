@@ -64,7 +64,7 @@ let service: OrgPeopleEventAttendeesService;
 
 /** The cache key of the compact read for a pick. */
 function compactKey(pick: Pick<OrgEventsFilters, 'range' | 'participation'> = DEFAULT_PICK): string {
-  return buildOrgCacheKey(ACCOUNT, `people-event-attendees:v7:${pick.range}:${pick.participation}`)!;
+  return buildOrgCacheKey(ACCOUNT, `people-event-attendees:v8:${pick.range}:${pick.participation}`)!;
 }
 
 /**
@@ -224,7 +224,7 @@ describe('OrgPeopleEventAttendeesService response', () => {
     await service.getEventAttendees(ACCOUNT, { range: '90d', participation: 'attended' });
 
     const summaryCall = execute.mock.calls.find(([query]) => (query as string).includes('ORG_EVENT_PARTICIPATION_SUMMARY'))!;
-    expect(summaryCall[1]).toEqual([ACCOUNT, '90d', 'verified', 'attended']);
+    expect(summaryCall[1]).toEqual([ACCOUNT, '90d', 'company_email', 'attended']);
     for (const [sql, binds] of execute.mock.calls as [string, string[]][]) {
       expect(sql.match(/\?/g)?.length ?? 0).toBe(binds.length);
     }
@@ -434,17 +434,17 @@ function dayOffset(days: number): string {
 }
 
 /**
- * The three row-level conjunction flags dbt computes for Employee match: (registered | attended | registered or attended).
- * Employee match is a company email or a roster LF account.
+ * The three row-level conjunction flags dbt computes for company-email attribution: (registered | attended | registered or attended).
+ * A registration counts only when its own email is a company address; a roster LF account never qualifies it (lfx-self-serve#5584).
  */
 function countsFlags(fixture: { companyEmail?: boolean; roster?: boolean; registered?: boolean; attended?: boolean }): Record<string, number> {
   const registered = fixture.registered !== false;
   const attended = fixture.attended === true;
-  const verified = fixture.companyEmail !== false || fixture.roster === true;
+  const verified = fixture.companyEmail !== false;
   return {
-    IS_COUNTED_REGISTERED_VERIFIED: registered && verified ? 1 : 0,
-    IS_COUNTED_ATTENDED_VERIFIED: attended && verified ? 1 : 0,
-    IS_COUNTED_ALL_VERIFIED: (registered || attended) && verified ? 1 : 0,
+    IS_COUNTED_REGISTERED_COMPANY_EMAIL: registered && verified ? 1 : 0,
+    IS_COUNTED_ATTENDED_COMPANY_EMAIL: attended && verified ? 1 : 0,
+    IS_COUNTED_ALL_COMPANY_EMAIL: (registered || attended) && verified ? 1 : 0,
   };
 }
 
@@ -461,7 +461,7 @@ interface ParticipationFixture {
   attended?: boolean;
   /** The legacy `IS_LISTABLE` flag dbt keeps for the previous release; the read must ignore it. */
   listable?: boolean;
-  /** The row's speaker flag: an ACCEPTED talk credited with an Employee match. */
+  /** The row's speaker flag: an ACCEPTED talk whose own speaker record carries a company email. */
   speaker?: { verified?: boolean };
   account?: string;
 }
@@ -493,7 +493,7 @@ describe('OrgPeopleEventAttendeesService predicates (SQLite)', () => {
       FOUNDATION_ID: fixture.foundationId ?? 'foundation-one',
       FOUNDATION_NAME: fixture.foundationName ?? (fixture.foundationId === 'foundation-two' ? 'Foundation Two' : 'Foundation One'),
       ...countsFlags(fixture),
-      IS_COUNTED_SPEAKER_VERIFIED: speakerVerified ? 1 : 0,
+      IS_COUNTED_SPEAKER_COMPANY_EMAIL: speakerVerified ? 1 : 0,
       IS_LISTABLE: fixture.listable === false ? 0 : 1,
     };
     const columns = Object.keys(record);
@@ -511,8 +511,8 @@ describe('OrgPeopleEventAttendeesService predicates (SQLite)', () => {
         ACCOUNT_ID TEXT, EVENT_ID TEXT, PARTICIPANT_REF INTEGER, PERSON_KEY TEXT, DISPLAY_NAME TEXT, JOB_TITLE TEXT,
         EVENT_NAME TEXT, EVENT_LOCATION TEXT, EVENT_CITY TEXT, EVENT_COUNTRY TEXT, EVENT_URL TEXT,
         EVENT_START_DATE TEXT, EVENT_END_DATE TEXT, EVENT_DATE TEXT, FOUNDATION_ID TEXT, FOUNDATION_NAME TEXT,
-        IS_COUNTED_REGISTERED_VERIFIED INTEGER, IS_COUNTED_ATTENDED_VERIFIED INTEGER, IS_COUNTED_ALL_VERIFIED INTEGER,
-        IS_COUNTED_SPEAKER_VERIFIED INTEGER, IS_LISTABLE INTEGER
+        IS_COUNTED_REGISTERED_COMPANY_EMAIL INTEGER, IS_COUNTED_ATTENDED_COMPANY_EMAIL INTEGER, IS_COUNTED_ALL_COMPANY_EMAIL INTEGER,
+        IS_COUNTED_SPEAKER_COMPANY_EMAIL INTEGER, IS_LISTABLE INTEGER
       )`
     );
     database.exec(
@@ -598,17 +598,17 @@ describe('OrgPeopleEventAttendeesService predicates (SQLite)', () => {
 
   it('lists everyone the selection credits, whatever the legacy listable flag says', async () => {
     addRow({ ref: 1, days: -5 });
-    addRow({ ref: 2, days: -5, name: 'Roster Registrant', roster: true, listable: false });
+    addRow({ ref: 2, days: -5, name: 'Company Registrant', listable: false });
 
     const response = await read();
 
     expect(response.details.map((row) => [row.participantRef, row.displayName])).toEqual([
       [1, 'Person 1'],
-      [2, 'Roster Registrant'],
+      [2, 'Company Registrant'],
     ]);
   });
 
-  it('leaves out people who are not an Employee match', async () => {
+  it('leaves out a registrant whose registration email is personal, even with an LF account on the roster (lfx-self-serve#5584)', async () => {
     addRow({ ref: 1, days: -5 });
     addRow({ ref: 2, days: -5, companyEmail: false, roster: true });
     addRow({ ref: 3, days: -5, companyEmail: false });
@@ -616,8 +616,52 @@ describe('OrgPeopleEventAttendeesService predicates (SQLite)', () => {
 
     const response = await read();
 
-    expect(response.details.map((row) => row.participantRef).sort((a, b) => a - b)).toEqual([1, 2, 4]);
+    expect(response.details.map((row) => row.participantRef).sort((a, b) => a - b)).toEqual([1, 4]);
     expect(response.details.filter((row) => row.isSpeaker).map((row) => row.participantRef)).toEqual([4]);
+  });
+
+  it('lists a registrant who used both a personal and a company address once, from the company-email registration', async () => {
+    // dbt collapses the person into one participant row whose counted flags come from the company-email registration.
+    addRow({ ref: 1, days: -5, name: 'Both Addresses' });
+
+    const response = await read();
+
+    expect(response.details.filter((row) => row.displayName === 'Both Addresses')).toHaveLength(1);
+  });
+
+  it('does not show a speaker whose own speaker record is a personal email, and gives no row for a personal-only speaker', async () => {
+    addRow({ ref: 1, days: -5, companyEmail: false, registered: false, speaker: { verified: false } });
+    addRow({ ref: 2, days: -5, speaker: { verified: true } });
+
+    const response = await read();
+
+    expect(response.details.filter((row) => row.isSpeaker).map((row) => row.participantRef)).toEqual([2]);
+    expect(response.details.map((row) => row.participantRef)).not.toContain(1);
+  });
+
+  it('shows the normal empty table, with zero counts and no fallback to another attribution, for an account with no company-email data', async () => {
+    addRow({ ref: 1, days: -5, companyEmail: false, account: 'acct-no-coverage' });
+
+    const response = await service.getEventAttendees('acct-no-coverage', DEFAULT_PICK);
+
+    expect(response.details).toEqual([]);
+    expect(response.foundationOptions).toEqual([]);
+    expect(response.eventOptions).toEqual([]);
+    expect(response.summary).toEqual({ attendeesCount: 0, speakersCount: 0, eventsCount: 0, foundationsCount: 0 });
+    const summaryBinds = (execute.mock.calls as [string, string[]][])
+      .filter(([sql]) => sql.includes('ORG_EVENT_PARTICIPATION_SUMMARY'))
+      .map(([, binds]) => binds);
+    expect(summaryBinds.every((binds) => binds.includes('company_email') && !binds.includes('account'))).toBe(true);
+  });
+
+  it('keys the cached rows and the summary under versions that miss entries written by the Employee match build', async () => {
+    addRow({ ref: 1, days: -5 });
+    await read();
+
+    const keys = [...cacheValues.keys()];
+    expect(keys.some((key) => key.includes('people-event-attendees:v8:'))).toBe(true);
+    expect(keys.some((key) => key.includes('people-event-attendees-summary:v4:'))).toBe(true);
+    expect(keys.some((key) => /people-event-attendees:v[0-7]:/.test(key) || /people-event-attendees-summary:v[0-3]:/.test(key))).toBe(false);
   });
 
   it("never reads another account's rows", async () => {
@@ -643,7 +687,7 @@ describe('OrgPeopleEventAttendeesService predicates (SQLite)', () => {
       .prepare(
         'INSERT INTO ORG_EVENT_PARTICIPATION_SUMMARY (ACCOUNT_ID, TIME_RANGE, ATTRIBUTION, PARTICIPATION, ATTENDEES_COUNT, LISTED_ATTENDEES_COUNT, SPEAKERS_COUNT, EVENTS_COUNT, FOUNDATIONS_COUNT) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
       )
-      .run(ACCOUNT, '90d', 'verified', 'attended', 11, 4, 2, 3, 1);
+      .run(ACCOUNT, '90d', 'company_email', 'attended', 11, 4, 2, 3, 1);
 
     const response = await read({ range: '90d', participation: 'attended' });
 
@@ -654,8 +698,8 @@ describe('OrgPeopleEventAttendeesService predicates (SQLite)', () => {
     const insertSummary = database.prepare(
       'INSERT INTO ORG_EVENT_PARTICIPATION_SUMMARY (ACCOUNT_ID, TIME_RANGE, ATTRIBUTION, PARTICIPATION, ATTENDEES_COUNT, LISTED_ATTENDEES_COUNT, SPEAKERS_COUNT, EVENTS_COUNT, FOUNDATIONS_COUNT) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
     );
-    insertSummary.run(ACCOUNT, '730d', 'verified', 'registered', 8, 3, 2, 4, 2);
-    insertSummary.run(ACCOUNT, '730d', 'verified', 'all', 13, 5, 2, 6, 3);
+    insertSummary.run(ACCOUNT, '730d', 'company_email', 'registered', 8, 3, 2, 4, 2);
+    insertSummary.run(ACCOUNT, '730d', 'company_email', 'all', 13, 5, 2, 6, 3);
 
     const response = await read({ range: '730d', participation: 'all' });
 

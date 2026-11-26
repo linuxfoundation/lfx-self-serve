@@ -7,8 +7,8 @@ import type { OrgEventsParticipation, OrgEventsParticipationOption, OrgEventsSco
 // One set of Events filters for the Overview, People → Event Attendees and the Events page (lfx-self-serve#4598): the same
 // options, defaults and URL parameters everywhere, so the same selection gives the same count on every page.
 
-/** Caption phrase for the Employee match count every Events surface shows (the only attribution there is). */
-export const ORG_EVENTS_EMPLOYEE_MATCH_CAPTION_PHRASE = 'Company email on record or LF account on the company roster.';
+/** Caption phrase for the company-email count every Events surface shows: only registrations or speaker records made with a company email count. */
+export const ORG_EVENTS_COMPANY_EMAIL_CAPTION_PHRASE = 'Counts only registrations and speaker records made with a company email.';
 
 /** "Count" options, default first. */
 export const ORG_EVENTS_PARTICIPATION_OPTIONS: readonly OrgEventsParticipationOption[] = [
@@ -77,13 +77,13 @@ export const ORG_EVENTS_NEUTRAL_REGISTRANT_LABEL = 'Registered attendee';
 /** Label shown for a speaker who has no usable name; never an email address. */
 export const ORG_EVENTS_NEUTRAL_SPEAKER_LABEL = 'Speaker';
 
-/** Every Events read counts Employee match only: its warehouse columns carry this suffix (`REGISTERED_COUNT_VERIFIED`, `IS_COUNTED_ALL_VERIFIED`, ...). Never built from user input. */
-export const ORG_EVENTS_COUNTED_COLUMN_SUFFIX = 'VERIFIED';
+/** Every Events read counts company-email registrations and speaker records only: its warehouse columns carry this suffix (`REGISTERED_COUNT_COMPANY_EMAIL`, `IS_COUNTED_ALL_COMPANY_EMAIL`, ...). Never built from user input. */
+export const ORG_EVENTS_COUNTED_COLUMN_SUFFIX = 'COMPANY_EMAIL';
 
-/** The `ATTRIBUTION` value of the Employee match rows in the warehouse summary tables (`ORG_EVENT_PARTICIPATION_SUMMARY`); bound, never built from user input. */
-export const ORG_EVENTS_COUNTED_ATTRIBUTION = 'verified';
+/** The `ATTRIBUTION` value of the company-email rows in the warehouse summary tables (`ORG_EVENT_PARTICIPATION_SUMMARY`); bound, never built from user input. */
+export const ORG_EVENTS_COUNTED_ATTRIBUTION = 'company_email';
 
-/** The one mapping from a participation to its segment of a warehouse column (`<SEGMENT>_COUNT_VERIFIED`, `IS_COUNTED_<SEGMENT>_VERIFIED`); never built from user input. */
+/** The one mapping from a participation to its segment of a warehouse column (`<SEGMENT>_COUNT_COMPANY_EMAIL`, `IS_COUNTED_<SEGMENT>_COMPANY_EMAIL`); never built from user input. */
 export const ORG_EVENTS_PARTICIPATION_COLUMN_SEGMENT: Readonly<Record<OrgEventsParticipation, string>> = {
   all: 'ALL',
   registered: 'REGISTERED',
@@ -91,14 +91,14 @@ export const ORG_EVENTS_PARTICIPATION_COLUMN_SEGMENT: Readonly<Record<OrgEventsP
 };
 
 /**
- * The metric columns of `ORG_EVENT_PARTICIPATION_MONTHLY` the Overview selects: the Employee match (`VERIFIED`) columns, the
+ * The metric columns of `ORG_EVENT_PARTICIPATION_MONTHLY` the Overview selects: the company-email (`COMPANY_EMAIL`) columns, the
  * only ones Events count.
  */
 export const ORG_EVENT_ATTENDANCE_METRIC_COLUMNS: readonly OrgEventAttendanceMetricColumn[] = [
-  'ATTENDEES_ALL_VERIFIED',
-  'SPEAKERS_VERIFIED',
-  'TOTAL_ATTENDEES_ALL_VERIFIED',
-  'TOTAL_SPEAKERS_VERIFIED',
+  'ATTENDEES_ALL_COMPANY_EMAIL',
+  'SPEAKERS_COMPANY_EMAIL',
+  'TOTAL_ATTENDEES_ALL_COMPANY_EMAIL',
+  'TOTAL_SPEAKERS_COMPANY_EMAIL',
 ] as const;
 
 /** Longest foundation id the Events filters accept; ids are short opaque strings and the value is only ever bound, never inlined. */

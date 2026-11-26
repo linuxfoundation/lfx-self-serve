@@ -561,7 +561,7 @@ export class OrgLensProjectDetailService {
 
     // `v3`: the maintainers roster leaves CDP team members' roles out, as the card count does (lfx-self-serve#4685).
     // (`v2`: the maintainers roster is the account's maintainer roles following the toggle, lfx-self-serve#4482.)
-    const cacheKey = `project-detail-roster:v3:${this.paramSignature([slug, cardKey, range, safePage, safeSize])}${this.cardScopeKeySuffix(cardKey, scope)}`;
+    const cacheKey = `project-detail-roster:v4:${this.paramSignature([slug, cardKey, range, safePage, safeSize])}${this.cardScopeKeySuffix(cardKey, scope)}`;
     const key = buildOrgCacheKey(orgUid, cacheKey);
     if (key !== null) {
       const cached = await valkeyService.getJson<OrgLensCardRosterPage>(key, OrgLensProjectDetailService.isRosterPage);
@@ -582,7 +582,7 @@ export class OrgLensProjectDetailService {
     const slug = projectSlug.trim().toLowerCase();
     // `v3` bump: hero now carries the v2 breakdown (`healthOverallScore` + Maintainer/Security/Development, #2096)
     // mapped from the same snapshot row — bumping drops cached hero blocks computed under the old shape.
-    const key = buildOrgCacheKey(orgUid, `project-detail-hero:v3:${this.paramSignature([slug])}`);
+    const key = buildOrgCacheKey(orgUid, `project-detail-hero:v4:${this.paramSignature([slug])}`);
     if (key !== null) {
       const cached = await valkeyService.getJson<OrgLensHeroBlock>(key, OrgLensProjectDetailService.isHeroBlock);
       if (cached !== null) return cached;
@@ -614,7 +614,7 @@ export class OrgLensProjectDetailService {
     // CDP team members out, lfx-self-serve#4685; `v4`: the maintainers sparkline counts maintainer roles following the
     // toggle, lfx-self-serve#4605.)
     const { scope, viewing: viewingOrg } = await this.resolveScope(orgUid, orgScope);
-    const key = buildOrgCacheKey(orgUid, `project-detail-influence:v6:${this.paramSignature([slug, range])}:${scope}`);
+    const key = buildOrgCacheKey(orgUid, `project-detail-influence:v7:${this.paramSignature([slug, range])}:${scope}`);
     if (key !== null) {
       const cached = await valkeyService.getJson<OrgLensInfluenceBlock>(
         key,
@@ -675,7 +675,8 @@ export class OrgLensProjectDetailService {
     const slug = projectSlug.trim().toLowerCase();
     // The trend is now range-scoped (`all` reads the bucketed lifetime source), so the cache key
     // carries the range — otherwise a 1y/2y series would be served for an all-time request.
-    const key = buildOrgCacheKey(orgUid, `project-detail-trend:${this.paramSignature([slug, range])}`);
+    // `v2` (lfx-self-serve#5627): event attendance and speaker series count only company-email people; the key had no version before.
+    const key = buildOrgCacheKey(orgUid, `project-detail-trend:v2:${this.paramSignature([slug, range])}`);
     if (key !== null) {
       const cached = await valkeyService.getJson<OrgLensTrendBlock>(
         key,
@@ -750,7 +751,7 @@ export class OrgLensProjectDetailService {
     const timeRangeType = PD_TIME_RANGE_TYPE[range];
     const scope = await this.resolveCardScope(orgUid, cardKey, orgScope);
     // `v3`: the maintainers total counts every company's maintainer roles following the toggle (lfx-self-serve#4605).
-    const key = buildOrgCacheKey(orgUid, `project-detail-drawer:v3:${this.paramSignature([slug, cardKey, range])}${this.cardScopeKeySuffix(cardKey, scope)}`);
+    const key = buildOrgCacheKey(orgUid, `project-detail-drawer:v4:${this.paramSignature([slug, cardKey, range])}${this.cardScopeKeySuffix(cardKey, scope)}`);
     if (key !== null) {
       const cached = await valkeyService.getJson<OrgLensCardDetailSection>(key, OrgLensProjectDetailService.isCardDetailSection);
       if (cached !== null) return cached;
@@ -2354,7 +2355,7 @@ export class OrgLensProjectDetailService {
         'event-attendance',
         'Event Attendance',
         foundation,
-        this.pctCaption(cards?.ECO_EVENT_ATTENDANCE_PCT, 'Employees attended ', ` of all ${foundation} events.`),
+        this.pctCaption(cards?.ECO_EVENT_ATTENDANCE_PCT, 'Employees who registered with a company email attended ', ` of all ${foundation} events.`),
         index,
         axis
       ),
@@ -2362,7 +2363,7 @@ export class OrgLensProjectDetailService {
         'event-speakers',
         'Event Speakers',
         foundation,
-        this.pctCaption(cards?.ECO_EVENT_SPEAKERS_PCT, 'Employees represented ', ` of all speakers at ${foundation} events.`),
+        this.pctCaption(cards?.ECO_EVENT_SPEAKERS_PCT, 'Employees with a company email represented ', ` of all speakers at ${foundation} events.`),
         index,
         axis
       ),

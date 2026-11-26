@@ -23,8 +23,8 @@ import {
   EMPTY_ORG_EVENTS_RESPONSE,
   ORG_EVENTS_ALL_COMPANIES_LABEL,
   ORG_EVENTS_ALL_FOUNDATIONS_LABEL,
+  ORG_EVENTS_COMPANY_EMAIL_CAPTION_PHRASE,
   ORG_EVENTS_COMPANY_QUERY_PARAM,
-  ORG_EVENTS_EMPLOYEE_MATCH_CAPTION_PHRASE,
   ORG_EVENTS_FOUNDATION_QUERY_PARAM,
   ORG_EVENTS_PAGE_COPY,
   ORG_EVENTS_PARTICIPATION_CAPTION_PHRASE,
@@ -240,11 +240,9 @@ export class OrgEventsDashboardComponent {
     if (!coverage) return [];
     return [...(coverage.excludedCount > 0 ? [ORG_EVENTS_ROLL_UP_EXCLUDED_NOTICE] : []), ...(!coverage.complete ? [ORG_EVENTS_ROLL_UP_INCOMPLETE_NOTICE] : [])];
   });
-  public readonly upcomingAttendeesCaption = computed(
-    () => `${ORG_EVENTS_PARTICIPATION_CAPTION_PHRASE.registered} ${ORG_EVENTS_EMPLOYEE_MATCH_CAPTION_PHRASE}`
-  );
+  public readonly upcomingAttendeesCaption = computed(() => `${ORG_EVENTS_PARTICIPATION_CAPTION_PHRASE.registered} ${ORG_EVENTS_COMPANY_EMAIL_CAPTION_PHRASE}`);
   public readonly pastAttendeesCaption = computed(
-    () => `${ORG_EVENTS_PARTICIPATION_CAPTION_PHRASE[this.participation()]} ${ORG_EVENTS_EMPLOYEE_MATCH_CAPTION_PHRASE}`
+    () => `${ORG_EVENTS_PARTICIPATION_CAPTION_PHRASE[this.participation()]} ${ORG_EVENTS_COMPANY_EMAIL_CAPTION_PHRASE}`
   );
   public readonly drawerParticipation = this.effectiveParticipation;
   public readonly upcomingEvents: Signal<OrgEventsResponse> = this.initEventsPipeline({

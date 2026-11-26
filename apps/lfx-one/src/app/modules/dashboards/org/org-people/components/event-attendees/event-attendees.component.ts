@@ -11,7 +11,7 @@ import {
   EMPTY_ORG_EVENT_ATTENDEES_RESPONSE,
   ORG_ALL_FOUNDATIONS_LABEL,
   ORG_EVENT_ATTENDEES_INITIAL_LIMIT,
-  ORG_EVENTS_EMPLOYEE_MATCH_CAPTION_PHRASE,
+  ORG_EVENTS_COMPANY_EMAIL_CAPTION_PHRASE,
   ORG_EVENTS_PARTICIPATION_CAPTION_PHRASE,
   ORG_EVENTS_PARTICIPATION_LABEL,
   ORG_EVENTS_PARTICIPATION_OPTIONS,
@@ -115,7 +115,7 @@ export class EventAttendeesComponent {
   protected readonly response: Signal<OrgEventAttendeesResponse> = this.initResponse();
 
   protected readonly attendeesCaption = computed(
-    () => `${ORG_EVENTS_PARTICIPATION_CAPTION_PHRASE[this.participation()]} ${ORG_EVENTS_EMPLOYEE_MATCH_CAPTION_PHRASE}`
+    () => `${ORG_EVENTS_PARTICIPATION_CAPTION_PHRASE[this.participation()]} ${ORG_EVENTS_COMPANY_EMAIL_CAPTION_PHRASE}`
   );
   protected readonly participationTooltip = computed(() => ORG_EVENTS_PARTICIPATION_TOOLTIP[this.participation()]);
 
