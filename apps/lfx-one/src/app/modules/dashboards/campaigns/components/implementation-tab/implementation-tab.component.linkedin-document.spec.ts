@@ -125,8 +125,10 @@ describe('ImplementationTabComponent linkedin document', () => {
     });
     expect(sent).not.toHaveProperty('carouselCards');
 
-    // A PDF picked for another brief: Create waits.
+    // A PDF picked for another brief, or one the library read no longer lists: Create waits.
     c(f)['onLinkedInDocumentChange'](document({ assetBriefId: 'b-0' }));
+    expect(c(f)['createBlockedReason']()).toContain('choose another PDF');
+    c(f)['onLinkedInDocumentChange'](document({ assetId: '9a7b1c2d-3e4f-4a6b-8c1e-5d4a3f2b4e6f' }));
     expect(c(f)['createBlockedReason']()).toContain('choose another PDF');
 
     // While the brief saves the tab has no brief id: the save's hold shows, not the document's.
