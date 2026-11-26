@@ -50,7 +50,7 @@ import { akritesEnabledGuard } from './shared/guards/akrites-enabled.guard';
 import { mktgOsAgentsEnabledGuard } from './shared/guards/mktg-os-agents-enabled.guard';
 import { myEventsRequestLensGuard } from './shared/guards/my-events-request-lens.guard';
 import { openprofileMeLensGuard } from './shared/guards/openprofile-me-lens.guard';
-import { profileRedesignEnabledGuard, profileRedesignOnlyGuard } from './shared/guards/profile-redesign.guard';
+import { profileRedesignEnabledGuard, profileRedesignOnlyGuard, profileRedesignReadGuard } from './shared/guards/profile-redesign.guard';
 import { projectQueryParamGuard } from './shared/guards/project-query-param.guard';
 import { settingsLensRedirectGuard } from './shared/guards/settings-lens-redirect.guard';
 import { votePermalinkMatchGuard } from './shared/guards/vote-permalink-match.guard';
@@ -1103,6 +1103,8 @@ export const routes: Routes = [
   {
     path: 'u/:username',
     title: 'Profile',
+    // Settles the profile redesign flag so the page renders the redesign for a signed-in viewer it is on for (#6088).
+    canActivate: [profileRedesignReadGuard],
     loadComponent: () => import('./modules/public-profile/public-profile-page/public-profile-page.component').then((m) => m.PublicProfilePageComponent),
   },
   // Public foundation groups directory — lists all public groups for a foundation (no auth required).

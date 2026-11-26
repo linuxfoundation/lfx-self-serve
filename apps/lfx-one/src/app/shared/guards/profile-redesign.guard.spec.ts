@@ -1,15 +1,16 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { PLATFORM_ID, REQUEST_CONTEXT, signal, TransferState } from '@angular/core';
+import { makeStateKey, PLATFORM_ID, REQUEST_CONTEXT, signal, TransferState } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRouteSnapshot, Route, Router, RouterStateSnapshot, UrlSegment, UrlTree } from '@angular/router';
 import { PROFILE_REDESIGN_FLAG } from '@lfx-one/shared/constants';
 import { FeatureFlagService } from '@shared/services/feature-flag.service';
+import { UserService } from '@shared/services/user.service';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { PROFILE_REDESIGN_KEY } from '../utils/profile-redesign.util';
-import { profileRedesignEnabledGuard, profileRedesignOnlyGuard, profileRedesignRedirectGuard } from './profile-redesign.guard';
+import { profileRedesignEnabledGuard, profileRedesignOnlyGuard, profileRedesignReadGuard, profileRedesignRedirectGuard } from './profile-redesign.guard';
 
 describe('profile redesign guards', () => {
   let getFlagOverride: ReturnType<typeof vi.fn>;
@@ -33,7 +34,10 @@ describe('profile redesign guards', () => {
       profileRedesignRedirectGuard({ routeConfig: { path }, fragment, queryParams } as unknown as ActivatedRouteSnapshot, {} as RouterStateSnapshot)
     );
 
+  let authenticated: ReturnType<typeof signal<boolean>>;
+
   beforeEach(() => {
+    authenticated = signal(true);
     getFlagOverride = vi.fn().mockReturnValue(undefined);
     providerReady = signal(true);
     flagValue = signal(true);
@@ -44,6 +48,7 @@ describe('profile redesign guards', () => {
       providers: [
         { provide: FeatureFlagService, useValue: { getFlagOverride, providerReady: providerReady.asReadonly(), getBooleanFlag, waitForReady } },
         { provide: PLATFORM_ID, useValue: 'browser' },
+        { provide: UserService, useValue: { authenticated } },
       ],
     });
   });
@@ -146,6 +151,53 @@ describe('profile redesign guards', () => {
 
       flagValue.set(false);
       expect(await only()).toBe(false);
+    });
+  });
+
+  describe('profileRedesignReadGuard', () => {
+    const read = () => TestBed.runInInjectionContext(() => profileRedesignReadGuard({} as ActivatedRouteSnapshot, {} as RouterStateSnapshot));
+
+    it('always lets the public profile load, whatever the flag says', async () => {
+      expect(await read()).toBe(true);
+
+      flagValue.set(false);
+      expect(await read()).toBe(true);
+    });
+
+    it('keeps the browser’s answer for the page after an in-app navigation', async () => {
+      expect(await read()).toBe(true);
+      expect(TestBed.inject(TransferState).get(PROFILE_REDESIGN_KEY, null)).toBe(true);
+    });
+
+    it('counts the server’s auth hand-off as signed in before AppComponent runs', async () => {
+      authenticated.set(false);
+      TestBed.inject(TransferState).set(makeStateKey<{ authenticated: boolean }>('auth'), { authenticated: true });
+
+      expect(await read()).toBe(true);
+      expect(TestBed.inject(TransferState).get(PROFILE_REDESIGN_KEY, null)).toBe(true);
+    });
+
+    it('leaves a timed-out read unsaved, so the next navigation asks again', async () => {
+      providerReady.set(false);
+
+      expect(await read()).toBe(true);
+      expect(TestBed.inject(TransferState).get(PROFILE_REDESIGN_KEY, null)).toBeNull();
+    });
+
+    it('lets a signed-out visitor through without waiting on the flag service', async () => {
+      authenticated.set(false);
+      providerReady.set(false);
+
+      expect(await read()).toBe(true);
+      expect(waitForReady).not.toHaveBeenCalled();
+    });
+
+    it('hands the server’s answer to the browser', async () => {
+      TestBed.overrideProvider(PLATFORM_ID, { useValue: 'server' });
+      TestBed.overrideProvider(REQUEST_CONTEXT, { useValue: { flags: { profileRedesign: true } } });
+
+      expect(await read()).toBe(true);
+      expect(TestBed.inject(TransferState).get(PROFILE_REDESIGN_KEY, null)).toBe(true);
     });
   });
 });
