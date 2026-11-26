@@ -115,3 +115,6 @@ export interface PublicProfileBadge {
   Image?: string;
   Url?: string;
 }
+
+/** A visitor's theme for the redesigned public profile (#6091). */
+export type PublicProfileTheme = 'light' | 'dark';
