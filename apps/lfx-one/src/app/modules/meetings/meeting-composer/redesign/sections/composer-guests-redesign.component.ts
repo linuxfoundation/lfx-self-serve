@@ -18,8 +18,8 @@ import { UiTooltipDirective } from '@shared/uikit/tooltip/tooltip.directive';
 import { ConfirmationService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 
-import { MeetingCommitteeManagerComponent } from '../../../components/meeting-committee-manager/meeting-committee-manager.component';
 import { ComposerGuestsComponent } from '../../sections/composer-guests.component';
+import { ComposerGroupPickerComponent } from './composer-group-picker.component';
 
 /**
  * Invite guests section of the redesigned composer: the same state and handlers as the drawer's guests section, in the new layout.
@@ -28,8 +28,8 @@ import { ComposerGuestsComponent } from '../../sections/composer-guests.componen
 @Component({
   selector: 'lfx-composer-guests-redesign',
   imports: [
+    ComposerGroupPickerComponent,
     ConfirmDialogModule,
-    MeetingCommitteeManagerComponent,
     ReactiveFormsModule,
     UiAvatarComponent,
     UiBadgeComponent,

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type {
+  Committee,
   CommitteeMember,
   Meeting,
   MeetingCommittee,
@@ -268,4 +269,11 @@ export function composerGuestSubline(
     meta = [guest.username ? 'LFX member' : null, company];
   }
   return [guest.email?.trim() || null, ...meta].filter(Boolean).join(' · ');
+}
+
+/** A group's line in the composer: its category and member count, with unknown parts dropped. */
+export function composerGroupMeta(committee: Partial<Pick<Committee, 'category' | 'total_members'>> | undefined): string {
+  const count = committee?.total_members;
+  const members = typeof count === 'number' ? `${count} ${count === 1 ? 'member' : 'members'}` : null;
+  return [committee?.category?.trim() || null, members].filter(Boolean).join(' · ');
 }
