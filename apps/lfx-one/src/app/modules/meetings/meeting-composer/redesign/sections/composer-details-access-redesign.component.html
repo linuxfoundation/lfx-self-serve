@@ -1,0 +1,140 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-7" [formGroup]="form()" data-testid="composer-details-access">
+  <div class="flex flex-col gap-2">
+    <span class="flex items-center gap-1.5 text-sm font-medium text-gray-900"> Meeting title <span class="text-red-600" aria-hidden="true">*</span> </span>
+    <lfx-ui-input
+      formControlName="title"
+      ariaLabel="Meeting title"
+      placeholder="Enter meeting title"
+      [required]="true"
+      [maxlength]="titleInputMaxlength()"
+      [hint]="titleHint() ?? ''"
+      [error]="titleError()"
+      data-testid="composer-title-input" />
+
+    @if (youtubeUploadEnabled()) {
+      <div class="flex items-center justify-between gap-2">
+        <p class="text-xs text-gray-500">
+          The meeting date is appended to the YouTube video title on upload, so the title must be ≤ {{ youtubeTitleLimit }} characters.
+        </p>
+        <p
+          class="text-xs"
+          data-testid="composer-title-youtube-counter"
+          [ngClass]="{
+            'text-gray-500': titleLength() < youtubeAmberThreshold,
+            'text-amber-600': titleLength() >= youtubeAmberThreshold && titleLength() <= youtubeTitleLimit,
+            'text-red-600': titleLength() > youtubeTitleLimit,
+          }">
+          {{ titleLength() }}/{{ youtubeTitleLimit }}
+        </p>
+      </div>
+    }
+    <p class="sr-only" role="status" aria-live="polite" aria-atomic="true" data-testid="composer-title-youtube-announcement">
+      {{ titleLimitAnnouncement() }}
+    </p>
+  </div>
+
+  @if (showTypeSelect()) {
+    <div class="flex flex-col gap-2">
+      <span class="flex items-center gap-1.5 text-sm font-medium text-gray-900"> Meeting type <span class="text-red-600" aria-hidden="true">*</span> </span>
+      <lfx-ui-select
+        formControlName="meeting_type"
+        ariaLabel="Meeting type"
+        placeholder="Select meeting type…"
+        [required]="true"
+        [error]="meetingTypeError()"
+        data-testid="composer-meeting-type-select">
+        @for (option of meetingTypeOptions(); track option.value) {
+          <lfx-ui-option [value]="option.value" [label]="option.label" [icon]="option.info.icon" [attr.data-testid]="'composer-meeting-type-' + option.value">
+            <span class="flex flex-col gap-0.5 whitespace-normal py-1.5">
+              <!-- Design sets 13px/18px for menu row titles. -->
+              <span class="text-[13px] font-medium leading-[18px] text-gray-800">{{ option.label }}</span>
+              <span class="text-xs font-normal text-gray-500">{{ option.info.description }}</span>
+            </span>
+          </lfx-ui-option>
+        }
+      </lfx-ui-select>
+    </div>
+  }
+
+  @if (showAccess()) {
+    <lfx-ui-choicebox-group label="Visibility" [columns]="2" name="composer-visibility" formControlName="visibility" data-testid="composer-visibility-group">
+      @for (option of visibilityOptions; track option.value) {
+        <lfx-ui-choicebox
+          [value]="option.value"
+          [label]="option.label"
+          [description]="option.info.description"
+          [attr.data-testid]="'composer-visibility-' + option.value" />
+      }
+    </lfx-ui-choicebox-group>
+
+    <lfx-ui-choicebox-group
+      label="Join restriction"
+      [columns]="2"
+      name="composer-restricted"
+      [value]="restrictedChoice()"
+      (valueChange)="setRestricted($event)"
+      data-testid="composer-restricted-group">
+      @for (option of joinRestrictionOptions; track option.value) {
+        <lfx-ui-choicebox
+          [value]="'' + option.value"
+          [label]="option.label"
+          [description]="option.info.description"
+          [attr.data-testid]="'composer-restricted-' + option.value" />
+      }
+    </lfx-ui-choicebox-group>
+  }
+
+  @if (showOrganizer()) {
+    <div class="flex flex-col gap-2" data-testid="composer-organizer">
+      <span class="flex items-center gap-1.5 text-sm font-medium text-gray-900">
+        Meeting organizer <span class="font-normal text-gray-500">(optional)</span>
+      </span>
+      @if (showOrganizerChip()) {
+        <!-- Design sets a 10px radius on the chip row. -->
+        <div class="flex items-center gap-2.5 rounded-[10px] border border-gray-200 bg-white py-2 pl-2.5 pr-2" data-testid="composer-organizer-chip">
+          <lfx-ui-avatar [name]="ownerName() || ownerEmail() || ''" [size]="28" decorative />
+          <span class="flex min-w-0 flex-1 flex-col">
+            <span class="truncate text-sm font-medium text-gray-900" [attr.title]="ownerName() || ownerEmail()">{{ ownerName() || ownerEmail() }}</span>
+            @if (ownerName() && ownerEmail()) {
+              <span class="truncate text-xs text-gray-500" [attr.title]="ownerEmail()">{{ ownerEmail() }}</span>
+            }
+          </span>
+          <lfx-ui-button
+            variant="tertiary"
+            size="small"
+            icon="fa-light fa-xmark"
+            [iconOnly]="true"
+            ariaLabel="Remove organizer"
+            (click)="removeOrganizer()"
+            data-testid="composer-organizer-remove" />
+        </div>
+      } @else {
+        <lfx-ui-combobox
+          ariaLabel="Meeting organizer"
+          placeholder="Search for a user…"
+          emptyText="No people match"
+          [serverSearch]="true"
+          [loading]="organizerLoading()"
+          (queryChange)="organizerQuery.set($event)"
+          (valueChange)="pickOrganizer($event)"
+          data-testid="composer-organizer-search">
+          @for (user of organizerResults(); track user.uid) {
+            <lfx-ui-option [value]="user.uid" [label]="fullName(user)" [attr.data-testid]="'composer-organizer-option-' + user.uid">
+              <span class="flex items-center gap-2.5 py-1.5">
+                <lfx-ui-avatar [name]="fullName(user)" [size]="28" decorative />
+                <span class="flex min-w-0 flex-col">
+                  <span class="truncate text-sm font-medium text-gray-900">{{ fullName(user) }}</span>
+                  <span class="truncate text-xs font-normal text-gray-500" [attr.title]="user.email">{{ user.email }}</span>
+                </span>
+              </span>
+            </lfx-ui-option>
+          }
+        </lfx-ui-combobox>
+      }
+      <p class="text-xs text-gray-500" data-testid="composer-organizer-hint">{{ organizerHint() }}</p>
+    </div>
+  }
+</div>
