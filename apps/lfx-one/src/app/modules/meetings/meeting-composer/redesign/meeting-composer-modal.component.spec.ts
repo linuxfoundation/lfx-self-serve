@@ -146,6 +146,15 @@ describe('MeetingComposerModalComponent (through the host, meetings-redesign on)
       expect(text('meeting-composer-mobile-step')).toBe('Step 1 of 5 · Details & Access');
     });
 
+    it('starts with recording and AI summary on, without marking the create dirty', () => {
+      expect(formService.form().get('recording_enabled')?.value).toBe(true);
+      expect(formService.form().get('zoom_ai_enabled')?.value).toBe(true);
+
+      pressEscape();
+
+      expect(composer.isOpen()).toBe(false);
+    });
+
     it('locks every step after an invalid required section', () => {
       expect(query('meeting-composer-rail-date-schedule')?.getAttribute('aria-disabled')).toBe('true');
       expect(query('meeting-composer-rail-guests')?.getAttribute('aria-disabled')).toBe('true');
@@ -434,6 +443,49 @@ describe('MeetingComposerModalComponent (through the host, meetings-redesign on)
 
       expect(lastToast()).toMatchObject({ variant: 'dark', message: 'Meeting deleted', description: '“Weekly sync” · 3 guests notified' });
       expect(composer.saveCount()).toBe(1);
+    });
+
+    it('leaves a composer opened since for another meeting open when a late delete lands', async () => {
+      const request = new Subject<void>();
+      deleteMeeting.mockReturnValue(request);
+      await openEdit();
+
+      button('meeting-composer-delete')?.click();
+      await flush();
+      fromDocument('meeting-composer-delete-confirm')?.click();
+      await flush();
+      composer.close();
+      await flush();
+      getMeeting.mockReturnValue(of({ ...meeting, id: 'meeting-2', title: 'Other sync' }));
+      composer.open({ mode: 'edit', meetingUid: 'meeting-2', projectUid: 'project-1' });
+
+      request.next();
+      request.complete();
+      await flush();
+
+      expect(lastToast()).toMatchObject({ message: 'Meeting deleted' });
+      expect(composer.isOpen()).toBe(true);
+      expect(composer.context()?.meetingUid).toBe('meeting-2');
+    });
+
+    it('closes a composer reopened on the deleted meeting when the late delete lands', async () => {
+      const request = new Subject<void>();
+      deleteMeeting.mockReturnValue(request);
+      await openEdit();
+
+      button('meeting-composer-delete')?.click();
+      await flush();
+      fromDocument('meeting-composer-delete-confirm')?.click();
+      await flush();
+      composer.close();
+      await flush();
+      composer.open({ mode: 'edit', meetingUid: 'meeting-1', projectUid: 'project-1' });
+
+      request.next();
+      request.complete();
+      await flush();
+
+      expect(composer.isOpen()).toBe(false);
     });
 
     it('keeps the meeting and the composer when the organizer backs out of the delete', async () => {

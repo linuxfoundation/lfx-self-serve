@@ -34,7 +34,7 @@ import { MeetingComposerFormService } from '../meeting-composer-form.service';
 import { MeetingComposerPreviewComponent } from '../meeting-composer-preview.component';
 import { MeetingsHomeDeleteService } from '../../meetings-redesign/services/meetings-home-delete.service';
 import { MeetingComposerService } from '../meeting-composer.service';
-import { ComposerAgendaResourcesComponent } from '../sections/composer-agenda-resources.component';
+import { ComposerAgendaResourcesRedesignComponent } from './sections/composer-agenda-resources-redesign.component';
 import { MeetingComposerDiscardDialogComponent } from './meeting-composer-discard-dialog.component';
 import { MeetingComposerModalRailComponent } from './meeting-composer-modal-rail.component';
 import { MeetingComposerScopeNoteComponent } from './meeting-composer-scope-note.component';
@@ -62,7 +62,7 @@ import { ComposerPlatformFeaturesRedesignComponent } from './sections/composer-p
     ComposerDateScheduleRedesignComponent,
     ComposerPlatformFeaturesRedesignComponent,
     ComposerGuestsRedesignComponent,
-    ComposerAgendaResourcesComponent,
+    ComposerAgendaResourcesRedesignComponent,
   ],
   templateUrl: './meeting-composer-modal.component.html',
   providers: [MeetingsHomeDeleteService],
