@@ -35,6 +35,8 @@ export class ProfilePillComponent {
   protected readonly tileClass = computed(() =>
     this.tile() === 'logo' ? 'rounded-[12px] shadow-[inset_0_0_0_1px_theme(colors.gray.200)] [[data-theme=dark]_&]:bg-white' : ''
   );
+  /** An image alone sits centred, with even padding. */
+  protected readonly layoutClass = computed(() => (this.imageOnly() ? 'justify-center !pr-[8px]' : ''));
   /** A pill that opens a card is a named group; an image alone is named as an image. */
   protected readonly tileRole = computed(() => {
     if (this.hoverCard()) return 'group';

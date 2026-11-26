@@ -46,7 +46,7 @@ describe('PublicProfileRecognitionsComponent', () => {
     expect(pills()).toHaveLength(4);
     expect(pills()[0].getAttribute('href')).toBe('https://www.credly.example/badges/b1');
     expect(pills()[0].getAttribute('target')).toBe('_blank');
-    expect(pills()[0].getAttribute('aria-label')).toBe(PUBLIC_PROFILE_BADGE_LABEL);
+    expect(pills()[0].getAttribute('aria-label')).toBe(`${PUBLIC_PROFILE_BADGE_LABEL} 1 of 4`);
     expect(pills()[0].querySelector('img')?.getAttribute('src')).toBe('https://images.example/b1.png');
     expect(toggle()).toBeNull();
   });
@@ -65,8 +65,18 @@ describe('PublicProfileRecognitionsComponent', () => {
     expect(pills()).toHaveLength(9);
   });
 
+  it('gives a bare Credly address https://, as the badges block before it did', async () => {
+    const { pills } = await render([{ Image: 'https://images.example/z.png', Url: 'www.credly.example/badges/z' }]);
+
+    expect(pills()[0].getAttribute('href')).toBe('https://www.credly.example/badges/z');
+  });
+
   it('leaves out a badge with no image, and links only to http(s) addresses', async () => {
-    const { pills } = await render([{ Url: 'https://www.credly.example/badges/x' }, { Image: 'https://images.example/y.png', Url: 'javascript:alert(1)' }]);
+    const { pills } = await render([
+      { Url: 'https://www.credly.example/badges/x' },
+      { Image: '  ', Url: 'https://www.credly.example/badges/w' },
+      { Image: 'https://images.example/y.png', Url: 'javascript:alert(1)' },
+    ]);
 
     expect(pills()).toHaveLength(1);
     expect(pills()[0].tagName).toBe('DIV');

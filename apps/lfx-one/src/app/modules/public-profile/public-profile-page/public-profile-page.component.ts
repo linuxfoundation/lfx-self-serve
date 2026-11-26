@@ -22,10 +22,10 @@ import { PublicProfileCertificationsComponent } from '../components/public-profi
 import { PublicProfileContributionsComponent } from '../components/public-profile-contributions/public-profile-contributions.component';
 import { PublicProfileHeroRedesignComponent } from '../components/public-profile-hero-redesign/public-profile-hero-redesign.component';
 import { PublicProfileHeroComponent } from '../components/public-profile-hero/public-profile-hero.component';
+import { PublicProfileRecognitionsComponent } from '../components/public-profile-recognitions/public-profile-recognitions.component';
 import { PublicProfileTopbarRedesignComponent } from '../components/public-profile-topbar-redesign/public-profile-topbar-redesign.component';
 import { PublicProfileTopbarComponent } from '../components/public-profile-topbar/public-profile-topbar.component';
 import { PublicProfileTrainingsComponent } from '../components/public-profile-trainings/public-profile-trainings.component';
-import { PublicProfileRecognitionsComponent } from '../components/public-profile-recognitions/public-profile-recognitions.component';
 import { PublicProfileNotFoundComponent } from '../public-profile-not-found/public-profile-not-found.component';
 import { PublicProfileThemeService } from '../services/public-profile-theme.service';
 import { PublicProfileService } from '../services/public-profile.service';
@@ -106,7 +106,7 @@ export class PublicProfilePageComponent {
   protected readonly hasContributions = computed(() => (this.technicalContribution()?.projects?.length ?? 0) > 0);
   // `Image` is omitempty upstream and the template only renders badges that have one — gate on at
   // least one renderable badge so a `Url`-only badge can't leave the heading above an empty grid.
-  protected readonly hasBadges = computed(() => this.badges().some((badge) => !!badge.Image));
+  protected readonly hasBadges = computed(() => this.badges().some((badge) => !!badge.Image?.trim()));
   protected readonly hasCertifications = computed(() => this.certifications().length > 0);
   protected readonly hasTrainings = computed(() => this.trainings().length > 0);
   // False inside an iframe, where Transcend's consent manager cannot open; the button is hidden.

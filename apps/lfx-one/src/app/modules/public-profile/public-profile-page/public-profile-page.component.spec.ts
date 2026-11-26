@@ -65,7 +65,7 @@ describe('PublicProfilePageComponent', () => {
     expect(query('public-profile-redesign')).not.toBeNull();
     expect(query('public-profile-recognitions-title')?.textContent?.trim()).toBe(PUBLIC_PROFILE_SECTION_COPY.recognitions);
     expect(query('public-profile-recognitions-description')?.textContent).toContain('this person');
-    // The block's own heading gives way to the section header.
+    // The section header names the block; the Recognitions grid carries no heading of its own.
     expect(query('public-profile-badges')?.querySelector('h2')).toBeNull();
     expect(query('public-profile-footer')?.className).toContain('mt-[64px]');
   });

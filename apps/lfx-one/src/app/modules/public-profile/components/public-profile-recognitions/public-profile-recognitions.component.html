@@ -3,6 +3,6 @@
 
 <lfx-profile-grid [total]="items().length" [(expanded)]="expanded" testId="public-profile-recognitions-grid">
   @for (item of shown(); track item.id) {
-    <lfx-profile-pill [name]="label" [imageUrl]="item.image" tile="image" imageOnly [href]="item.href" [testId]="'public-profile-badge-' + item.id" />
+    <lfx-profile-pill [name]="item.label" [imageUrl]="item.image" tile="image" imageOnly [href]="item.href" [testId]="'public-profile-badge-' + item.id" />
   }
 </lfx-profile-grid>

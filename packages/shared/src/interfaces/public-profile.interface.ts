@@ -122,6 +122,8 @@ export type PublicProfileTheme = 'light' | 'dark';
 /** A badge on the redesigned public profile's Recognitions (#6092). */
 export interface PublicProfileBadgeItem {
   id: string;
+  /** "Credly badge 3 of 12": the data carries no badge name, so the position names it. */
+  label: string;
   image: string;
   /** The Credly link, or null when it isn't an http(s) URL. */
   href: string | null;

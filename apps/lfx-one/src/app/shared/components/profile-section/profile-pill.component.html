@@ -8,7 +8,7 @@
     rel="noopener noreferrer"
     [attr.aria-label]="imageOnly() ? name() : null"
     class="{{ pillClass }}"
-    [class.justify-center]="imageOnly()"
+    [ngClass]="layoutClass()"
     [lfxUiHoverCard]="hoverCard()"
     [lfxUiHoverCardWidth]="hoverCardWidth()"
     [attr.data-testid]="testId()"
@@ -21,7 +21,7 @@
     [attr.tabindex]="hoverCard() ? 0 : null"
     [attr.aria-label]="hoverCard() || imageOnly() ? name() : null"
     [attr.role]="tileRole()"
-    [class.justify-center]="imageOnly()"
+    [ngClass]="layoutClass()"
     [lfxUiHoverCard]="hoverCard()"
     [lfxUiHoverCardWidth]="hoverCardWidth()"
     [attr.data-testid]="testId()">
