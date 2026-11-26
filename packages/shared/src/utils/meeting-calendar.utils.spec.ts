@@ -16,12 +16,13 @@ import {
 import {
   meetingToCalendarEvents,
   publicMeetingToCalendarEvents,
+  publicMeetingToCalendarGridEntries,
   resolveMeetingCalendarClickRoute,
   resolvePublicCalendarLegend,
 } from './meeting-calendar.utils';
 
 import { MeetingVisibility } from '../enums';
-import type { Meeting, PublicCalendarMeeting } from '../interfaces';
+import type { Meeting, MeetingOccurrenceSummary, PublicCalendarMeeting } from '../interfaces';
 import type { PublicCalendarCommittee, PublicCalendarCommitteeContext } from '../interfaces/calendar.interface';
 
 describe('meetingToCalendarEvents', () => {
@@ -249,5 +250,65 @@ describe('resolvePublicCalendarLegend', () => {
     expect(resolvePublicCalendarLegend(emittable.map((backgroundColor) => ({ backgroundColor })))).toHaveLength(emittable.length);
     // Pairwise-distinct colours, otherwise the filter above cannot tell two entries apart.
     expect(new Set(PUBLIC_CALENDAR_LEGEND.map((entry) => entry.color)).size).toBe(PUBLIC_CALENDAR_LEGEND.length);
+  });
+});
+
+describe('publicMeetingToCalendarGridEntries', () => {
+  const now = new Date('2026-10-10T12:00:00Z');
+  const meeting: PublicCalendarMeeting = {
+    id: 'meeting-1',
+    title: 'Technical Steering Committee',
+    start_time: '2026-10-01T15:00:00Z',
+    duration: 60,
+    timezone: 'America/New_York',
+    meeting_type: 'Technical',
+    restricted: false,
+    recurrence: null,
+  };
+
+  it('lists occurrences by type and past state, leaving cancelled ones out', () => {
+    const noDuration: MeetingOccurrenceSummary = { occurrence_id: '1792000000', start_time: '2026-10-15T15:00:00Z', duration: 0 };
+    // @ts-expect-error indexed occurrences omit duration when it matches the series
+    delete noDuration.duration;
+    const entries = publicMeetingToCalendarGridEntries(
+      {
+        ...meeting,
+        cancelled_occurrences: ['1791000000'],
+        occurrences: [
+          { occurrence_id: '1790000000', start_time: '2026-10-01T15:00:00Z', duration: 30 },
+          { occurrence_id: '1791000000', start_time: '2026-10-08T15:00:00Z', duration: 30 },
+          noDuration,
+        ],
+      },
+      now
+    );
+
+    expect(entries).toEqual([
+      {
+        key: 'meeting-1-1790000000',
+        title: 'Technical Steering Committee',
+        type: 'Technical',
+        startTime: '2026-10-01T15:00:00Z',
+        durationMinutes: 30,
+        past: true,
+      },
+      {
+        key: 'meeting-1-1792000000',
+        title: 'Technical Steering Committee',
+        type: 'Technical',
+        startTime: '2026-10-15T15:00:00Z',
+        durationMinutes: 60,
+        past: false,
+      },
+    ]);
+  });
+
+  it('keys a past-meeting row by its composite id at its scheduled start', () => {
+    const [entry] = publicMeetingToCalendarGridEntries(
+      { ...meeting, scheduled_start_time: '2026-10-02T15:00:00Z', meeting_and_occurrence_id: '99152950841-1630560600000' },
+      now
+    );
+
+    expect(entry).toMatchObject({ key: '99152950841-1630560600000', startTime: '2026-10-02T15:00:00Z', past: true });
   });
 });

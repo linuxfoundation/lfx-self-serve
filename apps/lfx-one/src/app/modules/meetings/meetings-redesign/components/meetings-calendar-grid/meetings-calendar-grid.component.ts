@@ -18,6 +18,7 @@ import {
   MeetingCalendarChipTooltip,
   MeetingCalendarDialogDay,
   MeetingCalendarGridEntry,
+  MeetingCalendarGridLayout,
   MeetingCalendarView,
 } from '@lfx-one/shared/interfaces';
 import {
@@ -44,6 +45,8 @@ import { UiSwitchComponent } from '@shared/uikit/switch/switch.component';
   imports: [NgTemplateOutlet, UiButtonComponent, UiSwitchComponent, UiSwitchOptionComponent],
   templateUrl: './meetings-calendar-grid.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
+  // The tooltip is fixed, so a page scroll would leave it behind.
+  host: { '(window:scroll)': 'hideTooltip()' },
 })
 export class MeetingsCalendarGridComponent {
   private readonly destroyRef = inject(DestroyRef);
@@ -53,6 +56,10 @@ export class MeetingsCalendarGridComponent {
   public readonly now = input.required<Date>();
   /** Starts every `data-testid` inside the grid, so each host keeps its own. */
   public readonly testIdPrefix = input<string>('meetings-calendar-grid');
+  /** `dialog` fills a dialog and scrolls inside it; `page` flows with the page, and only the week view scrolls. */
+  public readonly layout = input<MeetingCalendarGridLayout>('dialog');
+  /** Offers the week view; without it, month cells list every meeting instead of "+N more". */
+  public readonly weekView = input<boolean>(true);
   public readonly view = model<MeetingCalendarView>('month');
   /** A date in the shown month or week. */
   public readonly focus = model.required<Date>();
@@ -74,6 +81,7 @@ export class MeetingsCalendarGridComponent {
   protected readonly todayInView: Signal<boolean> = this.initTodayInView();
   /** Month view: rows of seven cells. */
   protected readonly monthWeeks: Signal<MeetingCalendarDialogDay[][]> = this.initMonthWeeks();
+  protected readonly bodyClass: Signal<string> = this.initBodyClass();
   /** Week view: the seven day columns. */
   protected readonly weekDays: Signal<MeetingCalendarDialogDay[]> = this.initWeekDays();
 
@@ -179,9 +187,17 @@ export class MeetingsCalendarGridComponent {
         this.days(),
         this.now(),
         this.focus().getMonth(),
-        MEETINGS_HOME_CALENDAR_MONTH_CHIPS
+        this.weekView() ? MEETINGS_HOME_CALENDAR_MONTH_CHIPS : Infinity
       );
       return Array.from({ length: days.length / 7 }, (_, week) => days.slice(week * 7, week * 7 + 7));
+    });
+  }
+
+  private initBodyClass(): Signal<string> {
+    return computed(() => {
+      const scroll = 'overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden';
+      if (this.layout() === 'dialog') return `min-h-0 flex-auto px-[24px] pb-[24px] ${scroll}`;
+      return this.view() === 'week' ? `max-h-[min(640px,calc(100vh-340px))] ${scroll}` : '';
     });
   }
 

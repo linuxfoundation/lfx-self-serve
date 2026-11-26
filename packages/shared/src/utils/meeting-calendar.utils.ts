@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { BEHAVIORAL_CLASS_CALENDAR_COLORS, PUBLIC_CALENDAR_LEGEND } from '../constants/calendar-colors.constants';
-import { Meeting, MeetingOccurrenceRoute, PastMeeting, PublicCalendarMeeting } from '../interfaces';
+import { Meeting, MeetingCalendarGridEntry, MeetingOccurrenceRoute, PastMeeting, PublicCalendarMeeting } from '../interfaces';
 import type {
   CalendarColor,
   CalendarLegendItem,
@@ -231,6 +231,27 @@ export function publicMeetingToCalendarEvents(meeting: PublicCalendarMeeting, co
       },
     },
   ];
+}
+
+/**
+ * A public feed meeting's dates as calendar grid entries, keyed like `publicMeetingToCalendarEvents` ids; cancelled
+ * occurrences are left out.
+ */
+export function publicMeetingToCalendarGridEntries(meeting: PublicCalendarMeeting, now = new Date()): MeetingCalendarGridEntry[] {
+  const entry = (key: string, startTime: string, durationMinutes: number): MeetingCalendarGridEntry => ({
+    key,
+    title: meeting.title,
+    type: meeting.meeting_type,
+    startTime,
+    durationMinutes,
+    past: isOccurrencePast(startTime, durationMinutes, now),
+  });
+  if (meeting.occurrences?.length) {
+    return meeting.occurrences
+      .filter((occ) => !isMeetingOccurrenceCancelled(occ, meeting.cancelled_occurrences))
+      .map((occ) => entry(`${meeting.id}-${occ.occurrence_id}`, occ.start_time, occ.duration ?? meeting.duration));
+  }
+  return [entry(meeting.meeting_and_occurrence_id ?? meeting.id, meeting.scheduled_start_time ?? meeting.start_time, meeting.duration)];
 }
 
 /**

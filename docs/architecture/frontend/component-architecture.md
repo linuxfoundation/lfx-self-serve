@@ -516,7 +516,8 @@ AppComponent
 
     Standalone routes (outside MainLayoutComponent):
     ├── /meetings/not-found      → MeetingPageNotFoundComponent behind meetingPageRedesignGuard, else MeetingNotFoundComponent
-    └── /meetings/:id            → MeetingPageComponent behind meetingPageRedesignGuard, else MeetingJoinComponent (public meeting join)
+    ├── /meetings/:id            → MeetingPageComponent behind meetingPageRedesignGuard, else MeetingJoinComponent (public meeting join)
+    └── /projects/:projectSlug/calendar → PublicCalendarPageComponent behind publicCalendarRedesignGuard, else PublicProjectCalendarComponent
 ```
 
 ## 🎯 Usage Guidelines

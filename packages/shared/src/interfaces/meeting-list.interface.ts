@@ -16,6 +16,7 @@ import type {
   OccurrenceNavItem,
   PastMeeting,
   PastMeetingSummary,
+  PublicProjectMeetingsResponse,
   RsvpResponse,
   RsvpScope,
 } from './meeting.interface';
@@ -597,6 +598,15 @@ export interface MeetingMiniCalendarTooltip extends MeetingCalendarTooltipAnchor
 
 /** Layout of the meetings home calendar dialog. */
 export type MeetingCalendarView = 'month' | 'week';
+
+/** Where the calendar grid sits: filling a dialog that scrolls it, or in a page's flow. */
+export type MeetingCalendarGridLayout = 'dialog' | 'page';
+
+/** The public project calendar's meetings feed while it loads, after it fails, or once loaded. */
+export interface PublicCalendarFeedState {
+  status: 'loading' | 'error' | 'ready';
+  response: PublicProjectMeetingsResponse | null;
+}
 
 /** A meeting type and the colour its calendar chips and legend dot take. */
 export interface MeetingCalendarTypeColor {

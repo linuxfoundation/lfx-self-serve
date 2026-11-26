@@ -1,0 +1,143 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- A fixed 36px bar; the pt-[36px] offset below must match IMPERSONATION_BANNER_HEIGHT_PX. -->
+<lfx-impersonation-banner />
+
+<div
+  class="flex min-h-screen flex-col bg-white"
+  [class]="userService.impersonating() ? 'pt-[36px] [--mp-offset:36px]' : '[--mp-offset:0px]'"
+  data-testid="public-calendar-page">
+  <lfx-meeting-page-top-bar [width]="1280" [revealAt]="110">
+    <span class="h-[28px] w-px flex-none bg-gray-200 max-sm:hidden" aria-hidden="true"></span>
+    <span class="flex min-w-0 items-center gap-[12px] max-sm:gap-[8px]" data-testid="public-calendar-compact-title">
+      <span
+        class="grid size-[32px] flex-none place-items-center overflow-hidden rounded-[8px] bg-white text-[12px] font-semibold text-blue-700 ring-1 ring-inset ring-gray-200"
+        aria-hidden="true">
+        @if (logoUrl()) {
+          <img [src]="logoUrl()" alt="" class="size-[72%] object-contain" />
+        } @else {
+          {{ initials() }}
+        }
+      </span>
+      <span class="flex min-w-0 flex-col">
+        <span class="text-[12px] leading-[16px] text-gray-500">Public Calendar</span>
+        <span class="truncate text-[15px] font-semibold leading-[20px] text-gray-900 max-sm:text-[13px]" [attr.title]="projectName()">{{ projectName() }}</span>
+      </span>
+    </span>
+  </lfx-meeting-page-top-bar>
+
+  <!-- Exact [Npx] design values: rem undershoots at the 14px root. -->
+  <main
+    class="mx-auto flex w-full max-w-[1280px] flex-auto flex-col gap-[24px] px-[16px] pb-[32px] pt-[32px] sm:px-[32px] sm:pb-[56px] sm:pt-[40px] min-[1345px]:px-0">
+    <div class="flex flex-wrap items-end justify-between gap-x-[24px] gap-y-[12px]">
+      @if (feed().status === 'loading') {
+        <div class="flex flex-col gap-[8px]" data-testid="public-calendar-heading-loading">
+          <lfx-ui-skeleton width="110px" height="14px" />
+          <lfx-ui-skeleton width="260px" height="28px" />
+        </div>
+      } @else {
+        <div class="flex min-w-0 items-center gap-[16px]" data-testid="public-calendar-heading">
+          <span
+            class="grid size-[56px] flex-none place-items-center overflow-hidden rounded-[12px] bg-white text-[16px] font-semibold text-blue-700 ring-1 ring-inset ring-gray-200"
+            aria-hidden="true">
+            @if (logoUrl()) {
+              <img [src]="logoUrl()" alt="" class="size-[72%] object-contain" data-testid="public-calendar-logo" />
+            } @else {
+              {{ initials() }}
+            }
+          </span>
+          <div class="flex min-w-0 flex-col gap-[4px]">
+            <span class="text-[13px] font-medium leading-[18px] text-gray-500">Public Calendar</span>
+            <h1 class="m-0 font-display text-[24px] font-light leading-[1.2] text-gray-900" data-testid="public-calendar-title">{{ projectName() }}</h1>
+          </div>
+        </div>
+      }
+
+      @if (!loading() && groups().length > 1) {
+        <lfx-ui-select
+          class="min-w-[180px] max-w-[340px]"
+          size="small"
+          ariaLabel="Group"
+          [value]="committeeUid() ?? ''"
+          (valueChange)="setGroup($event)"
+          data-testid="public-calendar-group">
+          <ng-template lfxUiSelectValue let-option>
+            <span class="truncate" [attr.title]="option.value ? option.label : null"
+              ><span class="font-semibold">Group:</span> {{ option.value ? option.label : 'All' }}</span
+            >
+          </ng-template>
+          <lfx-ui-option value="" label="All groups" />
+          @for (group of groups(); track group.uid) {
+            <lfx-ui-option [value]="group.uid" [label]="group.name" />
+          }
+        </lfx-ui-select>
+      }
+    </div>
+
+    @if (feed().status === 'error') {
+      <lfx-ui-empty-state
+        class="mt-[24px]"
+        heading="Unable to load calendar"
+        description="Something went wrong while fetching meeting data. Please try again."
+        icon="fa-light fa-circle-exclamation"
+        data-testid="public-calendar-error">
+        <lfx-ui-button variant="secondary" icon="fa-light fa-arrow-rotate-right" (click)="retry()" data-testid="public-calendar-retry">Retry</lfx-ui-button>
+      </lfx-ui-empty-state>
+    } @else if (loading()) {
+      <lfx-ui-skeleton width="100%" height="480px" data-testid="public-calendar-loading" />
+    } @else if (unknownGroup()) {
+      <lfx-ui-empty-state
+        class="mt-[24px]"
+        heading="Group not found"
+        description="This link points to a group that is not part of this project's public directory. It may have been renamed, made private, or removed."
+        icon="fa-light fa-calendar-xmark"
+        data-testid="public-calendar-unknown-group">
+        <lfx-ui-button variant="secondary-accent" icon="fa-light fa-calendar" (click)="setGroup(null)" data-testid="public-calendar-unknown-group-all"
+          >View all meetings</lfx-ui-button
+        >
+      </lfx-ui-empty-state>
+    } @else if (!entries().length) {
+      <div class="relative" data-testid="public-calendar-empty">
+        <div class="pointer-events-none grid grid-cols-7 overflow-hidden rounded-ui-md border border-gray-200 opacity-[.85]" aria-hidden="true">
+          @for (cell of emptyCells; track cell) {
+            <div class="h-[96px] border-l border-t border-gray-200 [&:nth-child(-n+7)]:border-t-0 [&:nth-child(7n+1)]:border-l-0"></div>
+          }
+        </div>
+        <div class="absolute inset-0 grid place-items-center bg-[radial-gradient(closest-side,theme(colors.white),theme(colors.white/0))]">
+          <lfx-ui-empty-state
+            heading="No public meetings"
+            [description]="
+              committeeUid()
+                ? 'No public meetings on the calendar for the selected group yet.'
+                : 'This project has no public meetings on the calendar yet. Check back soon.'
+            "
+            icon="fa-light fa-calendar-xmark">
+            @if (committeeUid()) {
+              <lfx-ui-button variant="secondary-accent" icon="fa-light fa-calendar" (click)="setGroup(null)" data-testid="public-calendar-empty-all"
+                >View all meetings</lfx-ui-button
+              >
+            }
+          </lfx-ui-empty-state>
+        </div>
+      </div>
+    } @else {
+      <section class="flex flex-col gap-[12px]" aria-label="Calendar" data-testid="public-calendar-ready">
+        <lfx-meetings-calendar-grid
+          layout="page"
+          testIdPrefix="public-calendar-grid"
+          [entries]="entries()"
+          [now]="now()"
+          [weekView]="!phone()"
+          [view]="calendarView()"
+          (viewChange)="setView($event)"
+          [(focus)]="focus" />
+        @if (zone()) {
+          <p class="m-0 text-[12px] leading-[16px] text-gray-500" data-testid="public-calendar-zone">Times in {{ zone() }}</p>
+        }
+      </section>
+    }
+  </main>
+
+  <lfx-meeting-page-footer [width]="1280" />
+</div>
