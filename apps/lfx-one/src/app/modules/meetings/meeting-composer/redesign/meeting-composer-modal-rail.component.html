@@ -1,0 +1,95 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact px from the design throughout: the 14px root shrinks the rem scale. -->
+<nav
+  class="flex w-[300px] shrink-0 flex-col gap-[20px] overflow-y-auto border-r border-gray-200 bg-gray-50 px-[16px] pb-[20px] pt-[24px]"
+  aria-label="Composer sections"
+  data-testid="meeting-composer-modal-rail">
+  <div class="flex min-w-0 flex-col gap-[10px] px-[10px] pb-[4px]">
+    @if (project(); as project) {
+      <span
+        class="flex min-w-0 items-center gap-[8px] text-[13px] font-medium leading-[18px] text-gray-700"
+        [title]="project.name"
+        data-testid="meeting-composer-project">
+        <lfx-ui-avatar shape="logo" decorative [size]="18" [initialsSize]="9" [name]="project.name" [src]="project.logoUrl" />
+        <span class="truncate">{{ project.name }}</span>
+      </span>
+    }
+    <h2 id="meeting-composer-title" class="heading-24 m-0 text-[26px] leading-[32px] text-gray-900" data-testid="meeting-composer-title">{{ heading() }}</h2>
+  </div>
+
+  <!-- No rows over a failed edit load: there is no form behind them. -->
+  @if (!loadFailed()) {
+    <div class="flex flex-col gap-[4px]">
+      @for (row of rows(); track row.section.id) {
+        @if (isEditMode()) {
+          <button
+            type="button"
+            class="flex w-full items-center gap-[10px] rounded-[10px] px-[10px] py-[6px] text-left text-[14px] leading-[20px] transition-colors duration-ui-fast focus-visible:shadow-focus focus-visible:outline-none"
+            [ngClass]="row.active ? 'bg-white font-semibold text-gray-900 shadow-small' : 'text-gray-700 hover:bg-gray-100'"
+            [attr.aria-current]="row.active ? 'true' : null"
+            [attr.data-testid]="'meeting-composer-rail-' + row.section.id"
+            (click)="onSelect(row)">
+            <i class="w-[16px] shrink-0 text-center" [ngClass]="[row.section.icon, row.active ? 'text-blue-600' : 'text-gray-500']" aria-hidden="true"></i>
+            <span class="truncate">{{ row.section.label }}</span>
+            @if (row.needsAttention) {
+              <span class="ml-auto size-[5px] shrink-0 rounded-full bg-red-500" data-testid="meeting-composer-rail-attention"></span>
+              <span class="sr-only">Required fields still missing</span>
+            }
+          </button>
+        } @else {
+          <button
+            type="button"
+            class="relative flex w-full items-center gap-[10px] rounded-[10px] px-[8px] py-[5px] text-left transition-colors duration-ui-fast focus-visible:shadow-focus focus-visible:outline-none"
+            [ngClass]="{
+              'bg-white shadow-small': row.active,
+              'cursor-not-allowed': !row.reachable,
+              'hover:bg-gray-100': !row.active && row.reachable,
+            }"
+            [attr.aria-current]="row.active ? 'step' : null"
+            [attr.aria-disabled]="row.reachable ? null : 'true'"
+            [attr.data-testid]="'meeting-composer-rail-' + row.section.id"
+            (click)="onSelect(row)">
+            <span
+              class="grid size-[24px] shrink-0 place-items-center rounded-full text-[11px]"
+              [ngClass]="{
+                'bg-blue-100 text-blue-700': row.active,
+                'bg-red-50 text-red-600': !row.active && row.needsAttention,
+                'bg-gray-50 text-gray-400 ring-1 ring-inset ring-gray-100': !row.reachable,
+                'bg-white text-gray-600 ring-1 ring-inset ring-gray-200': row.reachable && !row.active && !row.needsAttention,
+              }">
+              <i [class]="row.section.icon" aria-hidden="true"></i>
+            </span>
+            <span
+              class="truncate text-[13px] leading-[18px]"
+              [ngClass]="{
+                'font-semibold text-gray-900': row.active,
+                'text-gray-900': row.complete,
+                'text-gray-400': !row.reachable,
+                'text-gray-700': row.reachable && !row.active && !row.complete,
+              }">
+              {{ row.section.label }}
+            </span>
+            @if (row.complete) {
+              <span class="ml-auto grid size-[16px] shrink-0 place-items-center rounded-full bg-blue-500 text-[8px] text-white" aria-hidden="true">
+                <i class="fa-solid fa-check"></i>
+              </span>
+              <span class="sr-only" data-testid="meeting-composer-rail-complete">Complete</span>
+            }
+            @if (row.needsAttention) {
+              <span class="ml-auto mr-[4px] size-[6px] shrink-0 rounded-full bg-red-500" data-testid="meeting-composer-rail-attention"></span>
+              <span class="sr-only">Required fields still missing</span>
+            }
+          </button>
+        }
+      }
+    </div>
+  }
+
+  @if (scope(); as scope) {
+    <div class="mt-auto pt-[16px]">
+      <lfx-meeting-composer-scope-note [scope]="scope" (editSeries)="editSeries.emit()" />
+    </div>
+  }
+</nav>

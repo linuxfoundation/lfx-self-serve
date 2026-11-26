@@ -7,6 +7,7 @@ import type {
   CardSelectorOption,
   MeetingTypeConfig,
   MeetingComposerPreviewFeature,
+  MeetingComposerSectionId,
   RsvpResponse,
   ShowMeetingAttendeesLockOptions,
 } from '../interfaces';
@@ -397,6 +398,23 @@ export const MEETING_COMPOSER_SECTIONS = [
   { id: 'guests', label: 'Invite guests', icon: 'fa-light fa-users', required: false },
   { id: 'agenda-resources', label: 'Agenda & resources', icon: 'fa-light fa-list-check', required: false },
 ] as const;
+
+/** One-line description under each section title in the redesigned composer. */
+export const MEETING_COMPOSER_SECTION_DESCRIPTIONS: Record<MeetingComposerSectionId, string> = {
+  'details-access': 'Name the meeting, pick its type and decide who can find and join it.',
+  'date-schedule': 'When it starts, how long it runs and whether it repeats.',
+  'platform-features': 'Where the meeting happens and what gets captured for people who can’t attend live.',
+  guests: 'Add people one by one, or invite a whole group at once.',
+  'agenda-resources': 'Share the plan and any material guests should look at beforehand.',
+};
+
+/** What an occurrence edit leaves out of each section, shown at the end of the section in the redesigned composer. */
+export const MEETING_COMPOSER_OCCURRENCE_NOTES: Partial<Record<MeetingComposerSectionId, string>> = {
+  'details-access': 'Meeting type, organizer, visibility and join restriction apply to every occurrence, so they’re not shown here.',
+  'date-schedule': 'Timezone, early join and how often the meeting repeats apply to every occurrence, so they’re not shown here.',
+  guests: 'Groups, and guests invited to every occurrence, belong to the series, so they can’t be changed here.',
+  'agenda-resources': 'Documents and links are shared by every occurrence, so they’re not shown here.',
+};
 
 /**
  * Sections the quick create dialog puts in front of the organizer.
