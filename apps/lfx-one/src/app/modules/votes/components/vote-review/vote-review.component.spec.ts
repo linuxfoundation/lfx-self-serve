@@ -230,7 +230,7 @@ describe('VoteReviewComponent — voting method (#2921)', () => {
     [PollType.GENERIC, 'Plurality', 'Single selection (radio buttons)'],
     [PollType.CONDORCET_IRV, 'Condorcet IRV', 'Ranked'],
     [PollType.MAJORITY, 'Majority vote', 'Single selection (radio buttons)'],
-    [PollType.INSTANT_RUNOFF_VOTE, 'Instant runoff vote', 'Ranked'],
+    [PollType.INSTANT_RUNOFF_VOTE, 'Instant Runoff', 'Ranked'],
     [PollType.MEEK_STV, 'Meek STV', 'Ranked'],
   ])('shows %s as "%s" with response type "%s"', async (pollType, methodLabel, responseLabel) => {
     await render(pollType);
