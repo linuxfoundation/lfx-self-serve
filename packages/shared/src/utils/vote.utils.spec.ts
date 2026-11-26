@@ -1363,12 +1363,14 @@ describe('buildRankedQuestionViews', () => {
     expect(view.choiceDistributions).toEqual([]);
     expect(view.outcome).toBeNull();
     expect(view.standings).toEqual([]);
+    expect(view.irvRounds).toBeNull();
   });
 
   it('builds no outcome for a poll type that is not ranked', () => {
     const [view] = buildRankedQuestionViews(resultsWith([rankedQuestion()]), PollType.GENERIC);
     expect(view.outcome).toBeNull();
     expect(view.standings).toEqual([]);
+    expect(view.irvRounds).toBeNull();
   });
 
   describe('outcome and standings (lfx-self-serve-ops#2005)', () => {
@@ -1447,6 +1449,7 @@ describe('buildRankedQuestionViews', () => {
         ['Candidate F', 6, null, 1, 6],
         ['Candidate G', 7, null, 0, 6],
       ]);
+      expect(view.irvRounds).toBeNull();
     });
 
     it('shares a rank for equal head-to-head wins, in ballot order, and marks tied winners', () => {
@@ -1530,6 +1533,13 @@ describe('buildRankedQuestionViews', () => {
         ['b', 3, 'eliminated', 2, 2, 3],
         ['d', 4, 'eliminated', 1, 0, 3],
       ]);
+      // #6152: the fallback's round-by-round count, rows in standings order
+      expect(view.irvRounds?.rows.map((row) => row.choiceId)).toEqual(['a', 'c', 'b', 'd']);
+      expect(view.irvRounds?.steps.map((step) => [step.kind, step.choiceTexts])).toEqual([
+        ['eliminated', ['Candidate D']],
+        ['eliminated', ['Candidate B']],
+        ['winner', ['Candidate A']],
+      ]);
     });
 
     it('orders an Instant Runoff winner, survivors and eliminations without head-to-head counts', () => {
@@ -1545,6 +1555,18 @@ describe('buildRankedQuestionViews', () => {
         ['c', 2, 'survivor', null, null],
         ['b', 3, 'eliminated', 2, null],
         ['d', 4, 'eliminated', 1, null],
+      ]);
+      // #6152: the round-by-round count, rows in standings order, with the final round's winner marked
+      expect(view.irvRounds?.rounds.map((column) => [column.roundNumber, column.isFinal])).toEqual([
+        [1, false],
+        [2, false],
+        [3, true],
+      ]);
+      expect(view.irvRounds?.rows.map((row) => [row.choiceId, row.cells[2].status])).toEqual([
+        ['a', 'winner'],
+        ['c', 'continuing'],
+        ['b', 'out'],
+        ['d', 'out'],
       ]);
     });
 
@@ -1623,6 +1645,7 @@ describe('buildRankedQuestionViews', () => {
         ['b', 3, 'not_elected', null],
         ['d', 3, 'not_elected', null],
       ]);
+      expect(view.irvRounds).toBeNull();
     });
 
     it('lists a Meek STV seat missing from the rounds last among the elected, without a round', () => {
@@ -1674,7 +1697,7 @@ describe('buildRankedOverviewOutcome (#6124)', () => {
   });
 
   function view(outcome: RankedOutcome | null, standings: RankedStanding[] = []): RankedQuestionView {
-    return { questionId: 'q1', prompt: 'Pick a chair', choiceDistributions: [], outcome, standings };
+    return { questionId: 'q1', prompt: 'Pick a chair', choiceDistributions: [], outcome, standings, irvRounds: null };
   }
 
   const irv = (overrides: Partial<RankedOutcome> = {}): RankedOutcome => ({
@@ -1795,6 +1818,7 @@ describe('buildVoteResultsSummary (#4450)', () => {
     prompt: `Prompt ${questionId}`,
     outcome,
     standings: [],
+    irvRounds: null,
     choiceDistributions: Object.entries(counts).map(([choiceId, count]) => ({
       choiceId,
       choiceText: choiceId,

@@ -42,6 +42,7 @@ export * from './poll.utils';
 export * from './survey.utils';
 export * from './vote.utils';
 export * from './condorcet-results.utils';
+export * from './irv-rounds.utils';
 export * from './vote-mailing-list-reminder.utils';
 export * from './committee.utils';
 export * from './activity-feed.utils';

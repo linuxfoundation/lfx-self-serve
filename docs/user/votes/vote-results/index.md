@@ -4,7 +4,7 @@ description: How to see live and final results, abstentions, ranked questions, c
 audience: [all]
 product_area: Votes
 tags: [votes, results, abstain, comments, ranked, condorcet, tallies, voters]
-last_updated: 2026-11-24
+last_updated: 2026-11-26
 intercom_collection: Votes
 ---
 
@@ -78,9 +78,17 @@ The outcome is hidden while voting is open. After the vote ends and its final re
 
 - A banner names the winner, says the options are tied, or says **No winner could be determined.** Instant runoff explains that the winner had a majority of continuing ballots in the final round. Meek STV names the options elected using proportional counting.
 - **Standings** list every option in finishing order (**1st**, **2nd**, and so on). The winner is marked **Winner**, or **Tied** when several share first place. Instant-runoff standings show the round each option was knocked out (**Eliminated in round 2**). Meek STV standings show **Elected in round 3**, or **Not elected**.
+- On an Instant Runoff vote, **Round-by-round count** follows the standings. It shows how the instant runoff unfolded:
+  - A table has one row per option, in standings order, and one column per counting round. Each cell shows the option's votes in that round and its share of that round's continuing ballots.
+  - An option is marked **Eliminated** in the round it was knocked out. Later rounds show a dash, because it is no longer in the race.
+  - The last column is labelled **Final round** and marks the **Winner**, or every option that tied as **Tied**.
+  - Rows under the options show each round's **Continuing ballots**, **Exhausted ballots** (ballots with no remaining choices, counted as a running total) and **Majority needed** to win.
+  - Below the table, one line per round says who was eliminated with how many votes, and, when transfer details are available, where their ballots moved: how many went to each remaining option, and how many were exhausted. If the voting service omits those details, the line says **Transfer details were not provided.** rather than assuming the ballots were exhausted. The final line follows the service's declared winner or tie, or says that no winner could be determined.
+  - When options tied for the fewest votes, the line says how the tie was settled: by comparing lower-ranked preferences, or picked at random by the voting service. A random choice can differ between reads of the same results.
+  - On a narrow screen, scroll the table sideways. Keyboard users can Tab to it and use the arrow keys. The option names stay in view.
 - The per-rank breakdown follows under **Rank distribution**.
 
-Managers, invited voters who can see the final results, and the **Present** view all show the outcome. Round-by-round vote counts aren't shown yet.
+Managers, invited voters who can see the final results, and the **Present** view all show the outcome, including the round-by-round count. It never appears while the vote is open or before its final results load.
 
 ### Condorcet IRV results
 
@@ -88,6 +96,7 @@ A Condorcet IRV vote shows its own results for each question. The winner comes f
 
 - **Final result** puts the outcome first. A prominent card names the winning option and explains whether it beat every other option head-to-head or won through instant-runoff elimination. The method appears as a **Condorcet IRV** or **Instant-runoff fallback** badge. A tie names the tied options and says no single winner could be determined. If no winner could be determined, it says so.
 - **Final standings** lists every option in order, with the winner marked **Winner** and tied winners marked **Tied**. When head-to-head wins decided the result, each option shows how many head-to-head matchups it won. When instant-runoff elimination decided it, remaining non-winning options follow the winner in final-round vote-count order, with equal counts ordered by their head-to-head comparison. Eliminated options follow, showing the round they were eliminated in, latest first. When instant-runoff elimination ran but no winner could be determined, the remaining options all share first place.
+- **Round-by-round count** follows the final standings when the vote fell back to instant-runoff elimination. It works the same way as the [ranked questions round view](#ranked-questions): each option's votes per round, **Eliminated**, **Final round**, **Winner** or **Tied**, the **Continuing ballots**, **Exhausted ballots** and **Majority needed** rows, and a line per round on where eliminated ballots moved. A Condorcet winner has no rounds, so this section doesn't appear.
 - **Head-to-head results** compares every pair of options. Read across a row: the first number counts voters preferring that row's option, and the second counts voters preferring the column's option. Text, icons and shading distinguish wins, losses and ties. A closed Condorcet winner also has a short list of its available matchups above the table. On a narrow screen, scroll the table sideways; keyboard users can Tab to a table and use the arrow keys to scroll it, including the exact-rank-count and ballot-ranking tables when expanded; the option names stay in view, with long names wrapping inside their column.
 - **How voters ranked each option** shows a stacked preference bar and the exact count for each rank (**1st**, **2nd**, and so on). Each bar is based on ballots that ranked that option, not all invited voters or responses; ballots omitting the option and abstentions are excluded. These distributions are not the final result, and the option with the most first choices need not win. Select **View exact rank counts** to open the accompanying table. Its counts are not links to individual ballots.
 - **Ballot breakdown** comes last and starts collapsed when ranking orders are available. Select **View ballot rankings** to see the five most common orders and how many ballots used each. If there are more than five orders, select **Show all rankings** to see the full list, or **Show 5 most common** to return to the preview. Omitted preferences are marked **Not ranked**. Only managers of a named vote see this breakdown. On a pseudo-anonymous vote, or for voters, it says **Ballot-by-ballot rankings aren't available for this vote.** Managers of a named vote can still view individual ballots on the **Voters** tab.
