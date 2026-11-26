@@ -4,7 +4,7 @@
 import { Component, inject, PLATFORM_ID } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { PUBLIC_PROFILE_THEME_STORAGE_KEY } from '@lfx-one/shared/constants';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { PublicProfileThemeService } from './public-profile-theme.service';
 
@@ -47,5 +47,31 @@ describe('PublicProfileThemeService', () => {
     const { service } = await render('server');
 
     expect(service.theme()).toBe('light');
+  });
+
+  it('reads anything but a stored dark as light', async () => {
+    localStorage.setItem(PUBLIC_PROFILE_THEME_STORAGE_KEY, 'blue');
+    const { service } = await render();
+
+    expect(service.theme()).toBe('light');
+  });
+
+  it('stays light, and still switches for the visit, when storage is blocked', async () => {
+    const getItem = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('blocked');
+    });
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('blocked');
+    });
+    try {
+      const { service } = await render();
+      expect(service.theme()).toBe('light');
+
+      service.toggle();
+      expect(service.theme()).toBe('dark');
+    } finally {
+      getItem.mockRestore();
+      setItem.mockRestore();
+    }
   });
 });

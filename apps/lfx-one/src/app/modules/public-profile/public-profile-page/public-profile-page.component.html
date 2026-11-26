@@ -151,7 +151,11 @@
   <!-- Footer — matches design markup: LF horizontal logo, three-line legal text, cookie link -->
   <footer
     class="border-t text-[13px] leading-[1.7]"
-    [ngClass]="redesigned ? 'mt-[64px] border-ui-neutral-200 pt-[48px] text-ui-neutral-500' : 'mt-[72px] border-gray-200 pt-12 text-gray-500'"
+    [ngClass]="
+      redesigned
+        ? 'mt-[64px] border-ui-neutral-200 pt-[48px] text-ui-neutral-500 [[data-theme=dark]_&]:text-ui-neutral-600'
+        : 'mt-[72px] border-gray-200 pt-12 text-gray-500'
+    "
     data-testid="public-profile-footer">
     <img
       src="/images/logo_lf_horizontal_color.png"
@@ -191,7 +195,7 @@
         target="_blank"
         rel="noopener noreferrer"
         class="hover:underline"
-        [ngClass]="redesigned ? 'text-ui-neutral-500' : 'text-gray-500'"
+        [ngClass]="redesigned ? 'text-ui-neutral-500 [[data-theme=dark]_&]:text-ui-neutral-600' : 'text-gray-500'"
         >Policies</a
       >
       page.

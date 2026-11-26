@@ -17,6 +17,7 @@ import { PublicProfileHeroComponent } from '../public-profile-hero/public-profil
   selector: 'lfx-public-profile-hero-redesign',
   imports: [MarkdownRendererComponent, UiButtonComponent],
   templateUrl: './public-profile-hero-redesign.component.html',
+  styleUrl: './public-profile-hero-redesign.component.scss',
 })
 export class PublicProfileHeroRedesignComponent extends PublicProfileHeroComponent {
   protected readonly copy = PUBLIC_PROFILE_HERO_COPY;
