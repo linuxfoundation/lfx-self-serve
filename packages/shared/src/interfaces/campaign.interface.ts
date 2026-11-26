@@ -3859,6 +3859,9 @@ export interface RedditCustomAudiencesResult {
 /** The two Reddit custom-audience lists, keyed as `redditConfig` spells them (`REDDIT_CUSTOM_AUDIENCE_KEYS`). */
 export type RedditCustomAudienceListKey = 'customAudienceIds' | 'excludedCustomAudienceIds';
 
+/** The two Reddit targeting exclusion lists, keyed as `redditConfig` spells them (`REDDIT_TARGETING_EXCLUSION_KEYS`, #6108 row 3). */
+export type RedditTargetingExclusionKey = 'excludedSubreddits' | 'excludedGeoTargets';
+
 /** The Reddit custom audiences the Implement tab holds (#6108 row 1): the ids to target and to exclude, as picked or typed. */
 export type RedditCustomAudiencesDraft = Record<RedditCustomAudienceListKey, string[]>;
 

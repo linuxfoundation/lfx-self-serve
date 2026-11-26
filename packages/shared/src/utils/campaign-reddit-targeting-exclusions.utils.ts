@@ -7,7 +7,7 @@ import {
   REDDIT_TARGETING_EXCLUSION_KEYS,
   REDDIT_TARGETING_EXCLUSION_LIMITS,
 } from '../constants/campaign.constants';
-import type { RedditConfigRefusal } from '../interfaces/campaign.interface';
+import type { RedditConfigRefusal, RedditTargetingExclusionKey } from '../interfaces/campaign.interface';
 import { foldKey } from './campaign-linkedin-config.utils';
 import { goTrimSpace } from './campaign-linkedin.utils';
 
@@ -19,13 +19,23 @@ import { goTrimSpace } from './campaign-linkedin.utils';
  * `iso3166Alpha2`.
  */
 
-type ExclusionKey = (typeof REDDIT_TARGETING_EXCLUSION_KEYS)[number];
-
 function plainRecord(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
 }
 
-function fieldOf(key: ExclusionKey): string {
+/**
+ * The value campaign-service decodes for `key`, as Go's `encoding/json` matches keys: the exact spelling when present,
+ * else the first key equal to it ignoring case (Unicode folds included: `foldKey`). The keys the exclusions are compared
+ * against (`subreddits`, `geoTargets`, `subCountryGeoTargets`) are read this way, so a case variant of one cannot make
+ * the comparison differ from campaign-service's.
+ */
+function decodedValue(config: Record<string, unknown>, key: string): unknown {
+  if (key in config) return config[key];
+  const match = Object.keys(config).find((k) => foldKey(k) === foldKey(key));
+  return match === undefined ? undefined : config[match];
+}
+
+function fieldOf(key: RedditTargetingExclusionKey): string {
   return `redditConfig.${key}`;
 }
 
@@ -49,8 +59,8 @@ function subredditName(raw: string): string {
  * `geoTargets`, or `US` when there are none and no sub-country locations replace the default.
  */
 function effectiveGeoSet(config: Record<string, unknown>): Set<string> {
-  const targeted = new Set((stringList(config['geoTargets']) ?? []).map((g) => goTrimSpace(g).toUpperCase()).filter((g) => g !== ''));
-  const subCountry = stringList(config['subCountryGeoTargets']) ?? [];
+  const targeted = new Set((stringList(decodedValue(config, 'geoTargets')) ?? []).map((g) => goTrimSpace(g).toUpperCase()).filter((g) => g !== ''));
+  const subCountry = stringList(decodedValue(config, 'subCountryGeoTargets')) ?? [];
   if (targeted.size === 0 && subCountry.length === 0) targeted.add('US');
   return targeted;
 }
@@ -60,7 +70,7 @@ function subredditRefusal(excluded: string[], config: Record<string, unknown>): 
   const max = REDDIT_TARGETING_EXCLUSION_LIMITS.excludedSubreddits;
   if (excluded.length > max) return { field, message: `Exclude at most ${max} subreddits.` };
   const targeted = new Set(
-    (stringList(config['subreddits']) ?? [])
+    (stringList(decodedValue(config, 'subreddits')) ?? [])
       .map(subredditName)
       .filter((name) => name !== '')
       .map((name) => name.toLowerCase())
@@ -125,7 +135,7 @@ export function redditTargetingExclusionsRefusal(raw: unknown, enabled: boolean)
       return { field: fieldOf(key), message: `Send it as "${key}", spelled exactly.` };
     }
   }
-  const lists = {} as Record<ExclusionKey, string[]>;
+  const lists = {} as Record<RedditTargetingExclusionKey, string[]>;
   for (const key of REDDIT_TARGETING_EXCLUSION_KEYS) {
     const list = stringList(config[key]);
     if (list === null) return { field: fieldOf(key), message: 'Send it as a list of text entries.' };

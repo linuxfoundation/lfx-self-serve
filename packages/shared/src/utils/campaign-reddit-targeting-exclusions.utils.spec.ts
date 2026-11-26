@@ -22,6 +22,8 @@ describe('redditTargetingExclusionsRefusal', () => {
     ['countries beside explicit geo targets', { geoTargets: ['US'], excludedGeoTargets: ['ca', ' gb '] }, true],
     ['US excluded when sub-country locations replace the default', { subCountryGeoTargets: ['6252001'], excludedGeoTargets: ['US'] }, true],
     ['a repeated country', { geoTargets: ['US'], excludedGeoTargets: ['CA', 'ca'] }, true],
+    // campaign-service decodes keys ignoring case, so a case variant of geoTargets is the targeting it compares against.
+    ['US excluded beside a case-variant geoTargets', { GeoTargets: ['CA'], excludedGeoTargets: ['US'] }, true],
   ])('accepts %s', (_name, raw, enabled) => {
     expect(redditTargetingExclusionsRefusal(raw, enabled)).toBeNull();
   });
@@ -41,6 +43,7 @@ describe('redditTargetingExclusionsRefusal', () => {
     ['a /r/ prefix', { excludedSubreddits: ['/r/news'] }, true, SUBS, 'not a subreddit name'],
     ['a hyphenated name', { excludedSubreddits: ['cloud-native'] }, true, SUBS, 'not a subreddit name'],
     ['a subreddit also targeted', { subreddits: ['r/Kubernetes'], excludedSubreddits: ['kubernetes'] }, true, SUBS, 'also targeted'],
+    ['a subreddit targeted under a case-variant key', { Subreddits: ['news'], excludedSubreddits: ['news'] }, true, SUBS, 'also targeted'],
     ['51 countries', { excludedGeoTargets: Array.from({ length: 51 }, () => 'CA') }, true, GEOS, 'at most 50'],
     ['a blank country', { excludedGeoTargets: [' '] }, true, GEOS, '1 is blank'],
     ['a three-letter code', { excludedGeoTargets: ['CAN'] }, true, GEOS, 'ISO 3166-1'],
