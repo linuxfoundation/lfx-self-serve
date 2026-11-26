@@ -1,9 +1,10 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<!-- Exact [Npx] design values: rem undershoots at the 14px root. Edge to edge up to 1080px, then 1016px wide. -->
+<!-- Exact [Npx] design values: rem undershoots at the 14px root. Side gutters until the viewport fits `width` plus 64px. -->
 <footer
-  class="mx-auto flex w-full max-w-[1016px] flex-col items-start border-t border-gray-200 px-[16px] py-[32px] text-[12px] leading-[1.7] text-gray-500 sm:px-[32px] sm:pt-[48px] min-[1081px]:px-0"
+  class="mx-auto flex w-full flex-col items-start border-t border-gray-200 px-[16px] py-[32px] text-[12px] leading-[1.7] text-gray-500 sm:px-[32px] sm:pt-[48px]"
+  [class]="width() === 1280 ? 'max-w-[1280px] min-[1345px]:px-0' : 'max-w-[1016px] min-[1081px]:px-0'"
   data-testid="meeting-page-footer">
   <img src="/images/logo_lf_horizontal_color.png" alt="The Linux Foundation" class="mb-[28px] h-[16px] w-auto opacity-85" />
   <p class="mb-[14px] [text-wrap:pretty]">
