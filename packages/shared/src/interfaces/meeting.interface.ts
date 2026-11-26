@@ -960,6 +960,18 @@ export interface ComposerGuestRow {
   removable: boolean;
 }
 
+/** A guest row in the redesigned composer: the shared row plus the `You` badge and the line after the email. */
+export interface ComposerRedesignGuestRow extends ComposerGuestRow {
+  /** Whether the guest is the signed-in user. */
+  isSelf: boolean;
+  /** `{email} · {meta}`: how the guest got here (group, series) or who they are, with empty parts dropped. */
+  subline: string;
+  /** Whether the row offers to resend the guest's invite: an edit, with the guest saved upstream. */
+  canResend: boolean;
+  /** Whether a resend for this guest is in flight. */
+  resending: boolean;
+}
+
 /**
  * Guest removals since the last add or dismiss, kept so they can be undone together
  * @description Removal has no confirm step, so this is the way back from misclicks. Undo puts back the
