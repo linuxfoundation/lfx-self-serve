@@ -373,6 +373,16 @@ export function formatMeetingDateTime(start: string | Date, durationMinutes?: nu
   return `${day} · ${time}`;
 }
 
+/** Start of a meeting in a composer toast, e.g. "Tue, Oct 6, 2026 at 9:00 AM"; empty for an invalid start. */
+export function formatMeetingToastWhen(start: string | Date, timeZone?: string): string {
+  const startDate = new Date(start);
+  if (Number.isNaN(startDate.getTime())) return '';
+
+  const day = new Intl.DateTimeFormat('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone }).format(startDate);
+  const time = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', timeZone }).format(startDate);
+  return `${day} at ${time}`;
+}
+
 /** Parts of the meetings home date line: day, start time, minutes; empty for an invalid start. `timeZone` defaults to the viewer's own. */
 export function getMeetingWhenParts(start: string | Date, durationMinutes: number, timeZone?: string): string[] {
   const startDate = new Date(start);

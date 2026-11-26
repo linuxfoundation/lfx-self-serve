@@ -8,11 +8,10 @@
   <div
     class="relative flex max-h-full min-h-[min(680px,100%)] w-full max-w-[2000px] flex-col overflow-hidden rounded-ui-lg bg-white shadow-modal max-[972px]:h-full max-[972px]:min-h-0"
     role="dialog"
-    aria-modal="true"
     aria-labelledby="meeting-composer-title"
     cdkTrapFocus
     [cdkTrapFocusAutoCapture]="true"
-    (keydown.escape)="onEscape($event)"
+    (keydown.escape)="onEscape($any($event))"
     data-testid="meeting-composer-dialog">
     <lfx-ui-button
       class="absolute right-[14px] top-[14px] z-30"
@@ -46,7 +45,7 @@
               </span>
             }
           </span>
-          @if (isEditMode()) {
+          @if (isEditMode() && !formService.meetingLoadFailed()) {
             <lfx-ui-select
               ariaLabel="Section"
               [value]="composer.activeSection()"
@@ -147,6 +146,17 @@
             @if (!isEditMode()) {
               <lfx-ui-button variant="secondary" size="large" [disabled]="formService.submitting()" data-testid="meeting-composer-cancel" (click)="onClose()">
                 Cancel
+              </lfx-ui-button>
+            }
+            @if (scope()?.kind === 'occurrence') {
+              <lfx-ui-button
+                variant="danger-tertiary"
+                size="large"
+                icon="fa-light fa-trash"
+                [disabled]="formService.submitting()"
+                data-testid="meeting-composer-cancel-occurrence"
+                (click)="onCancelOccurrence()">
+                Cancel occurrence
               </lfx-ui-button>
             }
           </span>

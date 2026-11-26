@@ -7,7 +7,7 @@ import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { Router } from '@angular/router';
-import type { Meeting, MeetingWriteAccess } from '@lfx-one/shared/interfaces';
+import type { Meeting, MeetingWriteAccess, UiToastConfig } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { IntercomService } from '@services/intercom.service';
@@ -16,6 +16,8 @@ import { MeetingService } from '@services/meeting.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
+import { UserService } from '@services/user.service';
+import { UiToastService } from '@shared/uikit/toast/toast.service';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { of, Subject, throwError } from 'rxjs';
@@ -30,6 +32,7 @@ describe('MeetingComposerModalComponent (through the host, meetings-redesign on)
   let composer: MeetingComposerService;
   let formService: MeetingComposerFormService;
   let getMeeting: ReturnType<typeof vi.fn>;
+  let toast: { show: ReturnType<typeof vi.fn> };
 
   const meeting = {
     id: 'meeting-1',
@@ -49,6 +52,16 @@ describe('MeetingComposerModalComponent (through the host, meetings-redesign on)
   const text = (testId: string): string => query(testId)?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
   const button = (testId: string): HTMLButtonElement | null => fixture.nativeElement.querySelector(`[data-testid="${testId}"] button`);
 
+  const lastToast = (): UiToastConfig => toast.show.mock.calls[toast.show.mock.calls.length - 1][0];
+  // The last match: a dialog closed earlier in the test can still be leaving the overlay container.
+  const fromDocument = (testId: string): HTMLButtonElement | null => {
+    const matches = document.querySelectorAll<HTMLButtonElement>(`[data-testid="${testId}"] button`);
+    return matches[matches.length - 1] ?? null;
+  };
+  const pressEscape = (): void => {
+    query('meeting-composer-dialog')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  };
+
   const openEdit = async (patch: Partial<Meeting> = {}, occurrenceId?: string): Promise<void> => {
     getMeeting.mockReturnValue(of({ ...meeting, ...patch }));
     composer.open({ mode: 'edit', meetingUid: 'meeting-1', projectUid: 'project-1', ...(occurrenceId ? { occurrenceId } : {}) });
@@ -57,6 +70,7 @@ describe('MeetingComposerModalComponent (through the host, meetings-redesign on)
 
   beforeEach(async () => {
     getMeeting = vi.fn(() => of(meeting));
+    toast = { show: vi.fn(() => ({ id: 'toast', dismiss: vi.fn() })) };
 
     TestBed.configureTestingModule({
       providers: [
@@ -83,6 +97,8 @@ describe('MeetingComposerModalComponent (through the host, meetings-redesign on)
             activeContext: signal({ uid: 'project-1', name: 'Acme Project', slug: 'acme' }),
           },
         },
+        { provide: UiToastService, useValue: toast },
+        { provide: UserService, useValue: { refreshUserMeetings: vi.fn(), refreshUserPastMeetings: vi.fn() } },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(true) } },
         { provide: PersonaService, useValue: { currentPersona: signal('maintainer') } },
         { provide: ProjectService, useValue: {} },
@@ -164,7 +180,58 @@ describe('MeetingComposerModalComponent (through the host, meetings-redesign on)
       expect(text('meeting-composer-mobile-step')).toBe('Step 2 of 5 · Date & schedule');
     });
 
-    it('closes from the X, Cancel and Escape', async () => {
+    it('asks before discarding entered work, and keeps editing when told to', async () => {
+      formService.form().patchValue({ title: 'Weekly sync' });
+      await flush();
+
+      button('meeting-composer-close')?.click();
+      await flush();
+
+      expect(document.querySelector('[data-testid="meeting-composer-discard-dialog"]')?.textContent).toContain('Discard this meeting?');
+      fromDocument('meeting-composer-discard-keep')?.click();
+      await flush();
+
+      expect(composer.isOpen()).toBe(true);
+      expect(document.querySelector('[data-testid="meeting-composer-discard-dialog"]')).toBeNull();
+    });
+
+    it('closes once the organizer discards from Cancel', async () => {
+      formService.form().patchValue({ title: 'Weekly sync' });
+      await flush();
+
+      button('meeting-composer-cancel')?.click();
+      await flush();
+      fromDocument('meeting-composer-discard-confirm')?.click();
+      await flush();
+
+      expect(composer.isOpen()).toBe(false);
+    });
+
+    it('asks from Escape too', async () => {
+      formService.form().patchValue({ title: 'Weekly sync' });
+      await flush();
+
+      pressEscape();
+      await flush();
+      fromDocument('meeting-composer-discard-confirm')?.click();
+      await flush();
+
+      expect(composer.isOpen()).toBe(false);
+    });
+
+    it('announces a create with a dark toast offering View meeting and Edit', async () => {
+      vi.spyOn(formService, 'validateForSubmit').mockReturnValue(true);
+      vi.spyOn(formService, 'submit').mockReturnValue(of({ ...meeting, timezone: 'America/Los_Angeles', start_time: '2026-10-06T16:00:00Z' }));
+
+      fixture.debugElement.componentInstance['onSubmit']();
+      await flush();
+
+      expect(lastToast()).toMatchObject({ variant: 'dark', message: 'Meeting created', description: '“Weekly sync” · Tue, Oct 6, 2026 at 9:00 AM' });
+      expect(lastToast().position).toBeUndefined();
+      expect(lastToast().actions?.map((action) => action.label)).toEqual(['View meeting', 'Edit']);
+    });
+
+    it('closes untouched without asking', async () => {
       button('meeting-composer-close')?.click();
       expect(composer.isOpen()).toBe(false);
 
@@ -175,8 +242,21 @@ describe('MeetingComposerModalComponent (through the host, meetings-redesign on)
 
       composer.open({ mode: 'create', projectUid: 'project-1' });
       await flush();
-      query('meeting-composer-dialog')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      pressEscape();
       expect(composer.isOpen()).toBe(false);
+      expect(document.querySelector('[data-testid="meeting-composer-discard-dialog"]')).toBeNull();
+    });
+
+    it('leaves Escape to an open overlay or an input method composition', async () => {
+      const trigger = document.createElement('button');
+      trigger.setAttribute('aria-expanded', 'true');
+      query('meeting-composer-body')?.appendChild(trigger);
+
+      trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      query('meeting-composer-dialog')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, isComposing: true }));
+
+      expect(composer.isOpen()).toBe(true);
+      expect(query('meeting-composer-dialog')?.hasAttribute('aria-modal')).toBe(false);
     });
 
     it('stays open on Escape while a save is in flight', async () => {
@@ -214,6 +294,16 @@ describe('MeetingComposerModalComponent (through the host, meetings-redesign on)
       expect(query('meeting-composer-load-error')).not.toBeNull();
       expect(query('meeting-composer-rail-details-access')).toBeNull();
       expect(query('meeting-composer-preview-column')).toBeNull();
+      expect(query('meeting-composer-mobile-section')).toBeNull();
+    });
+
+    it('names no project and marks every section seen while an edit loads', async () => {
+      getMeeting.mockReturnValue(new Subject());
+      composer.open({ mode: 'edit', meetingUid: 'meeting-1', projectUid: 'project-1' });
+      await flush();
+
+      expect(query('meeting-composer-project')).toBeNull();
+      expect(composer.visitedSections().size).toBe(5);
     });
 
     it('lists every section, offers Cancel and Save on the right, and names a one-time meeting', async () => {
@@ -229,10 +319,57 @@ describe('MeetingComposerModalComponent (through the host, meetings-redesign on)
       expect(text('meeting-composer-scope-single')).toContain('Weekly sync');
     });
 
+    it('asks before discarding edits with the edit copy', async () => {
+      await openEdit();
+      formService.form().patchValue({ title: 'Renamed sync' });
+      await flush();
+
+      button('meeting-composer-cancel')?.click();
+      await flush();
+
+      expect(document.querySelector('[data-testid="meeting-composer-discard-dialog"]')?.textContent).toContain('Discard your changes?');
+      fromDocument('meeting-composer-discard-confirm')?.click();
+      await flush();
+      expect(composer.isOpen()).toBe(false);
+    });
+
+    it('closes an unchanged edit without asking, and offers no Cancel occurrence outside occurrence scope', async () => {
+      await openEdit();
+
+      expect(button('meeting-composer-cancel-occurrence')).toBeNull();
+      button('meeting-composer-cancel')?.click();
+      await flush();
+
+      expect(composer.isOpen()).toBe(false);
+    });
+
+    it('confirms a saved one-time meeting with its new date', async () => {
+      await openEdit();
+      vi.spyOn(formService, 'validateForSubmit').mockReturnValue(true);
+      vi.spyOn(formService, 'submit').mockReturnValue(of(null));
+      formService.form().patchValue({ title: 'Renamed sync', startDate: new Date(2030, 0, 8), startTime: '10:00 AM', timezone: 'UTC' });
+
+      fixture.debugElement.componentInstance['onSubmit']();
+      await flush();
+
+      expect(lastToast()).toMatchObject({ variant: 'dark', message: 'Meeting updated', description: '“Renamed sync” · Tue, Jan 8, 2030 at 10:00 AM' });
+    });
+
     it('says a recurring edit applies to the whole series', async () => {
       await openEdit({ recurrence: { type: 2, repeat_interval: 1 } as Meeting['recurrence'] });
 
       expect(text('meeting-composer-scope-series')).toContain('Changes apply to every upcoming occurrence.');
+
+      vi.spyOn(formService, 'validateForSubmit').mockReturnValue(true);
+      vi.spyOn(formService, 'submit').mockReturnValue(of(null));
+      fixture.debugElement.componentInstance['onSubmit']();
+      await flush();
+
+      expect(lastToast()).toMatchObject({
+        variant: 'dark',
+        message: 'Series updated',
+        description: '“Weekly sync” · changes apply to every upcoming occurrence',
+      });
     });
 
     it('notes what an occurrence edit leaves out and reopens the series on the same section', async () => {
@@ -249,6 +386,7 @@ describe('MeetingComposerModalComponent (through the host, meetings-redesign on)
 
       expect(text('meeting-composer-series-fields-note')).toContain('Timezone, early join and how often the meeting repeats');
       expect(query('meeting-composer-rail-platform-features')).toBeNull();
+      expect(button('meeting-composer-cancel-occurrence')).not.toBeNull();
 
       query('meeting-composer-series-fields-edit-series')?.click();
       await flush();
