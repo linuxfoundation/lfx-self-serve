@@ -33,7 +33,7 @@
               size="small"
               [ariaLabel]="copy.visibilityLabel"
               [value]="visibility()"
-              [disabled]="impersonating()"
+              [disabled]="impersonating() || saving()"
               (valueChange)="onVisibilityChange($event)"
               data-testid="profile-settings-drawer-switch">
               <lfx-ui-switch-option value="private" [label]="copy.private" icon="fa-light fa-lock" data-testid="profile-settings-drawer-private" />

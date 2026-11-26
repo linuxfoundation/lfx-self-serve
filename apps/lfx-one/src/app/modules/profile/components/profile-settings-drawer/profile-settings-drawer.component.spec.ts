@@ -8,7 +8,7 @@ import { PROFILE_SETTINGS_DRAWER_COPY, PROFILE_VISIBILITY_DEFAULTS, PROFILE_VISI
 import { ProfileVisibility } from '@lfx-one/shared/interfaces';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
-import { Observable, of, throwError } from 'rxjs';
+import { Observable, of, Subject, throwError } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { ProfileVisibilityDrawerService } from '../profile-visibility-drawer/profile-visibility-drawer.service';
@@ -207,5 +207,22 @@ describe('ProfileSettingsDrawerComponent', () => {
     expect((query('profile-settings-drawer-public')?.querySelector('input') as HTMLInputElement).disabled).toBe(true);
     expect(toggle('badges').disabled).toBe(true);
     expect(button('profile-settings-drawer-save').disabled).toBe(true);
+  });
+
+  it('locks the switches while a save is in flight, so a later change is not lost', async () => {
+    const response = new Subject<ProfileVisibility>();
+    const { query, open, button, toggle, flush } = await render(
+      () => of(visibility(true)),
+      vi.fn(() => response)
+    );
+    await open();
+
+    toggle('badges').click();
+    await flush();
+    button('profile-settings-drawer-save').click();
+    await flush();
+
+    expect(toggle('skills').disabled).toBe(true);
+    expect((query('profile-settings-drawer-private')?.querySelector('input') as HTMLInputElement).disabled).toBe(true);
   });
 });

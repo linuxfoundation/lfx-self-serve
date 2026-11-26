@@ -89,8 +89,8 @@ export class ProfileSettingsDrawerComponent {
   protected readonly impersonating = this.userService.impersonating;
   protected readonly visibility = computed(() => (this.isPublic() ? 'public' : 'private'));
   protected readonly dirty: Signal<boolean> = this.initDirty();
-  /** The switches below the card wait for a public profile, and stay read-only while impersonating. */
-  protected readonly locked = computed(() => !this.isPublic() || this.impersonating());
+  /** The switches below the card wait for a public profile, and stay read-only while impersonating or saving. */
+  protected readonly locked = computed(() => !this.isPublic() || this.impersonating() || this.saving());
   protected readonly canSave = computed(() => this.dirty() && !this.saving() && !this.loading() && !this.loadFailed() && !this.impersonating());
   protected readonly publicProfileUrl: Signal<string> = this.initPublicProfileUrl();
   /** The open tab's switches, each with whether its block shows. */
@@ -110,7 +110,7 @@ export class ProfileSettingsDrawerComponent {
   }
 
   protected onVisibilityChange(value: string | null): void {
-    if (this.impersonating() || value === null) return;
+    if (this.impersonating() || this.saving() || value === null) return;
     const isPublic = value === 'public';
     if (isPublic === this.isPublic()) return;
     this.isPublic.set(isPublic);
@@ -221,7 +221,7 @@ export class ProfileSettingsDrawerComponent {
     this.load();
     const ref = this.drawerService.open(this.content(), { describedBy: true, canClose: () => !this.saving() });
     this.drawerRef = ref;
-    ref.closed.pipe(take(1)).subscribe(() => {
+    ref.closed.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe(() => {
       this.drawerRef = null;
       this.loadSubscription?.unsubscribe();
       this.drawer.close();
@@ -241,7 +241,8 @@ export class ProfileSettingsDrawerComponent {
           console.warn('[ProfileSettingsDrawer] Failed to load the visibility settings', error);
           return of(null);
         }),
-        finalize(() => this.loading.set(false))
+        finalize(() => this.loading.set(false)),
+        takeUntilDestroyed(this.destroyRef)
       )
       .subscribe((visibility) => {
         if (visibility) this.seed(visibility);
