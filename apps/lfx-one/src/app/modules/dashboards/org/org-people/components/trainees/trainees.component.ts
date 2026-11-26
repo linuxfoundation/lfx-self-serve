@@ -21,11 +21,11 @@ import {
   countOrgTraineePairs,
   hasOrgTrainingFilter,
   matchesOrgTrainingFilters,
+  mostRecentOrgTraineePair,
   orgTraineePairCourseLabel,
   orgTrainingFiltersSignature,
   orgTrainingStatsQuery,
   parseOrgTrainingViewState,
-  resolveOrgTraineePairs,
 } from '@lfx-one/shared/utils';
 import { formatMonthYearUtc } from '@shared/utils/date-format.util';
 import { computePersonInitials } from '@shared/utils/person-avatar.util';
@@ -147,14 +147,9 @@ export class TraineesComponent {
   // Learners not on the people list: already the range's (the BFF windows them), narrowed by the name search only, by name.
   protected readonly outsideLearners: Signal<OrgTraineeOutsideLearner[]> = computed(() => this.initOutsideLearners());
 
-  // Each person-course pair is resolved from ALL its in-range rows first (the BFF's pair rule); only then do the filters apply, to the pair.
-  private readonly resolvedPairs: Signal<OrgTraineePair[]> = computed(() => resolveOrgTraineePairs(this.response().details));
-
-  // Pairs that match the dropdown filters and the name search: the one source of the table rows, their counts and the expanded section.
   private readonly filteredPairs: Signal<OrgTraineePair[]> = computed(() => this.initFilteredPairs());
 
-  // The detail rows of those pairs (the cards come from the stats call).
-  protected readonly filteredDetails: Signal<OrgTraineeDetailRow[]> = computed(() => this.initFilteredDetails());
+  private readonly detailsByPair: Signal<Map<string, OrgTraineeDetailRow[]>> = computed(() => groupDetailsByPair(this.response().details));
 
   protected readonly viewRows: Signal<OrgTraineeRowVm[]> = computed(() => this.initViewRows());
 
@@ -182,7 +177,6 @@ export class TraineesComponent {
 
   protected readonly sortIconMap: Signal<Record<OrgTraineeSortColumn, string>> = computed(() => this.initSortIconMap());
 
-  // Lookup of expanded sub-row VMs keyed by personKey; computed from `filteredDetails()` so it recomputes when filters change.
   protected readonly expandedRowsMap: Signal<Record<string, OrgTraineeExpandedRowVm[]>> = computed(() => this.initExpandedRowsMap());
 
   public constructor() {
@@ -280,8 +274,7 @@ export class TraineesComponent {
       personIndex.set(t.personKey, { name: t.name, title: t.title });
     }
 
-    // The details are already the range's (the BFF windows them), so only the filters and the search apply here.
-    return this.resolvedPairs().filter((pair) => {
+    return this.response().pairs.filter((pair) => {
       if (!matchesOrgTrainingFilters(pair, filters)) return false;
       if (q) {
         const person = personIndex.get(pair.personKey);
@@ -294,39 +287,17 @@ export class TraineesComponent {
     });
   }
 
-  private initFilteredDetails(): OrgTraineeDetailRow[] {
-    const keys = new Set(this.filteredPairs().map((pair) => `${pair.personKey}|${pair.courseId}`));
-    return this.response().details.filter((row) => keys.has(`${row.personKey}|${row.courseId}`));
-  }
-
   private initViewRows(): OrgTraineeRowVm[] {
-    const details = this.filteredDetails();
-    if (details.length === 0) return [];
-
-    // Group details and pairs by personKey once, then map to VMs.
-    const detailsByPerson = new Map<string, OrgTraineeDetailRow[]>();
-    for (const d of details) {
-      const list = detailsByPerson.get(d.personKey) ?? [];
-      list.push(d);
-      detailsByPerson.set(d.personKey, list);
-    }
-    const pairsByPerson = new Map<string, OrgTraineePair[]>();
-    for (const pair of this.filteredPairs()) {
-      const list = pairsByPerson.get(pair.personKey) ?? [];
-      list.push(pair);
-      pairsByPerson.set(pair.personKey, list);
-    }
+    const pairsByPerson = groupByPerson(this.filteredPairs());
+    if (pairsByPerson.size === 0) return [];
 
     const out: OrgTraineeRowVm[] = [];
     for (const trainee of this.response().trainees) {
-      const personDetails = detailsByPerson.get(trainee.personKey);
-      if (!personDetails || personDetails.length === 0) continue;
+      const personPairs = pairsByPerson.get(trainee.personKey);
+      if (!personPairs || personPairs.length === 0) continue;
 
-      const personPairs = pairsByPerson.get(trainee.personKey) ?? [];
       const counts = countOrgTraineePairs(personPairs);
-      // Which course is the most recent follows the rows; what it is called and its foundation come from its resolved pair.
-      const recent = pickMostRecent(personDetails);
-      const recentPair = recent ? personPairs.find((pair) => pair.courseId === recent.courseId) : undefined;
+      const recent = mostRecentOrgTraineePair(personPairs);
 
       out.push({
         personKey: trainee.personKey,
@@ -340,8 +311,8 @@ export class TraineesComponent {
         certsCount: counts.certifications,
         trainingsCompletedCount: counts.trainingsCompleted,
         inProgressCount: counts.inProgress,
-        recentCourseName: recentPair ? orgTraineePairCourseLabel(recentPair) : null,
-        recentFoundationName: recentPair?.foundationName ?? null,
+        recentCourseName: recent ? orgTraineePairCourseLabel(recent) : null,
+        recentFoundationName: recent?.foundationName ?? null,
       });
     }
 
@@ -455,15 +426,10 @@ export class TraineesComponent {
   }
 
   private initExpandedRowsMap(): Record<string, OrgTraineeExpandedRowVm[]> {
-    const detailsByPerson = new Map<string, OrgTraineeDetailRow[]>();
-    for (const d of this.filteredDetails()) {
-      const list = detailsByPerson.get(d.personKey) ?? [];
-      list.push(d);
-      detailsByPerson.set(d.personKey, list);
-    }
+    const detailsByPair = this.detailsByPair();
     const out: Record<string, OrgTraineeExpandedRowVm[]> = {};
-    for (const [personKey, rows] of detailsByPerson) {
-      out[personKey] = collapseExpandedRows(rows);
+    for (const [personKey, pairs] of groupByPerson(this.filteredPairs())) {
+      out[personKey] = buildExpandedRows(pairs, detailsByPair);
     }
     return out;
   }
@@ -559,67 +525,61 @@ function clampPageFirst(first: number, total: number, pageSize: number): number 
   return Math.min(first, Math.floor((total - 1) / pageSize) * pageSize);
 }
 
-/** Most-recent row per Item 4 tiebreak: ACTIVITY_TS DESC → STATUS='Certified' DESC → COURSE_NAME ASC. */
-function pickMostRecent(rows: OrgTraineeDetailRow[]): OrgTraineeDetailRow | null {
-  if (rows.length === 0) return null;
-  let best = rows[0];
-  for (let i = 1; i < rows.length; i++) {
-    const r = rows[i];
-    if (compareMostRecent(r, best) < 0) {
-      best = r;
-    }
-  }
-  return best;
-}
-
-/** Max of two ISO timestamps; at least one must be non-null (caller-enforced). */
-function maxIsoTs(a: string | null, b: string | null): string {
-  if (a === null) return b as string;
+function maxIsoTs(a: string | null, b: string | null): string | null {
+  if (a === null) return b;
   if (b === null) return a;
   return a > b ? a : b;
 }
 
-function compareMostRecent(a: OrgTraineeDetailRow, b: OrgTraineeDetailRow): number {
-  if (a.activityTs !== b.activityTs) {
-    return a.activityTs > b.activityTs ? -1 : 1;
-  }
-  const aCert = a.status === 'Certified' ? 1 : 0;
-  const bCert = b.status === 'Certified' ? 1 : 0;
-  if (aCert !== bCert) return bCert - aCert;
-  return (a.courseName ?? a.courseId).localeCompare(b.courseName ?? b.courseId, 'en-US');
+function pairKey(personKey: string, courseId: string): string {
+  return `${personKey}|${courseId}`;
 }
 
-/** Collapse (personKey, courseId) source rows to one per course; typed by product, sorted recent-first per Item 4 tiebreak. */
-function collapseExpandedRows(rows: OrgTraineeDetailRow[]): OrgTraineeExpandedRowVm[] {
-  const byCourse = new Map<string, OrgTraineeDetailRow[]>();
-  for (const r of rows) {
-    const list = byCourse.get(r.courseId) ?? [];
-    list.push(r);
-    byCourse.set(r.courseId, list);
+function groupByPerson(pairs: readonly OrgTraineePair[]): Map<string, OrgTraineePair[]> {
+  const byPerson = new Map<string, OrgTraineePair[]>();
+  for (const pair of pairs) {
+    const list = byPerson.get(pair.personKey);
+    if (list) list.push(pair);
+    else byPerson.set(pair.personKey, [pair]);
   }
+  return byPerson;
+}
 
-  const out: OrgTraineeExpandedRowVm[] = [];
-  for (const group of byCourse.values()) {
-    const enrolledTs = minActivityTs(group.filter((r) => r.status === 'Enrolled'));
-    const certifiedTs = minActivityTs(group.filter((r) => r.status === 'Certified'));
-    // MAX is defensive against rare source-data anomalies where certifiedTs < enrolledTs.
-    const sortTs = maxIsoTs(enrolledTs, certifiedTs);
-    const [pair] = resolveOrgTraineePairs(group);
+function groupDetailsByPair(details: readonly OrgTraineeDetailRow[]): Map<string, OrgTraineeDetailRow[]> {
+  const byPair = new Map<string, OrgTraineeDetailRow[]>();
+  for (const row of details) {
+    const key = pairKey(row.personKey, row.courseId);
+    const list = byPair.get(key);
+    if (list) list.push(row);
+    else byPair.set(key, [row]);
+  }
+  return byPair;
+}
 
-    out.push({
-      courseId: group[0].courseId,
+function buildExpandedRows(pairs: readonly OrgTraineePair[], detailsByPair: ReadonlyMap<string, OrgTraineeDetailRow[]>): OrgTraineeExpandedRowVm[] {
+  const out = pairs.map<OrgTraineeExpandedRowVm>((pair) => {
+    const rows = detailsByPair.get(pairKey(pair.personKey, pair.courseId)) ?? [];
+    const enrolledTs = minActivityTs(rows.filter((r) => r.status === 'Enrolled'));
+    const certifiedTs = minActivityTs(rows.filter((r) => r.status === 'Certified'));
+    return {
+      courseId: pair.courseId,
       courseName: orgTraineePairCourseLabel(pair),
       type: pair.productType === CERTIFICATION_PRODUCT_TYPE ? CERTIFICATION_PRODUCT_TYPE : TRAINING_PRODUCT_TYPE,
       enrolledTs,
       completedTs: certifiedTs,
       enrolledLabel: enrolledTs ? formatMonthYearUtc(enrolledTs) : '—',
       completedLabel: certifiedTs ? formatMonthYearUtc(certifiedTs) : '—',
-      sortTs,
-    });
-  }
+      // MAX is defensive against rare source-data anomalies where certifiedTs < enrolledTs.
+      sortTs: maxIsoTs(enrolledTs, certifiedTs) ?? pair.lastActivityTs,
+    };
+  });
 
   return out.sort((a, b) => {
-    if (a.sortTs !== b.sortTs) return a.sortTs > b.sortTs ? -1 : 1;
+    if (a.sortTs !== b.sortTs) {
+      if (a.sortTs === null) return 1;
+      if (b.sortTs === null) return -1;
+      return a.sortTs > b.sortTs ? -1 : 1;
+    }
     if (a.type !== b.type) return a.type === CERTIFICATION_PRODUCT_TYPE ? -1 : 1;
     return a.courseName.localeCompare(b.courseName, 'en-US');
   });
