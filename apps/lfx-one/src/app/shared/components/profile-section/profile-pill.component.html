@@ -6,19 +6,22 @@
     [href]="link"
     target="_blank"
     rel="noopener noreferrer"
+    [attr.aria-label]="imageOnly() ? name() : null"
     class="{{ pillClass }}"
+    [ngClass]="layoutClass()"
     [lfxUiHoverCard]="hoverCard()"
     [lfxUiHoverCardWidth]="hoverCardWidth()"
     [attr.data-testid]="testId()"
     ><ng-container [ngTemplateOutlet]="body"
   /></a>
 } @else {
-  <!-- Focusable, as a named group, only when it opens a card, so the card reaches keyboard users. -->
+  <!-- Focusable, as a named group, only when it opens a card, so the card reaches keyboard users; an image alone is named as one. -->
   <div
     class="{{ pillClass }}"
     [attr.tabindex]="hoverCard() ? 0 : null"
-    [attr.role]="hoverCard() ? 'group' : null"
-    [attr.aria-label]="hoverCard() ? name() : null"
+    [attr.aria-label]="hoverCard() || imageOnly() ? name() : null"
+    [attr.role]="tileRole()"
+    [ngClass]="layoutClass()"
     [lfxUiHoverCard]="hoverCard()"
     [lfxUiHoverCardWidth]="hoverCardWidth()"
     [attr.data-testid]="testId()">
@@ -28,23 +31,19 @@
 
 <!-- Exact [Npx] design values throughout: rem undershoots at the 14px root. -->
 <ng-template #body>
-  <span
-    class="flex size-[48px] flex-none items-center justify-center overflow-hidden"
-    [class.rounded-[12px]]="tile() === 'logo'"
-    [class.shadow-[inset_0_0_0_1px_theme(colors.gray.200)]]="tile() === 'logo'"
-    aria-hidden="true">
+  <span class="flex size-[48px] flex-none items-center justify-center overflow-hidden" [ngClass]="tileClass()" aria-hidden="true">
     @if (imageUrl()) {
       <img class="size-[48px] object-contain" [src]="imageUrl()" alt="" loading="lazy" referrerpolicy="no-referrer" />
     } @else {
-      <span class="text-[16px] font-semibold text-gray-500">{{ initial() }}</span>
+      <span class="text-[16px] font-semibold text-ui-neutral-500">{{ initial() }}</span>
     }
   </span>
-  <span class="flex min-w-0 flex-col gap-[4px]">
+  <span class="flex min-w-0 flex-col gap-[4px]" [class.hidden]="imageOnly()">
     <!-- One line, as designed; the title carries the full name when it is cut. -->
-    <span class="truncate text-[13px] font-semibold leading-[18px] text-gray-900" [attr.title]="name()" [attr.data-testid]="testId() + '-name'">{{
+    <span class="truncate text-[13px] font-semibold leading-[18px] text-ui-neutral-900" [attr.title]="name()" [attr.data-testid]="testId() + '-name'">{{
       name()
     }}</span>
-    <span class="flex min-w-0 flex-row flex-wrap items-center gap-x-[8px] gap-y-[4px] text-[12px] leading-[16px] text-gray-500 empty:hidden"
+    <span class="flex min-w-0 flex-row flex-wrap items-center gap-x-[8px] gap-y-[4px] text-[12px] leading-[16px] text-ui-neutral-500 empty:hidden"
       ><ng-content
     /></span>
   </span>

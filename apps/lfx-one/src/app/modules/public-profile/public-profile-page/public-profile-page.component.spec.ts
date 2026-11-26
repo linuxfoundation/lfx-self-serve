@@ -22,8 +22,8 @@ const PROFILE: PublicProfile = {
   basic: { Name: 'Ada Lovelace', Title: 'Engineer' },
   badges: [{ Image: 'https://images.example/badge.png', Url: 'https://www.credly.example/badges/b1' }],
   technical_contribution: { projects: [] },
-  certification_activities: [],
-  training_activities: [],
+  certification_activities: [{ Name: 'Kubernetes Admin' }],
+  training_activities: [{ Name: 'Intro to Linux' }],
 } as PublicProfile;
 
 describe('PublicProfilePageComponent', () => {
@@ -65,7 +65,7 @@ describe('PublicProfilePageComponent', () => {
     expect(query('public-profile-redesign')).not.toBeNull();
     expect(query('public-profile-recognitions-title')?.textContent?.trim()).toBe(PUBLIC_PROFILE_SECTION_COPY.recognitions);
     expect(query('public-profile-recognitions-description')?.textContent).toContain('this person');
-    // The block's own heading gives way to the section header.
+    // The section header names the block; the Recognitions grid carries no heading of its own.
     expect(query('public-profile-badges')?.querySelector('h2')).toBeNull();
     expect(query('public-profile-footer')?.className).toContain('mt-[64px]');
   });
@@ -75,6 +75,9 @@ describe('PublicProfilePageComponent', () => {
 
     expect(query('public-profile-involvement')).toBeNull();
     expect(query('public-profile-blocks')?.children).toHaveLength(1);
+    // Certifications and Training enrollment have no place in the redesign (#6092).
+    expect(query('public-profile-certifications')).toBeNull();
+    expect(query('public-profile-trainings')).toBeNull();
   });
 
   it('keeps the involvement block’s year select on the right once its heading gives way to the section header', async () => {
