@@ -2994,8 +2994,10 @@ export class ImplementationTabComponent implements OnInit {
    * was never shown. Deriving both from here means the screen cannot claim one target while the
    * request buys another.
    *
-   * Empty is a real answer, not a bug: it means nothing usable was supplied, and `canSubmit`
-   * blocks on it rather than letting the server pick a country on the operator's behalf.
+   * Empty is a real answer, not a bug. With no region or city picks sent it means nothing usable
+   * was supplied, and `canSubmit` blocks on it rather than letting the server pick a country on the
+   * operator's behalf. With region or city picks sent it means those picks are the whole targeting:
+   * they replace the `countryCode` fallback, and Create goes ahead (#5904).
    */
   protected readonly metaEffectiveGeoTargets = computed<string[]>(() =>
     metaEffectiveGeoTargets(this.metaGeoTargets(), this.countryCodeValue(), this.metaLocationPicksSent().length > 0)

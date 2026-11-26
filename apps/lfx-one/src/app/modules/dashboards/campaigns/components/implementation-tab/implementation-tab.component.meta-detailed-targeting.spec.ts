@@ -32,8 +32,8 @@ describe('ImplementationTabComponent meta detailed targeting', () => {
     behaviors: [{ id: '6004', name: 'Early adopters' }],
     workPositions: [{ id: '105', name: 'Engineer' }],
     locales: [{ id: '6', name: 'English (US)' }],
-    regions: [{ id: '3847', name: 'California, US' }],
-    cities: [{ id: '2420379', name: 'Austin, Texas, US' }],
+    regions: [{ id: '3847', name: 'California, US', countryCode: 'US' }],
+    cities: [{ id: '2420379', name: 'Austin, Texas, US', countryCode: 'US' }],
   };
   const brief = (): CampaignBriefOutput =>
     ({

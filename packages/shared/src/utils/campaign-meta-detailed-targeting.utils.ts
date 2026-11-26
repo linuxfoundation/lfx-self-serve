@@ -483,10 +483,18 @@ export function metaDetailedTargetingPicksFromDraft(raw: unknown): MetaDetailedT
       const name = entry?.['name'];
       if (typeof id !== 'string' || typeof name !== 'string') continue;
       const countryCode = entry?.['countryCode'];
-      picks[key] = metaTargetingPicksWith(picks[key], { id, name, countryCode: typeof countryCode === 'string' ? countryCode : undefined }, key);
+      picks[key] = metaTargetingPicksWith(picks[key], { id, name, countryCode: typeof countryCode === 'string' ? countryCode : nameCountryCode(name) }, key);
     }
   }
   return picks;
+}
+
+/**
+ * The country code at the end of a location pick's name ("Paris, FR"), which {@link metaTargetingPicksAdd} always puts
+ * last: how a draft saved before picks kept `countryCode` still gets its DSA check. `undefined` when the name has none.
+ */
+function nameCountryCode(name: string): string | undefined {
+  return /, ([A-Z]{2})$/.exec(name.trim())?.[1];
 }
 
 /** A copy of `picks`, so the parent's draft never holds a live view of the tab's signal. */
@@ -522,7 +530,7 @@ export function metaDetailedTargetingForCreate(picks: MetaDetailedTargetingPicks
  * none ({@link metaDetailedTargetingForCreate} sends them on the same rule).
  */
 export function metaLocationPicksSent(picks: MetaDetailedTargetingPicks, enabled: MetaDetailedTargetingEnabled): MetaTargetingPick[] {
-  return enabled.region === true ? [...picks.regions, ...picks.cities] : [];
+  return (['regions', 'cities'] as const).filter((list) => pickListFlag(list, enabled) === true).flatMap((list) => picks[list]);
 }
 
 /** The countries `locations` lie in, de-duplicated in first-seen order; a pick without a country code adds none. */

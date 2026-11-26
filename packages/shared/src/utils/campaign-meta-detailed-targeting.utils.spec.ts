@@ -414,7 +414,13 @@ describe('the detailed-targeting create rules', () => {
         regions: [{ id: '3847', name: 'California, US' }],
         cities: [{ id: '2420379', name: 'Austin, Texas, US' }],
       },
-      { ...none, locales: picks.locales, regions: picks.regions, cities: picks.cities },
+      // Saved before picks kept a code: each place reads its country back from the end of its name.
+      {
+        ...none,
+        locales: picks.locales,
+        regions: [{ id: '3847', name: 'California, US', countryCode: 'US' }],
+        cities: [{ id: '2420379', name: 'Austin, Texas, US', countryCode: 'US' }],
+      },
     ],
   ])('reads a saved draft holding %s', (_case, raw, expected) => {
     expect(metaDetailedTargetingPicksFromDraft(raw)).toEqual(expected);
@@ -550,17 +556,19 @@ describe('the language and location picker rules', () => {
     expect(metaTargetingPicksWith([], { id: '6003', name: 'X', countryCode }, list)[0]?.countryCode).toBe(expected);
   });
 
-  it('restores a location pick country code from a draft only when it is a country code', () => {
+  it('restores a location pick country code from a draft, or from the end of its name, only when it is a country code', () => {
     const restored = metaDetailedTargetingPicksFromDraft({
       cities: [
         { id: '2420379', name: 'Berlin, DE', countryCode: 'DE' },
         { id: '2420380', name: 'Odd', countryCode: 49 },
+        { id: '2420381', name: 'Paris, Ile-de-France, FR' },
       ],
       interests: [{ id: '6003', name: 'K', countryCode: 'US' }],
     });
     expect(restored?.cities).toEqual([
       { id: '2420379', name: 'Berlin, DE', countryCode: 'DE' },
       { id: '2420380', name: 'Odd' },
+      { id: '2420381', name: 'Paris, Ile-de-France, FR', countryCode: 'FR' },
     ]);
     expect(restored?.interests).toEqual([{ id: '6003', name: 'K' }]);
     expect(copyMetaDetailedTargetingPicks(restored ?? none).cities[0]?.countryCode).toBe('DE');
