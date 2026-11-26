@@ -1,7 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DEFAULT_REDDIT_BUDGET_USD, DEFAULT_REDDIT_CONVERSION_EVENT, DEFAULT_REDDIT_OBJECTIVE } from '../constants/campaign.constants';
+import {
+  DEFAULT_REDDIT_BUDGET_USD,
+  DEFAULT_REDDIT_CONVERSION_EVENT,
+  DEFAULT_REDDIT_CUSTOM_AUDIENCES,
+  DEFAULT_REDDIT_OBJECTIVE,
+} from '../constants/campaign.constants';
 import type {
   CampaignBriefOutput,
   RedditAdVariant,
@@ -95,7 +100,10 @@ export function redditBriefReset(): RedditBriefReset {
     objective: DEFAULT_REDDIT_OBJECTIVE,
     videoGoal: '',
     conversionEvent: DEFAULT_REDDIT_CONVERSION_EVENT,
-    customAudiences: { customAudienceIds: [], excludedCustomAudienceIds: [] },
+    customAudiences: {
+      customAudienceIds: [...DEFAULT_REDDIT_CUSTOM_AUDIENCES.customAudienceIds],
+      excludedCustomAudienceIds: [...DEFAULT_REDDIT_CUSTOM_AUDIENCES.excludedCustomAudienceIds],
+    },
     budgetUsd: DEFAULT_REDDIT_BUDGET_USD,
     variants: [],
     subreddits: [],

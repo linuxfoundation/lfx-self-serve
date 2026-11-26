@@ -152,15 +152,17 @@ describe('redditDraftRestore: custom audiences', () => {
       { customAudienceIds: ['a1'], excludedCustomAudienceIds: ['b1'] },
     ],
     ['one list, the other empty', { redditExcludedCustomAudienceIds: ['b1'] }, { customAudienceIds: [], excludedCustomAudienceIds: ['b1'] }],
-    [
-      'only the strings of a stored list',
-      { redditCustomAudienceIds: ['a1', 7, null] as unknown as string[] },
-      { customAudienceIds: ['a1'], excludedCustomAudienceIds: [] },
-    ],
     ['neither key (an older draft)', {}, undefined],
-    ['a list stored as text', { redditCustomAudienceIds: 'a1' as unknown as string[] }, undefined],
   ])('restores %s', (_name, over, expected) => {
     expect(redditDraftRestore(draft(over)).customAudiences).toEqual(expected);
+  });
+
+  it.each([
+    ['only the strings of a stored list', ['a1', 7, null], { customAudienceIds: ['a1'], excludedCustomAudienceIds: [] }],
+    ['a list stored as text', 'a1', undefined],
+  ])('restores %s', (_name, stored, expected) => {
+    // @ts-expect-error -- a draft is replayed from stored JSON whose inner shape is not validated
+    expect(redditDraftRestore(draft({ redditCustomAudienceIds: stored })).customAudiences).toEqual(expected);
   });
 });
 

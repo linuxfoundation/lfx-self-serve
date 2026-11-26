@@ -2165,7 +2165,7 @@ export class ImplementationTabComponent implements OnInit {
    */
   protected readonly redditConversionEvent = signal<RedditConversionEvent>(DEFAULT_REDDIT_CONVERSION_EVENT);
   /** The Reddit custom audiences to target and to exclude (#6108 row 1), kept whatever the capability says; only the request is gated. */
-  protected readonly redditCustomAudiences = signal<RedditCustomAudiencesDraft>({ customAudienceIds: [], excludedCustomAudienceIds: [] });
+  protected readonly redditCustomAudiences = signal<RedditCustomAudiencesDraft>(redditBriefReset().customAudiences);
   /** Why Create is held for picks the capability has not confirmed, or `null` — held, never dropped. */
   protected readonly redditCustomAudiencesBlock = computed<CampaignRedditCustomAudiencesBlock | null>(() =>
     redditCustomAudiencesBlock({
