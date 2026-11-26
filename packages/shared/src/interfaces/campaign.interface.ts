@@ -1521,6 +1521,14 @@ export interface CampaignImplementationDraft {
   redditExcludedSubreddits?: string[];
   redditExcludedGeoTargets?: string[];
   /**
+   * The Reddit subreddits and interests as the operator edited them (#6108 row 4). Carried once they gained an editor,
+   * as `linkedInVariants` is: restored over the brief's seed. Absent (an older draft), the brief's seed stands. Not the
+   * `redditSubreddits` / `redditInterests` keys an older build wrote: those were stale copies of the brief's seed, which
+   * a restore deliberately ignores.
+   */
+  redditEditedSubreddits?: string[];
+  redditEditedInterests?: string[];
+  /**
    * The Meta ad image, on the same terms as the Reddit image fields above: a pasted URL, or an
    * upload made for ONE brief (its asset id, file name and brief), plus an upload still in flight
    * and a failed upload's reason, so a tab switch neither loses the image nor lifts the block a
@@ -3731,6 +3739,8 @@ export type RedditDraftSnapshot = Pick<
   | 'redditExcludedCustomAudienceIds'
   | 'redditExcludedSubreddits'
   | 'redditExcludedGeoTargets'
+  | 'redditEditedSubreddits'
+  | 'redditEditedInterests'
 >;
 
 /** The Reddit values `redditDraftFields` snapshots into the draft (#5980): the typed fields, the pixel and the image upload slot. */
@@ -3752,6 +3762,8 @@ export interface RedditDraftState {
   conversionEvent: RedditConversionEvent;
   customAudiences: RedditCustomAudiencesDraft;
   targetingExclusions: RedditTargetingExclusionsDraft;
+  /** The subreddits and interests once the operator edited them, else `null`: an unedited list stays the brief's, out of the draft. */
+  editedTargetingLists: RedditTargetingListsDraft | null;
 }
 
 /** What a restored draft does to the Reddit section (#5980): values to set, and at most one upload step for the component to run. */
@@ -3771,6 +3783,8 @@ export interface RedditDraftRestore {
   conversionEvent?: RedditConversionEvent;
   customAudiences?: RedditCustomAudiencesDraft;
   targetingExclusions?: RedditTargetingExclusionsDraft;
+  /** Both lists as edited, set over the brief's seed; absent when the draft carries neither. */
+  editedTargetingLists?: RedditTargetingListsDraft;
 }
 
 /** The Reddit lists a brief seeds (#5980): the variants and the four targeting lists. */
@@ -3876,6 +3890,25 @@ export type RedditCustomAudienceListKey = 'customAudienceIds' | 'excludedCustomA
 
 /** The two Reddit targeting exclusion lists, keyed as `redditConfig` spells them (`REDDIT_TARGETING_EXCLUSION_KEYS`, #6108 row 3). */
 export type RedditTargetingExclusionKey = 'excludedSubreddits' | 'excludedGeoTargets';
+
+/** The two Reddit targeting lists the Implement tab can edit once campaign-service resolves them (#6108 row 4). */
+export type RedditTargetingListKey = 'subreddits' | 'interests';
+
+/** The Reddit subreddits and interests as the Implement tab holds them once edited (#6108 row 4). */
+export type RedditTargetingListsDraft = Record<RedditTargetingListKey, string[]>;
+
+/** One editable Reddit targeting list as the Implement tab renders it (#6108 row 4). */
+export interface RedditTargetingListView {
+  key: RedditTargetingListKey;
+  label: string;
+  placeholder: string;
+}
+
+/** One editable Reddit targeting list with its entries: the box's label with the count against the cap, and the entries. */
+export interface RedditTargetingListState extends RedditTargetingListView {
+  heading: string;
+  entries: string[];
+}
 
 /** The Reddit targeting exclusions the Implement tab holds (#6108 row 3): subreddit names without `r/`, and country codes. */
 export type RedditTargetingExclusionsDraft = Record<RedditTargetingExclusionKey, string[]>;

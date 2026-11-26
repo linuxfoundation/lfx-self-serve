@@ -28,6 +28,7 @@ describe('redditDraftFields', () => {
     conversionEvent: 'SIGN_UP',
     customAudiences: { customAudienceIds: ['aud_in'], excludedCustomAudienceIds: ['aud_out'] },
     targetingExclusions: { excludedSubreddits: ['politics'], excludedGeoTargets: ['CA'] },
+    editedTargetingLists: { subreddits: ['kubernetes'], interests: ['technology_v3'] },
   };
 
   it('carries every typed value, the pixel and the upload slot as held', () => {
@@ -51,7 +52,15 @@ describe('redditDraftFields', () => {
       redditExcludedCustomAudienceIds: ['aud_out'],
       redditExcludedSubreddits: ['politics'],
       redditExcludedGeoTargets: ['CA'],
+      redditEditedSubreddits: ['kubernetes'],
+      redditEditedInterests: ['technology_v3'],
     });
+  });
+
+  it('leaves unedited subreddits and interests out, so the brief re-seeds them', () => {
+    const fields = redditDraftFields({ ...state, editedTargetingLists: null });
+    expect(fields).not.toHaveProperty('redditEditedSubreddits');
+    expect(fields).not.toHaveProperty('redditEditedInterests');
   });
 
   it.each([
@@ -178,6 +187,18 @@ describe('redditDraftRestore: targeting exclusions', () => {
   ])('restores %s', (_name, subs, geos, expected) => {
     // @ts-expect-error -- a draft is replayed from stored JSON whose inner shape is not validated
     expect(redditDraftRestore(draft({ redditExcludedSubreddits: subs, redditExcludedGeoTargets: geos })).targetingExclusions).toEqual(expected);
+  });
+});
+
+describe('redditDraftRestore: edited subreddits and interests', () => {
+  it.each<[string, unknown, unknown, unknown]>([
+    ['both lists', ['kubernetes'], ['technology_v3'], { subreddits: ['kubernetes'], interests: ['technology_v3'] }],
+    ['a cleared list beside a missing one', [], undefined, { subreddits: [], interests: [] }],
+    ['only the strings of a stored list', ['kubernetes', 7], undefined, { subreddits: ['kubernetes'], interests: [] }],
+    ['neither key (an older draft), so the seed stands', undefined, undefined, undefined],
+  ])('restores %s', (_name, subs, interests, expected) => {
+    // @ts-expect-error -- a draft is replayed from stored JSON whose inner shape is not validated
+    expect(redditDraftRestore(draft({ redditEditedSubreddits: subs, redditEditedInterests: interests })).editedTargetingLists).toEqual(expected);
   });
 });
 

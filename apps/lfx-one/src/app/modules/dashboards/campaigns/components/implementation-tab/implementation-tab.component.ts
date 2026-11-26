@@ -403,6 +403,7 @@ import type {
   RedditCustomAudiencesDraft,
   RedditTargetedLists,
   RedditTargetingExclusionsDraft,
+  RedditTargetingListsDraft,
   RedditObjective,
   RedditVideoGoal,
   StoredCreativeAsset,
@@ -544,6 +545,7 @@ import {
   redditCustomAudiencesField,
   redditTargetingExclusionsBlock,
   redditTargetingExclusionsCapability,
+  redditTargetingListsCapability,
   redditTargetingExclusionsDraftRefusal,
   redditTargetingExclusionsField,
   redditDraftFields,
@@ -659,6 +661,7 @@ import { LinkedInCarouselEditorComponent } from '../linkedin-carousel-editor/lin
 import { MetaAudienceTargetingComponent } from '../meta-audience-targeting/meta-audience-targeting.component';
 import { RedditCustomAudiencesComponent } from '../reddit-custom-audiences/reddit-custom-audiences.component';
 import { RedditTargetingExclusionsComponent } from '../reddit-targeting-exclusions/reddit-targeting-exclusions.component';
+import { RedditTargetingListsComponent } from '../reddit-targeting-lists/reddit-targeting-lists.component';
 import { MetaDeliveryOptionsComponent } from '../meta-delivery-options/meta-delivery-options.component';
 import { MetaDeviceOsOptionsComponent } from '../meta-device-os-options/meta-device-os-options.component';
 import { MetaDetailedTargetingComponent } from '../meta-detailed-targeting/meta-detailed-targeting.component';
@@ -747,6 +750,7 @@ let linkedInVariantKeySequence = 0;
     MetaAudienceTargetingComponent,
     RedditCustomAudiencesComponent,
     RedditTargetingExclusionsComponent,
+    RedditTargetingListsComponent,
     MetaDetailedTargetingComponent,
     MetaDeliveryOptionsComponent,
     MetaDeviceOsOptionsComponent,
@@ -1011,6 +1015,21 @@ export class ImplementationTabComponent implements OnInit {
   public readonly redditTargetingExclusionsEnabled = input<boolean | null>(null);
   /** @see redditTargetingExclusionsEnabled — an explicit yes, never a `null`. */
   protected readonly redditTargetingExclusionsAvailable = computed<boolean>(() => redditTargetingExclusionsCapability(this.redditTargetingExclusionsEnabled()));
+  /**
+   * Whether campaign-service resolves Reddit subreddits and interests before creating anything
+   * (`CampaignListResult.redditTargetingResolutionEnabled`, #6108 row 4), so the two lists are offered for editing.
+   * `null` until the parent has an answer, which keeps them the brief's, read-only.
+   */
+  public readonly redditTargetingResolutionEnabled = input<boolean | null>(null);
+  /** @see redditTargetingResolutionEnabled — an explicit yes, never a `null`. */
+  protected readonly redditTargetingListsAvailable = computed<boolean>(() => redditTargetingListsCapability(this.redditTargetingResolutionEnabled()));
+  /** Whether the operator edited the subreddits or interests on this brief; only then does the draft carry them. */
+  protected readonly redditTargetingListsEdited = signal<boolean>(false);
+  /** The two editable lists, as the editor takes them. */
+  protected readonly redditTargetingLists = computed<RedditTargetingListsDraft>(() => ({
+    subreddits: this.redditSubreddits(),
+    interests: this.redditInterests(),
+  }));
 
   /**
    * Whether the Meta section may offer an image UPLOAD (`CampaignListResult.metaAssetUploadEnabled`).
@@ -5688,6 +5707,14 @@ export class ImplementationTabComponent implements OnInit {
     this.emitDraft();
   }
 
+  /** The edited subreddits and interests, kept in the draft from now on (#6108 row 4). */
+  protected onRedditTargetingListsChange(lists: RedditTargetingListsDraft): void {
+    this.redditSubreddits.set(lists.subreddits);
+    this.redditInterests.set(lists.interests);
+    this.redditTargetingListsEdited.set(true);
+    this.emitDraft();
+  }
+
   /** The exclusion lists, kept in the draft. */
   protected onRedditTargetingExclusionsChange(exclusions: RedditTargetingExclusionsDraft): void {
     this.redditTargetingExclusions.set(exclusions);
@@ -9717,6 +9744,11 @@ export class ImplementationTabComponent implements OnInit {
     if (redditRestore.conversionEvent !== undefined) this.redditConversionEvent.set(redditRestore.conversionEvent);
     if (redditRestore.customAudiences !== undefined) this.redditCustomAudiences.set(redditRestore.customAudiences);
     if (redditRestore.targetingExclusions !== undefined) this.redditTargetingExclusions.set(redditRestore.targetingExclusions);
+    if (redditRestore.editedTargetingLists !== undefined) {
+      this.redditSubreddits.set(redditRestore.editedTargetingLists.subreddits);
+      this.redditInterests.set(redditRestore.editedTargetingLists.interests);
+      this.redditTargetingListsEdited.set(true);
+    }
     // The Meta image, on the Reddit image's terms above.
     const metaImageRestore = metaImageDraftRestore(draft);
     if (metaImageRestore.imageUrl !== undefined) this.metaImageUrl.set(metaImageRestore.imageUrl);
@@ -10290,6 +10322,7 @@ export class ImplementationTabComponent implements OnInit {
         conversionEvent: this.redditConversionEvent(),
         customAudiences: this.redditCustomAudiences(),
         targetingExclusions: this.redditTargetingExclusions(),
+        editedTargetingLists: this.redditTargetingListsEdited() ? this.redditTargetingLists() : null,
       }),
       ...metaImageDraftFields({
         imageUrl: this.metaImageUrl(),
@@ -10347,6 +10380,7 @@ export class ImplementationTabComponent implements OnInit {
     this.redditConversionEvent.set(redditReset.conversionEvent);
     this.redditCustomAudiences.set(redditReset.customAudiences);
     this.redditTargetingExclusions.set(redditReset.targetingExclusions);
+    this.redditTargetingListsEdited.set(false);
     this.redditBudgetUsd.set(redditReset.budgetUsd);
     this.setRedditBriefLists(redditReset);
     // The other platforms on the same terms (#4624): every value the brief does not derive, or derives
