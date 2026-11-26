@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { NgClass } from '@angular/common';
-import { Component, computed, type Signal } from '@angular/core';
+import { Component, computed, signal, type Signal } from '@angular/core';
 import { ReactiveFormsModule } from '@angular/forms';
 import { MeetingType } from '@lfx-one/shared/enums';
 import type { MeetingTemplate } from '@lfx-one/shared/interfaces';
@@ -26,22 +26,26 @@ import { ComposerAgendaFieldComponent } from '../../composer-agenda-field.compon
 })
 export class ComposerAgendaFieldRedesignComponent extends ComposerAgendaFieldComponent {
   protected readonly templateType: Signal<MeetingType> = computed(() => this.meetingType() ?? MeetingType.OTHER);
-  private readonly aiPrompt = controlValueSignal<string>(this.form, 'aiPrompt');
+  /** The goal lives here, not in the form, so a dismissed popover cannot leave a hidden value or validator behind. */
+  protected readonly aiPrompt = signal('');
   private readonly title = controlValueSignal<string>(this.form, 'title');
   /** The server drafts from a goal or, failing that, the title. */
-  protected readonly canGenerate: Signal<boolean> = computed(() => !!(this.aiPrompt()?.trim() || this.title()?.trim()) && !this.isGeneratingAgenda());
+  protected readonly canGenerate: Signal<boolean> = computed(() => !!(this.aiPrompt().trim() || this.title()?.trim()) && !this.isGeneratingAgenda());
 
   protected applyTemplate(template: MeetingTemplate, close: () => void): void {
     this.onApplyTemplate(template, this.popoverHandle(close));
   }
 
   protected generate(close: () => void): void {
+    const prompt = this.form().get('aiPrompt');
+    prompt?.setValue(this.aiPrompt());
     this.onGenerateAgenda(
       this.popoverHandle(() => {
         close();
-        this.form().get('aiPrompt')?.setValue('');
+        this.aiPrompt.set('');
       })
     );
+    prompt?.setValue('');
   }
 
   // shortcut: adapts a uikit popover close to the base class's PrimeNG Popover parameter. revisit: when the drawer field is removed at flag cleanup.
