@@ -788,6 +788,7 @@ export const ORG_LENS_EMPLOYEE_VIEW_INTERFACE_FILES: Readonly<Record<string, Org
   'org-people-key-contacts.interface.ts': 'hidden-page',
   'org-people-key-contacts.internal.interface.ts': 'hidden-page',
   'org-people-trainees.interface.ts': 'hidden-page',
+  'org-people-trainees.internal.interface.ts': 'hidden-page',
   'org-people.interface.ts': 'hidden-page',
   'org-people.internal.interface.ts': 'hidden-page',
   'org-selector.interface.ts': 'internal',

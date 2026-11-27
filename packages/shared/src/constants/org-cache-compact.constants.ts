@@ -11,7 +11,8 @@ import type {
   OrgPeopleAllTraineeRow,
   OrgEventParticipationRow,
   OrgPeopleFoundationOptionRow,
-  OrgPeopleTrainingRow,
+  OrgPeopleTrainingPairRow,
+  OrgTraineeDateRow,
   OrgTrainingOutsideLearnerRow,
 } from '../interfaces';
 
@@ -129,9 +130,8 @@ export const ORG_TRAINEE_ROW_COLUMNS = [
   'EMAIL',
 ] as const satisfies readonly (keyof OrgPeopleAllTraineeRow)[];
 
-/** `CompactOrgTraineesRawCache.courses` — the course-level columns lifted out of every detail row. */
 export const ORG_TRAINEE_COURSE_DICTIONARY_COLUMNS = [
-  'COURSE_ID',
+  'COURSE_KEY',
   'COURSE_NAME',
   'FOUNDATION_ID',
   'FOUNDATION_NAME',
@@ -140,15 +140,11 @@ export const ORG_TRAINEE_COURSE_DICTIONARY_COLUMNS = [
   'COURSE_LEVEL',
   'COURSE_FORMAT',
   'PRODUCT_TYPE',
-] as const satisfies readonly (keyof OrgPeopleTrainingRow)[];
+] as const satisfies readonly (keyof OrgPeopleTrainingPairRow)[];
 
-/** `CompactOrgTraineesRawCache.details` — what genuinely varies per (person, course-or-cert) row. */
-export const ORG_TRAINEE_DETAIL_COLUMNS = [
-  'PERSON_KEY',
-  'STATUS',
-  'COURSE_OR_CERT_ID',
-  'ACTIVITY_TS',
-] as const satisfies readonly (keyof OrgPeopleTrainingRow)[];
+export const ORG_TRAINEE_PAIR_COLUMNS = ['PERSON_KEY', 'IS_CERTIFIED', 'LAST_ACTIVITY_TS'] as const satisfies readonly (keyof OrgPeopleTrainingPairRow)[];
+
+export const ORG_TRAINEE_DATE_COLUMNS = ['STATUS', 'ACTIVITY_TS'] as const satisfies readonly (keyof OrgTraineeDateRow)[];
 
 /** `CompactOrgTraineesRawCache.outsideLearnerRows` — learners outside the people list, name and overall status only (lfx-self-serve#4287); no warehouse key. */
 export const ORG_TRAINEE_OUTSIDE_LEARNER_COLUMNS = ['LEARNER_NAME', 'IS_CERTIFIED'] as const satisfies readonly (keyof OrgTrainingOutsideLearnerRow)[];
