@@ -402,6 +402,9 @@ import type {
   RedditCallToAction,
   RedditConversionEvent,
   RedditCustomAudiencesDraft,
+  RedditBudgetCopy,
+  RedditDeliveryCapabilities,
+  RedditDeliveryDraft,
   RedditTargetedLists,
   RedditTargetingExclusionsDraft,
   RedditTargetingListsDraft,
@@ -554,6 +557,9 @@ import {
   redditTargetingListsInEffect,
   redditTargetingExclusionsDraftRefusal,
   redditTargetingExclusionsField,
+  redditBudgetCopy,
+  redditDeliveryField,
+  redditDeliveryRefusal,
   redditDraftFields,
   redditDraftRestore,
   redditEffectiveGeoTargets,
@@ -669,6 +675,8 @@ import { MetaAudienceTargetingComponent } from '../meta-audience-targeting/meta-
 import { RedditCustomAudiencesComponent } from '../reddit-custom-audiences/reddit-custom-audiences.component';
 import { RedditTargetingExclusionsComponent } from '../reddit-targeting-exclusions/reddit-targeting-exclusions.component';
 import { RedditTargetingListsComponent } from '../reddit-targeting-lists/reddit-targeting-lists.component';
+import { RedditDeliveryComponent } from '../reddit-delivery/reddit-delivery.component';
+import { RedditPixelPickerComponent } from '../reddit-pixel-picker/reddit-pixel-picker.component';
 import { MetaDeliveryOptionsComponent } from '../meta-delivery-options/meta-delivery-options.component';
 import { MetaDeviceOsOptionsComponent } from '../meta-device-os-options/meta-device-os-options.component';
 import { MetaDetailedTargetingComponent } from '../meta-detailed-targeting/meta-detailed-targeting.component';
@@ -758,6 +766,8 @@ let linkedInVariantKeySequence = 0;
     RedditCustomAudiencesComponent,
     RedditTargetingExclusionsComponent,
     RedditTargetingListsComponent,
+    RedditDeliveryComponent,
+    RedditPixelPickerComponent,
     MetaDetailedTargetingComponent,
     MetaDeliveryOptionsComponent,
     MetaDeviceOsOptionsComponent,
@@ -1031,6 +1041,25 @@ export class ImplementationTabComponent implements OnInit {
   public readonly redditTargetingResolutionEnabled = input<boolean | null>(null);
   /** @see redditTargetingResolutionEnabled — an explicit yes, never a `null`. */
   protected readonly redditTargetingListsAvailable = computed<boolean>(() => redditTargetingListsCapability(this.redditTargetingResolutionEnabled()));
+  /**
+   * Whether a Reddit create may carry placements, devices and audience expansion (`CampaignListResult.redditPlacementsEnabled`)
+   * and a budget type (`redditBudgetTypeEnabled`), #6108 row 5. `null` until the parent has an answer, which withholds the
+   * controls and sends campaign-service's defaults.
+   */
+  public readonly redditPlacementsEnabled = input<boolean | null>(null);
+  public readonly redditBudgetTypeEnabled = input<boolean | null>(null);
+  /** Both, as the delivery rules read them (`redditDeliveryInEffect`): only an explicit yes counts. */
+  protected readonly redditDeliveryCapabilities = computed<RedditDeliveryCapabilities>(() => ({
+    placements: this.redditPlacementsEnabled(),
+    budgetType: this.redditBudgetTypeEnabled(),
+  }));
+  /**
+   * Whether the Reddit pixel list is served (`CampaignListResult.redditPixelListEnabled`, #6108 row 5), so the pixel
+   * override becomes a pick from the ad account's pixels. Read only together with `redditConversionPixelAvailable()`.
+   */
+  public readonly redditPixelListEnabled = input<boolean | null>(null);
+  /** @see redditPixelListEnabled — an explicit yes, never a `null`. */
+  protected readonly redditPixelListAvailable = computed<boolean>(() => this.redditPixelListEnabled() === true);
   /**
    * The subreddits and interests as the operator edited them on this brief, else `null`. Kept apart from the brief's seed
    * (`redditSubreddits` / `redditInterests`), and in the draft only once edited.
@@ -1935,7 +1964,8 @@ export class ImplementationTabComponent implements OnInit {
    * means "use the connection's pixel".
    */
   protected readonly redditConversionPixelForm = this.fb.nonNullable.group({ conversionPixelId: '' });
-  private readonly redditConversionPixelDraft = this.initFormDraft(this.redditConversionPixelForm);
+  /** The pixel as typed or picked, which `lfx-reddit-pixel-picker` shows (#6108 row 5). */
+  protected readonly redditConversionPixelDraft = this.initFormDraft(this.redditConversionPixelForm);
   protected readonly redditConversionPixelId = computed<string>(() => this.redditConversionPixelDraft().conversionPixelId.trim());
 
   // === WritableSignals ===
@@ -2242,6 +2272,10 @@ export class ImplementationTabComponent implements OnInit {
       briefId: this.briefPersistence().briefId,
     })
   );
+  /** The Reddit budget type, placements, devices and expansion (#6108 row 5), kept whatever the capabilities say; only the request is gated. */
+  protected readonly redditDelivery = signal<RedditDeliveryDraft>(redditBriefReset().delivery);
+  /** The budget box's label and hint: daily only once the budget type is offered and chosen. */
+  protected readonly redditBudgetCopy = computed<RedditBudgetCopy>(() => redditBudgetCopy(this.redditDelivery(), this.redditDeliveryCapabilities()));
   /** The Reddit subreddits and countries to exclude (#6108 row 3), kept whatever the capability says; only the request is gated. */
   protected readonly redditTargetingExclusions = signal<RedditTargetingExclusionsDraft>(redditBriefReset().targetingExclusions);
   /** The targeting a Reddit create sends, which the exclusions must not overlap. */
@@ -4529,6 +4563,7 @@ export class ImplementationTabComponent implements OnInit {
           customAudiencesRefusal: redditCustomAudiencesDraftRefusal(this.redditCustomAudiences()),
           targetingExclusionsBlock: this.redditTargetingExclusionsBlock()?.message ?? null,
           targetingExclusionsRefusal: redditTargetingExclusionsDraftRefusal(this.redditTargetingExclusions(), this.redditTargetedLists()),
+          deliveryRefusal: redditDeliveryRefusal(this.redditDelivery(), this.redditDeliveryCapabilities()),
         })
       : null;
     if (redditRefusal !== null) return redditRefusal;
@@ -5742,6 +5777,17 @@ export class ImplementationTabComponent implements OnInit {
   protected onRedditTargetingListsChange(lists: RedditTargetingListsDraft): void {
     this.redditEditedTargetingLists.set(lists);
     this.emitDraft();
+  }
+
+  /** The delivery choices, kept in the draft. */
+  protected onRedditDeliveryChange(delivery: RedditDeliveryDraft): void {
+    this.redditDelivery.set(delivery);
+    this.emitDraft();
+  }
+
+  /** A pixel picked or typed in `lfx-reddit-pixel-picker`; the form's own trigger saves the draft. */
+  protected onRedditConversionPixelPick(pixelId: string): void {
+    this.redditConversionPixelForm.patchValue({ conversionPixelId: pixelId });
   }
 
   /** The exclusion lists, kept in the draft. */
@@ -7571,6 +7617,8 @@ export class ImplementationTabComponent implements OnInit {
               ...redditCustomAudiencesField(this.redditCustomAudiences(), this.redditCustomAudiencesEnabled()),
               // The same for the excluded communities and countries (#6108 row 3).
               ...redditTargetingExclusionsField(this.redditTargetingExclusions(), this.redditTargetingExclusionsEnabled()),
+              // Only what differs from campaign-service's default, and nothing a capability does not confirm (#6108 row 5).
+              ...redditDeliveryField(this.redditDelivery(), this.redditDeliveryCapabilities()),
               // Omitted when blank rather than sent empty: upstream treats an empty `postUrl` as
               // "author a post instead", and an empty `callToAction` as "use the default" — both
               // the same decision an absent key makes, so a blank string would only add a value
@@ -9813,6 +9861,7 @@ export class ImplementationTabComponent implements OnInit {
     if (redditRestore.conversionEvent !== undefined) this.redditConversionEvent.set(redditRestore.conversionEvent);
     if (redditRestore.customAudiences !== undefined) this.redditCustomAudiences.set(redditRestore.customAudiences);
     if (redditRestore.targetingExclusions !== undefined) this.redditTargetingExclusions.set(redditRestore.targetingExclusions);
+    if (redditRestore.delivery !== undefined) this.redditDelivery.set(redditRestore.delivery);
     if (redditRestore.editedTargetingLists !== undefined) this.redditEditedTargetingLists.set(redditRestore.editedTargetingLists);
     // The Meta image, on the Reddit image's terms above.
     const metaImageRestore = metaImageDraftRestore(draft);
@@ -10391,6 +10440,7 @@ export class ImplementationTabComponent implements OnInit {
         customAudiences: this.redditCustomAudiences(),
         targetingExclusions: this.redditTargetingExclusions(),
         editedTargetingLists: this.redditEditedTargetingLists(),
+        delivery: this.redditDelivery(),
       }),
       ...metaImageDraftFields({
         imageUrl: this.metaImageUrl(),
@@ -10448,6 +10498,7 @@ export class ImplementationTabComponent implements OnInit {
     this.redditConversionEvent.set(redditReset.conversionEvent);
     this.redditCustomAudiences.set(redditReset.customAudiences);
     this.redditTargetingExclusions.set(redditReset.targetingExclusions);
+    this.redditDelivery.set(redditReset.delivery);
     this.redditEditedTargetingLists.set(null);
     this.redditBudgetUsd.set(redditReset.budgetUsd);
     this.setRedditBriefLists(redditReset);

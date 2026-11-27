@@ -776,6 +776,20 @@ environment:
   LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_DAILY_BUDGET:
     value:
 
+  # Reddit one ad per variant (#6108 row 6, linuxfoundation/lfx-v2-campaign-service#549): a create that authors its post
+  # (`redditConfig.imageUrl` or `imageAssetId`, no `postUrl`) with 2 to 5 `redditConfig.variants` makes one promoted post
+  # and one ad per variant, so the variants' headlines become editable.
+  #
+  # A CAPABILITY flag of the Bidding kind: REQUIRES campaign-service DEPLOYED with `REDDIT_AD_PER_VARIANT_ENABLED` on, and
+  # the create pipeline on. It gates no new field: creates already carry the brief's variants, so off (the default)
+  # changes nothing and refuses nothing. On, the create route refuses more than 5 variants or a blank or
+  # over-300-character headline with a 400, never trimming them. Rules only, so turning it back off strands nothing.
+  # Order: set campaign-service's flag and pass its live probe, THEN this. NOTE: campaign-service's flag alone already
+  # makes one ad per variant on every authored-post create with 2 to 5 variants, whatever this flag says. Same accepted
+  # values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_AD_PER_VARIANT:
+    value:
+
   # Reddit pixel list (#6108 row 5, linuxfoundation/lfx-v2-campaign-service#549): serves `GET /api/campaigns/reddit/pixels`,
   # the conversion pixels on the shared Reddit ad account, for a picker that fills the existing
   # `redditConfig.conversionPixelId` (still gated by LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_CONVERSION_PIXEL's create path).
@@ -981,6 +995,18 @@ environment:
   # fields with a 400, never dropping them. Fields only, so turning it back off strands nothing. Order: set
   # campaign-service's flag and pass its paused boost probe, THEN this. Same accepted values as the flags above.
   LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_BOOST:
+    value:
+
+  # LinkedIn Audience Expansion and the LinkedIn Audience Network (linuxfoundation/lfx-v2-campaign-service#667): accepts
+  # `linkedInConfig.audienceExpansionEnabled` and `linkedInConfig.offsiteDeliveryEnabled`, each a boolean. Omitted, a
+  # create sends what it always did: no Audience Expansion and the Audience Network off. The Audience Network is refused
+  # with Text Ads and with the lead generation objective.
+  #
+  # A CAPABILITY flag of the Bidding kind: REQUIRES campaign-service v1.0.44 DEPLOYED with
+  # `LINKEDIN_ADS_DELIVERY_OPTIONS_ENABLED` on, and the create pipeline on. Off (the default), the create route refuses
+  # either field (false included) with a 400, never dropping it. Fields only, so turning it back off strands nothing.
+  # Order: set campaign-service's flag and pass its probe, THEN this. Same accepted values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_DELIVERY_OPTIONS:
     value:
 
   # Offers Meta ad set audience targeting on the Implement tab (#5905), sent as
