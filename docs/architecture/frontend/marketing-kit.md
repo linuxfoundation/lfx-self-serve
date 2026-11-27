@@ -180,7 +180,8 @@ the export's cadence through the shared visibility poller until it reports none,
 for no longer than `MKTG_FAMILY_EXPORT_ACTIVE_TTL_MS` on its own clock. A start
 answered 409 `MKTG_FAMILY_EXPORT_ACTIVE` is an answer, not an error: the validated
 body (`readMktgFamilyExportActiveConflict`) puts the card straight into that state,
-and a body that does not validate names nobody until the next read. When the followed
+and a body that does not validate names nobody and holds Slides and the chooser
+(never the PDF) until `last` answers. When the followed
 export ends the card says, in `family-export-followed`, that its deck is the last
 export below (a different last export than when following began, or one made after
 that start) or that nothing was kept; the next export clears the line. The card's own

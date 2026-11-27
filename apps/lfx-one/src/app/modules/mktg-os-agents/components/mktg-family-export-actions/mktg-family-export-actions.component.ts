@@ -123,6 +123,11 @@ export class MktgFamilyExportActionsComponent {
   protected readonly followedNote = signal('');
   /** The export this card follows (one it did not start here), or null. */
   private followed: MktgFamilyExportFollowState | null = null;
+  /**
+   * True from a refused start whose body named nobody until the lookup answers: an export holds the family and the
+   * card cannot say which, so Slides and its chooser wait for the server. Follow state, written where `followed` is.
+   */
+  protected readonly conflictPending = signal(false);
 
   protected readonly writer = computed(() => this.context.canWrite());
   protected readonly target = this.initTarget();
@@ -133,7 +138,7 @@ export class MktgFamilyExportActionsComponent {
   protected readonly following = computed(() => (this.phase() === 'running' ? null : (this.lookup()?.running ?? null)));
   protected readonly followingLead = this.initFollowingLead();
   /** One export of a family at a time: while another holds it, a start would only be refused. The PDF is unaffected. */
-  protected readonly canExportSlides = computed(() => this.canExport() && !this.following());
+  protected readonly canExportSlides = computed(() => this.canExport() && !this.following() && !this.conflictPending());
   /**
    * This card's own run's outcome (the chooser, its ready line, its failure and incomplete deck) gives way to an
    * export it follows and to that export's end. It is derived, never erased: the run's signals stay the run's.
@@ -371,10 +376,13 @@ export class MktgFamilyExportActionsComponent {
               // reconnect) behind one plain line; a final failure keeps its message. No button re-reads.
               let first = true;
               let denied = false;
-              const read = () => {
+              const read = (poll: boolean) => {
                 // A refused lookup is latched for this target (RFC 9110 §15.5.2 (401) and §15.5.4 (403); latching a 401
                 // too is the operator's choice, since a session-expiry 401 needs a sign-in, not a poll): no wake re-reads it.
                 if (denied) return EMPTY;
+                // The poller asks `shouldContinue` after a good read only, so a follow whose reads keep failing ends its
+                // scheduled reads here, at the same deadline. The plain line stays; a first read and a wake still read.
+                if (poll && this.followed && Date.now() >= this.followed.until) return EMPTY;
                 // Only a first read with nothing loaded shows the checking line: a retry keeps the plain line until it
                 // succeeds (no flicker), and a re-read after an export keeps the loaded lookup usable (law 5) instead of
                 // entering a checking state that a filtered transient failure could never leave.
@@ -470,10 +478,12 @@ export class MktgFamilyExportActionsComponent {
    * own run is never followed: it reports itself.
    *
    * It runs on every read of the lookup, the follow poll's included, so it writes follow state only (`followed`,
-   * `followedNote`). What the run and the PDF preparation set (`phase`, `message`, `partialLink`, `pdfError`) is
-   * theirs alone; the card hides the run's outcome while it is `superseded`.
+   * `followedNote`, `conflictPending`). What the run and the PDF preparation set (`phase`, `message`, `partialLink`,
+   * `pdfError`) is theirs alone; the card hides the run's outcome while it is `superseded`.
    */
   private trackFollow(next: MktgFamilyExportLastResponse | null): void {
+    // The lookup answered (an export, none, or a final refusal that holds Export by itself): nothing is pending.
+    this.conflictPending.set(false);
     const running = this.phase() === 'running' ? null : (next?.running ?? null);
     if (running) {
       if (this.followed?.startedAt !== running.startedAt) {
@@ -498,6 +508,7 @@ export class MktgFamilyExportActionsComponent {
   private endFollow(): void {
     this.followed = null;
     this.followedNote.set('');
+    this.conflictPending.set(false);
   }
 
   private watch(run: ReturnType<MktgFamilyExportService['run']>): void {
@@ -534,10 +545,12 @@ export class MktgFamilyExportActionsComponent {
             this.lookup.update((value) => (value ? { ...value, running } : value));
             this.trackFollow(this.lookup());
           } else {
-            // A body that does not validate names nobody: one plain line, and the read below says who holds the
-            // family, or how that export ended if it is already over.
+            // A body that does not validate names nobody: one plain line, Slides and its chooser held (the family is
+            // taken, whoever took it), and the read below says who holds the family, or how that export ended if it
+            // is already over.
             this.followed = { startedAt: '', baseline: mktgFamilyExportIdentity(this.last()), until: Date.now() + MKTG_FAMILY_EXPORT_ACTIVE_TTL_MS };
             this.followedNote.set(MKTG_SLIDES_EXPORT_START_MESSAGES[MKTG_FAMILY_EXPORT_ACTIVE]);
+            this.conflictPending.set(true);
           }
           this.retry.next(true);
           return;

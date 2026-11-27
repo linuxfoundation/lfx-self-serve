@@ -907,6 +907,42 @@ describe('Family export slot', () => {
       vi.useRealTimers();
     });
 
+    it('stops reading a followed export at the marker’s deadline when its reads keep failing, behind the one plain line', async () => {
+      pollClock();
+      vi.spyOn(Math, 'random').mockReturnValue(0);
+      api.last.mockReturnValue(of({ ...lookup(), running: other }));
+      const { fixture, root, button } = await setup();
+      expect(following(root)).not.toBeNull();
+      // The server answers 503 while it keeps a finished export's record, as it does when it cannot be reached at all.
+      api.last.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503, error: { code: 'MKTG_FAMILY_EXPORT_RECORD_NOT_KEPT' } })));
+      await tick(fixture, MKTG_FAMILY_EXPORT_ACTIVE_TTL_MS);
+      const reads = api.last.mock.calls.length;
+      // Read again on the backoff until the deadline, and not once on its own after it.
+      expect(reads).toBeGreaterThan(MKTG_FAMILY_EXPORT_ACTIVE_TTL_MS / MKTG_RUN_POLL.intervalMs - 2);
+      await tick(fixture, MKTG_RUN_POLL.intervalMs * 20);
+      expect(api.last).toHaveBeenCalledTimes(reads);
+      // The card ends on the plain line over what the server last said, and starts nothing over that export.
+      const retrying = () => root.querySelector('[data-testid="family-export-lookup-retrying"]');
+      expect(retrying()?.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
+      expect(following(root)).not.toBeNull();
+      expect(button('slides')?.disabled).toBe(true);
+      // A return to the page still reads once; its failure is not read again on a timer either.
+      window.dispatchEvent(new Event('focus'));
+      await tick(fixture, MKTG_RUN_POLL.intervalMs * 20);
+      expect(api.last).toHaveBeenCalledTimes(reads + 1);
+      // The read that reaches the server says how that export ended.
+      api.last.mockReturnValue(of({ ...lookup(), last: familyExportRecord({ exportedAt: '2026-11-27T10:01:30.000Z' }) }));
+      window.dispatchEvent(new Event('focus'));
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(retrying()).toBeNull();
+      expect(following(root)).toBeNull();
+      expect(followed(root)).toBe(MKTG_FAMILY_EXPORT_FOLLOWED_MESSAGES.done);
+      expect(button('slides')?.disabled).toBe(false);
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    });
+
     it('names nobody on a refusal that carries no facts, and the next read says how that export ended', async () => {
       pollClock();
       vi.spyOn(console, 'error').mockImplementation(() => undefined);
@@ -927,6 +963,72 @@ describe('Family export slot', () => {
       expect(followed(root)).toBe(MKTG_FAMILY_EXPORT_FOLLOWED_MESSAGES.ended);
       expect(button('slides')?.disabled).toBe(false);
       vi.useRealTimers();
+      vi.restoreAllMocks();
+    });
+
+    it('holds Slides and its chooser after a refusal that carries no facts until the lookup answers, and leaves the PDF alone', async () => {
+      pollClock();
+      vi.spyOn(Math, 'random').mockReturnValue(0);
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const earlier = familyExportRecord();
+      const refused = MKTG_SLIDES_EXPORT_START_MESSAGES[MKTG_FAMILY_EXPORT_ACTIVE];
+      api.last.mockReturnValue(of({ ...lookup(), last: earlier }));
+      api.run.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 409, error: { code: MKTG_FAMILY_EXPORT_ACTIVE } })));
+      const { fixture, root, button } = await setup();
+      button('slides')?.click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      // The read after the refusal does not reach the server.
+      api.last.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+      button('update')?.click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(api.run).toHaveBeenCalledTimes(1);
+      expect(followed(root)).toBe(refused);
+      // An export holds the family and the card does not know which yet: no second start, by the button or by the chooser.
+      expect(button('slides')?.disabled).toBe(true);
+      fixture.componentInstance['export']();
+      fixture.componentInstance['choose']('create');
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(button('update')).toBeNull();
+      expect(button('create')).toBeNull();
+      expect(api.run).toHaveBeenCalledTimes(1);
+      expect(followed(root)).toBe(refused);
+      // The PDF is not the Slides export's business.
+      expect(button('pdf')?.disabled).toBe(false);
+      button('pdf')?.click();
+      expect(print.printNow).toHaveBeenCalledWith(MKTG_FAMILY_PRINT_BODY_CLASS, pdfTitle);
+      // The lookup's answer names no export: that one is over, and Slides and its chooser are back.
+      api.last.mockReturnValue(of({ ...lookup(), last: earlier }));
+      await tick(fixture, MKTG_RUN_POLL.intervalMs);
+      expect(followed(root)).toBe(MKTG_FAMILY_EXPORT_FOLLOWED_MESSAGES.ended);
+      expect(button('slides')?.disabled).toBe(false);
+      button('slides')?.click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(button('update')).not.toBeNull();
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    });
+
+    it('drops a refusal that carries no facts when the project changes, without waiting for a lookup', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      api.run.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 409, error: { code: MKTG_FAMILY_EXPORT_ACTIVE } })));
+      const { fixture, root, button } = await setup();
+      // The read after the refusal never answers.
+      api.last.mockReturnValue(new Subject<MktgFamilyExportLastResponse>());
+      button('slides')?.click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(button('slides')?.disabled).toBe(true);
+      expect(fixture.componentInstance['conflictPending']()).toBe(true);
+      // Another project's card owes that refusal nothing, before its own lookup has answered.
+      activeContext.set({ uid: 'synthetic-other-project', name: 'Synthetic other project' });
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(fixture.componentInstance['conflictPending']()).toBe(false);
+      expect(followed(root)).toBeNull();
       vi.restoreAllMocks();
     });
 
