@@ -53,6 +53,7 @@ describe('linkedInDraftFields', () => {
     textAds: [{ key: 'text-ad-1', headline: 'h', description: 'd' }],
     carouselCards: [{ key: 'card-1', imageAssetId: 'img', imageAssetBriefId: 'b1', headline: 'Keynote', destinationUrl: '' }],
     carouselIntroText: 'Meet the speakers',
+    document: { assetId: 'pdf', assetBriefId: 'b1', title: 'Prospectus', introText: 'Sponsor us' },
     customTargeting: true,
     targetingDraft: { clauses: [{ skills: [{ urn: 'urn:li:skill:1', name: 'Go' }] }], exclude: {}, segmentsAccountId: null },
     objectiveDraft: { objective: 'conversions', conversions: ['104012'], conversionsOwner: 'tlf|' },
@@ -82,6 +83,12 @@ describe('linkedInDraftFields', () => {
     expect(fields.linkedInCarouselCards?.[0]).not.toBe(state.carouselCards[0]);
   });
 
+  it('carries a copy of the document ad', () => {
+    const fields = linkedInDraftFields(state);
+    expect(fields.linkedInDocument).toEqual(state.document);
+    expect(fields.linkedInDocument).not.toBe(state.document);
+  });
+
   it('carries the budget pair and cap as held, and copies each variant', () => {
     const fields = linkedInDraftFields(state);
     expect(fields).toMatchObject({ linkedInBudgetUsd: 1000, linkedInLifetimeBudget: true, linkedInImageUploadPendingName: 'hero.png' });
@@ -108,10 +115,18 @@ describe('linkedInDraftRestore', () => {
     ['single_image', 'single_image'],
     ['video', 'video'],
     ['carousel', 'carousel'],
-    ['document', undefined],
+    ['document', 'document'],
+    ['slideshow', undefined],
   ])('restores a stored format %s as %s', (stored, expected) => {
     // A stored draft is replayed from JSON, so an unknown format is possible.
     expect(linkedInDraftRestore(draft({ linkedInFormat: stored as LinkedInDraftSnapshot['linkedInFormat'] })).format).toBe(expected);
+  });
+
+  // A malformed stored document is `linkedInDocumentDraftFromStored`'s, tested in its own spec.
+  it('restores a stored document ad, present-only', () => {
+    const stored = { assetId: 'pdf', assetBriefId: 'b1', title: 'Prospectus', introText: 'Sponsor us' };
+    expect(linkedInDraftRestore(draft({ linkedInDocument: stored })).document).toEqual(stored);
+    expect(linkedInDraftRestore(draft({})).document).toBeUndefined();
   });
 
   it('restores carousel cards whose fields are text, and the intro text, present-only', () => {

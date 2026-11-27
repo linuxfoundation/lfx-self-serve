@@ -9,14 +9,19 @@
       size="small"
       [value]="draft().objective ?? ''"
       (valueChange)="onObjectiveChange($event)"
-      hint="By default, automatic bidding optimizes for website visits and manual bidding for website conversions."
+      [hint]="
+        documentChosen()
+          ? 'A document ad is an engagement ad by default, or a lead generation ad that opens a form.'
+          : 'By default, automatic bidding optimizes for website visits and manual bidding for website conversions.'
+      "
       data-testid="linkedin-objective-picker-objective">
-      <lfx-ui-option value="" label="Set by bidding (default)" />
-      <!-- Each choice only while its capability offers it, or while it is the held choice, so it can be set back. -->
-      @if (available() || draft().objective === 'traffic') {
+      <!-- '' sends no objective: for a document ad (campaign-service#665) that is an engagement ad. -->
+      <lfx-ui-option value="" [label]="documentChosen() ? 'Engagement (default)' : 'Set by bidding (default)'" />
+      <!-- Each choice only while its capability offers it and the ad format takes it, or while it is the held choice, so it can be set back. -->
+      @if ((available() && !documentChosen()) || draft().objective === 'traffic') {
         <lfx-ui-option value="traffic" label="Website visits" />
       }
-      @if (available() || draft().objective === 'conversions') {
+      @if ((available() && !documentChosen()) || draft().objective === 'conversions') {
         <lfx-ui-option value="conversions" label="Website conversions" />
       }
       @if ((leadGenAvailable() && leadGenOffered()) || draft().objective === 'lead_generation') {

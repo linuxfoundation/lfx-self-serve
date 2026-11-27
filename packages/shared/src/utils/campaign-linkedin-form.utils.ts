@@ -152,6 +152,8 @@ export function linkedInCreateRefusal(input: LinkedInCreateRefusalInput): string
   if (input.carouselUnavailable) return 'LinkedIn Ads: carousel ads are not available right now. Choose single image ads as the ad format.';
   // A carousel beside lead generation, which campaign-service builds none of yet.
   if (input.carouselWithLeadGen) return 'LinkedIn Ads: lead generation campaigns cannot be carousels yet. Choose single image or video ads as the ad format.';
+  // A document chosen but no longer offered: held, never sent as single image ads instead (campaign-service#665).
+  if (input.documentUnavailable) return 'LinkedIn Ads: document ads are not available right now. Choose single image ads as the ad format.';
   // Custom targeting this deployment no longer offers is held rather than sent as the profile, a wider audience (#5764 rows 8–11).
   if (input.customTargetingUnavailable) return 'LinkedIn Ads: custom targeting is not available right now. Choose a targeting profile.';
   if (input.textAds) {
@@ -161,6 +163,9 @@ export function linkedInCreateRefusal(input: LinkedInCreateRefusalInput): string
   } else if (input.carousel) {
     // A carousel's cards (campaign-service#665) take the variants' place too: already a whole message.
     if (input.carousel.refusal !== null) return input.carousel.refusal;
+  } else if (input.document) {
+    // A document (campaign-service#665) takes the variants' place too: already a whole message.
+    if (input.document.refusal !== null) return input.document.refusal;
   } else {
     if (input.variantCount === 0) return 'LinkedIn Ads: add at least one ad variant.';
     if (input.variantCount > LINKEDIN_MAX_VARIANTS) return `LinkedIn Ads: remove ad variants until there are at most ${LINKEDIN_MAX_VARIANTS}.`;

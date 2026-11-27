@@ -4177,6 +4177,7 @@
               [available]="linkedInConversionsAvailable()"
               [leadGenAvailable]="linkedInLeadGenAvailable()"
               [leadGenOffered]="!linkedInCarouselSelected()"
+              [documentChosen]="linkedInDocumentSelected()"
               [targetCostOffered]="linkedInTargetCostFieldShown()"
               [draft]="linkedInObjectiveDraft()"
               (draftChange)="onLinkedInObjectiveDraftChange($event)"
@@ -4192,9 +4193,15 @@
           </div>
 
           <!-- The ad format (#5764 rows 18–19, campaign-service#665), offered on an explicit yes from `linkedInTextAdsAvailable()`,
-               `linkedInVideoAdsAvailable()` or `linkedInCarouselAvailable()`, and kept on screen while a choice can no longer be sent,
-               so the operator can switch back. -->
-          @if (linkedInTextAdsAvailable() || linkedInVideoAdsAvailable() || linkedInCarouselAvailable() || linkedInFormat() !== 'single_image') {
+               `linkedInVideoAdsAvailable()`, `linkedInCarouselAvailable()` or `linkedInDocumentAvailable()`, and kept on screen while a
+               choice can no longer be sent, so the operator can switch back. -->
+          @if (
+            linkedInTextAdsAvailable() ||
+            linkedInVideoAdsAvailable() ||
+            linkedInCarouselAvailable() ||
+            linkedInDocumentAvailable() ||
+            linkedInFormat() !== 'single_image'
+          ) {
             <lfx-ui-select
               label="Ad format"
               size="small"
@@ -4213,6 +4220,10 @@
               <!-- Not offered with lead generation either (campaign-service#665 builds no lead gen carousel); a held choice stays so it can be changed. -->
               @if ((linkedInCarouselAvailable() && !linkedInLeadGenSelected()) || linkedInFormat() === 'carousel') {
                 <lfx-ui-option value="carousel" label="Carousel" />
+              }
+              <!-- Offered with lead generation too: a gated document opens the form after its free preview pages (campaign-service#665). -->
+              @if (linkedInDocumentAvailable() || linkedInFormat() === 'document') {
+                <lfx-ui-option value="document" label="Document" />
               }
             </lfx-ui-select>
           }
@@ -4239,6 +4250,17 @@
               [uploadAvailable]="linkedInAssetUploadAvailable() && !!briefPersistence().briefId"
               (upload)="onLinkedInCarouselUpload($event)"
               data-testid="implementation-linkedin-carousel" />
+          } @else if (linkedInDocumentSelected()) {
+            <!-- A document (campaign-service#665) replaces the single image ad variants: one post of a PDF picked from the brief's library. -->
+            <lfx-linkedin-document-editor
+              [document]="linkedInDocument()"
+              (documentChange)="onLinkedInDocumentChange($event)"
+              [library]="googleCreativeLibrary()"
+              [briefId]="briefPersistence().briefId ?? ''"
+              [uploadAvailable]="linkedInAssetUploadAvailable() && !!briefPersistence().briefId"
+              [gatedWarning]="linkedInDocumentGatedWarning()"
+              (upload)="onLinkedInDocumentUpload($event)"
+              data-testid="implementation-linkedin-document" />
           } @else {
             <!-- Ad variants: each one is its own LinkedIn ad, with its own copy and, when uploads are on, its own image (#5547). -->
             <fieldset class="flex flex-col gap-3" aria-describedby="linkedin-variants-hint" data-testid="implementation-linkedin-variants">

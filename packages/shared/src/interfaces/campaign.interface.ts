@@ -1575,6 +1575,12 @@ export interface CampaignImplementationDraft {
   linkedInCarouselCards?: LinkedInCarouselCardDraft[];
   linkedInCarouselIntroText?: string;
   /**
+   * The LinkedIn document ad as edited (campaign-service#665): the PDF picked from the brief's library, its title and
+   * intro text. Restored only when present; the tab sends it only while `linkedInDocumentEnabled` is on and the document
+   * format is chosen.
+   */
+  linkedInDocument?: LinkedInDocumentDraft;
+  /**
    * Whether custom targeting replaces the targeting profile (#5764 rows 8–11), and the clauses as edited. Restored only
    * when present; the tab sends `targeting` only while `linkedInTargetingEnabled` is on.
    */
@@ -2215,6 +2221,36 @@ export interface LinkedInCarouselCardDraft {
   destinationUrl: string;
 }
 
+/** The LinkedIn document ad as the Implement tab edits it (campaign-service#665). */
+export interface LinkedInDocumentDraft {
+  /** A stored PDF picked from the brief's library, `''` for none, and the brief it was picked for. */
+  assetId: string;
+  assetBriefId: string;
+  title: string;
+  introText: string;
+}
+
+/** The LinkedIn document editor's state: counters, the error or hint under each field (`''` for none), and the PDF picker. */
+export interface LinkedInDocumentView {
+  titleLength: number;
+  titleError: string;
+  introLength: number;
+  introError: string;
+  /** LinkedIn's recommended intro length, suggested and never refused (decision 2026-11-25), or `''` while within it. */
+  introHint: string;
+  /** Why the picked PDF cannot be used (another brief, no longer stored), or `''`. */
+  assetProblem: string;
+  /** Why the picker offers nothing (unsaved brief, loading, failed, no PDF stored), or `''`. */
+  pdfNote: string;
+  pdfOptions: LinkedInDocumentPdfOption[];
+}
+
+/** One stored PDF the LinkedIn document picker offers. */
+export interface LinkedInDocumentPdfOption {
+  value: string;
+  label: string;
+}
+
 /** One stored image a carousel card's picker offers. */
 export interface LinkedInCarouselImageOption {
   value: string;
@@ -2622,6 +2658,10 @@ export interface LinkedInCreateRefusalInput {
   carouselWithLeadGen?: boolean;
   /** Present only while a carousel is chosen (campaign-service#665): why its cards cannot be sent, or `null`. They replace the variant checks. */
   carousel?: { refusal: string | null };
+  /** A document is chosen but this deployment no longer offers it (campaign-service#665). */
+  documentUnavailable?: boolean;
+  /** Present only while a document is chosen (campaign-service#665): why it cannot be sent, or `null`. It replaces the variant checks. */
+  document?: { refusal: string | null };
   /** Present only while video ads are chosen (#5764 row 18): an ad with no video for the open brief. */
   videoMissing?: boolean;
   /**
@@ -3679,6 +3719,7 @@ export type LinkedInDraftSnapshot = Pick<
   | 'linkedInTextAds'
   | 'linkedInCarouselCards'
   | 'linkedInCarouselIntroText'
+  | 'linkedInDocument'
   | 'linkedInCustomTargeting'
   | 'linkedInTargetingDraft'
   | 'linkedInObjectiveDraft'
@@ -3701,6 +3742,8 @@ export interface LinkedInDraftState {
   /** The carousel cards and intro text as edited (campaign-service#665). */
   carouselCards: readonly LinkedInCarouselCardDraft[];
   carouselIntroText: string;
+  /** The document ad as edited (campaign-service#665). */
+  document: LinkedInDocumentDraft;
   /** Whether custom targeting is on, and its clauses as edited (#5764 rows 8–11). */
   customTargeting: boolean;
   targetingDraft: LinkedInTargetingDraft;
@@ -3723,6 +3766,7 @@ export interface LinkedInDraftRestore {
   textAds?: LinkedInTextAdDraft[];
   carouselCards?: LinkedInCarouselCardDraft[];
   carouselIntroText?: string;
+  document?: LinkedInDocumentDraft;
   customTargeting?: boolean;
   targetingDraft?: LinkedInTargetingDraft;
   objectiveDraft?: LinkedInObjectiveDraft;
@@ -4870,6 +4914,8 @@ export interface GoogleCreativeImageSlotView {
 export interface CreativeAssetLibraryState {
   status: 'idle' | 'loading' | 'ready' | 'error';
   assets: StoredCreativeAsset[];
+  /** The stored PDFs (campaign-service#665), carried by a `ready` read only; a LinkedIn document ad picks one. */
+  documents?: StoredCreativeDocument[];
 }
 
 /**

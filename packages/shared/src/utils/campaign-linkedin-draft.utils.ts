@@ -12,6 +12,7 @@ import type {
   LinkedInVariantDraft,
 } from '../interfaces/campaign.interface';
 import { linkedInCarouselCardsFromStored } from './campaign-linkedin-carousel-form.utils';
+import { linkedInDocumentDraftFromStored } from './campaign-linkedin-document-form.utils';
 import { linkedInObjectiveDraftFromStored } from './campaign-linkedin-objective-form.utils';
 import { linkedInTargetingDraftFromStored } from './campaign-linkedin-targeting-form.utils';
 
@@ -54,6 +55,7 @@ export function linkedInDraftFields(
   | 'linkedInTextAds'
   | 'linkedInCarouselCards'
   | 'linkedInCarouselIntroText'
+  | 'linkedInDocument'
   | 'linkedInCustomTargeting'
   | 'linkedInTargetingDraft'
   | 'linkedInObjectiveDraft'
@@ -72,6 +74,7 @@ export function linkedInDraftFields(
     linkedInTextAds: state.textAds.map((ad) => ({ ...ad })),
     linkedInCarouselCards: state.carouselCards.map((card) => ({ ...card })),
     linkedInCarouselIntroText: state.carouselIntroText,
+    linkedInDocument: { ...state.document },
     linkedInCustomTargeting: state.customTargeting,
     linkedInTargetingDraft: structuredClone(state.targetingDraft),
     linkedInObjectiveDraft: { ...state.objectiveDraft, conversions: [...state.objectiveDraft.conversions] },
@@ -98,10 +101,13 @@ export function linkedInDraftRestore(draft: LinkedInDraftSnapshot): LinkedInDraf
   if (draft.linkedInImageUploadFailedMessage && draft.linkedInImageUploadFailedBriefId) {
     restore.failedUpload = { message: draft.linkedInImageUploadFailedMessage, briefId: draft.linkedInImageUploadFailedBriefId };
   }
-  // Text Ads (#5764 row 19), video ads (row 18) and carousels (campaign-service#665): present-only, so an older draft keeps the single-image default. An
+  // Text Ads (#5764 row 19), video ads (row 18), carousels and documents (campaign-service#665): present-only, so an older draft keeps the single-image default. An
   // unknown format restores nothing.
   const format = draft.linkedInFormat;
-  if (format === 'single_image' || format === 'text' || format === 'video' || format === 'carousel') restore.format = format;
+  if (format === 'single_image' || format === 'text' || format === 'video' || format === 'carousel' || format === 'document') restore.format = format;
+  // The document ad (campaign-service#665): present-only, with every field as text.
+  const document = linkedInDocumentDraftFromStored(draft.linkedInDocument);
+  if (document) restore.document = document;
   // Carousel cards and intro text (campaign-service#665): present-only, and only entries whose fields are all text.
   const carouselCards = linkedInCarouselCardsFromStored(draft.linkedInCarouselCards);
   if (carouselCards) restore.carouselCards = carouselCards;
