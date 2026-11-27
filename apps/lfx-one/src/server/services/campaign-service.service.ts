@@ -761,6 +761,16 @@ export function canSetRedditTargetingExclusions(): boolean {
 }
 
 /**
+ * Whether a Reddit create may carry `subCountryGeoTargets` (#6108 row 7, campaign-service #549). Needs the
+ * campaign-service create path AND `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_SUBCOUNTRY_GEO`, which follows campaign-service's
+ * own `REDDIT_SUBCOUNTRY_GEO_ENABLED`: campaign-service refuses the field while that is off, and the legacy creator
+ * ignores it.
+ */
+export function canSetRedditSubCountryGeo(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceRedditSubCountryGeo);
+}
+
+/**
  * Whether campaign-service resolves a Reddit create's `subreddits` and `interests` before creating anything (#6108 row 4,
  * campaign-service #573), so the Implement tab may offer them for editing. Needs the campaign-service create path AND
  * `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_TARGETING_RESOLUTION`, which follows campaign-service's own
@@ -1380,6 +1390,7 @@ export class CampaignServiceClient {
         redditConversionPixelEnabled: canSetRedditConversionPixel(),
         redditConversionEventEnabled: canSetRedditConversionEvent(),
         redditTargetingExclusionsEnabled: canSetRedditTargetingExclusions(),
+        redditSubCountryGeoEnabled: canSetRedditSubCountryGeo(),
         redditTargetingResolutionEnabled: canResolveRedditTargeting(),
         redditPlacementsEnabled: canSetRedditPlacements(),
         redditBudgetTypeEnabled: canSetRedditBudgetType(),
@@ -1483,6 +1494,7 @@ export class CampaignServiceClient {
       redditConversionPixelEnabled: canSetRedditConversionPixel(),
       redditConversionEventEnabled: canSetRedditConversionEvent(),
       redditTargetingExclusionsEnabled: canSetRedditTargetingExclusions(),
+      redditSubCountryGeoEnabled: canSetRedditSubCountryGeo(),
       redditTargetingResolutionEnabled: canResolveRedditTargeting(),
       redditPlacementsEnabled: canSetRedditPlacements(),
       redditBudgetTypeEnabled: canSetRedditBudgetType(),

@@ -4842,6 +4842,26 @@ export const REDDIT_TARGETING_EXCLUSION_LIMITS = { excludedSubreddits: 100, excl
 /** A subreddit name campaign-service accepts (`subredditNameRE`): 2 to 21 ASCII letters, digits or underscores. */
 export const REDDIT_SUBREDDIT_NAME_PATTERN = /^[A-Za-z0-9_]{2,21}$/;
 
+/** The create field a Reddit sub-country location refusal names (#6108 row 7). */
+export const REDDIT_SUBCOUNTRY_GEO_FIELD = 'redditConfig.subCountryGeoTargets';
+
+/**
+ * The most Reddit sub-country locations a create may carry (#6108 row 7), campaign-service's `MaxSubCountryGeoTargets`
+ * (`internal/platform/reddit/subcountry_geo.go`), counted on the raw list.
+ */
+export const REDDIT_MAX_SUBCOUNTRY_GEO_TARGETS = 50;
+
+/**
+ * Reddit sub-country geolocation id shapes campaign-service accepts (`subCountryRegionRE`, `subCountryCityRE`,
+ * `subCountryDMARE`), matched on the trimmed, upper-cased id. A region is a country, a hyphen and an ISO 3166-2
+ * subdivision part (`US-CA`; a longer digit run is a postal code, refused); a city is a country, a colon and a positive
+ * numeric id (`CA:6167865`); a DMA is a three-digit Nielsen market code (`662`), always in the US. The first group is the
+ * country.
+ */
+export const REDDIT_SUBCOUNTRY_REGION_PATTERN = /^([A-Z]{2})-([A-Z0-9]{1,3})$/;
+export const REDDIT_SUBCOUNTRY_CITY_PATTERN = /^([A-Z]{2}):[1-9][0-9]{0,9}$/;
+export const REDDIT_SUBCOUNTRY_DMA_PATTERN = /^[1-9][0-9]{2}$/;
+
 /** The Reddit targeting exclusion lists the Implement tab offers, in order (#6108 row 3). */
 export const REDDIT_TARGETING_EXCLUSION_LISTS: readonly RedditTargetingExclusionListView[] = [
   { key: 'excludedSubreddits', label: 'Exclude communities', placeholder: 'Enter a subreddit, e.g. r/politics', emptyText: 'Press Enter to add it' },

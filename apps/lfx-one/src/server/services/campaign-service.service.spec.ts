@@ -4958,6 +4958,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       redditConversionPixelEnabled: false,
       redditConversionEventEnabled: false,
       redditTargetingExclusionsEnabled: false,
+      redditSubCountryGeoEnabled: false,
       redditTargetingResolutionEnabled: false,
       redditPlacementsEnabled: false,
       redditBudgetTypeEnabled: false,
@@ -5700,8 +5701,9 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
     }
   });
 
-  /** Reddit placements, budget type and pixel list (#6108 row 5): the cutover and each one's own flag. */
+  /** Reddit placements, budget type and pixel list (#6108 row 5), and regions, cities and DMAs (row 7): the cutover and each one's own flag. */
   it.each([
+    ['redditSubCountryGeoEnabled', ServerFeatureFlag.CampaignServiceRedditSubCountryGeo],
     ['redditPlacementsEnabled', ServerFeatureFlag.CampaignServiceRedditPlacements],
     ['redditBudgetTypeEnabled', ServerFeatureFlag.CampaignServiceRedditDailyBudget],
     ['redditPixelListEnabled', ServerFeatureFlag.CampaignServiceRedditPixelList],
@@ -5929,6 +5931,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       redditConversionPixelEnabled: false,
       redditConversionEventEnabled: false,
       redditTargetingExclusionsEnabled: false,
+      redditSubCountryGeoEnabled: false,
       redditTargetingResolutionEnabled: false,
       redditPlacementsEnabled: false,
       redditBudgetTypeEnabled: false,

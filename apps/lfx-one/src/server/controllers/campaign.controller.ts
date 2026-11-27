@@ -22,6 +22,7 @@ import { linkedInConfigNamesConversions, linkedInConversionRules, linkedInObject
 import { linkedInTargetingNamesSegments, linkedInTargetingRefusal } from '@lfx-one/shared/utils/campaign-linkedin-targeting.utils';
 import { redditConversionEventRefusal } from '@lfx-one/shared/utils/campaign-reddit-conversion-event.utils';
 import { redditTargetingExclusionsRefusal } from '@lfx-one/shared/utils/campaign-reddit-targeting-exclusions.utils';
+import { redditSubCountryGeoRefusal } from '@lfx-one/shared/utils/campaign-reddit-subcountry-geo.utils';
 import { redditBudgetTypeRefusal, redditPlacementsRefusal } from '@lfx-one/shared/utils/campaign-reddit-delivery.utils';
 import { redditPixelsFromPayload } from '@lfx-one/shared/utils/campaign-reddit-pixels.utils';
 import {
@@ -496,6 +497,7 @@ import {
   canSetRedditConversionEvent,
   canSetRedditCustomAudiences,
   canSetRedditTargetingExclusions,
+  canSetRedditSubCountryGeo,
   canSetRedditPlacements,
   canSetRedditBudgetType,
   canListRedditPixels,
@@ -1483,6 +1485,16 @@ export class CampaignController {
       const redditTargetingExclusionsRefused = redditTargetingExclusionsRefusal(body?.redditConfig, canSetRedditTargetingExclusions());
       if (redditTargetingExclusionsRefused !== null) {
         throw ServiceValidationError.forField(redditTargetingExclusionsRefused.field, redditTargetingExclusionsRefused.message, {
+          operation: 'campaign_create',
+          service: 'campaign_controller',
+        });
+      }
+      // Reddit regions, cities and DMAs (#6108 row 7): refused, never dropped, while this deployment cannot send them, and
+      // held to campaign-service's rules (`checkRedditSubCountryGeo`), which it checks after the exclusions and before the
+      // placements. Whether Reddit can target an id is campaign-service's own read. See `redditSubCountryGeoRefusal`.
+      const redditSubCountryGeoRefused = redditSubCountryGeoRefusal(body?.redditConfig, canSetRedditSubCountryGeo());
+      if (redditSubCountryGeoRefused !== null) {
+        throw ServiceValidationError.forField(redditSubCountryGeoRefused.field, redditSubCountryGeoRefused.message, {
           operation: 'campaign_create',
           service: 'campaign_controller',
         });

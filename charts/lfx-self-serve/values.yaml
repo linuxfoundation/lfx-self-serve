@@ -732,6 +732,18 @@ environment:
   LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_TARGETING_EXCLUSIONS:
     value:
 
+  # Reddit regions, cities and DMAs (#6108 row 7, linuxfoundation/lfx-v2-campaign-service#549): accepts
+  # `redditConfig.subCountryGeoTargets`, at most 50 Reddit geolocation ids: a region (`US-CA`), a city (`CA:6167865`) or
+  # a DMA (`662`). A bare country belongs in `geoTargets`, and no id may lie inside a country `geoTargets` targets or
+  # `excludedGeoTargets` excludes. campaign-service confirms each id with Reddit before anything is created.
+  #
+  # A CAPABILITY flag of the Bidding kind: REQUIRES campaign-service DEPLOYED with `REDDIT_SUBCOUNTRY_GEO_ENABLED` on, and
+  # the create pipeline on. Off (the default), the create route refuses the field with a 400, never dropping it. A field
+  # only, so turning it back off strands nothing. Order: set campaign-service's flag and pass its live probe, THEN this.
+  # Same accepted values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_SUBCOUNTRY_GEO:
+    value:
+
   # Reddit community and interest resolution (#6108 row 4, linuxfoundation/lfx-v2-campaign-service#573): offers the
   # Reddit section's subreddits and interests for editing on the Implement tab; campaign-service resolves them to Reddit's
   # names and ids, refusing an unknown one before anything is created.
