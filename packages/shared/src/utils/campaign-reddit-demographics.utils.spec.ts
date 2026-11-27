@@ -201,6 +201,12 @@ describe('redditScheduleWindowAdded', () => {
     expect(redditDemographicsDraftRefusal({ ...NONE, schedule }, true)).toBeNull();
   });
 
+  it('carries an hour past midnight into the next day, so an added window keeps its length', () => {
+    let schedule: RedditDemographicsDraft['schedule'] = [{ startDay: 1, startHour: 20, endDay: 1, endHour: 23 }];
+    for (let i = 0; i < 7; i++) schedule = redditScheduleWindowAdded(schedule);
+    expect(schedule[7]).toEqual({ startDay: 1, startHour: 21, endDay: 2, endHour: 0 });
+  });
+
   it('adds nothing at the cap', () => {
     expect(redditScheduleWindowAdded(windows(REDDIT_MAX_SCHEDULE_WINDOWS))).toHaveLength(REDDIT_MAX_SCHEDULE_WINDOWS);
   });

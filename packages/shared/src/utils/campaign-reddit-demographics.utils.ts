@@ -213,7 +213,8 @@ export function redditLanguagesChoice(values: readonly string[]): RedditLanguage
  * The schedule with one more window, or unchanged at the cap: the first is {@link DEFAULT_REDDIT_SCHEDULE_WINDOW}, and
  * each later one the last window moved one day on (Saturday wraps to Sunday), so adding builds a weekday-by-weekday schedule.
  * A move that would repeat a window already held moves on another day, then an hour, so an added window is never one
- * campaign-service would refuse as a repeat (7 days by 24 hours of distinct starts is more than the cap).
+ * campaign-service would refuse as a repeat (7 days by 24 hours of distinct starts is more than the cap). Both ends move
+ * as hours of the week, so an hour past midnight carries into the next day and the window keeps its length.
  */
 export function redditScheduleWindowAdded(schedule: readonly RedditScheduleWindow[]): RedditScheduleWindow[] {
   if (schedule.length >= REDDIT_MAX_SCHEDULE_WINDOWS) return [...schedule];
@@ -222,17 +223,17 @@ export function redditScheduleWindowAdded(schedule: readonly RedditScheduleWindo
   const held = new Set(schedule.map(scheduleWindowKey));
   for (let hours = 0; hours < 24; hours++) {
     for (let days = 1; days <= 7; days++) {
-      const next = {
-        startDay: (last.startDay + days) % 7,
-        startHour: (last.startHour + hours) % 24,
-        endDay: (last.endDay + days) % 7,
-        endHour: (last.endHour + hours) % 24,
-      };
+      const offset = days * 24 + hours;
+      const start = (last.startDay * 24 + last.startHour + offset) % HOURS_PER_WEEK;
+      const end = (last.endDay * 24 + last.endHour + offset) % HOURS_PER_WEEK;
+      const next = { startDay: Math.floor(start / 24), startHour: start % 24, endDay: Math.floor(end / 24), endHour: end % 24 };
       if (!held.has(scheduleWindowKey(next))) return [...schedule, next];
     }
   }
   return [...schedule];
 }
+
+const HOURS_PER_WEEK = 7 * 24;
 
 function scheduleWindowKey(window: RedditScheduleWindow): string {
   return `${window.startDay}|${window.startHour}|${window.endDay}|${window.endHour}`;
