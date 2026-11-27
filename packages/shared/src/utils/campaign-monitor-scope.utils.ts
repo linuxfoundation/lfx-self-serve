@@ -77,3 +77,24 @@ export function campaignMonitorSystemAccountNote(label: string, read: MonitorSys
     : `This project has no ${label} account bound of its own, so only the campaigns created for it are shown.`;
   return `Read from ${label} account ${read.accountId} through the LF system account. ${shown}`;
 }
+
+/**
+ * The note under the Google Ads panel when campaign-service, not the project's own connection, decided which
+ * account was read: the customer the project's campaigns were created under (#5622), or the LF shared account
+ * an account-wide read named (#6209). `null` for the project's own connection or a read that named none.
+ */
+export function campaignMonitorGoogleAccountNote(
+  origin: 'connection' | 'recorded_campaigns' | 'shared_account' | undefined,
+  accountId: string | undefined
+): string | null {
+  if (!accountId) {
+    return null;
+  }
+  if (origin === 'recorded_campaigns') {
+    return `Read from Google Ads account ${accountId}, the account this project's campaigns were created under. This project has no Google Ads account bound of its own.`;
+  }
+  if (origin === 'shared_account') {
+    return `Read from Google Ads account ${accountId}, the LF shared account, shown account-wide. This project has no Google Ads account bound of its own.`;
+  }
+  return null;
+}

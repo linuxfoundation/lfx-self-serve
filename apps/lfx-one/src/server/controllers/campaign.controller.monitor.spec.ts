@@ -1818,9 +1818,12 @@ describe('account-wide monitor scope', () => {
     );
     svcGoogle.mockResolvedValueOnce(labeledPayload());
 
-    await new CampaignController().getMonitorData(buildReq({ project: 'tlf', accountWide: 'true' }), buildRes(), vi.fn());
+    const res = buildRes();
+    await new CampaignController().getMonitorData(buildReq({ project: 'tlf', accountWide: 'true' }), res, vi.fn());
 
     expect(svcGoogle).toHaveBeenCalledWith(expect.anything(), 'tlf', '8666746580', expect.any(Number), 'account');
+    // Labelled as the LF shared account, not as the account this project's campaigns were created under.
+    expect(vi.mocked(res.json).mock.calls[0][0]).toMatchObject({ accountId: '8666746580', googleAccountOrigin: 'shared_account' });
     vi.unstubAllEnvs();
   });
 

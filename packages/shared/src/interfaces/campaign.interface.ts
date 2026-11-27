@@ -6670,11 +6670,13 @@ export interface CampaignMonitorResponse {
    * the project's own Google Ads connection; `recorded_campaigns` means the project has no connection
    * with an account bound of its own and campaign-service read the customer its campaigns were
    * created under, through the LF system account when needed (#5622, campaign-service #592).
+   * `shared_account` means an account-wide read (#6209) of the LF shared account, named because the
+   * project has neither an account of its own nor campaigns recorded to take one from.
    *
    * Unrelated to the `MonitorAccountSource` request marker (`accountSource`), which says where a
    * client's account picker got its account; that marker is never set from this field.
    */
-  googleAccountOrigin?: 'connection' | 'recorded_campaigns';
+  googleAccountOrigin?: 'connection' | 'recorded_campaigns' | 'shared_account';
 }
 
 // ---------------------------------------------------------------------------

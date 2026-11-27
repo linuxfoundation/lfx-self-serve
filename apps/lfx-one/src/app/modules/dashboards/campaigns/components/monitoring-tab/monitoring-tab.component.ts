@@ -25,7 +25,13 @@ import {
   MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE,
   parseCampaignName,
 } from '@lfx-one/shared/constants';
-import { campaignMonitorManagedElsewhere, campaignMonitorProvenance, campaignMonitorSystemAccountNote, formatPercent } from '@lfx-one/shared/utils';
+import {
+  campaignMonitorGoogleAccountNote,
+  campaignMonitorManagedElsewhere,
+  campaignMonitorProvenance,
+  campaignMonitorSystemAccountNote,
+  formatPercent,
+} from '@lfx-one/shared/utils';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 
@@ -307,16 +313,13 @@ export class MonitoringTabComponent implements OnInit {
   /** True when the Google amounts on screen are in the read account's own, unnamed currency. */
   protected readonly googleCurrencyNote = computed(() => this.monitorData()?.amountsInAccountCurrency === true);
   /**
-   * Which Google Ads account was read, when campaign-service chose it (#5622): the project has no
-   * connection with an account bound of its own, so the read is of the customer its campaigns were created under.
-   * NULL when the account came from the project's own connection, or the read named none.
+   * Which Google Ads account was read, when it was not the project's own connection's: the customer its campaigns
+   * were created under (#5622), or the LF shared account an account-wide read named (#6209). NULL when the account
+   * came from the project's own connection, or the read named none.
    */
   protected readonly googleRecordedAccountNote = computed((): string | null => {
     const data = this.monitorData();
-    if (data?.googleAccountOrigin !== 'recorded_campaigns' || !data.accountId) {
-      return null;
-    }
-    return `Read from Google Ads account ${data.accountId}, the account this project's campaigns were created under. This project has no Google Ads account bound of its own.`;
+    return campaignMonitorGoogleAccountNote(data?.googleAccountOrigin, data?.accountId);
   });
   /** The empty state's text: the read's own explanation when it gave one (#5622), else the default. */
   protected readonly googleEmptyMessage = computed(() => this.monitorData()?.message ?? 'No active campaigns found for the selected date range.');

@@ -6931,6 +6931,9 @@ export class CampaignController {
       return;
     }
     const priorState = connection.state === 'no_account' ? 'no_account' : 'no_connection';
+    // The LF account an account-wide read named, if any: its response is labelled `shared_account`, not as the
+    // account this project's campaigns were created under (set by `read`, which runs before `toResponse`).
+    let sharedAccount: string | undefined;
     await this.serveLegacyShapedMonitor(req, res, next, {
       operation,
       platformLabel: 'Google Ads',
@@ -6938,15 +6941,14 @@ export class CampaignController {
       accountId: null,
       // Project-scoped, campaign-service names the account the project's campaigns were created under. Account-wide,
       // that is empty for a project with none recorded, so the LF account is named when it is configured.
-      read: (slug, scope) =>
-        this.campaignServiceClient.getGoogleAdsAccountMonitor(
-          req,
-          slug,
-          scope === 'account' ? this.accountWideFallbackAccount('google-ads') : undefined,
-          days,
-          scope
-        ),
-      toResponse: (payload) => toRecordedCampaignsGoogleMonitorResponse(payload, new Date().toISOString()),
+      read: (slug, scope) => {
+        sharedAccount = scope === 'account' ? this.accountWideFallbackAccount('google-ads') : undefined;
+        return this.campaignServiceClient.getGoogleAdsAccountMonitor(req, slug, sharedAccount, days, scope);
+      },
+      toResponse: (payload) =>
+        sharedAccount === undefined
+          ? toRecordedCampaignsGoogleMonitorResponse(payload, new Date().toISOString())
+          : { ...toGoogleMonitorResponse(payload, new Date().toISOString()), accountId: sharedAccount, googleAccountOrigin: 'shared_account' as const },
       mapError: (error) => (isAccountIdRequiredByUpstream(error) ? toMonitorConnectionError(priorState, 'Google Ads', operation) : undefined),
     });
   }

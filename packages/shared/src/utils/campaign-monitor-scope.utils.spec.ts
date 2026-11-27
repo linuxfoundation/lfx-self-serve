@@ -4,6 +4,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  campaignMonitorGoogleAccountNote,
   campaignMonitorManagedElsewhere,
   campaignMonitorProvenance,
   campaignMonitorScope,
@@ -90,5 +91,24 @@ describe('campaignMonitorSystemAccountNote', () => {
     ],
   ])('%j -> %s', (read, want) => {
     expect(campaignMonitorSystemAccountNote('LinkedIn', read)).toBe(want);
+  });
+});
+
+describe('campaignMonitorGoogleAccountNote', () => {
+  it.each([
+    ['connection', '1', null],
+    ['recorded_campaigns', undefined, null],
+    [
+      'recorded_campaigns',
+      '1',
+      "Read from Google Ads account 1, the account this project's campaigns were created under. This project has no Google Ads account bound of its own.",
+    ],
+    [
+      'shared_account',
+      '1',
+      'Read from Google Ads account 1, the LF shared account, shown account-wide. This project has no Google Ads account bound of its own.',
+    ],
+  ] as const)('%s, %s -> %s', (origin, accountId, want) => {
+    expect(campaignMonitorGoogleAccountNote(origin, accountId)).toBe(want);
   });
 });
