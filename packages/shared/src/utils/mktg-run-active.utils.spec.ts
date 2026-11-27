@@ -89,6 +89,21 @@ describe('refused dismiss', () => {
   ] as const)('says %j at %j as %j', (facts, localTime, line) => {
     expect(mktgRunNotFailedNotice({ ...facts, changedAt: refused.changedAt }, localTime)).toBe(line);
   });
+  it.each([
+    ['closed', 'Brand Kit', '19 Oct, 12:30', 'Synthetic Writer already closed the Brand Kit run started at 19 Oct, 12:10 (closed at 19 Oct, 12:30).'],
+    ['retried', 'Brand Kit', '19 Oct, 12:30', 'Synthetic Writer already retried the Brand Kit run started at 19 Oct, 12:10 (retried at 19 Oct, 12:30).'],
+    ['closed', 'Brand Kit', '', 'Synthetic Writer already closed the Brand Kit run started at 19 Oct, 12:10.'],
+    ['closed', 'Member 360 run', '', 'Synthetic Writer already closed the Member 360 run started at 19 Oct, 12:10.'],
+  ] as const)('says which run was %s, by the label %j and its started time, at %j', (change, label, localTime, line) => {
+    const facts = { change, changedBy: 'Synthetic Writer', changedByViewer: false, changedAt: refused.changedAt };
+    expect(mktgRunNotFailedNotice(facts, localTime, { label, started: '19 Oct, 12:10' })).toBe(line);
+  });
+  it.each([
+    [{ changedBy: null, changedByViewer: true }, 'You already closed the Brand Kit run started at 19 Oct, 12:10.'],
+    [{ changedBy: null, changedByViewer: false }, 'Someone on your team already closed the Brand Kit run started at 19 Oct, 12:10.'],
+  ])('keeps the viewer and the unnamed writer as they are with a run to name %j', (who, line) => {
+    expect(mktgRunNotFailedNotice({ change: 'closed', changedAt: null, ...who }, '', { label: 'Brand Kit', started: '19 Oct, 12:10' })).toBe(line);
+  });
   it('gives no time when the record has none, whatever the caller formats', () => {
     expect(mktgRunNotFailedNotice({ change: 'closed', changedBy: 'Synthetic Writer', changedByViewer: false, changedAt: null }, '19 Oct, 12:00')).toBe(
       'Synthetic Writer already closed this run.'

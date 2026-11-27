@@ -83,15 +83,22 @@ export function readMktgRunNotFailedConflict(value: unknown, runId: string): Mkt
   };
 }
 
-/** One line for a dismiss that lost: who closed or retried the run first and, with the caller's local short time, when. */
+/**
+ * One line for a dismiss that lost: who closed or retried the run first and, with the caller's local short time, when.
+ * With the row's label and local started time the line says which run, as that row's Dismiss button names it.
+ */
 export function mktgRunNotFailedNotice(
   conflict: Pick<MktgRunNotFailedConflict, 'change' | 'changedBy' | 'changedByViewer' | 'changedAt'>,
-  localTime = ''
+  localTime = '',
+  run: { label: string; started: string } | null = null
 ): string {
   const who = conflict.changedByViewer ? 'You' : (conflict.changedBy ?? MKTG_RUN_CHANGED_BY_FALLBACK);
   const at = conflict.changedAt && localTime ? ` at ${localTime}` : '';
   // The change is the verb: "closed" or "retried".
-  return `${who} already ${conflict.change} this run${at}.`;
+  const did = `${who} already ${conflict.change}`;
+  if (!run) return `${did} this run${at}.`;
+  // Two times in one line: the change's own repeats the verb, so it is never read as the start. Never double the word "run".
+  return `${did} the ${run.label.replace(/\s+run$/i, '')} run started at ${run.started}${at && ` (${conflict.change}${at})`}.`;
 }
 
 /** One heading policy for catalog and dedicated one-off intakes; never double the word "run". */

@@ -1205,11 +1205,15 @@ export class MktgDocumentRunService {
     const run = stored.record;
     const closedAt = state === 'discarded' || state === 'superseded' ? new Date().toISOString() : undefined;
     const discardedBySubject = state === 'discarded' ? getEffectiveSub(req) : null;
+    // Discard is open while impersonating, and that close is not the impersonated person's: it keeps its time and records no closer.
+    const closedBySubject = isImpersonating(req) ? null : discardedBySubject;
     // Only an explicit retry moves a failed run back to writing: its actor and time stay on the record for a later refused dismiss.
     // Retry is open while impersonating, and that retry is not the impersonated person's: it keeps its time and names nobody.
     const retried = state === 'writing' && run.state === 'failed';
-    const retriedBySubject = retried ? (!isImpersonating(req) && getEffectiveSub(req)) || undefined : run.retriedBySubject;
-    const retriedAt = retried ? retryAt : run.retriedAt;
+    // A failure ends what the retry started: only a retry made after the latest failure stays on record.
+    const kept = state === 'failed' ? undefined : run;
+    const retriedBySubject = retried ? (!isImpersonating(req) && getEffectiveSub(req)) || undefined : kept?.retriedBySubject;
+    const retriedAt = retried ? retryAt : kept?.retriedAt;
     const turn = state === 'questions' ? pendingQuestions : null;
     // State must change the bytes/ETag too: metadata-only replacements can retain an S3 ETag.
     const body = JSON.stringify({
@@ -1231,7 +1235,7 @@ export class MktgDocumentRunService {
       {
         state,
         ...(closedAt && { 'closed-at': closedAt }),
-        ...(discardedBySubject && { 'closed-by': discardedBySubject }),
+        ...(closedBySubject && { 'closed-by': closedBySubject }),
         'started-at': run.startedAt,
         'prior-version': String(run.priorVersion),
         'attempt-id': run.attemptId ?? 'initial',

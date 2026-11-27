@@ -580,15 +580,30 @@ describe('MktgDocumentsComponent', () => {
     });
 
     it.each([
-      { change: 'closed', changedBy: 'Synthetic Closer', changedByViewer: false, line: 'Synthetic Closer already closed this run at 19 Oct, 12:30.' },
+      {
+        change: 'closed',
+        changedBy: 'Synthetic Closer',
+        changedByViewer: false,
+        line: `Synthetic Closer already closed the ${BRAND_KIT.itemLabel} run started at 19 Oct, 12:00 (closed at 19 Oct, 12:30).`,
+      },
       {
         change: 'closed',
         changedBy: 'closer@synthetic.example',
         changedByViewer: false,
-        line: 'Someone on your team already closed this run at 19 Oct, 12:30.',
+        line: `Someone on your team already closed the ${BRAND_KIT.itemLabel} run started at 19 Oct, 12:00 (closed at 19 Oct, 12:30).`,
       },
-      { change: 'retried', changedBy: 'Synthetic Retrier', changedByViewer: false, line: 'Synthetic Retrier already retried this run at 19 Oct, 12:30.' },
-      { change: 'retried', changedBy: null, changedByViewer: true, line: 'You already retried this run at 19 Oct, 12:30.' },
+      {
+        change: 'retried',
+        changedBy: 'Synthetic Retrier',
+        changedByViewer: false,
+        line: `Synthetic Retrier already retried the ${BRAND_KIT.itemLabel} run started at 19 Oct, 12:00 (retried at 19 Oct, 12:30).`,
+      },
+      {
+        change: 'retried',
+        changedBy: null,
+        changedByViewer: true,
+        line: `You already retried the ${BRAND_KIT.itemLabel} run started at 19 Oct, 12:00 (retried at 19 Oct, 12:30).`,
+      },
     ])('names who $change the run first ($line), as an answer and not an error', async ({ line, ...facts }) => {
       const body = { code: 'MKTG_RUN_NOT_FAILED', runId: RUN_ID, changedAt: '2026-10-19T12:30:00Z', ...facts, message: 'server text', error: 'server text' };
       store.dismissRun.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 409, error: body })));
@@ -622,7 +637,9 @@ describe('MktgDocumentsComponent', () => {
       dismissButton()?.click();
       await fixture.whenStable();
       fixture.detectChanges();
-      expect(query('mktg-documents-dismiss-notice')?.textContent?.trim()).toBe('Synthetic Retrier already retried this run.');
+      expect(query('mktg-documents-dismiss-notice')?.textContent?.trim()).toBe(
+        `Synthetic Retrier already retried the ${BRAND_KIT.itemLabel} run started at 19 Oct, 12:00.`
+      );
       dismissButton()?.click();
       await fixture.whenStable();
       fixture.detectChanges();

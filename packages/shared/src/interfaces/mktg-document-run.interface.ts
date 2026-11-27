@@ -241,7 +241,7 @@ export interface MktgStartedRunRecord {
   closedBySubject?: string;
   /** Retry/answers-continuation budget origin; does not change the original Started label. */
   retryAt?: string;
-  /** Private opaque actor of the latest explicit retry; only a safe display name may reach a refused dismiss. */
+  /** Private opaque actor of the explicit retry made after the latest failure; only a safe display name may reach a refused dismiss. */
   retriedBySubject?: string;
   /** When that retry was recorded; unlike retryAt, a later answers continuation does not move it. */
   retriedAt?: string;

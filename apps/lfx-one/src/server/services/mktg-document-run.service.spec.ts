@@ -1393,11 +1393,50 @@ describe('MktgDocumentRunService core', () => {
       it('dismisses a run that failed again after a retry, and then names the closer, not the retry', async () => {
         await failedRun();
         await service.retry(retrier, project, types[0].agentKey, 'living', runId);
-        stored().metadata['state'] = 'failed';
+        flows.result.mockResolvedValue({ status: 'failed', failureText: 'Synthetic second failure.' });
+        await service.readProgress(req, project);
+        // The failure ends what the retry started: nothing of it stays on the record.
+        expect(stored().metadata['state']).toBe('failed');
+        expect(stored().metadata).not.toHaveProperty('retried-by');
+        expect(stored().metadata).not.toHaveProperty('retried-at');
+        expect(stored().body).not.toContain('retried');
         await expect(service.dismiss(closer, project, types[0].agentKey, 'living', runId)).resolves.toBeUndefined();
-        expect(stored().metadata).toMatchObject({ state: 'discarded', 'closed-by': 'synthetic-closer', 'retried-by': 'synthetic-retrier' });
+        expect(stored().metadata).toMatchObject({ state: 'discarded', 'closed-by': 'synthetic-closer' });
+        expect(stored().metadata).not.toHaveProperty('retried-by');
         expect(await refusal(late)).toMatchObject({ change: 'closed', changedByViewer: false });
         expect(flows.author).toHaveBeenCalledExactlyOnceWith(late, 'synthetic-closer');
+      });
+
+      it('names nobody for a retry that predates the latest failure, once a late result completed the run', async () => {
+        await failedRun();
+        await service.retry(retrier, project, types[0].agentKey, 'living', runId);
+        flows.result.mockResolvedValue({ status: 'failed', failureText: 'Synthetic second failure.' });
+        await service.readProgress(req, project);
+        expect(stored().metadata['state']).toBe('failed');
+        flows.result.mockResolvedValue(ready());
+        await service.recordResult(req, session, ready(), project);
+        expect(stored().metadata['state']).toBe('completed');
+        expect(stored().metadata).not.toHaveProperty('retried-by');
+        expect(stored().metadata).not.toHaveProperty('retried-at');
+        // Nobody retried it after the failure this viewer's row still shows: the same 204 as any completed run.
+        expect(await refusal(late)).toBeNull();
+        expect(flows.author).not.toHaveBeenCalled();
+        expect(audits('mktg_run_dismiss_audit')).toHaveLength(0);
+      });
+
+      it('records an impersonated discard with its time and no closer, so a later dismiss names nobody', async () => {
+        await service.start(writerRequest('synthetic-creator'), project, types[0].agentKey, session);
+        const impersonated = Object.assign(writerRequest('synthetic-operator'), {
+          impersonationActive: true,
+          appSession: { impersonationUser: { sub: 'synthetic-target' } },
+        }) as unknown as Request;
+        // "Discard and start over" resends the start with the confirmed run to discard.
+        await service.assertSingleActiveRun(impersonated, project, types[0].agentKey, { discard: runId });
+        expect(stored().metadata).toMatchObject({ state: 'discarded', 'closed-at': '2026-10-19T12:00:00.000Z' });
+        expect(stored().metadata).not.toHaveProperty('closed-by');
+        expect(await refusal(late)).toBeNull();
+        expect(await refusal(writerRequest('synthetic-target'))).toBeNull();
+        expect(flows.author).not.toHaveBeenCalled();
       });
 
       it('names a Member 360 retry through the conditional member write', async () => {

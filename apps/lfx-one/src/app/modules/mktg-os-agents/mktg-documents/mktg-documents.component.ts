@@ -387,8 +387,10 @@ export class MktgDocumentsComponent {
         const lost = error.status === 409 ? readMktgRunNotFailedConflict(error.error, run.runId) : null;
         if (lost) {
           // The same short time, in the same zone, as the row's own "Started".
-          const at = lost.changedAt ? formatDate(lost.changedAt, 'd MMM, HH:mm', this.locale, this.dateOptions?.timezone) : '';
-          this.dismissNotice.set(mktgRunNotFailedNotice(lost, at));
+          const short = (iso: string) => formatDate(iso, 'd MMM, HH:mm', this.locale, this.dateOptions?.timezone);
+          // The row may be gone or one of several: the line names it as its Dismiss button does.
+          const which = { label: run.label, started: short(run.startedAt) };
+          this.dismissNotice.set(mktgRunNotFailedNotice(lost, lost.changedAt ? short(lost.changedAt) : '', which));
           // A closed run leaves as a dismissed one does; a retried run stays, and the re-read shows where it stands.
           if (lost.change === 'closed') this.dismissed(scope, run.runId);
           else {
