@@ -4912,6 +4912,44 @@ export const REDDIT_CUSTOM_AUDIENCES_ACCESS_ERRORS = {
 } as const;
 
 /**
+ * The Reddit ad placements a create may name in `redditConfig.placements` (#6108 row 5), campaign-service's
+ * `placementValues` (`internal/platform/reddit/placement_targeting.go`, #549), in its order. Omitted or empty is both.
+ */
+export const REDDIT_PLACEMENTS = ['FEED', 'COMMENTS_PAGE'] as const;
+
+/**
+ * The Reddit device platforms a create may name in `redditConfig.platforms` (#6108 row 5), campaign-service's
+ * `platformValues`, in its order. Omitted or empty is every device; `ALL` itself is refused there, so it is not listed.
+ */
+export const REDDIT_DEVICE_PLATFORMS = ['DESKTOP', 'MOBILE_NATIVE', 'MOBILE_WEB'] as const;
+
+/** The `redditConfig.budgetType` values campaign-service accepts (#6108 row 5, `ResolveBudgetGoalType`). Omitted is `lifetime`. */
+export const REDDIT_BUDGET_TYPES = ['lifetime', 'daily'] as const;
+
+/** The three `redditConfig` keys of the Reddit placement choices (#6108 row 5), as campaign-service spells them. */
+export const REDDIT_PLACEMENT_KEYS = ['placements', 'platforms', 'expandTargeting'] as const;
+
+/** A Reddit pixel id campaign-service offers (`ValidPixelID`): 1 to 64 letters, digits or underscores. */
+export const REDDIT_PIXEL_ID_PATTERN = /^[A-Za-z0-9_]{1,64}$/;
+
+/**
+ * The error `code` (HTTP 403) of a Reddit pixel read refused because the caller does not hold `global_marketing_ops` on
+ * the project: the Reddit ad account is shared by every foundation, so campaign-service answers the read on that relation
+ * (linuxfoundation/lfx-v2-campaign-service#549).
+ */
+export const REDDIT_PIXELS_RESTRICTED_CODE = 'REDDIT_PIXELS_RESTRICTED';
+export const REDDIT_PIXELS_RESTRICTED_MESSAGE =
+  'Reddit pixels can only be listed by the LF marketing team, because every foundation shares one Reddit ad account.';
+/** The error `code` (HTTP 503) when that relation could not be checked. Nothing was read. */
+export const REDDIT_PIXELS_ACCESS_UNAVAILABLE_CODE = 'REDDIT_PIXELS_ACCESS_UNAVAILABLE';
+export const REDDIT_PIXELS_ACCESS_UNAVAILABLE_MESSAGE = 'Your access to Reddit pixels could not be verified. Try again in a few minutes.';
+/** The 403 and 503 a Reddit pixel read answers, shaped like `REDDIT_CUSTOM_AUDIENCES_ACCESS_ERRORS`. */
+export const REDDIT_PIXELS_ACCESS_ERRORS = {
+  restricted: { code: REDDIT_PIXELS_RESTRICTED_CODE, message: REDDIT_PIXELS_RESTRICTED_MESSAGE },
+  unavailable: { code: REDDIT_PIXELS_ACCESS_UNAVAILABLE_CODE, message: REDDIT_PIXELS_ACCESS_UNAVAILABLE_MESSAGE },
+} as const;
+
+/**
  * The `REDDIT_OBJECTIVE_PARAMS` row for an objective, or a refusal.
  *
  * The single place any caller reads that table, because reading it safely is not a plain index.

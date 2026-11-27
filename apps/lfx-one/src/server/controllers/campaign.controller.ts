@@ -22,6 +22,8 @@ import { linkedInConfigNamesConversions, linkedInConversionRules, linkedInObject
 import { linkedInTargetingNamesSegments, linkedInTargetingRefusal } from '@lfx-one/shared/utils/campaign-linkedin-targeting.utils';
 import { redditConversionEventRefusal } from '@lfx-one/shared/utils/campaign-reddit-conversion-event.utils';
 import { redditTargetingExclusionsRefusal } from '@lfx-one/shared/utils/campaign-reddit-targeting-exclusions.utils';
+import { redditBudgetTypeRefusal, redditPlacementsRefusal } from '@lfx-one/shared/utils/campaign-reddit-delivery.utils';
+import { redditPixelsFromPayload } from '@lfx-one/shared/utils/campaign-reddit-pixels.utils';
 import {
   redditConfigNamesCustomAudiences,
   redditCustomAudienceQuery,
@@ -206,6 +208,7 @@ import type {
   MetaTargetingSearchResult,
   MetaCustomAudiencesResult,
   RedditCustomAudiencesResult,
+  RedditPixelsResult,
   MetaLeadFormsResult,
 } from '@lfx-one/shared/interfaces';
 import {
@@ -407,6 +410,7 @@ import {
   META_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE_MESSAGE,
   META_CUSTOM_AUDIENCES_RESTRICTED_CODE,
   REDDIT_CUSTOM_AUDIENCES_ACCESS_ERRORS,
+  REDDIT_PIXELS_ACCESS_ERRORS,
   LINKEDIN_MARKETING_OPS_ACCESS_ERRORS,
   LINKEDIN_GEO_SEARCH_BUSY_MESSAGE,
   LINKEDIN_TARGETING_SEARCH_BUSY_MESSAGE,
@@ -492,6 +496,9 @@ import {
   canSetRedditConversionEvent,
   canSetRedditCustomAudiences,
   canSetRedditTargetingExclusions,
+  canSetRedditPlacements,
+  canSetRedditBudgetType,
+  canListRedditPixels,
   canSetRedditConversionPixel,
   canUseGoogleCreativeAssets,
   canUseLinkedInCreativeAssets,
@@ -1476,6 +1483,17 @@ export class CampaignController {
       const redditTargetingExclusionsRefused = redditTargetingExclusionsRefusal(body?.redditConfig, canSetRedditTargetingExclusions());
       if (redditTargetingExclusionsRefused !== null) {
         throw ServiceValidationError.forField(redditTargetingExclusionsRefused.field, redditTargetingExclusionsRefused.message, {
+          operation: 'campaign_create',
+          service: 'campaign_controller',
+        });
+      }
+      // Reddit placements, devices and expansion, and the budget type (#6108 row 5): refused, never dropped, while this
+      // deployment cannot send them, and held to campaign-service's rules (`checkRedditPlacementTargeting`,
+      // `checkRedditBudgetType`). See `redditPlacementsRefusal` and `redditBudgetTypeRefusal`.
+      const redditDeliveryRefused =
+        redditPlacementsRefusal(body?.redditConfig, canSetRedditPlacements()) ?? redditBudgetTypeRefusal(body?.redditConfig, canSetRedditBudgetType());
+      if (redditDeliveryRefused !== null) {
+        throw ServiceValidationError.forField(redditDeliveryRefused.field, redditDeliveryRefused.message, {
           operation: 'campaign_create',
           service: 'campaign_controller',
         });
@@ -5533,6 +5551,43 @@ export class CampaignController {
         });
       }
       logger.success(req, operation, startTime, { count: result.audiences.length, truncated: result.truncated });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * The conversion pixels on the Reddit ad account a create for this project uses, for a picker that fills
+   * `redditConfig.conversionPixelId` (#6108 row 5), camel-cased (`redditPixelsFromPayload`). The ad account is shared by
+   * every foundation, so it is answered on the relation campaign-service's gateway checks first: `global_marketing_ops`
+   * on the project (linuxfoundation/lfx-v2-campaign-service#549) — a coded 403 when refused, a coded 503 when the check
+   * cannot be made, both before any upstream call. Registered ahead of the blanket `requireCampaignManager`, behind its
+   * own `requireRedditPixelsAccess`, as the custom-audience picker is. 404 while the pixel list is off
+   * (`canListRedditPixels`). campaign-service's own 404 (no connection) and 503 (Reddit's answer cannot be trusted) pass
+   * through; an unreadable answer is a 502, never an empty list.
+   */
+  public async getRedditPixels(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'reddit_pixels';
+    if (!canListRedditPixels()) {
+      next(this.monitorDisabledError(operation));
+      return;
+    }
+    const projectSlug = this.requireMonitorProject(req, next, operation);
+    if (projectSlug === null) {
+      return;
+    }
+    try {
+      await this.requireMarketingOpsAccess(req, projectSlug, operation, 'the Reddit pixel read', REDDIT_PIXELS_ACCESS_ERRORS);
+      const startTime = logger.startOperation(req, operation, { viaCampaignService: true });
+      const result: RedditPixelsResult | null = redditPixelsFromPayload(await this.campaignServiceClient.listRedditPixels(req, projectSlug));
+      if (result === null) {
+        throw new MicroserviceError('campaign-service returned an unreadable Reddit pixel read.', 502, 'BAD_GATEWAY', {
+          operation,
+          service: 'campaign_controller',
+        });
+      }
+      logger.success(req, operation, startTime, { count: result.pixelCount, truncated: result.truncated });
       res.json(result);
     } catch (error) {
       next(error);

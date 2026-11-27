@@ -33,8 +33,11 @@ import type {
   LINKEDIN_TARGETING_SEARCH_FACETS,
   MICROSOFT_KEYWORDS_WINDOWS,
   MONITOR_DATE_RANGE_OPTIONS,
+  REDDIT_BUDGET_TYPES,
   REDDIT_CALL_TO_ACTIONS,
   REDDIT_CONVERSION_EVENTS,
+  REDDIT_DEVICE_PLATFORMS,
+  REDDIT_PLACEMENTS,
   REDDIT_SELECTABLE_OBJECTIVES,
   REDDIT_VIDEO_GOALS,
 } from '../constants/campaign.constants';
@@ -3054,6 +3057,22 @@ export interface RedditCampaignCreateRequest {
    */
   excludedSubreddits?: string[];
   excludedGeoTargets?: string[];
+  /**
+   * Where the ads run, on which devices, and whether Reddit may widen the audience (#6108 row 5, campaign-service #549).
+   * An omitted or empty list means every placement (`FEED` and `COMMENTS_PAGE`) or every device; `ALL` is not a device
+   * value, omit the list for it. `expandTargeting` omitted means `true`. Only while
+   * `CampaignListResult.redditPlacementsEnabled`: the create route refuses all three otherwise, never dropping them
+   * (`redditPlacementsRefusal`).
+   */
+  placements?: RedditPlacement[];
+  platforms?: RedditDevicePlatform[];
+  expandTargeting?: boolean;
+  /**
+   * Whether `budgetUsd` is spent over the flight (`lifetime`, the default when omitted) or per day (`daily`) (#6108 row 5,
+   * campaign-service #549). Only while `CampaignListResult.redditBudgetTypeEnabled`: the create route refuses it otherwise,
+   * `lifetime` included, never dropping it (`redditBudgetTypeRefusal`).
+   */
+  budgetType?: RedditBudgetType;
   /** Optional bidding choice (#3299) — see {@link CampaignBiddingConfig}. Omitted means automatic. */
   bidding?: CampaignBiddingConfig;
 }
@@ -3882,6 +3901,32 @@ export interface RedditCustomAudienceOption {
 export interface RedditCustomAudiencesResult {
   accountId: string;
   audiences: RedditCustomAudienceOption[];
+  truncated: boolean;
+}
+
+/** A Reddit ad placement (`REDDIT_PLACEMENTS`, #6108 row 5). */
+export type RedditPlacement = (typeof REDDIT_PLACEMENTS)[number];
+
+/** A Reddit device platform (`REDDIT_DEVICE_PLATFORMS`, #6108 row 5). `ALL` is not one: omit the list for every device. */
+export type RedditDevicePlatform = (typeof REDDIT_DEVICE_PLATFORMS)[number];
+
+/** How a Reddit budget is spent (`REDDIT_BUDGET_TYPES`, #6108 row 5): over the flight or per day. */
+export type RedditBudgetType = (typeof REDDIT_BUDGET_TYPES)[number];
+
+/** One conversion pixel on the Reddit ad account, for the `conversionPixelId` picker (#6108 row 5). */
+export interface RedditPixelOption {
+  id: string;
+  /** Reddit's display name; may be empty. Not an identifier. */
+  name: string;
+  /** The Reddit business that owns the pixel, when Reddit sent one. */
+  businessId?: string;
+}
+
+/** The Reddit pixel read (#6108 row 5): the ad account, its pixels, how many, and whether Reddit had more pages. */
+export interface RedditPixelsResult {
+  accountId: string;
+  pixels: RedditPixelOption[];
+  pixelCount: number;
   truncated: boolean;
 }
 
@@ -7080,6 +7125,24 @@ export interface CampaignServiceRedditCustomAudiences {
   truncated: boolean;
 }
 
+/** One element of campaign-service's `reddit-ads/pixels` read. */
+export interface CampaignServiceRedditPixel {
+  id: string;
+  name: string;
+  business_id?: string;
+}
+
+/**
+ * campaign-service `GET /projects/{project_id}/reddit-ads/pixels` (`global_marketing_ops` on the project, #549): the
+ * conversion pixels on the shared ad account, `truncated` when Reddit had more than 10 pages.
+ */
+export interface CampaignServiceRedditPixels {
+  account_id: string;
+  pixels: CampaignServiceRedditPixel[];
+  pixel_count: number;
+  truncated: boolean;
+}
+
 /** One element of campaign-service's `meta-lead-forms` read. */
 export interface CampaignServiceMetaLeadForm {
   id: string;
@@ -8861,6 +8924,25 @@ export interface CampaignListResult {
    * editing, and sends the edits, only on an explicit yes. Optional, so a BFF that predates it reads as unanswered.
    */
   redditTargetingResolutionEnabled?: boolean;
+  /**
+   * Whether a Reddit create may carry `redditConfig.placements`, `platforms` and `expandTargeting` (#6108 row 5): the
+   * campaign-service create path AND `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_PLACEMENTS`, which follows campaign-service's
+   * own `REDDIT_PLACEMENT_TARGETING_ENABLED`. Optional, so a BFF that predates it reads as unanswered.
+   */
+  redditPlacementsEnabled?: boolean;
+  /**
+   * Whether a Reddit create may carry `redditConfig.budgetType` (#6108 row 5): the campaign-service create path AND
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_DAILY_BUDGET`, which follows campaign-service's own `REDDIT_DAILY_BUDGET_ENABLED`.
+   * Optional, so a BFF that predates it reads as unanswered.
+   */
+  redditBudgetTypeEnabled?: boolean;
+  /**
+   * Whether `GET /api/campaigns/reddit/pixels` is served (#6108 row 5): the campaign-service create path AND
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_PIXEL_LIST`, which follows campaign-service's own `REDDIT_PIXEL_LIST_ENABLED`.
+   * The read also needs `global_marketing_ops` on the project, and sending the chosen pixel needs
+   * `redditConversionPixelEnabled`. Optional, so a BFF that predates it reads as unanswered.
+   */
+  redditPixelListEnabled?: boolean;
   /**
    * Whether a Meta create may carry `metaConfig.callToAction`, `conversionEvent` and `optimizationGoal`
    * (#5934), one flag each: `cutoverOwnsCreate()` AND `LFX_CUTOVER_CAMPAIGN_SERVICE_META_CALL_TO_ACTION`,

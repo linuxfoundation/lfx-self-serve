@@ -99,6 +99,7 @@ import type {
   CampaignServiceGoogleAdsUserLists,
   CampaignServiceMetaCustomAudiences,
   CampaignServiceRedditCustomAudiences,
+  CampaignServiceRedditPixels,
   CampaignServiceLinkedInAudiences,
   CampaignServiceLinkedInConversions,
   CampaignServiceLinkedInLeadForms,
@@ -770,6 +771,37 @@ export function canResolveRedditTargeting(): boolean {
 }
 
 /**
+ * Whether a Reddit create may carry `placements` / `platforms` / `expandTargeting` (#6108 row 5, campaign-service #549).
+ * Needs the campaign-service create path AND `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_PLACEMENTS`, which follows
+ * campaign-service's own `REDDIT_PLACEMENT_TARGETING_ENABLED`: campaign-service refuses all three while that is off, and
+ * the legacy creator ignores them.
+ */
+export function canSetRedditPlacements(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceRedditPlacements);
+}
+
+/**
+ * Whether a Reddit create may carry `budgetType` (#6108 row 5, campaign-service #549). Needs the campaign-service create
+ * path AND `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_DAILY_BUDGET`, which follows campaign-service's own
+ * `REDDIT_DAILY_BUDGET_ENABLED`: campaign-service refuses the field while that is off, `lifetime` included, and the
+ * legacy creator ignores it.
+ */
+export function canSetRedditBudgetType(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceRedditDailyBudget);
+}
+
+/**
+ * Whether the Reddit pixel picker's read is served (#6108 row 5, campaign-service #549). Needs the campaign-service create
+ * path AND `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_PIXEL_LIST`, which follows campaign-service's own
+ * `REDDIT_PIXEL_LIST_ENABLED`: campaign-service refuses the read while that is off. The caller also needs
+ * `global_marketing_ops` on the project, checked by the controller. Sending the chosen pixel stays
+ * {@link canSetRedditConversionPixel}'s call.
+ */
+export function canListRedditPixels(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceRedditPixelList);
+}
+
+/**
  * Whether a Google create may reference uploaded images by asset id.
  *
  * Needs the campaign-service create path to serve the create AND the Google-assets flag. Unlike its
@@ -1349,6 +1381,9 @@ export class CampaignServiceClient {
         redditConversionEventEnabled: canSetRedditConversionEvent(),
         redditTargetingExclusionsEnabled: canSetRedditTargetingExclusions(),
         redditTargetingResolutionEnabled: canResolveRedditTargeting(),
+        redditPlacementsEnabled: canSetRedditPlacements(),
+        redditBudgetTypeEnabled: canSetRedditBudgetType(),
+        redditPixelListEnabled: canListRedditPixels(),
         googleAssetUploadEnabled: canUseGoogleCreativeAssets(),
         metaCreativeEnabled: cutoverOwnsCreate(),
         metaAssetUploadEnabled: canUseMetaCreativeAssets(),
@@ -1449,6 +1484,9 @@ export class CampaignServiceClient {
       redditConversionEventEnabled: canSetRedditConversionEvent(),
       redditTargetingExclusionsEnabled: canSetRedditTargetingExclusions(),
       redditTargetingResolutionEnabled: canResolveRedditTargeting(),
+      redditPlacementsEnabled: canSetRedditPlacements(),
+      redditBudgetTypeEnabled: canSetRedditBudgetType(),
+      redditPixelListEnabled: canListRedditPixels(),
       googleAssetUploadEnabled: canUseGoogleCreativeAssets(),
       metaCreativeEnabled: cutoverOwnsCreate(),
       metaAssetUploadEnabled: canUseMetaCreativeAssets(),
@@ -4061,6 +4099,27 @@ export class CampaignServiceClient {
       req,
       'LFX_V2_CAMPAIGN_SERVICE',
       `/projects/${encodePathSegment(projectSlug)}/reddit-ads/custom-audiences`,
+      'GET'
+    );
+  }
+
+  /**
+   * The conversion pixels on the Reddit ad account a create for this project uses (`list-reddit-ads-pixels`,
+   * linuxfoundation/lfx-v2-campaign-service#549), for the `conversionPixelId` picker (#6108 row 5). Upstream answers it on
+   * `global_marketing_ops` of the path project, the relation the BFF checks first: every pixel, with `truncated` when
+   * Reddit had more pages. Failures are left to the caller.
+   */
+  public async listRedditPixels(req: Request, projectSlug: string): Promise<CampaignServiceRedditPixels> {
+    if (projectSlug === '') {
+      throw ServiceValidationError.forField('project', 'A pixel read requires the project it belongs to.', {
+        operation: 'list_reddit_pixels',
+        service: 'campaign_service_client',
+      });
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceRedditPixels>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodePathSegment(projectSlug)}/reddit-ads/pixels`,
       'GET'
     );
   }

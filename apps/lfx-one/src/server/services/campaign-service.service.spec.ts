@@ -4959,6 +4959,9 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       redditConversionEventEnabled: false,
       redditTargetingExclusionsEnabled: false,
       redditTargetingResolutionEnabled: false,
+      redditPlacementsEnabled: false,
+      redditBudgetTypeEnabled: false,
+      redditPixelListEnabled: false,
       googleAssetUploadEnabled: false,
       metaCreativeEnabled: false,
       metaAssetUploadEnabled: false,
@@ -5697,6 +5700,24 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
     }
   });
 
+  /** Reddit placements, budget type and pixel list (#6108 row 5): the cutover and each one's own flag. */
+  it.each([
+    ['redditPlacementsEnabled', ServerFeatureFlag.CampaignServiceRedditPlacements],
+    ['redditBudgetTypeEnabled', ServerFeatureFlag.CampaignServiceRedditDailyBudget],
+    ['redditPixelListEnabled', ServerFeatureFlag.CampaignServiceRedditPixelList],
+  ] as const)('reports %s from the cutover and %s', async (field, own) => {
+    const read = async (cutover: boolean, enabled: boolean): Promise<boolean | undefined> => {
+      isServerFeatureEnabled.mockImplementation((flag: unknown) => (flag === own ? enabled : cutover));
+      proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+      return (await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1'))[field];
+    };
+    try {
+      expect([await read(true, true), await read(true, false), await read(false, true)]).toEqual([true, false, false]);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
   /** Reddit targeting exclusions (#6108 row 3): the cutover and its own flag. */
   it.each([
     [{ cutover: true, exclusions: true }, true],
@@ -5909,6 +5930,9 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       redditConversionEventEnabled: false,
       redditTargetingExclusionsEnabled: false,
       redditTargetingResolutionEnabled: false,
+      redditPlacementsEnabled: false,
+      redditBudgetTypeEnabled: false,
+      redditPixelListEnabled: false,
       googleAssetUploadEnabled: false,
       metaCreativeEnabled: false,
       metaAssetUploadEnabled: false,
@@ -6872,6 +6896,27 @@ describe('CampaignServiceClient.listRedditCustomAudiences', () => {
 
     expect(await new CampaignServiceClient().listRedditCustomAudiences(req, 'lf/ai')).toBe(audiences);
     expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/lf%2Fai/reddit-ads/custom-audiences', 'GET');
+  });
+});
+
+describe('CampaignServiceClient.listRedditPixels', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("GETs the project's pixel read, the project encoded", async () => {
+    const pixels = { account_id: 't2_acct', pixels: [], pixel_count: 0, truncated: false };
+    proxyRequest.mockResolvedValueOnce(pixels);
+
+    expect(await new CampaignServiceClient().listRedditPixels(req, 'lf/ai')).toBe(pixels);
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/lf%2Fai/reddit-ads/pixels', 'GET');
+  });
+
+  it('refuses an empty project without calling the proxy', async () => {
+    const caught = await new CampaignServiceClient().listRedditPixels(req, '').catch((e: unknown) => e);
+
+    expect(caught).toBeInstanceOf(ServiceValidationError);
+    expect(proxyRequest).not.toHaveBeenCalled();
   });
 });
 

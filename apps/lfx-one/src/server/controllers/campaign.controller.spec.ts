@@ -13136,6 +13136,50 @@ describe('CampaignController.createCampaign Reddit targeting exclusions', () => 
 });
 
 /**
+ * `redditConfig.placements` / `platforms` / `expandTargeting` and `budgetType` (#6108 row 5): refused, never dropped,
+ * while this deployment cannot send them, and forwarded as typed once it can. The rules are table rows in
+ * `campaign-reddit-delivery.utils.spec.ts`.
+ */
+describe('CampaignController.createCampaign Reddit placements and budget type', () => {
+  let controller: CampaignController;
+  let res: Response;
+  let next: NextFunction;
+  const redditConfig = { budgetUsd: 50, placements: ['FEED'], platforms: ['DESKTOP'], expandTargeting: false, budgetType: 'daily' };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new CampaignController();
+    res = buildRes();
+    next = vi.fn();
+  });
+
+  it.each([
+    [ServerFeatureFlag.CampaignServiceRedditPlacements, 'redditConfig.placements', 'Reddit placements are not enabled'],
+    [ServerFeatureFlag.CampaignServiceRedditDailyBudget, 'redditConfig.budgetType', 'Reddit daily budgets are not enabled'],
+  ])('refuses the choices while %s is off, creating nothing', async (off, field, message) => {
+    isServerFeatureEnabled.mockImplementation((flag) => flag !== off);
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+
+    await controller.createCampaign(buildReq({ platforms: ['reddit-ads'], redditConfig }, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error.toResponse()['errors']).toEqual([{ field, message: expect.stringContaining(message), code: 'FIELD_VALIDATION_ERROR' }]);
+  });
+
+  it('forwards the choices untouched once both flags are on', async () => {
+    isServerFeatureEnabled.mockImplementation(() => true);
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+
+    await controller.createCampaign(buildReq({ platforms: ['reddit-ads'], redditConfig }, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    const envelope = createCampaigns.mock.calls[0][4] as Record<string, Record<string, unknown>>;
+    expect(envelope['redditConfig']).toMatchObject({ placements: ['FEED'], platforms: ['DESKTOP'], expandTargeting: false, budgetType: 'daily' });
+    expect(next).not.toHaveBeenCalled();
+  });
+});
+
+/**
  * `redditConfig.customAudienceIds` / `excludedCustomAudienceIds` (#6108 row 1): refused, never dropped, while this
  * deployment cannot send them; named only by a caller holding `global_marketing_ops` on the project; forwarded as typed
  * otherwise. Wiring only: the rules themselves are table rows in `campaign-reddit-custom-audiences.utils.spec.ts`.
