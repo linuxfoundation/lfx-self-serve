@@ -9,7 +9,7 @@ import {
   AEO_GEO_QUESTION_KEY_PREFIX,
   MKTG_ARTIFACT_SPECS,
 } from '@lfx-one/shared/constants';
-import { AeoGeoAnswer, AeoGeoEnvelope, MktgRunResultResponse, MktgRunSessionResponse } from '@lfx-one/shared/interfaces';
+import { AeoGeoAnswer, AeoGeoEnvelope, MktgGenerationAttribution, MktgRunResultResponse, MktgRunSessionResponse } from '@lfx-one/shared/interfaces';
 import {
   aeoGeoRunQuestions,
   buildAeoGeoFormPayload,
@@ -33,7 +33,12 @@ import { MktgDocumentStoreService } from './mktg-document-store.service';
 /** Reports come only from the finalize tool, never chat text; final-answer text is read only as a questions turn or a refusal. */
 export class AeoGeoService {
   private readonly guild = new GuildService();
-  private readonly documents = new MktgDocumentStoreService();
+  private readonly documents: MktgDocumentStoreService;
+
+  /** The run tracker's reads pass the run's creator, so a report a visitor's read stores is still the creator's. */
+  public constructor(attribution?: MktgGenerationAttribution) {
+    this.documents = new MktgDocumentStoreService(attribution);
+  }
 
   public async startGeneration(
     req: Request,
@@ -107,32 +112,42 @@ export class AeoGeoService {
     };
   }
 
-  public async sendAnswers(
+  /**
+   * The check before the tracker's claim; it sends nothing to Guild. Returns the rendered answers turn when the session
+   * is waiting on exactly this questions turn, and null when that turn is no longer open (already answered, or a later
+   * one asked): the claim then answers 409 and nothing is sent twice. Invalid answers never consume the turn.
+   */
+  public async prepareAnswers(
     req: Request,
     sessionId: string,
     documentId: string,
     project: string,
-    answers: AeoGeoAnswer[],
-    handle: string
-  ): Promise<MktgRunResultResponse> {
+    questionsId: string,
+    answers: AeoGeoAnswer[]
+  ): Promise<string | null> {
     if (documentId !== this.documents.runDocumentId(sessionId)) {
       throw ServiceValidationError.forField('documentId', 'The answers must belong to this audit document.');
     }
     const result = await this.getResult(req, sessionId, project);
     if (result.status !== 'questions' || !result.questions) {
       const history = await this.guild.getHistory(req, sessionId);
-      if (history.some((message) => message.sender === 'user' && message.text.trimStart().startsWith(AEO_GEO_ANSWERS_HEADER))) return result;
+      if (history.some((message) => message.sender === 'user' && message.text.trimStart().startsWith(AEO_GEO_ANSWERS_HEADER))) return null;
       throw ServiceValidationError.forField('answers', 'This audit is not waiting for answers.');
     }
+    if (result.questionsId !== questionsId) return null;
     for (const answer of answers) {
       const question = result.questions.find((entry) => entry.key === `${AEO_GEO_QUESTION_KEY_PREFIX}${answer.id}`);
       if (!question || (answer.origin === 'accepted' && answer.text.trim() !== question.suggestedAnswer)) {
         throw ServiceValidationError.forField('answers', 'Answer only the questions asked; an accepted answer must keep its suggestion.');
       }
     }
-    logger.debug(req, 'aeo_geo_answers', 'Continuing the same audit session', { answers: answers.length, agent_handle: handle });
+    return renderAeoGeoAnswers(answers);
+  }
+
+  /** Only delivery follows the claim; an uncertain delivery never rolls it back. */
+  public async deliverAnswers(req: Request, sessionId: string, message: string, answerCount: number): Promise<void> {
+    logger.debug(req, 'aeo_geo_answers', 'Continuing the same audit session', { answers: answerCount });
     // The agent's answers frame must start at the first line; this session already routes to the agent.
-    await this.guild.sendFollowUp(req, sessionId, { message: renderAeoGeoAnswers(answers) });
-    return { status: 'pending' };
+    await this.guild.sendFollowUp(req, sessionId, { message });
   }
 }

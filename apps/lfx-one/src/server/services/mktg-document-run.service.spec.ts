@@ -36,6 +36,7 @@ const flows = vi.hoisted(() => ({
   author: vi.fn(),
   interrupt: vi.fn(),
   linkedin: vi.fn(),
+  aeo: vi.fn(),
   member: vi.fn(),
   attribution: vi.fn(),
   project: vi.fn(),
@@ -95,6 +96,14 @@ vi.mock('./icp.service', () => ({
 vi.mock('./linkedin-post.service', () => ({
   LinkedinPostService: class {
     public result = flows.linkedin;
+    public constructor(...args: unknown[]) {
+      flows.attribution(...args);
+    }
+  },
+}));
+vi.mock('./aeo-geo.service', () => ({
+  AeoGeoService: class {
+    public getResult = flows.aeo;
     public constructor(...args: unknown[]) {
       flows.attribution(...args);
     }
@@ -242,6 +251,7 @@ describe('MktgDocumentRunService core', () => {
     flows.interrupt.mockReset().mockResolvedValue(undefined);
     flows.author.mockReset().mockResolvedValue(null);
     flows.linkedin.mockReset().mockResolvedValue({ status: 'pending' });
+    flows.aeo.mockReset().mockResolvedValue({ status: 'pending' });
     flows.member.mockReset().mockResolvedValue({ status: 'pending' });
     flows.project.mockResolvedValue({ uid: project, writer: true });
     flows.ensure.mockResolvedValue(undefined);
@@ -647,6 +657,38 @@ describe('MktgDocumentRunService core', () => {
       await service.claimSessionAnswers(owner, project, session, questionsId, 'linkedin-post', answers);
       expect(flows.claim).toHaveBeenCalledTimes(1);
       expect(JSON.parse(stored().body)).toMatchObject({ state: 'writing', answeredBy: 'synthetic-linkedin-creator' });
+    });
+    it('tracks an AEO/GEO audit: one active run per creator, and only the first answer to its questions wins', async () => {
+      const creator = writerRequest('synthetic-audit-creator');
+      await service.startForOneOff(creator, 'aeo-geo', project, session);
+      const second = await service.assertSingleActiveOneOffRun(creator, project, 'aeo-geo').catch((err: unknown) => err);
+      expect(second).toMatchObject({ statusCode: 409, code: 'MKTG_RUN_ACTIVE' });
+      expect(second instanceof ConflictError ? second.toResponse() : null).toMatchObject({
+        message: 'Your AEO/GEO report run is in progress.',
+        startedByViewer: true,
+        startedAt: new Date().toISOString(),
+        activeRunId: hash(session),
+        agentKey: 'aeo-geo',
+        documentId: `run-${hash(session).slice(0, 24)}`,
+        state: 'writing',
+      });
+      // Another writer's slot is their own; a visitor's Documents read stores the report as the creator's.
+      await expect(service.assertSingleActiveOneOffRun(writerRequest('synthetic-other-writer'), project, 'aeo-geo')).resolves.toBeUndefined();
+      flows.aeo.mockResolvedValue({ status: 'questions', questionsId, questions });
+      await service.readProgress(writerRequest('synthetic-other-writer'), project);
+      expect(flows.attribution).toHaveBeenLastCalledWith({ creatorSubject: 'synthetic-audit-creator' });
+      expect(await service.ownedOneOffResult(creator, project, 'aeo-geo', session, {})).toMatchObject({ status: 'questions', questionsId });
+      await service.claimSessionAnswers(creator, project, session, questionsId, 'aeo-geo', answers);
+      flows.author.mockResolvedValue({ name: 'Synthetic Auditor' });
+      await expect(service.claimSessionAnswers(creator, project, session, questionsId, 'aeo-geo', answers)).rejects.toMatchObject({
+        statusCode: 409,
+        code: 'MKTG_RUN_ANSWERED',
+        details: { runId: hash(session), questionsId, answeredBy: 'Synthetic Auditor', answeredAt: new Date().toISOString() },
+      });
+      expect(flows.claim).toHaveBeenCalledTimes(1);
+      // The answered turn read again from Guild never reopens the questions.
+      await service.ownedOneOffResult(creator, project, 'aeo-geo', session, {});
+      expect(JSON.parse(stored().body)).toMatchObject({ state: 'writing', answeredQuestionsId: questionsId });
     });
     it('binds creator transports to their catalog agent before using the same conditional claim', async () => {
       await waiting();
@@ -1306,6 +1348,26 @@ describe('MktgDocumentRunService core', () => {
     await expect(service.assertRunOpen(owner, project, 'linkedin-post', session)).rejects.toMatchObject({ statusCode: 409, code: 'MKTG_RUN_CLOSED' });
   });
 
+  it.each([
+    ['discarded', 'aeo-geo'],
+    ['superseded', 'aeo-geo'],
+    ['discarded', 'linkedin-post'],
+    ['superseded', 'linkedin-post'],
+  ] as const)("refuses the creator's result poll of a %s %s run: no agent result is read and nothing is stored", async (state, agentId) => {
+    const creator = writerRequest('synthetic-creator');
+    await service.startForOneOff(creator, agentId, project, session);
+    stored().metadata['state'] = state;
+    const before = JSON.stringify([...objects]);
+    // A late report is waiting: reading it is what would store the closed run's document.
+    flows.aeo.mockResolvedValue(ready(agentId));
+    flows.linkedin.mockResolvedValue(ready(agentId));
+    await expect(service.ownedOneOffResult(creator, project, agentId, session, {})).rejects.toMatchObject({ statusCode: 409, code: 'MKTG_RUN_CLOSED' });
+    expect(flows.aeo).not.toHaveBeenCalled();
+    expect(flows.linkedin).not.toHaveBeenCalled();
+    expect(flows.events).not.toHaveBeenCalled();
+    expect(JSON.stringify([...objects])).toBe(before);
+  });
+
   it('keeps selected closed records lightweight even when omitted from discovery', async () => {
     await service.start(req, project, types[0].agentKey, session);
     stored().metadata['state'] = 'discarded';
@@ -1351,8 +1413,7 @@ describe('MktgDocumentRunService core', () => {
     expect((await reader.readProgress(req, project, agent, id)).runs).toEqual([]);
   });
 
-  it('classifies a settled linkedin-post runtime failure on a Documents read before its writing deadline', async () => {
-    const agent = 'linkedin-post';
+  it.each(['linkedin-post', 'aeo-geo'])('classifies a settled %s runtime failure on a Documents read before its writing deadline', async (agent) => {
     await service.startForOneOff(req, agent, project, session);
     const startedAt = new Date().toISOString();
     vi.advanceTimersByTime(61_000);

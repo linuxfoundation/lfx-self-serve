@@ -61,7 +61,7 @@ export const MKTG_RUN_ANSWERED_READY_CLAUSE = ' — the asset is ready.';
 /** Only a failed started run can be dismissed from the Documents page. */
 export const MKTG_RUN_NOT_FAILED = 'MKTG_RUN_NOT_FAILED';
 /** Separate dialog hosts may coexist when a dedicated intake is rendered inside the catalog. */
-export const MKTG_RUN_ACTIVE_DIALOG_KEYS = { linkedin: 'mktg-active-linkedin', member360: 'mktg-active-member360' } as const;
+export const MKTG_RUN_ACTIVE_DIALOG_KEYS = { linkedin: 'mktg-active-linkedin', member360: 'mktg-active-member360', aeoGeo: 'mktg-active-aeo-geo' } as const;
 
 // Form-first run-page configuration for the Marketing OS Agents marketplace
 // (LFXAI-95 workstream): per-agent batch intake registry, running-phase stage
@@ -744,6 +744,7 @@ export const AEO_GEO_INTAKE: MktgAgentIntake = {
   endpoints: { generate: '/api/mktg-agents/aeo-geo/generate', result: '/api/mktg-agents/aeo-geo/result', answers: '/api/mktg-agents/aeo-geo/answers' },
   persistsDocument: true,
   oneOffDocument: true,
+  tracksDocumentRun: true,
   liveActivity: true,
 };
 

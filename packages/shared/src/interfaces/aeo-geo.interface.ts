@@ -72,6 +72,8 @@ export interface AeoGeoAnswersBody {
   sessionId: string;
   ownerToken: string;
   documentId: string;
+  /** The questions turn these answers are for: the run tracker lets only the first answer to it through. */
+  questionsId: string;
   answers: AeoGeoAnswer[];
 }
 

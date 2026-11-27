@@ -23,7 +23,24 @@ Notes are rendered last, as the agent's `NOTES (untrusted context):` …
 `END NOTES` block, after the structural key-page lines its parser reads, with
 every protocol-looking line inside them quoted (`guardAeoGeoText`, the agent's
 `guardText`); blank notes send no block.
-The response includes a stable run-document id and creator-bound owner token.
+Every audit is a tracked one-off run (`tracksDocumentRun`, the
+[durable started runs](../backend/mktg-document-revisions.md#durable-started-runs)
+LinkedIn and Member 360 use). Generate preflights tracking storage and the
+creator's active slot before any Guild session exists: a second start while the
+creator's audit is `writing`, `questions` or `storing` in that project is 409
+`MKTG_RUN_ACTIVE` with who started it and when, and only `discard: <activeRunId>`
+closes that run and starts the new one. The accepted session is recorded with
+`startForOneOff`. The run page hands that 409 to the shared
+`MktgActiveRunGuardService` dialog ("Your AEO/GEO report run is in progress",
+"Started …"): "Open it" opens the run's document, "Discard and start over"
+re-sends the same audit with `discard`. A refused start leaves a capability this
+browser already holds in place; an earlier capability, and that of a run the
+person discards, is cleared only once the replacement start is accepted, so a
+failed discard request leaves it. "Open it" opens the run's Document page; in the browser that holds the
+capability, that page shows an audit in its writing phase as generating and
+sends one that is still researching or waiting for answers back to the run page
+(see the Document component below), so the person can answer here.
+The response includes a stable run-document id, the public `runId` and a creator-bound owner token.
 `MktgPendingDocumentService` retains that capability under the effective user,
 project and document, with the existing run TTL; it never travels in a URL.
 Research stays on the run page with the shared activity feed. A 2.0 run may
@@ -32,12 +49,40 @@ After the answers are acknowledged (or a no-questions report is ready), the
 page opens `documents/:agentKey/:documentId` and waits for storage there.
 
 The one Document component handles both pending and stored reports. If a
-not-yet-stored document has a matching pending capability, it polls the result
-endpoint and displays a generating state until the persistence receipt arrives.
+not-yet-stored document has a matching pending capability in its writing phase
+(`phase: 'writing'`, set by the run page before it opens the Document route), it
+polls the result endpoint and displays a generating state until the persistence
+receipt arrives. A capability that has not reached that phase (research, or a
+questions turn), or whose run the server records as waiting for answers, is not
+waited on here: the storage wait drops a `questions` result and would only time
+out. The page navigates to the run page instead (`replaceUrl`, without `run`),
+which resumes research or the questions from the same capability, and the
+wait's anchor (`waitStartedAt`) is not set until the audit is writing, so the
+600 s storage budget is never spent on research or answering. This covers the
+409 dialog's "Open it", a Started runs "Open" link during research and a typed
+URL. If that navigation fails the page says "This audit is not finished. Open
+AEO/GEO from the kit to continue it." and keeps the capability. A stored report
+always opens, whatever the capability's phase.
 A ready Markdown result without that receipt is not a stored document. Polling
 is bounded, retries transient failures and cancels on destruction or scope
 change. A refresh can resume the pending run; another user cannot load it.
-The audit receiver stays separate from the shared living-asset Runs-land lifecycle; it does not create a generic run record.
+The audit's result endpoint reads through the tracker (`ownedOneOffResult`), so each poll records the run's state, and a
+writer's Documents read advances the same record and stores the report as the creator's. A poll for a stored run that is
+discarded or superseded is refused before the audit result is read (409 `MKTG_RUN_CLOSED`), so a stale tab cannot store a
+late report of a discarded audit; the run page and the Document page end on "This audit was closed. Start a new audit."
+and poll no further. The audit keeps its own receiver on
+the run and Document pages (its browser capability), not the shared run-progress view: opened without that capability (another
+browser, another writer, a Started runs row), the Document page shows the same generating state and re-reads until the
+recorded run is stored; a recorded run waiting for answers or failed is a plain line with Run again. That re-read
+trusts only its own answer: a run the server no longer lists (discarded, superseded or dismissed) is a 404 and ends on
+the plain not-found line, while a read whose run record the server could not read (`progressUnavailable`, no revision)
+is a transient failure the shared poller retries on its capped backoff, and the loop ends at `MKTG_RUN_POLL.timeoutMs` from the view's first read of the run as
+running ("The audit is taking longer than expected."), the server's writing budget, which a tab return never restarts.
+On the Documents page a Started runs row of an audit waiting for answers reads "Answer the questions" and opens the
+run page only in the browser that holds its capability; anywhere else the row reads "Open" and opens the run's
+Document page (`?run=`), where that waiting line explains it, never a blank intake form. A `writing` row always reads
+"Open" and opens the Document page; research is recorded as `writing`, so in the capability's browser that page
+forwards a run still in research to the run page, where questions that arrive later are shown.
 Document reads preserve the shared client's poll/refresh arguments and use its trailing expected-404 flag only for the matching pending audit.
 
 While generating, the existing result endpoint projects Guild session events
@@ -55,11 +100,20 @@ progress message or fetched tool text. A shared guard validates the one fenced
 JSON block. `MktgRunQuestionsComponent` presents it one question at a time,
 with Back/Continue, suggestion acceptance or editing, and no skip. The new
 `POST /api/mktg-agents/aeo-geo/answers` checks creator proof, project writer
-rights, the session's document id and the actual questions before posting a
-byte-compatible, protocol-guarded `aeo-geo-answers/v1` user message to the SAME
-Guild session. Omitted API answers remain caveats; the interactive stepper
-requires an answer to each question. A history read recognizes an acknowledged
-answers turn after a lost response/reload; history is never read as a report.
+rights, the session's document id and the actual questions, then claims the
+questions turn named by `questionsId` on the run tracker (`claimSessionAnswers`,
+as LinkedIn does) before posting a byte-compatible, protocol-guarded
+`aeo-geo-answers/v1` user message to the SAME Guild session. The first answer
+wins: any later one for that turn (a stale window, a retry after a lost
+response) is 409 `MKTG_RUN_ANSWERED` and sends nothing, and the run page shows
+"<name> already answered these — the agent is writing." and opens the report.
+A 404 from the answers endpoint (an audit started before audits were tracked has
+no run record) is final: the run page clears the capability and shows "This audit
+can no longer take answers. Start a new audit." without re-reading the run.
+The claim requires one answer per asked question, as the interactive stepper
+does; invalid answers are a 400 that leaves the turn unclaimed, and a delivery
+that fails after the claim keeps it. A history read still recognizes an answered
+turn so a reload does not ask again; history is never read as a report.
 A plain transport/domain-confirmation refusal stays an error on the run page,
 with no invented question round or report. Malformed questions fail visibly.
 Question position and edits stay in the same user/project/session-scoped pending record, with its existing TTL/pruning; they are not proof of writing.
@@ -132,7 +186,8 @@ not a simulated control here.
 The content and structural `mktg-os-aeo-geo` Playwright specs stub every Marketing
 OS call and project entitlement and run against the served branch.
 They cover validation, storage-dependent generating state, independent runs,
-research/questions re-entry, same-session answers, writing recovery, typed
+research/questions re-entry, same-session answers, the active-run dialog on a
+second start, the answered notice on a second answer, writing recovery, typed
 report presentation, PDF printing, refusal/errors, access denial and responsive
 layouts. The existing typed-report case checks About to the right at 1440px and below at 390px.
 The contract fixtures retain the provided 2.0 key-mode QA's event and

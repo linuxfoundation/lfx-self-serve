@@ -24,6 +24,7 @@ import {
   ProjectContext,
 } from '@lfx-one/shared/interfaces';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
+import { MktgPendingDocumentService } from '@services/mktg-pending-document.service';
 import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
@@ -95,6 +96,7 @@ describe('MktgDocumentsComponent', () => {
   let activeContext: ReturnType<typeof signal<ProjectContext | null>>;
   let effectiveUser: ReturnType<typeof signal<{ sub: string } | null>>;
   let impersonating: ReturnType<typeof signal<boolean>>;
+  const loadPending = vi.fn();
   let store: { listDocuments: ReturnType<typeof vi.fn>; getDocument: ReturnType<typeof vi.fn>; dismissRun: ReturnType<typeof vi.fn> };
 
   function query(testId: string): HTMLElement | null {
@@ -120,6 +122,7 @@ describe('MktgDocumentsComponent', () => {
       getDocument: vi.fn(() => of(detail)),
       dismissRun: vi.fn(() => of(undefined)),
     };
+    loadPending.mockReset().mockReturnValue(null);
     impersonating = signal(false);
     activeContext = signal<ProjectContext | null>(PROJECT);
     effectiveUser = signal<{ sub: string } | null>({ sub: 'synthetic-subject' });
@@ -133,6 +136,7 @@ describe('MktgDocumentsComponent', () => {
         { provide: ProjectContextService, useValue: { activeContext, activeContextUid: computed(() => activeContext()?.uid ?? ''), canWrite: signal(true) } },
         { provide: MktgDocumentStoreService, useValue: store },
         { provide: UserService, useValue: { user: effectiveUser, impersonating } },
+        { provide: MktgPendingDocumentService, useValue: { load: loadPending } },
       ],
     }).compileComponents();
   });
@@ -1112,6 +1116,24 @@ describe('MktgDocumentsComponent', () => {
     expect(action?.textContent?.trim()).toBe('Answer the questions');
     // Rule 1/#137/#4591: creator-scoped entry discovers its own active record; never a caller-selected private run.
     expect(action?.getAttribute('href')).toBe(`/mktg-os-agents/linkedin-post?project=${PROJECT.slug}`);
+    expect(nav?.getAttribute('href')).toBe(action?.getAttribute('href'));
+  });
+
+  it.each([true, false])('sends an audit waiting for answers to its questions only where its capability lives (here: %s)', async (here) => {
+    const run: MktgDocumentRunProgress = { ...startedRun('questions'), agentKey: 'aeo-geo', documentId: 'run-' + 'c'.repeat(24) };
+    store.listDocuments.mockReturnValue(of({ ...documentsResponse(), runs: [run] }));
+    if (here) loadPending.mockReturnValue({ agentId: 'aeo-geo', projectUid: PROJECT.uid, documentId: run.documentId });
+    await render('/?type=aeo-geo');
+    const nav = query('mktg-documents-nav-aeo-geo');
+    const action = query('mktg-documents-open-started-' + run.runId);
+    expect(loadPending).toHaveBeenCalledWith(PROJECT.uid, run.documentId);
+    expect(nav?.textContent).toContain('Needs answers');
+    // Without the capability (the creator on another browser, another writer) the intake would be a blank form:
+    // the row opens the run's Document page, which says the audit is waiting for answers.
+    expect(action?.textContent?.trim()).toBe(here ? 'Answer the questions' : 'Open');
+    expect(action?.getAttribute('href')).toBe(
+      here ? `/mktg-os-agents/aeo-geo?project=${PROJECT.slug}` : `/aeo-geo/${run.documentId}?project=${PROJECT.slug}&run=${run.runId}`
+    );
     expect(nav?.getAttribute('href')).toBe(action?.getAttribute('href'));
   });
 

@@ -23,6 +23,9 @@ import {
   MKTG_POLL_MAX_BACKOFF_MS,
   MKTG_NOT_AVAILABLE_TEXT,
   MKTG_POLL_RETRYING_TEXT,
+  MKTG_RUN_ACTIVE_DIALOG_KEYS,
+  MKTG_RUN_ANSWERED_WRITING_CLAUSE,
+  MKTG_RUN_CLOSED,
   MKTG_RUN_POLL,
 } from '@lfx-one/shared/constants';
 import {
@@ -36,12 +39,22 @@ import {
   MktgRunResultResponse,
   Project,
 } from '@lfx-one/shared/interfaces';
-import { isAeoGeoKeyPageUrl, normalizeAeoGeoDomain, validateAeoGeoIntakeAnswers, mktgLinkWarnings } from '@lfx-one/shared/utils';
+import {
+  isAeoGeoKeyPageUrl,
+  mktgLinkWarnings,
+  mktgRunAnsweredBy,
+  normalizeAeoGeoDomain,
+  readMktgActiveRunConflict,
+  validateAeoGeoIntakeAnswers,
+} from '@lfx-one/shared/utils';
+import { MktgActiveRunGuardService } from '@services/mktg-active-run-guard.service';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { MktgPendingDocumentService } from '@services/mktg-pending-document.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
+import { ConfirmationService, MessageService } from 'primeng/api';
+import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import {
   catchError,
   distinctUntilChanged,
@@ -73,6 +86,7 @@ import { MktgRunQuestionsComponent } from '../../mktg-run-questions/mktg-run-que
     DecimalPipe,
     ReactiveFormsModule,
     RouterLink,
+    ConfirmDialogModule,
     ButtonComponent,
     InputTextComponent,
     MessageComponent,
@@ -95,6 +109,10 @@ export class AeoGeoRunComponent {
   private readonly platform = inject(PLATFORM_ID);
   private readonly destroyRef = inject(DestroyRef);
   private readonly document = inject(DOCUMENT);
+  private readonly confirmation = inject(ConfirmationService);
+  private readonly messages = inject(MessageService);
+  private readonly activeRunGuard = inject(MktgActiveRunGuardService);
+  protected readonly conflictKey = MKTG_RUN_ACTIVE_DIALOG_KEYS.aeoGeo;
 
   public readonly intake = input.required<MktgAgentIntake>();
   protected readonly form = new FormGroup(
@@ -126,6 +144,8 @@ export class AeoGeoRunComponent {
   protected readonly answerValues = signal<Record<string, string>>({});
   protected readonly questionDraft = signal<MktgRunQuestionDraft | null>(null);
   private generation: Subscription | null = null;
+  /** The questions turn on screen; the server lets only the first answer to it through. */
+  private questionsId = '';
   protected readonly startedAt = computed(() => Date.parse(this.activeRun()?.savedAt ?? '') || Date.now());
   protected readonly agent = computed(() => MKTG_AGENTS.find((entry) => entry.id === this.intake().agentId));
   protected readonly iconClass = computed(
@@ -165,6 +185,7 @@ export class AeoGeoRunComponent {
       .pipe(
         distinctUntilChanged((a, b) => a.context?.uid === b.context?.uid && a.sub === b.sub),
         switchMap(({ context, sub }) => {
+          this.confirmation.close();
           this.generation?.unsubscribe();
           this.busy.set(false);
           this.activeRun.set(null);
@@ -327,8 +348,10 @@ export class AeoGeoRunComponent {
     this.error.set('');
     this.submitted.set(true);
     if (!this.validation().valid) return;
+    // A capability this browser still holds is the owner token of a run that may be going. It, and that of a run the person
+    // discards, is forgotten only once the server accepts this start; a refused or failed start leaves both for "Open it".
     const stale = this.pending.loadActive(project, this.intake().agentId);
-    if (stale) this.pending.clear(stale.projectUid, stale.documentId);
+    const replaced = new Set(stale ? [stale.documentId] : []);
     this.busy.set(true);
     this.error.set('');
     this.documentLink.set(null);
@@ -336,20 +359,66 @@ export class AeoGeoRunComponent {
     this.questionDraft.set(null);
     this.questions.set([]);
     this.activity.set([]);
-    this.generation = this.pending
-      .start(this.intake(), project, { ...this.answers(), project_name: context.name, project_uid: project })
-      .pipe(
-        tap((run) => this.activeRun.set(run)),
-        switchMap((run) => this.watchRun(run)),
-        takeUntilDestroyed(this.destroyRef)
-      )
-      .subscribe({
+    const answers = { ...this.answers(), project_name: context.name, project_uid: project };
+    const owner = this.user.user()?.sub;
+    const current = () => !this.destroyRef.destroyed && owner === this.user.user()?.sub && project === this.projectContext.activeContextUid();
+    const conflictOf = (error: unknown) =>
+      error instanceof HttpErrorResponse && error.status === 409 ? readMktgActiveRunConflict(error.error, this.intake().agentId) : null;
+    const follow = (run: MktgPendingDocumentRun) => {
+      replaced.delete(run.documentId);
+      replaced.forEach((documentId) => this.pending.clear(project, documentId));
+      this.activeRun.set(run);
+      return this.watchRun(run);
+    };
+    const failed = (error: unknown) => {
+      console.error('Failed to start the audit', error);
+      this.busy.set(false);
+      this.error.set('The audit could not be started. Your inputs are kept — try again.');
+    };
+    const start = (discard?: string) => {
+      if (!current()) return;
+      this.busy.set(true);
+      const call = discard ? this.pending.start(this.intake(), project, answers, discard) : this.pending.start(this.intake(), project, answers);
+      this.generation = call.pipe(switchMap(follow), takeUntilDestroyed(this.destroyRef)).subscribe({
         error: (error: unknown) => {
-          console.error('Failed to start the audit', error);
+          if (!current()) return;
+          const conflict = conflictOf(error);
+          if (!conflict) {
+            failed(error);
+            return;
+          }
+          // One audit at a time: the server refused a second start. The shared dialog says whose run it is and since
+          // when, re-checks it, and only "Discard and start over" sends the same audit again naming the run to close.
           this.busy.set(false);
-          this.error.set('The audit could not be started. Your inputs are kept — try again.');
+          this.activeRunGuard.open(
+            this.confirmation,
+            {
+              conflict,
+              current,
+              recheck: () => this.pending.start(this.intake(), project, answers),
+              classify: conflictOf,
+              onValue: (run) => {
+                this.generation = follow(run).pipe(takeUntilDestroyed(this.destroyRef)).subscribe();
+              },
+              onDiscard: (fresh) => {
+                replaced.add(fresh.documentId);
+                start(fresh.activeRunId);
+              },
+              onOpen: (fresh) =>
+                void this.router.navigate(['..', 'documents', fresh.agentKey, fresh.documentId], {
+                  relativeTo: this.route,
+                  queryParamsHandling: 'merge',
+                  queryParams: { mode: null, run: fresh.activeRunId },
+                }),
+              onError: failed,
+            },
+            this.destroyRef,
+            this.conflictKey
+          );
         },
       });
+    };
+    start();
   }
 
   protected onRunAgain(): void {
@@ -379,15 +448,36 @@ export class AeoGeoRunComponent {
     this.error.set('');
     this.answerValues.set(Object.fromEntries(answers.map((a) => [a.key, a.text])));
     this.questionDraft.set(null);
+    const questionsId = this.questionsId;
     this.generation = this.pending
       .answerQuestions(
         run,
         this.intake(),
+        questionsId,
         answers.map((a) => ({ id: a.key.slice(AEO_GEO_QUESTION_KEY_PREFIX.length), text: a.text, origin: a.origin }))
       )
       .pipe(
         tap(() => this.openDocument(run)),
         catchError((error: unknown) => {
+          const refused = error instanceof HttpErrorResponse && error.status === 409;
+          const answeredBy = refused ? mktgRunAnsweredBy(error.error, run.runId ?? '', questionsId) : null;
+          if (answeredBy) {
+            // The first answer won (another window, or this one's lost acknowledgement): the same notice as LinkedIn, then the report.
+            this.messages.add({ severity: 'info', summary: `${answeredBy} already answered these${MKTG_RUN_ANSWERED_WRITING_CLAUSE}` });
+            this.openDocument(run);
+            return EMPTY;
+          }
+          if (refused && error.error?.code === MKTG_RUN_CLOSED) {
+            // The server closed this run (discarded, or replaced by a newer audit): nothing here can continue it.
+            // Any other 409 does not close it and falls through to the recheck, which keeps this browser's capability.
+            this.failRun(run, 'This audit was closed. Start a new audit.');
+            return EMPTY;
+          }
+          if (error instanceof HttpErrorResponse && error.status === 404) {
+            // The server holds no record of this audit (it was started before audits were tracked): no answer can reach it.
+            this.failRun(run, 'This audit can no longer take answers. Start a new audit.');
+            return EMPTY;
+          }
           console.error('Failed to acknowledge audit answers', error);
           this.error.set('Your answers are kept. Checking whether the agent took them…');
           return this.watchRun(run).pipe(map(() => undefined));
@@ -446,6 +536,9 @@ export class AeoGeoRunComponent {
         if (error instanceof TimeoutError) {
           this.busy.set(false);
           this.error.set(AEO_GEO_TIMEOUT_MESSAGE);
+        } else if (error instanceof HttpErrorResponse && error.status === 409 && error.error?.code === MKTG_RUN_CLOSED) {
+          // The server closed this run (discarded, or replaced by a newer audit) and reads it no further: the form is offered again.
+          this.failRun(run, 'This audit was closed. Start a new audit.');
         } else {
           this.failRun(run, 'The audit could not finish. Your inputs are kept — try again.');
         }
@@ -464,6 +557,7 @@ export class AeoGeoRunComponent {
       if (run.phase === 'writing' || Object.keys(this.answerValues()).length > 0) this.openDocument(run);
     }
     if (result.status === 'questions' && result.questions?.length && result.questionsId) {
+      this.questionsId = result.questionsId;
       this.questions.set(result.questions);
       this.error.set('');
       this.busy.set(false);

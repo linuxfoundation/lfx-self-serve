@@ -335,6 +335,8 @@ describe('mktg-document-store utils', () => {
     expect(findMktgRunIntake('member-360')).toBeUndefined();
     expect(findMktgRunIntake('linkedin-post', true)?.tracksDocumentRun).toBe(true);
     expect(findMktgRunIntake('member-360', true)?.tracksDocumentRun).toBe(true);
+    expect(findMktgRunIntake('aeo-geo')).toBeUndefined();
+    expect(findMktgRunIntake('aeo-geo', true)?.endpoints.answers).toBe('/api/mktg-agents/aeo-geo/answers');
   });
   it('adds an optional public activity projection without private completion metadata', () => {
     const activity = [{ id: 'step', kind: 'checking' as const, label: 'Checking', status: 'running' as const, startedAt: '2026-10-19T00:00:00Z' }];

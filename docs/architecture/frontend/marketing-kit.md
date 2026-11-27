@@ -431,8 +431,9 @@ A first load that cannot reach the server keeps trying by itself behind one grey
 final refusal is one red line with no Retry, rather than claiming no run exists. An initially
 unavailable progress response settles to available inputs with an inline notice and keeps
 checking; it never claims that no run exists. Background failures retain the last observed
-state, question DOM and unsent edits while pausing submission until verification recovers. AEO/GEO discovery needs backend run
-recording before this mechanism applies to it.
+state, question DOM and unsent edits while pausing submission until verification recovers. AEO/GEO audits are recorded
+by the run tracker (one active run, first answer wins) but keep their own capability-based receiver, so this
+mechanism does not apply to them: see [AEO/GEO](mktg-aeo-geo.md).
 
 LinkedIn content sources use `source=`; profile editing keeps `profile=edit` until Save or Cancel.
 Edit actions mark their pushed history entry with `mktgEditPushed: 'run' | 'document' | 'redraft'`

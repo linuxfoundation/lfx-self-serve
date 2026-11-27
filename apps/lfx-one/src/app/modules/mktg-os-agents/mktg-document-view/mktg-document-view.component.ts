@@ -46,6 +46,7 @@ import {
   MKTG_AGENTS,
   MKTG_NOT_AVAILABLE_TEXT,
   MKTG_POLL_RETRYING_TEXT,
+  MKTG_RUN_CLOSED,
   MKTG_RUN_POLL,
   MKTG_DOCUMENT_PROGRESS_POLL,
   VISIBILITY_POLL_WAKE_DEBOUNCE_MS,
@@ -144,6 +145,7 @@ import {
   expand,
   ignoreElements,
   merge,
+  Observable,
   throwError,
   timer,
   TimeoutError,
@@ -611,7 +613,8 @@ export class MktgDocumentViewComponent {
     );
   });
   protected readonly runAgentId = computed(() => {
-    if (this.params().agentKey === 'member-360') return '';
+    // Member 360 and the audit are tracked runs with their own receivers here: neither uses the shared run controls.
+    if (this.params().agentKey === 'member-360' || this.isPendingReportAgent(this.params().agentKey)) return '';
     const type = this.runDetail()?.type ?? MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === this.params().agentKey);
     const id = type?.catalogAgentId;
     const intake = id ? MKTG_AGENT_INTAKES[id] : undefined;
@@ -865,6 +868,9 @@ export class MktgDocumentViewComponent {
                     });
                     return EMPTY;
                   }
+                  // The server closed this run (discarded, or replaced by a newer one) and reads it no further: not a failure
+                  // to confirm. The record read beside this poll shows the closed-run line and the way to the newer run.
+                  if (this.isRunClosed(error)) return EMPTY;
                   const errorType = error instanceof Error ? error.name : typeof error;
                   console.error('Failed to confirm Marketing OS run', error instanceof HttpErrorResponse ? { status: error.status } : { errorType });
                   this.unconfirmed.set(true);
@@ -1943,6 +1949,11 @@ export class MktgDocumentViewComponent {
     return MKTG_NOT_AVAILABLE_TEXT.revision;
   }
 
+  /** The result endpoint's answer for a discarded or replaced run: 409 MKTG_RUN_CLOSED, final. */
+  private isRunClosed(error: unknown): boolean {
+    return error instanceof HttpErrorResponse && error.status === 409 && error.error?.code === MKTG_RUN_CLOSED;
+  }
+
   // === Private helpers ===
   private onProgress(progress: MktgGenerateProgress, pending: MktgPendingGeneration): void {
     if (progress.type === 'submitted' || progress.type === 'restored' || progress.type === 'failed' || progress.type === 'refused') {
@@ -2065,15 +2076,28 @@ export class MktgDocumentViewComponent {
     );
     const startedAt = Date.parse(pending?.savedAt ?? '');
     this.aeoActivityStartedAt.set(Number.isFinite(startedAt) ? startedAt : Date.now());
+    // The server's record of this audit while no report is stored: the run tracker lists it on every writer's read.
+    let tracked: MktgDocumentRunProgress | undefined;
+    // Following a run without its capability has one absolute end: the run's writing budget, counted from this view's
+    // first read of it as running (the public record carries no renewed deadline). A tab return or a focus never moves it.
+    let followUntil = 0;
     const read = () =>
-      revisionId
-        ? this.documentStore.getRevision(project, agentKey, documentId, revisionId)
-        : this.documentStore.getDocument(project, agentKey, documentId, false, undefined, canResume).pipe(
-            switchMap((detail) => {
-              const id = detail.current?.revisionId ?? detail.revisions.find((revision) => revision.latest)?.id ?? detail.revisions[0]?.id;
-              return id ? this.documentStore.getRevision(project, agentKey, documentId, id) : throwError(() => new HttpErrorResponse({ status: 404 }));
-            })
-          );
+      defer(() => {
+        // Each read stands alone: a run the server no longer lists must not be followed on what an earlier read said.
+        tracked = undefined;
+        return revisionId
+          ? this.documentStore.getRevision(project, agentKey, documentId, revisionId)
+          : this.documentStore.getDocument(project, agentKey, documentId, false, undefined, canResume).pipe(
+              switchMap((detail) => {
+                const id = detail.current?.revisionId ?? detail.revisions.find((revision) => revision.latest)?.id ?? detail.revisions[0]?.id;
+                tracked = id ? undefined : detail.runs?.find((run) => run.documentId === documentId);
+                if (id) return this.documentStore.getRevision(project, agentKey, documentId, id);
+                // A run record the server could not read says nothing about the audit: a transient failure, as on the living
+                // document's receiver. The poller retries it; a follow's deadline (`followUntil`) is kept across the retry.
+                return throwError(() => new HttpErrorResponse({ status: detail.progressUnavailable ? 503 : 404 }));
+              })
+            );
+      });
     // The storage wait's budget is absolute from the moment this view first began waiting (persisted with the pending
     // record, so a tab return, a focus or a reload never moves it); research and answering time are not spent from it.
     // Only a record that cannot be anchored falls back to the run's savedAt.
@@ -2082,12 +2106,39 @@ export class MktgDocumentViewComponent {
       return (Number.isFinite(anchor) ? anchor : Date.now()) + MKTG_RUN_POLL.timeoutMs;
     };
     let denied = false;
-    const attempt = () => {
+    // This browser's capability belongs on the run page until the audit is writing: research and a questions turn are
+    // resumed there from the same capability. No storage wait starts here, so the wait's anchor is never set early.
+    const runPageUnopened = new Error('The audit run page could not be opened.');
+    const resumeOnRunPage = (): Observable<never> =>
+      defer(() => {
+        const commands = this.runAgainLink();
+        return commands ? this.router.navigate(commands, { queryParams: this.runAgainParams(), replaceUrl: true }) : of(false);
+      }).pipe(
+        catchError((error: unknown) => {
+          console.error('Failed to open the audit run page', error);
+          return of(false);
+        }),
+        switchMap((opened) => (opened ? EMPTY : throwError(() => runPageUnopened)))
+      );
+    const attempt = (): Observable<MktgRevisionResponse | null> => {
       // A refused read is latched for this report (RFC 9110 §15.5.4): no wake sends the same credentials again.
       if (denied) return EMPTY;
       return read().pipe(
         catchError((error: HttpErrorResponse) => {
+          if (error.status === 404 && !canResume && (tracked?.state === 'writing' || tracked?.state === 'storing')) {
+            // Opened without this browser's capability (another browser, another writer): the server is still running
+            // the audit and each read advances it, so the same read is repeated until the report is stored, the run ends,
+            // the server stops listing it (the next read's 404 is then final) or the run's deadline passes.
+            followUntil ||= Date.now() + MKTG_RUN_POLL.timeoutMs;
+            if (Date.now() >= followUntil) throw new TimeoutError();
+            this.refreshWarning.set('');
+            this.generating.set(true);
+            return timer(MKTG_RUN_POLL.intervalMs).pipe(switchMap(() => attempt()));
+          }
           if (error.status !== 404 || !canResume || !pending || !intake) throw error;
+          // The report is not stored and the audit is not writing yet (still researching, or the server records it as
+          // waiting for answers): the run page shows it, and the questions when they arrive.
+          if (pending.phase !== 'writing' || tracked?.state === 'questions') return resumeOnRunPage();
           // The server answered (the report is not stored yet): nothing is retrying while the storage wait runs.
           this.refreshWarning.set('');
           this.generating.set(true);
@@ -2104,9 +2155,16 @@ export class MktgDocumentViewComponent {
           // A transient HTTP failure (RFC 9110: 408, 429, 5xx, no response) is retried by the poller below; a refusal, the
           // audit's own deadline and everything else, HTTP or not, is final.
           if (!refused && !(error instanceof TimeoutError) && isTransientHttpError(error)) throw error;
-          denied = status === 401 || status === 403;
+          // A closed run stays closed: like a refused read, no wake sends its poll again.
+          denied = status === 401 || status === 403 || this.isRunClosed(error);
           if (refused) this.errorText.set(error.message);
+          else if (error === runPageUnopened) this.errorText.set('This audit is not finished. Open AEO/GEO from the kit to continue it.');
           else if (error instanceof TimeoutError) this.errorText.set(AEO_GEO_TIMEOUT_MESSAGE);
+          // The server closed this run (discarded, or replaced by a newer audit) and reads it no further: Run again is below.
+          else if (this.isRunClosed(error)) this.errorText.set('This audit was closed. Start a new audit.');
+          else if (status === 404 && !canResume && tracked?.state === 'questions')
+            this.errorText.set('This audit is waiting for answers. Answer them in the browser where it was started, or run a new audit.');
+          else if (status === 404 && !canResume && tracked?.state === 'failed') this.errorText.set('The audit ended without a report. Start a new audit.');
           else this.errorText.set(this.loadErrorText(status, error instanceof HttpErrorResponse ? error.error?.code : undefined));
           return of(null);
         })

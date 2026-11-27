@@ -26,6 +26,7 @@ import {
   FAQ_INTAKE,
   ICP_INTAKE,
   LINKEDIN_POST_INTAKE,
+  AEO_GEO_INTAKE,
   MEMBER_360_API,
   LINKEDIN_SOURCE_MAX_WORDS,
 } from '@lfx-one/shared/constants';
@@ -81,6 +82,7 @@ import {
 import { getEffectiveSub, isImpersonating } from '../utils/auth-helper';
 import { buildMktgRunDocumentId } from '../utils/mktg-document-store.util';
 import { classifyTransientStorageError } from '../utils/transient-storage-error.util';
+import { AeoGeoService } from './aeo-geo.service';
 import { LinkedinPostService } from './linkedin-post.service';
 import { Member360Service } from './member-360.service';
 import { BrandKitService } from './brand-kit.service';
@@ -250,6 +252,8 @@ export class MktgDocumentRunService {
     }
     if (stored && (stored.record.agentKey !== type.agentKey || stored.record.sessionId !== sessionId || stored.record.creatorSubject !== creatorSubject))
       throw new AuthorizationError('This run does not belong to this requester and project.');
+    // A discarded or replaced run is read no further: a stale tab's poll must not store its late result (409 MKTG_RUN_CLOSED).
+    this.assertNotRetired(stored?.record.state);
     const record: MktgStartedRunRecord = stored?.record ?? {
       schema: MKTG_STARTED_RUN_SCHEMA,
       project,
@@ -1131,6 +1135,8 @@ export class MktgDocumentRunService {
           record.oneOff?.answers,
           record.oneOff?.sourceWords
         );
+      case AEO_GEO_INTAKE.endpoints.result:
+        return new AeoGeoService(attribution).getResult(req, record.sessionId, record.project);
       case `${MEMBER_360_API}/result`: {
         const result = await new Member360Service(attribution).result(req, record.sessionId, record.project);
         return Member360Service.toRunResult(result);
