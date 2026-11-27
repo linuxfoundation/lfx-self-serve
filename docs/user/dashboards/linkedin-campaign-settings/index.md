@@ -66,7 +66,7 @@ The box is only there with automatic bidding, and only where your deployment sup
 
 ## Website visits with a manual bid
 
-Where your deployment supports it, you can choose **Website visits** as the **Campaign objective** and **Manual max CPC bid** together. The campaign is created as a website visits campaign that pays your bid per click, for example $45. While website visits is chosen, the manual bidding option says "Creates a website-visits campaign with a manual cost-per-click bid."
+Where your deployment supports it, you can choose **Website visits** as the **Campaign objective** and **Manual max CPC bid** together. The campaign is created as a website visits campaign with your bid as its maximum cost per click, for example $45; LinkedIn may charge less per click. While website visits is chosen, the manual bidding option says "Creates a website-visits campaign with a manual cost-per-click bid."
 
 Leave the objective on **Set by bidding (default)** and a manual bid still creates a website conversions campaign, as before. Where your deployment doesn't support it, website visits with a manual bid keeps **Create** disabled with "The traffic objective takes automatic bidding only"; choose automatic bidding or the website conversions objective to continue.
 
