@@ -6899,6 +6899,27 @@ describe('CampaignServiceClient.listRedditCustomAudiences', () => {
   });
 });
 
+describe('CampaignServiceClient.listRedditPixels', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("GETs the project's pixel read, the project encoded", async () => {
+    const pixels = { account_id: 't2_acct', pixels: [], pixel_count: 0, truncated: false };
+    proxyRequest.mockResolvedValueOnce(pixels);
+
+    expect(await new CampaignServiceClient().listRedditPixels(req, 'lf/ai')).toBe(pixels);
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/lf%2Fai/reddit-ads/pixels', 'GET');
+  });
+
+  it('refuses an empty project without calling the proxy', async () => {
+    const caught = await new CampaignServiceClient().listRedditPixels(req, '').catch((e: unknown) => e);
+
+    expect(caught).toBeInstanceOf(ServiceValidationError);
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+});
+
 describe('CampaignServiceClient.listLinkedInAudiences', () => {
   const audiences = { account_id: '500000001', audiences: [], audience_count: 0, truncated: false };
 
