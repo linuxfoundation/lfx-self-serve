@@ -1503,8 +1503,9 @@ export class CampaignController {
       // Reddit one ad per variant (#6108 row 6): while this deployment offers it, an authored-post create's variants are
       // held to campaign-service's rules (`checkRedditAdPerVariant`), which campaign-service checks after every other
       // config refusal; never refused while off, since creates already carry the brief's variants. See
-      // `redditAdPerVariantRefusal`.
-      const redditAdPerVariantRefused = redditAdPerVariantRefusal(body?.redditConfig, canSetRedditAdPerVariant());
+      // `redditAdPerVariantRefusal`. Only when Reddit is selected: campaign-service checks only the selected platforms, so
+      // unused Reddit copy must not block another platform's create.
+      const redditAdPerVariantRefused = platforms.includes('reddit-ads') ? redditAdPerVariantRefusal(body?.redditConfig, canSetRedditAdPerVariant()) : null;
       if (redditAdPerVariantRefused !== null) {
         throw ServiceValidationError.forField(redditAdPerVariantRefused.field, redditAdPerVariantRefused.message, {
           operation: 'campaign_create',

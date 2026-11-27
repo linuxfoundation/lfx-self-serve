@@ -13209,6 +13209,15 @@ describe('CampaignController.createCampaign Reddit one ad per variant', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
+  it('leaves an unused redditConfig alone when Reddit is not selected, flag on', async () => {
+    isServerFeatureEnabled.mockImplementation(() => true);
+
+    await controller.createCampaign(buildReq({ platforms: ['meta-ads'], redditConfig }, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+  });
+
   it('refuses six variants once the flag is on, creating nothing', async () => {
     isServerFeatureEnabled.mockImplementation(() => true);
 
