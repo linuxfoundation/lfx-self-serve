@@ -659,7 +659,9 @@ export class MktgSlidesExportService {
   /**
    * Poll a started export to its end on the server, on the browser's
    * interval and within its deadline. The injected `read` callback
-   * (`getResult` or `getFamilyResult`) keeps the ready deck's record,
+   * (`getResult`, or `familyResult` with the start's claim, so this
+   * server's own poll can release a marker that could not be bound to
+   * its session) keeps the ready deck's record,
    * so the deck is never left without one when the page that started
    * it goes before the end (the next visit would offer Create again and make
    * a second deck). A failed poll is logged and the next one tries again.
