@@ -162,6 +162,7 @@ import { MktgRunQuestionsComponent } from '../mktg-run-questions/mktg-run-questi
 import { MktgAssetMetaComponent } from '../components/mktg-asset-meta/mktg-asset-meta.component';
 import { AeoGeoReportComponent } from '../components/aeo-geo-report/aeo-geo-report.component';
 import { BrandKitWebViewComponent } from '../brand-kit-web-view/brand-kit-web-view.component';
+import { LinkedinPostIdentityComponent } from '../components/linkedin-post-identity/linkedin-post-identity.component';
 import { LinkedinPostOptionsComponent } from '../components/linkedin-post-options/linkedin-post-options.component';
 import { MktgCommentsPanelComponent } from '../components/mktg-comments-panel/mktg-comments-panel.component';
 import { MktgBoilerplatesViewComponent } from '../mktg-boilerplates-view/mktg-boilerplates-view.component';
@@ -221,6 +222,7 @@ import { createVisibilityPoll, pollBackoffDelayMs } from '@shared/utils/visibili
     MktgCommentsPanelComponent,
     TooltipModule,
     TooltipHostFocusDirective,
+    LinkedinPostIdentityComponent,
     LinkedinPostOptionsComponent,
     ReactiveFormsModule,
     InputTextComponent,
@@ -1481,6 +1483,23 @@ export class MktgDocumentViewComponent {
     });
   }
 
+  /** An objection to the identity changes the profile, then drafts again: the agent reads it as the saved profile, never as feedback. */
+  protected onEditProfileAndRedraft(): void {
+    if (!this.linkedinContent()?.isAuthor || !this.writer()) return;
+    void this.router.navigate([LINKEDIN_POST_INTAKE.agentId], {
+      relativeTo: this.route.parent,
+      state: { [LINKEDIN_PROFILE_EDIT_PUSHED_STATE_KEY]: LINKEDIN_PROFILE_EDIT_ORIGINS.redraft },
+      queryParams: {
+        ...this.runAgainParams(),
+        profile: 'edit',
+        revision: null,
+        type: null,
+        mode: mktgRunModeFor(LINKEDIN_POST_INTAKE.agentId),
+        ...(this.profileWarning() && { profileDocument: this.params().documentId }),
+      },
+    });
+  }
+
   protected onEditLink(): void {
     if (!isPlatformBrowser(this.platformId) || this.savingLink()) return;
     this.editingLink.set(true);
@@ -1778,9 +1797,13 @@ export class MktgDocumentViewComponent {
         const type = this.runDetail()?.type;
         // A confirmed run with no revision can name its asset; never guess from route params.
         if (!type) return '';
-        // A Member 360 title waits for its period, which a discarded or superseded run never gets: name the type
-        // instead, so the title placeholder (announced as "Loading…") does not stay over the closure message.
-        if (type.agentKey === 'member-360') return this.closedRun() ? type.label : '';
+        // A Member 360 title needs its period, which only a revision has. A failed run never gets one, so name the run.
+        // A discarded or superseded run never gets one either: name the type instead, so the title placeholder
+        // (announced as "Loading…") does not stay over the closure message.
+        if (type.agentKey === 'member-360') {
+          if (this.runFailed()) return `The ${type.itemLabel} wasn't finished`;
+          return this.closedRun() ? type.label : '';
+        }
         const label = mktgKitAssetLabel(type.agentKey) ?? type.itemLabel;
         return `${this.projectContext.activeContext()?.name ?? ''} ${label}`.trim();
       }

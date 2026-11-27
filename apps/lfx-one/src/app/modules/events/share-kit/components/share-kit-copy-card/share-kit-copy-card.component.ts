@@ -1,0 +1,94 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { DOCUMENT } from '@angular/common';
+import { Component, computed, DestroyRef, inject, input, output, signal } from '@angular/core';
+import { UiButtonVariant } from '@lfx-one/shared/interfaces';
+import { UiButtonComponent } from '@shared/uikit/button/button.component';
+
+/** A block of ready-to-copy text with a copy button, a visible "Copied" state and a selection fallback. */
+@Component({
+  selector: 'lfx-share-kit-copy-card',
+  imports: [UiButtonComponent],
+  templateUrl: './share-kit-copy-card.component.html',
+})
+export class ShareKitCopyCardComponent {
+  private readonly document = inject(DOCUMENT);
+
+  /** Heading above the text, e.g. the post title. */
+  public readonly heading = input<string>('');
+  /** The exact text the button copies. Rendered as text, never HTML. */
+  public readonly text = input.required<string>();
+  /** A link at the end of `text`, shown in the accent colour; the copy is still `text` exactly. */
+  public readonly link = input<string>('');
+  /** Button label, e.g. "Copy Post". */
+  public readonly copyLabel = input<string>('Copy');
+  /** Length as the platform counts it; hidden when null. */
+  public readonly length = input<number | null>(null);
+  /** The platform's character limit, shown beside the length. */
+  public readonly limit = input<number | null>(null);
+  /** The copy button's look: filled (`primary`) on a branded kit, outlined otherwise. */
+  public readonly buttonVariant = input<UiButtonVariant>('secondary');
+  /** Stable prefix for data-testid attributes. */
+  public readonly testId = input<string>('share-kit-copy-card');
+  /** Masks the card's text in Datadog Session Replay, e.g. a member discount code. */
+  public readonly sensitive = input<boolean>(false);
+
+  /** Emitted after the text was copied (or selected for manual copy). */
+  public readonly copied = output<void>();
+
+  protected readonly status = signal('');
+  /** `text` split so its trailing link can be styled; a link not at the very end stays part of the body. */
+  protected readonly textParts = computed(() => {
+    const text = this.text();
+    const link = this.link();
+    return link && text.endsWith(link) ? { body: text.slice(0, -link.length), link } : { body: text, link: '' };
+  });
+  protected readonly countLabel = computed(() => {
+    const length = this.length();
+    const limit = this.limit();
+    // en-US grouping on the server and in every browser, so the SSR and client text match ("3,000").
+    return length === null || limit === null ? '' : `${length.toLocaleString('en-US')} / ${limit.toLocaleString('en-US')} characters`;
+  });
+  protected readonly overLimit = computed(() => {
+    const length = this.length();
+    const limit = this.limit();
+    return length !== null && limit !== null && length > limit;
+  });
+
+  private statusTimer: ReturnType<typeof setTimeout> | null = null;
+
+  public constructor() {
+    // A copy shortly before navigating away must not leave a timer writing to a destroyed card.
+    inject(DestroyRef).onDestroy(() => this.clearStatusTimer());
+  }
+
+  protected async copy(textElement: HTMLElement): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(this.text());
+      this.showStatus('Copied');
+    } catch {
+      // Clipboard can be refused (older browsers, embedded views): select the text so the visitor can copy it.
+      const selection = this.document.getSelection();
+      const range = this.document.createRange();
+      range.selectNodeContents(textElement);
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+      this.showStatus('Text selected. Use your device’s copy command.');
+    }
+    this.copied.emit();
+  }
+
+  private showStatus(message: string): void {
+    this.status.set(message);
+    this.clearStatusTimer();
+    this.statusTimer = setTimeout(() => this.status.set(''), 4000);
+  }
+
+  private clearStatusTimer(): void {
+    if (this.statusTimer) {
+      clearTimeout(this.statusTimer);
+      this.statusTimer = null;
+    }
+  }
+}

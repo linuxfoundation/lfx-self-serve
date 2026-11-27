@@ -292,7 +292,9 @@ export class ImportMembersDialogComponent {
           .filter((invite) => (invite.status ?? '').toLowerCase() === 'pending' && (invite.invitee_email ?? '').trim().toLowerCase() === row.normalizedEmail)
           .map((invite) => invite.uid)
           .filter(Boolean);
-        return [{ ...row.payload, createOptions: { skipNotification: !this.form.controls.send_notification.value }, pendingInviteUids }];
+        return [
+          { ...row.payload, createOptions: { skipNotification: !this.form.controls.send_notification.value }, pendingInviteUids, importSource: 'csv' as const },
+        ];
       });
       this.closing.set(true);
       this.form.controls.send_notification.disable();

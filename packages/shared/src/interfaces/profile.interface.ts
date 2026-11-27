@@ -3,7 +3,10 @@
 
 import type { Signal } from '@angular/core';
 
-import type { ACCOUNT_SETTINGS_SECTIONS } from '../constants/profile.constants';
+import type { ACCOUNT_SETTINGS_SECTIONS, PERSONAL_INFORMATION_FIELD_LIMITS } from '../constants/profile.constants';
+import type { Badge } from './badge.interface';
+import type { UiTone } from './uikit.interface';
+import type { UserMetadata } from './user-profile.interface';
 
 /**
  * Developer settings token info returned by GET /api/profile/developer.
@@ -36,6 +39,31 @@ export type AccountSettingsSection = (typeof ACCOUNT_SETTINGS_SECTIONS)[keyof ty
  * An Account & Settings page with fields the header save bar saves and reverts (#6070). The page registers itself with
  * `AccountUnsavedChangesService` while it is shown.
  */
+/**
+ * A profile change kept in session storage while a Flow C redirect authorizes it. The shell that the redirect returns to replays
+ * `userMetadata`; `avatarPending` asks the user to pick the photo again, since a file can't be kept.
+ */
+export interface PendingProfileSave {
+  savedAt: number;
+  userMetadata?: Partial<UserMetadata>;
+  avatarPending?: boolean;
+}
+
+/** A Linux.com forwarding address chosen on Account & Settings, kept while its save leaves for Flow C. */
+export interface PendingLinuxForward {
+  savedAt: number;
+  forwardTo: string;
+}
+
+/** A Personal information field that has a length limit. */
+export type PersonalInformationLimitedField = keyof typeof PERSONAL_INFORMATION_FIELD_LIMITS;
+
+/** A primary email chosen on Personal information, kept while its save leaves for Flow C. */
+export interface PendingPrimaryEmail {
+  savedAt: number;
+  email: string;
+}
+
 export interface AccountPageForm {
   /** True while the fields differ from what is saved. */
   dirty: Signal<boolean>;
@@ -839,3 +867,70 @@ export interface CdpProjectAffiliation {
   roles: CdpProjectAffiliationRole[];
   affiliations: CdpProjectAffiliationEntry[];
 }
+
+/** A badge as the Profile page's Recognitions section shows it (#6084). */
+export interface ProfileRecognitionItem {
+  badge: Badge;
+  /** The Credly link, or null when it isn't an http(s) URL. */
+  href: string | null;
+  /** "Mon YYYY" the badge was issued. */
+  issued: string;
+}
+
+/** A role the Profile page can show for a project (#6085): the hub's two, until the data carries more. */
+export type ProfileInvolvementRole = 'Maintainer' | 'Contributor';
+
+/** A project on the Profile page's Foundations & projects involvement section (#6085). */
+export interface ProfileInvolvementItem {
+  id: string;
+  name: string;
+  logo: string;
+  role: ProfileInvolvementRole;
+  /** True while any role in the project is still open. */
+  current: boolean;
+  /** "Since 2021" or "2019 – 2022"; '' when no date is known. */
+  years: string;
+  /** "Since Mar 2021" or "Jan 2019 – Jun 2022", for the card; '' when no date is known. */
+  period: string;
+  /** ISO start date, for sorting. */
+  start: string;
+}
+
+/** Load state of the Profile page's Foundations & projects involvement section (#6085). */
+export interface ProfileInvolvementState {
+  loading: boolean;
+  error: boolean;
+  items: ProfileInvolvementItem[];
+}
+
+/** A group seat on the Profile page's Group participation section (#6086). */
+export interface ProfileGroupItem {
+  uid: string;
+  /** Router commands to the group's page, and the project it opens under, as the Groups page links it. */
+  commands: string[];
+  queryParams: Record<string, string> | null;
+  /** The card's accessible name: the group, then its org when known. */
+  ariaLabel: string;
+  /** The foundation or project the group belongs to, and its logo. */
+  org: string;
+  orgLogo: string;
+  name: string;
+  description: string;
+  /** Board, Technical, Committee, Working group, or the group's own category. */
+  type: string;
+  typeTone: UiTone;
+  /** The user's role in the group, e.g. "Chair" or "Member". */
+  role: string;
+  /** "12 members" or "1 member". */
+  members: string;
+}
+
+/** Load state of the Profile page's Group participation section (#6086). */
+export interface ProfileGroupsState {
+  loading: boolean;
+  error: boolean;
+  items: ProfileGroupItem[];
+}
+
+/** What the Profile page's openprofile card knows of the public profile (#6083): `unknown` when the read failed. */
+export type ProfileOpenprofileState = 'public' | 'private' | 'unknown';

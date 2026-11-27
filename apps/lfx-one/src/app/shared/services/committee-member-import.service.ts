@@ -20,6 +20,7 @@ import {
   MemberImportRunRef,
   MemberImportRunSummary,
   MemberImportSettlement,
+  MemberImportStagedRunInput,
 } from '@lfx-one/shared/interfaces';
 import { classifyMemberImportBulkResult, getMemberImportRetryDelayMs, isMemberImportRowRetryable } from '@lfx-one/shared/utils';
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
@@ -44,6 +45,7 @@ import {
   take,
   tap,
   timer,
+  toArray,
 } from 'rxjs';
 
 import { CommitteeService } from './committee.service';
@@ -67,6 +69,11 @@ import { UserService } from './user.service';
  * Each settled attempt is announced once: `settlements$` lets mounted hosts refresh their counts, and a
  * root toast names the group and its outcome. A settled report stays until it is explicitly dismissed.
  * While any run is writing, a best-effort browser leave warning is installed; it is not recovery.
+ *
+ * The create and edit wizards save their staged CSV rows through `runStaged` (#5529), which uses the same
+ * chunking, pauses and invite cleanup. A wizard run is stored under its own key, so it never appears as the
+ * group's Members-tab report, summary or toast and never blocks a Members-tab import. Its settled rows go
+ * only to the wizard, and the run is discarded once they are delivered.
  */
 @Injectable({ providedIn: 'root' })
 export class CommitteeMemberImportService {
@@ -82,6 +89,10 @@ export class CommitteeMemberImportService {
   /** Ends a run's current pause early, keyed by run ID so a replacement run never receives a stale stop. */
   private readonly stopRequests = new Map<string, Subject<void>>();
   private readonly retryDeadlineTimers = new Map<string, Subscription>();
+  /** Wizard runs discard row data on settlement, but server cooldowns survive later saves by this owner. */
+  private readonly wizardRetryDeadlines = new Map<string, number>();
+  /** Delivers a wizard run's settled rows, keyed by run ID; completed without a value when the run is discarded. */
+  private readonly stagedResults = new Map<string, Subject<MemberImportRow[]>>();
   private owner: string | null = null;
   private runSequence = 0;
 
@@ -108,10 +119,8 @@ export class CommitteeMemberImportService {
 
   /** A different observed subject cannot read the previous subject's runs, even before the cleanup subscription runs. */
   public getRun(committeeUid: string): MemberImportRun | undefined {
-    const run = this.runs().get(committeeUid);
-    const owner = this.viewerSubject();
-    if (!owner || this.owner !== owner || run?.ownerSubject !== owner) return undefined;
-    return run;
+    const run = this.ownedRun(committeeUid);
+    return run?.origin === 'members-tab' ? run : undefined;
   }
 
   /** Starts the ready rows of a confirmed preview. Refused while any run is retained for this subject and group. */
@@ -128,6 +137,8 @@ export class CommitteeMemberImportService {
       pendingInviteUidByEmail: { ...input.pendingInviteUidByEmail },
       runId: `member-import-${++this.runSequence}`,
       ownerSubject: owner,
+      storeKey: input.committeeUid,
+      origin: 'members-tab',
       status: 'importing',
       attempt: 0,
       batchTotal: 0,
@@ -140,10 +151,71 @@ export class CommitteeMemberImportService {
       manualStopRequested: false,
       reconciliationTarget: input.baselineMemberCount,
     };
-    this.runs.update((runs) => new Map(runs).set(input.committeeUid, run));
+    this.runs.update((runs) => new Map(runs).set(run.storeKey, run));
     this.stopRequests.set(run.runId, new Subject<void>());
     this.submitRows(run, ready, input.skipNotification);
     return true;
+  }
+
+  /**
+   * Saves the wizard's staged CSV rows through the bulk endpoint (#5529) and emits every row's settled
+   * outcome once, then completes. Completes without emitting when there is no signed-in subject or no row,
+   * or when the run is discarded because the observed subject changed. The run starts on subscription.
+   */
+  public runStaged(input: MemberImportStagedRunInput): Observable<MemberImportRow[]> {
+    return defer(() => {
+      const owner = this.viewerSubject();
+      if (!owner || input.members.length === 0) return EMPTY;
+      this.synchronizeOwner(owner);
+
+      const rows: MemberImportRow[] = input.members.map(({ payload, pendingInviteUids, uncertain }, index) => ({
+        rowNumber: index + 1,
+        email: payload.email,
+        normalizedEmail: payload.email.trim().toLowerCase(),
+        cells: {},
+        status: 'ready',
+        issues: [],
+        payload,
+        pendingInviteUids: [...pendingInviteUids],
+        uncertain,
+      }));
+      const runId = `member-import-${++this.runSequence}`;
+      const run: MemberImportRun = {
+        committeeUid: input.committeeUid,
+        committeeName: input.committeeName,
+        rules: { requiresOrganization: false, votingEnabled: false },
+        fileName: null,
+        rows,
+        skipNotification: input.skipNotification,
+        pendingInviteUidByEmail: {},
+        baselineMemberCount: 0,
+        runId,
+        ownerSubject: owner,
+        storeKey: `wizard:${runId}`,
+        origin: 'wizard',
+        status: 'importing',
+        attempt: 0,
+        batchTotal: 0,
+        batchSettled: 0,
+        pauseCount: 0,
+        resumeAt: null,
+        resumeInSeconds: 0,
+        retryNotBefore: 0,
+        stopReason: null,
+        manualStopRequested: false,
+        reconciliationTarget: 0,
+      };
+      const result = new Subject<MemberImportRow[]>();
+      this.stagedResults.set(runId, result);
+      this.runs.update((runs) => new Map(runs).set(run.storeKey, run));
+      this.stopRequests.set(runId, new Subject<void>());
+      // Subscribe before submitting, so a run that settles synchronously still delivers its rows.
+      return new Observable<MemberImportRow[]>((subscriber) => {
+        const subscription = result.pipe(take(1)).subscribe(subscriber);
+        this.submitRows(run, rows, input.skipNotification);
+        return subscription;
+      });
+    });
   }
 
   /**
@@ -207,7 +279,8 @@ export class CommitteeMemberImportService {
       const summaries = new Map<string, MemberImportRunSummary>();
       if (!owner) return summaries;
       for (const run of this.runs().values()) {
-        if (run.ownerSubject === owner) summaries.set(run.committeeUid, this.toSummary(run));
+        // A wizard run reports only to its wizard; it is never a group's Members-tab report or badge.
+        if (run.ownerSubject === owner && run.origin === 'members-tab') summaries.set(run.committeeUid, this.toSummary(run));
       }
       return summaries;
     });
@@ -224,7 +297,11 @@ export class CommitteeMemberImportService {
       // Some browsers still require a return value to show the prompt.
       event.returnValue = '';
     };
-    const active = computed(() => [...this.summaries().values()].some((summary) => summary.phase !== 'settled'));
+    // Every run of the observed subject counts, including a wizard save that has no summary.
+    const active = computed(() => {
+      const owner = this.viewerSubject();
+      return !!owner && [...this.runs().values()].some((run) => run.ownerSubject === owner && run.status !== 'settled');
+    });
     toObservable(active)
       .pipe(distinctUntilChanged(), takeUntilDestroyed())
       .subscribe((importing) => {
@@ -269,6 +346,17 @@ export class CommitteeMemberImportService {
   private announceSettlement(ref: MemberImportRunRef): void {
     const run = this.currentRun(ref);
     if (!run || run.status !== 'settled') return;
+    if (run.origin === 'wizard') {
+      // The wizard reports its own outcome; deliver the rows once, then drop the run and its PII.
+      this.stagedResults.get(run.runId)?.next(run.rows);
+      this.retireRun(run.runId);
+      this.runs.update((runs) => {
+        const next = new Map(runs);
+        next.delete(run.storeKey);
+        return next;
+      });
+      return;
+    }
     const summary = this.toSummary(run);
     this.settlementEvents.next({ key: `${run.runId}:${run.attempt}`, summary });
     this.messageService.add({ ...this.settlementNotice(summary), life: 8000 });
@@ -328,11 +416,13 @@ export class CommitteeMemberImportService {
    */
   private discardAll(): void {
     this.runs.set(new Map());
-    for (const runId of [...this.stopRequests.keys(), ...this.retryDeadlineTimers.keys()]) {
+    this.wizardRetryDeadlines.clear();
+    for (const runId of [...this.stopRequests.keys(), ...this.retryDeadlineTimers.keys(), ...this.stagedResults.keys()]) {
       this.retireRun(runId);
     }
   }
 
+  /** Ends a run's timers and stop requests; a wizard caller that has not received rows completes without a value. */
   private retireRun(runId: string): void {
     this.retryDeadlineTimers.get(runId)?.unsubscribe();
     this.retryDeadlineTimers.delete(runId);
@@ -340,6 +430,9 @@ export class CommitteeMemberImportService {
     this.stopRequests.delete(runId);
     stopRequested?.next();
     stopRequested?.complete();
+    const stagedResult = this.stagedResults.get(runId);
+    this.stagedResults.delete(runId);
+    stagedResult?.complete();
   }
 
   /**
@@ -402,6 +495,12 @@ export class CommitteeMemberImportService {
         this.markUnsubmitted(ref, rows, run.stopReason);
         return EMPTY;
       }
+      const wizardDeadline = run.origin === 'wizard' ? (this.wizardRetryDeadlines.get(ref.committeeUid) ?? 0) : 0;
+      if (Date.now() < wizardDeadline) {
+        this.markUnsubmitted(ref, rows, 'The service cooldown is still active. Retry once the service permits.');
+        return EMPTY;
+      }
+      if (run.origin === 'wizard') this.wizardRetryDeadlines.delete(ref.committeeUid);
       const sendable = rows.filter((row) => row.payload);
       const missing = rows.filter((row) => !row.payload);
       this.patchRows(ref, missing, { status: 'failed', reason: 'Not sent: missing member data.', retryable: false });
@@ -591,6 +690,10 @@ export class CommitteeMemberImportService {
     if (!this.updateRun(ref, (run) => ({ ...run, retryNotBefore: deadline }))) {
       return;
     }
+    const run = this.currentRun(ref);
+    if (run?.origin === 'wizard' && deadline > Date.now()) {
+      this.wizardRetryDeadlines.set(ref.committeeUid, Math.max(this.wizardRetryDeadlines.get(ref.committeeUid) ?? 0, deadline));
+    }
     const remaining = deadline - Date.now();
     if (remaining <= 0 || !Number.isFinite(remaining)) {
       return;
@@ -601,9 +704,28 @@ export class CommitteeMemberImportService {
     );
   }
 
-  /** Emits the cleanup warning (or undefined) — a failed revoke never turns an added member into a failure. */
+  /**
+   * Emits the cleanup warning (or undefined) — a failed revoke never turns an added member into a failure.
+   * A wizard row revokes each of its own pending invitations in turn; a Members-tab row revokes the one matched by email.
+   */
   private revokePendingInvite(ref: MemberImportRunRef, row: MemberImportRow): Observable<string | undefined> {
     return defer(() => {
+      if (!this.currentRun(ref)) return EMPTY;
+      if (row.pendingInviteUids?.length) {
+        return from(row.pendingInviteUids).pipe(
+          concatMap((inviteUid) =>
+            defer(() => {
+              if (!this.currentRun(ref)) return EMPTY;
+              return this.committeeService.revokeCommitteeInvite(ref.committeeUid, inviteUid).pipe(
+                map((): string | undefined => undefined),
+                catchError((err: HttpErrorResponse) => of(this.inviteCleanupFailure(ref, err)))
+              );
+            })
+          ),
+          toArray(),
+          map((warnings) => warnings.find((warning) => !!warning))
+        );
+      }
       const inviteUid = this.currentRun(ref)?.pendingInviteUidByEmail[row.normalizedEmail];
       if (!inviteUid) {
         return of(undefined);
@@ -617,15 +739,17 @@ export class CommitteeMemberImportService {
           });
           return undefined;
         }),
-        catchError((err: HttpErrorResponse) => {
-          console.error('CSV member import invitation cleanup failed', { status: err.status });
-          const reason =
-            err.status === 404 ? 'The pending invitation could not be found. Review pending invitations before retrying.' : this.failureReason(err);
-          this.stopForFatalError(ref, err, reason);
-          return of('Added, but their pending invitation could not be revoked. Revoke it from the Pending tab.');
-        })
+        catchError((err: HttpErrorResponse) => of(this.inviteCleanupFailure(ref, err)))
       );
     });
+  }
+
+  /** Logs only the status, applies fatal guidance, and returns the row's cleanup warning. */
+  private inviteCleanupFailure(ref: MemberImportRunRef, err: HttpErrorResponse): string {
+    console.error('CSV member import invitation cleanup failed', { status: err.status });
+    const reason = err.status === 404 ? 'The pending invitation could not be found. Review pending invitations before retrying.' : this.failureReason(err);
+    this.stopForFatalError(ref, err, reason);
+    return 'Added, but their pending invitation could not be revoked. Revoke it from the Pending tab.';
   }
 
   /** Fatal guidance overrides a manual stop without replacing an earlier fatal reason or an added row's outcome. */
@@ -679,9 +803,17 @@ export class CommitteeMemberImportService {
     return this.currentRun(ref)?.rows.find((row) => row.rowNumber === rowNumber);
   }
 
+  /** The run stored under this key, only while its subject is still the observed subject. */
+  private ownedRun(storeKey: string): MemberImportRun | undefined {
+    const run = this.runs().get(storeKey);
+    const owner = this.viewerSubject();
+    if (!owner || this.owner !== owner || run?.ownerSubject !== owner) return undefined;
+    return run;
+  }
+
   /** The retained run only while it is still this run and its subject is still the observed subject. */
   private currentRun(ref: MemberImportRunRef): MemberImportRun | undefined {
-    const run = this.getRun(ref.committeeUid);
+    const run = this.ownedRun(ref.storeKey);
     return run?.runId === ref.runId && run.ownerSubject === ref.ownerSubject ? run : undefined;
   }
 
@@ -696,7 +828,7 @@ export class CommitteeMemberImportService {
       return true;
     }
     const confirmedAdded = next.rows.filter((row) => row.status === 'added').length;
-    this.runs.update((runs) => new Map(runs).set(ref.committeeUid, { ...next, reconciliationTarget: next.baselineMemberCount + confirmedAdded }));
+    this.runs.update((runs) => new Map(runs).set(ref.storeKey, { ...next, reconciliationTarget: next.baselineMemberCount + confirmedAdded }));
     return true;
   }
 }

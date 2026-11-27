@@ -36,10 +36,13 @@ import { AnalyticsService } from '@services/analytics.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
 import { OrgClaOnlyAccessService } from '@services/org-cla-only-access.service';
+import { OrgLensViewModeService } from '@services/org-lens-view-mode.service';
+import { withoutEmployeeViewHiddenPages } from '../utils/org-lens-employee-nav.utils';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { SocialListeningService } from '@services/social-listening.service';
 import { UserService } from '@services/user.service';
 import { WriterGrantsService } from '@services/writer-grants.service';
 import { finalize, forkJoin, map, of, startWith, switchMap, tap } from 'rxjs';
@@ -64,6 +67,8 @@ export class SidebarNavService {
   private readonly accountContext = inject(AccountContextService);
   private readonly orgRoleGrants = inject(OrgRoleGrantsService);
   private readonly orgClaOnlyAccess = inject(OrgClaOnlyAccessService);
+  private readonly orgLensViewMode = inject(OrgLensViewModeService);
+  private readonly socialListeningService = inject(SocialListeningService);
 
   /** The Me lens section Formations (#2753) is appended to; matched by label because the tree is built inline. */
   private readonly meEngagementSectionLabel = 'Engagement';
@@ -125,6 +130,12 @@ export class SidebarNavService {
   // when they have writer (or owner-equivalent) permission on the currently
   // active foundation/project. canWrite() is reactive to context changes.
   private readonly canSeeNewsletters: Signal<boolean> = this.initCanSeeNewsletters();
+
+  /**
+   * True when a non-ED, non-LF-Staff user can view Social Listening for the selected foundation because
+   * one of their groups on it has the setting on (lfx-self-serve-ops#387).
+   */
+  private readonly canGroupMemberViewSocialListening: Signal<boolean> = this.initCanGroupMemberViewSocialListening();
 
   /**
    * Mirrors the BFF gate for the project Participating companies page so the entry is hidden, not a dead end: LF staff,
@@ -284,18 +295,23 @@ export class SidebarNavService {
     // EasyCLA is single-organization too: a corporate CLA belongs to one company, so its requests
     // need a concrete organization and `/org/family-{id}/easycla` could only error (#4415, Copilot).
     const items = this.accountContext.isRollUp() ? base : this.withEasyclaNavItem(base);
-    // Initiatives (#348) follows a direct writer grant on the selected organization — CF lists an
-    // organization's initiatives to its writers only, and b2b_org writer access does not cascade from a parent.
-    const initiativesItems = this.orgRoleGrants.writerSet().has(this.accountContext.selectedAccount().uid ?? '') ? [this.orgInitiativesNavItem()] : [];
-    // Donations (#415) is dark-launched behind `cf-org-donations` and shown to every org viewer, like the other org
-    // pages: CF lists them to auditors, which the lens route already requires. The page shows a 403 state otherwise.
-    // Crowdfunding Donations is single-organization too: `/api/crowdfunding/org-donations` takes an
-    // `orgUid` its SFID validator refuses the sentinel for, so `/org/family-{id}/donations` only errors (#4415, Copilot).
-    const donationsItems = this.isCfOrgDonationsEnabled() && !this.accountContext.isRollUp() ? [this.orgDonationsNavItem()] : [];
-    // Both close the Company Engagement section, right below Groups.
-    const withInitiatives = this.placeAfterOrgGroups(items, [...initiativesItems, ...donationsItems]);
+    // One Crowdfunding page (#5838) with an Initiatives (#348) and a Donations (#415) tab. Initiatives follows a direct
+    // writer grant on the selected organization — CF lists an organization's initiatives to its writers only, and
+    // b2b_org writer access does not cascade from a parent. Donations is dark-launched behind `cf-org-donations` and
+    // shown to every org viewer: CF lists them to auditors, which the lens route already requires. Both tabs are
+    // single-organization — the CF endpoints take one `orgUid` their SFID validator refuses the sentinel for, so
+    // `/org/family-{id}/crowdfunding` only errors (#4415, Copilot) — and the link shows when either tab is available.
+    const hasInitiatives = this.orgRoleGrants.writerSet().has(this.accountContext.selectedAccount().uid ?? '');
+    const hasDonations = this.isCfOrgDonationsEnabled();
+    // The all employee view hides both tabs' pages (`initiatives`, `donations`), so it hides their one link too.
+    const hiddenPages = this.orgLensViewMode.hiddenPages();
+    const crowdfundingHidden = hiddenPages.includes('initiatives') && hiddenPages.includes('donations');
+    const crowdfundingItems = (hasInitiatives || hasDonations) && !this.accountContext.isRollUp() && !crowdfundingHidden ? [this.orgCrowdfundingNavItem()] : [];
+    // The link closes the Company Engagement section, right below Groups.
+    const withCrowdfunding = this.placeAfterOrgGroups(items, crowdfundingItems);
     // ROI Metrics sits in the LF Staff Only section, which closes the menu.
-    return this.showsOrgLfStaffOnlySection() ? [...withInitiatives, this.orgLfStaffOnlySection()] : withInitiatives;
+    const withStaffSection = this.showsOrgLfStaffOnlySection() ? [...withCrowdfunding, this.orgLfStaffOnlySection()] : withCrowdfunding;
+    return withoutEmployeeViewHiddenPages(withStaffSection, this.orgLensViewMode.hiddenPages());
   });
 
   // Me Lens nav with feature-flagged sections stripped (Security/Akrites is dark-launched),
@@ -675,29 +691,34 @@ export class SidebarNavService {
         });
       }
 
-      if (this.personaService.canViewExecutiveDashboards()) {
-        const metricsItems: SidebarMenuItem[] = [
-          {
+      const canViewExecutiveDashboards = this.personaService.canViewExecutiveDashboards();
+      if (canViewExecutiveDashboards || this.canGroupMemberViewSocialListening()) {
+        const metricsItems: SidebarMenuItem[] = [];
+        if (canViewExecutiveDashboards) {
+          metricsItems.push({
             label: 'Health Metrics',
             icon: 'fa-light fa-chart-line-up',
             routerLink: '/foundation/health-metrics',
             testId: 'sidebar-metrics-health-metrics',
-          },
-          {
-            label: 'Social Listening',
-            icon: 'fa-light fa-radar',
-            routerLink: '/foundation/social-listening',
-            testId: 'sidebar-metrics-social-listening',
-          },
-        ];
-
-        // The page reads live PROJECT_PARTICIPATING_ORGS figures (#5697); its route and BFF admit only the foundation's executive director and LF staff.
+          });
+        }
         metricsItems.push({
-          label: 'Participating companies',
-          icon: 'fa-light fa-building',
-          routerLink: '/foundation/participating-orgs',
-          testId: 'sidebar-metrics-participating-companies',
+          label: 'Social Listening',
+          icon: 'fa-light fa-radar',
+          routerLink: '/foundation/social-listening',
+          testId: 'sidebar-metrics-social-listening',
         });
+
+        // The page reads live PROJECT_PARTICIPATING_ORGS figures (#5697); its route and BFF admit only the foundation's executive director and LF staff,
+        // so a group member here (Social Listening only) does not get it.
+        if (canViewExecutiveDashboards) {
+          metricsItems.push({
+            label: 'Participating companies',
+            icon: 'fa-light fa-building',
+            routerLink: '/foundation/participating-orgs',
+            testId: 'sidebar-metrics-participating-companies',
+          });
+        }
 
         items.push({
           label: 'Metrics',
@@ -956,18 +977,13 @@ export class SidebarNavService {
     items: [this.orgRoiNavItem()],
   }));
 
-  private readonly orgInitiativesNavItem: Signal<SidebarMenuItem> = computed(() => ({
-    label: 'Crowdfunding Initiatives',
+  private readonly orgCrowdfundingNavItem: Signal<SidebarMenuItem> = computed(() => ({
+    label: 'Crowdfunding',
     icon: 'fa-light fa-box-dollar',
-    routerLink: this.orgLensNavigation.orgLensPath('initiatives'),
-    testId: 'sidebar-org-initiatives',
-  }));
-
-  private readonly orgDonationsNavItem: Signal<SidebarMenuItem> = computed(() => ({
-    label: 'Crowdfunding Donations',
-    icon: 'fa-light fa-hand-holding-heart',
-    routerLink: this.orgLensNavigation.orgLensPath('donations'),
-    testId: 'sidebar-org-donations',
+    routerLink: this.orgLensNavigation.orgLensPath('crowdfunding'),
+    // Stays lit on the Donations tab and on an initiative's detail page.
+    activeOnSubpaths: true,
+    testId: 'sidebar-org-crowdfunding',
   }));
 
   private readonly orgEasyclaNavItem: Signal<SidebarMenuItem> = computed(() => ({
@@ -1211,6 +1227,32 @@ export class SidebarNavService {
       routerLink: embedEnabled ? GW_EMBED_PROJECT_NEWSLETTERS_LINK : '/project/newsletters',
       testId: 'sidebar-project-newsletters',
     };
+  }
+
+  private initCanGroupMemberViewSocialListening(): Signal<boolean> {
+    // Probe with the slug as stored: the server looks it up verbatim.
+    // Only probe for an authenticated user on the foundation lens (the docs shell injects this service too).
+    const groupFoundationSlug = computed((): string | null => {
+      if (!this.userService.authenticated() || this.menuLens() !== 'foundation' || this.personaService.canViewExecutiveDashboards()) {
+        return null;
+      }
+      return this.projectContextService.selectedFoundation()?.slug ?? null;
+    });
+
+    return toSignal(
+      toObservable(groupFoundationSlug).pipe(
+        switchMap((slug) =>
+          slug
+            ? this.socialListeningService.getAccess(slug).pipe(
+                map((access) => access.canView),
+                // Start each foundation's probe at false so the previous foundation's answer can't linger while it loads.
+                startWith(false)
+              )
+            : of(false)
+        )
+      ),
+      { initialValue: false }
+    );
   }
 
   private initCanSeeNewsletters(): Signal<boolean> {

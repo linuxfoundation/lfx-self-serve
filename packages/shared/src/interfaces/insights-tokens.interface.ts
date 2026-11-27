@@ -78,3 +78,8 @@ export interface InsightsTokenListItem {
   /** Expired tokens stay listed, greyed out, with Remove instead of Revoke. */
   expired: boolean;
 }
+
+/** What the Account & Settings revoke dialog (#6081) asks about. */
+export interface AccountRevokeInsightsTokenDialogData {
+  name: string;
+}

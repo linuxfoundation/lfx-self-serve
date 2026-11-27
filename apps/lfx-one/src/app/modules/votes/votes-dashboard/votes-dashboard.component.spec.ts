@@ -73,7 +73,7 @@ describe('VotesDashboardComponent personal summary', () => {
   const rows = () => table['displayedVotes']().map((row) => row.uid);
   const tabPills = () =>
     Array.from(fixture.nativeElement.querySelectorAll('[data-testid="votes-status-tabs"] [data-testid^="filter-pill-"]') as NodeListOf<HTMLElement>);
-  const tabLabels = () => tabPills().map((pill) => pill.textContent!.trim());
+  const tabLabels = () => tabPills().map((pill) => pill.textContent!.replace(/\s+/g, ' ').trim());
   const tabAccessibleNames = () => tabPills().map((pill) => pill.getAttribute('aria-label'));
   const element = (id: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="${id}"]`);
   const settle = async () => {
@@ -890,15 +890,18 @@ describe('VotesDashboardComponent personal summary', () => {
       expect(toggle).toHaveBeenCalledTimes(1);
     });
 
-    it('opens the create form with the method chosen in the Create Vote dropdown (#2921)', async () => {
+    it('opens the create form with the method chosen in the Create Vote dropdown (#2921, #2936)', async () => {
       canWrite.set(true);
       await freshDashboard('project');
       const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
       const menu = fixture.debugElement.query(By.directive(VoteCreateMenuComponent)).componentInstance as VoteCreateMenuComponent;
 
-      menu.methodSelected.emit(PollType.CONDORCET_IRV);
+      for (const pollType of [PollType.CONDORCET_IRV, PollType.INSTANT_RUNOFF_VOTE]) {
+        navigate.mockClear();
+        menu.methodSelected.emit(pollType);
 
-      expect(navigate).toHaveBeenCalledWith(['/votes', 'create'], { queryParams: { poll_type: 'condorcet_irv' } });
+        expect(navigate).toHaveBeenCalledExactlyOnceWith(['/votes', 'create'], { queryParams: { poll_type: pollType } });
+      }
     });
   });
 
@@ -943,7 +946,7 @@ describe('VotesDashboardComponent personal summary', () => {
     const counts = vi.mocked(service.getVoteStatusCountsByProject);
     await management(lens);
     expect(counts).toHaveBeenLastCalledWith('project-a', undefined, undefined);
-    expect(tabLabels()).toEqual(['All (9)', 'Active (4)', 'Draft (2)', 'Ended (3)']);
+    expect(tabLabels()).toEqual(['All 9', 'Active 4', 'Draft 2', 'Ended 3']);
 
     counts.mockClear();
     counts.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })));
@@ -956,8 +959,8 @@ describe('VotesDashboardComponent personal summary', () => {
     expect(rows()).toEqual(['first-page']);
     dashboard['refreshVotes']();
     await settle();
-    expect(tabLabels()).toEqual(['All (9)', 'Active (4)', 'Draft (2)', 'Ended (3)']);
-    expect(tabAccessibleNames()).toEqual(tabLabels());
+    expect(tabLabels()).toEqual(['All 9', 'Active 4', 'Draft 2', 'Ended 3']);
+    expect(tabAccessibleNames()).toEqual(['All, 9 votes', 'Active, 4 votes', 'Draft, 2 votes', 'Ended, 3 votes']);
 
     counts.mockClear();
     table['onStatusTabChange'](PollStatus.ENDED);
@@ -988,15 +991,15 @@ describe('VotesDashboardComponent personal summary', () => {
     request.complete();
     await settle();
     expect(dashboard['tabStatusCounts']()).toEqual({ all: 5, active: 1, disabled: 0, ended: 4 });
-    expect(tabLabels()).toEqual(['All (5)', 'Active (1)', 'Draft', 'Ended (4)']);
-    expect(tabAccessibleNames()).toEqual(tabLabels());
+    expect(tabLabels()).toEqual(['All 5', 'Active 1', 'Draft', 'Ended 4']);
+    expect(tabAccessibleNames()).toEqual(['All, 5 votes', 'Active, 1 vote', 'Draft', 'Ended, 4 votes']);
     expect(element(`filter-pill-${PollStatus.DISABLED}`)).not.toBeNull();
   });
 
   it('counts the personal list by foundation/project/Group/search, ignoring quick filters and the status tab', async () => {
     const counts = () => dashboard['tabStatusCounts']();
     expect(counts()).toEqual({ all: 7, active: 6, disabled: 0, ended: 1 });
-    expect(tabLabels()).toEqual(['All (7)', 'Active (6)', 'Ended (1)']);
+    expect(tabLabels()).toEqual(['All 7', 'Active 6', 'Ended 1']);
     await selectSummary('needs-vote');
     expect(counts()).toEqual({ all: 7, active: 6, disabled: 0, ended: 1 });
     table['onStatusTabChange'](PollStatus.ENDED);
@@ -1073,7 +1076,7 @@ describe('VotesDashboardComponent personal summary', () => {
     table.searchForm.patchValue({ search: '' });
     await settle();
     expect(dashboard['tabStatusCounts']()).toEqual({ all: 7, active: 6, disabled: 0, ended: 1 });
-    expect(tabLabels()).toEqual(['All (7)', 'Active (6)', 'Ended (1)']);
+    expect(tabLabels()).toEqual(['All 7', 'Active 6', 'Ended 1']);
   });
 
   it('does not infer an empty Active status from an incomplete feed containing only ended votes', async () => {

@@ -1,0 +1,116 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-3" data-testid="linkedin-objective-picker">
+  <!-- '' is the default: no objective is sent, so the bidding decides, as before. -->
+  @if (objectiveShown()) {
+    <lfx-ui-select
+      label="Campaign objective"
+      size="small"
+      [value]="draft().objective ?? ''"
+      (valueChange)="onObjectiveChange($event)"
+      [hint]="
+        documentChosen()
+          ? 'A document ad is an engagement ad by default, or a lead generation ad that opens a form.'
+          : 'By default, automatic bidding optimizes for website visits and manual bidding for website conversions.'
+      "
+      data-testid="linkedin-objective-picker-objective">
+      <!-- '' sends no objective: for a document ad (campaign-service#665) that is an engagement ad. -->
+      <lfx-ui-option value="" [label]="documentChosen() ? 'Engagement (default)' : 'Set by bidding (default)'" />
+      <!-- Each choice only while its capability offers it and the ad format takes it, or while it is the held choice, so it can be set back. -->
+      @if ((available() && !documentChosen()) || draft().objective === 'traffic') {
+        <lfx-ui-option value="traffic" label="Website visits" />
+      }
+      @if ((available() && !documentChosen()) || draft().objective === 'conversions') {
+        <lfx-ui-option value="conversions" label="Website conversions" />
+      }
+      @if ((leadGenAvailable() && leadGenOffered()) || draft().objective === 'lead_generation') {
+        <lfx-ui-option value="lead_generation" label="Lead generation (LinkedIn form)" />
+      }
+    </lfx-ui-select>
+  }
+
+  <!-- Lead generation (campaign-service#664): the form each ad opens and its button. -->
+  @if (draft().objective === 'lead_generation') {
+    <lfx-linkedin-lead-form-picker
+      [projectSlug]="projectSlug()"
+      [accountId]="accountId()"
+      [owner]="owner()"
+      [available]="leadGenAvailable()"
+      [(draft)]="draft"
+      data-testid="linkedin-objective-picker-lead-gen" />
+  }
+
+  <!-- Automatic bidding's optional target (campaign-service#674): blank sends none. Hidden, a typed value is kept but not sent. -->
+  @if (targetCostOffered()) {
+    <lfx-ui-input
+      class="max-w-xs"
+      label="Target cost (USD)"
+      size="small"
+      type="text"
+      inputmode="decimal"
+      placeholder="Optional, e.g. 17.88"
+      hint="Optional, in USD. Sent with automatic bidding as the campaign's unit cost."
+      [value]="draft().targetCost ?? ''"
+      (valueChange)="onTargetCostChange($event)"
+      [error]="targetCostError() ?? ''"
+      data-testid="linkedin-objective-picker-target-cost" />
+  }
+
+  @if (draft().objective === 'conversions') {
+    <fieldset class="flex flex-col gap-2 rounded-md border border-gray-200 bg-gray-50 p-3" data-testid="linkedin-objective-picker-conversions">
+      <legend class="float-left text-xs font-medium text-gray-700">Conversion rules ({{ draft().conversions.length }}/{{ maxConversions }})</legend>
+      <p class="text-xs text-gray-500">Tracked on the campaign once it is created. Automatic bidding needs at least one.</p>
+      @if (picks().length > 0) {
+        <div class="flex flex-wrap items-center gap-2">
+          @for (pick of picks(); track pick.id) {
+            <span
+              class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700"
+              [attr.data-testid]="'linkedin-objective-picker-conversion-' + pick.id">
+              {{ pick.name }}
+              <button
+                type="button"
+                (click)="onRemove(pick.id)"
+                class="ml-0.5 text-blue-600 hover:text-blue-800"
+                [attr.aria-label]="'Remove ' + pick.name"
+                [attr.data-testid]="'linkedin-objective-picker-remove-' + pick.id">
+                <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
+              </button>
+            </span>
+          }
+        </div>
+      }
+      @if (available() && choices().length > 0 && canAdd()) {
+        <lfx-ui-select
+          size="small"
+          ariaLabel="Add a conversion rule"
+          placeholder="Add a conversion rule"
+          [formControl]="addControl"
+          (valueChange)="onAdd($event)"
+          data-testid="linkedin-objective-picker-add">
+          @for (rule of choices(); track rule.id) {
+            <lfx-ui-option [value]="rule.id" [label]="rule.name" />
+          }
+        </lfx-ui-select>
+      }
+      @if (available() && message(); as text) {
+        <div class="flex flex-wrap items-center gap-2" aria-live="polite">
+          <p class="text-xs text-gray-500" data-testid="linkedin-objective-picker-message">{{ text }}</p>
+          @if (conversionsState().status === 'unavailable') {
+            <lfx-button
+              label="Try again"
+              icon="fa-light fa-rotate-right"
+              size="small"
+              severity="secondary"
+              [text]="true"
+              (onClick)="retry()"
+              data-testid="linkedin-objective-picker-retry" />
+          }
+        </div>
+      }
+    </fieldset>
+    @if (ownerRefusal(); as refusal) {
+      <p role="alert" class="text-xs text-red-600" data-testid="linkedin-objective-picker-owner-error">{{ refusal }}</p>
+    }
+  }
+</div>

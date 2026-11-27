@@ -664,7 +664,8 @@ export interface VisaRequestApplicantInfo {
   passportNumber: string;
   /** Country of citizenship — maps to birthCountry in the user-service API */
   citizenshipCountry: string;
-  passportExpiryDate: Date | null;
+  /** Passport expiry as a `YYYY-MM-DD` calendar date */
+  passportExpiryDate: string | null;
   embassyCity: string;
   /** Organization ID — selected from the autocomplete component */
   organizationID: string;
@@ -674,8 +675,8 @@ export interface VisaRequestApplicantInfo {
   attendeeAccommodationPaidBy: AttendeeAccommodationPaidBy;
   /** Attendee role at the event */
   attendeeType: AttendeeType;
-  /** Date of birth */
-  birthDate: Date | null;
+  /** Date of birth as a `YYYY-MM-DD` calendar date; a `Date` would serialize as an instant and shift the day */
+  birthDate: string | null;
 }
 
 export interface VisaRequestApplication {

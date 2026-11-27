@@ -56,8 +56,12 @@ const {
 vi.mock('@lfx-one/shared/enums', () => ({
   CommitteeMemberRole: {},
   CommitteeMemberVisibility: { HIDDEN: 'hidden', BASIC_PROFILE: 'basic_profile' },
+  CommitteeMemberStatus: { ACTIVE: 'Active', INACTIVE: 'Inactive' },
 }));
-vi.mock('@lfx-one/shared/utils', () => ({ invitationRequiresOrganization: vi.fn() }));
+vi.mock('@lfx-one/shared/utils', () => ({
+  invitationRequiresOrganization: vi.fn(),
+  canGroupGrantSocialListening: (category?: string) => category === 'Board',
+}));
 vi.mock('@lfx-one/shared/constants', async () => {
   const regex = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/regex.constants')>(
     '../../../../../packages/shared/src/constants/regex.constants'
@@ -73,6 +77,7 @@ vi.mock('@lfx-one/shared/constants', async () => {
   );
   return {
     COMMITTEE_DOCUMENT_DELETE_TYPES: documentConstants.COMMITTEE_DOCUMENT_DELETE_TYPES,
+    DOCUMENT_UPDATE_TYPES: documentConstants.DOCUMENT_UPDATE_TYPES,
     DOCUMENT_UPSTREAM_PATH_SEGMENTS: documentConstants.DOCUMENT_UPSTREAM_PATH_SEGMENTS,
     SLACK_INCOMING_WEBHOOK_URL_PATTERN: /^https:\/\/hooks\.slack\.com\/services\/T[A-Za-z0-9]+\/B[A-Za-z0-9]+\/[A-Za-z0-9]+$/,
     CHAT_WEBHOOK_URL_MAX_LENGTH: 500,
@@ -124,6 +129,7 @@ vi.mock('../utils/auth-helper', () => ({
   getEffectiveEmail,
   getEffectiveUsername,
 }));
+vi.mock('../utils/m2m-token.util', () => ({ generateM2MToken: vi.fn(() => Promise.resolve('m2m-token')) }));
 vi.mock('../services/logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn(), sanitize: (v: unknown) => v },
 }));
@@ -434,6 +440,131 @@ describe('CommitteeService — deleteCommitteeDocument', () => {
     await expect(service.deleteCommitteeDocument(req, 'committee-1', 'doc-1', 'meeting' as never)).rejects.toMatchObject({ statusCode: 400 });
     expect(fetchWithETag).not.toHaveBeenCalled();
     expect(deleteWithETag).not.toHaveBeenCalled();
+  });
+});
+
+describe('CommitteeService — updateCommitteeDocument', () => {
+  const FOLDER_A = '3f2a8c1e-5b7d-4e69-9a0f-1c2d3e4f5a6b';
+  const FOLDER_B = '9d8c7b6a-5e4f-4a3b-8c2d-1e0f9a8b7c6d';
+  let service: CommitteeService;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    fetchWithETag.mockReset();
+    updateWithETag.mockReset();
+    resolveAuditUserDisplayName.mockReset();
+    resolveAuditUserDisplayName.mockReturnValue('Resolved Display Name');
+    updateWithETag.mockImplementation((_req: unknown, _svc: string, _path: string, _etag: string, body: Record<string, unknown>) =>
+      Promise.resolve({ uid: 'doc-1', committee_uid: 'committee-1', created_at: '2026-01-01T00:00:00Z', updated_at: '2026-02-02T00:00:00Z', ...body })
+    );
+    service = new CommitteeService();
+  });
+
+  it.each([
+    ['link', '/committees/committee-1/links/doc-1', { name: 'Old', url: 'https://example.com', description: 'A link', folder_uid: FOLDER_A }],
+    ['file', '/committees/committee-1/documents/doc-1', { name: 'Old', description: 'A file', folder_uid: FOLDER_A }],
+    ['folder', '/committees/committee-1/folders/doc-1', { name: 'Old' }],
+  ] as const)('renames a %s through its own upstream path, with the fetched ETag and X-Sync', async (type, path, current) => {
+    fetchWithETag.mockResolvedValue({ data: current, etag: 'etag-1' });
+
+    await service.updateCommitteeDocument(req, 'committee-1', 'doc-1', type, { name: 'New' });
+
+    expect(fetchWithETag).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', path, 'update_committee_document');
+    expect(updateWithETag).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', path, 'etag-1', expect.objectContaining({ name: 'New' }), 'update_committee_document', {
+      'X-Sync': 'true',
+    });
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it('carries the description, url and folder over on a link rename', async () => {
+    fetchWithETag.mockResolvedValue({ data: { name: 'Old', url: 'https://example.com', description: 'A link', folder_uid: FOLDER_A }, etag: 'etag-1' });
+
+    await service.updateCommitteeDocument(req, 'committee-1', 'doc-1', 'link', { name: 'New' });
+
+    expect(updateWithETag.mock.calls[0][4]).toEqual({ name: 'New', url: 'https://example.com', description: 'A link', folder_uid: FOLDER_A });
+  });
+
+  it('moves a file into another folder and keeps its name and description', async () => {
+    fetchWithETag.mockResolvedValue({ data: { name: 'Charter', description: 'A file', folder_uid: FOLDER_A }, etag: 'etag-1' });
+
+    await service.updateCommitteeDocument(req, 'committee-1', 'doc-1', 'file', { parent_uid: FOLDER_B });
+
+    expect(updateWithETag.mock.calls[0][4]).toEqual({ name: 'Charter', description: 'A file', folder_uid: FOLDER_B });
+  });
+
+  it('moves a link to the root by leaving the folder out of the body', async () => {
+    fetchWithETag.mockResolvedValue({ data: { name: 'Old', url: 'https://example.com', folder_uid: FOLDER_A }, etag: 'etag-1' });
+
+    await service.updateCommitteeDocument(req, 'committee-1', 'doc-1', 'link', { parent_uid: null });
+
+    expect(JSON.parse(JSON.stringify(updateWithETag.mock.calls[0][4]))).toEqual({ name: 'Old', url: 'https://example.com' });
+  });
+
+  it('maps what the upstream update returns to the document shape the tab lists, with the audit name resolved', async () => {
+    fetchWithETag.mockResolvedValue({ data: { name: 'Old', url: 'https://example.com', folder_uid: FOLDER_A }, etag: 'etag-1' });
+    updateWithETag.mockResolvedValue({
+      uid: 'doc-1',
+      committee_uid: 'committee-1',
+      name: 'New',
+      url: 'https://example.com',
+      folder_uid: FOLDER_A,
+      created_by: { name: 'Ada Lovelace' },
+      updated_at: '2026-02-02T00:00:00Z',
+    });
+
+    const link = await service.updateCommitteeDocument(req, 'committee-1', 'doc-1', 'link', { name: 'New' });
+
+    expect(link).toMatchObject({
+      uid: 'doc-1',
+      type: 'link',
+      name: 'New',
+      url: 'https://example.com',
+      parent_uid: FOLDER_A,
+      committee_uid: 'committee-1',
+      uploaded_by: 'Resolved Display Name',
+    });
+    expect(resolveAuditUserDisplayName).toHaveBeenCalledWith({ name: 'Ada Lovelace' }, undefined);
+  });
+
+  it('maps a renamed folder and a moved file', async () => {
+    fetchWithETag.mockResolvedValue({ data: { name: 'Old' }, etag: 'etag-1' });
+    const folder = await service.updateCommitteeDocument(req, 'committee-1', 'doc-1', 'folder', { name: 'Reports' });
+    expect(folder).toMatchObject({ uid: 'doc-1', type: 'folder', name: 'Reports', committee_uid: 'committee-1' });
+
+    updateWithETag.mockResolvedValue({
+      uid: 'doc-1',
+      committee_uid: 'committee-1',
+      name: 'Charter',
+      file_size: 12,
+      content_type: 'application/pdf',
+      folder_uid: FOLDER_B,
+    });
+    const file = await service.updateCommitteeDocument(req, 'committee-1', 'doc-1', 'file', { parent_uid: FOLDER_B });
+    expect(file).toMatchObject({ type: 'file', name: 'Charter', file_size: 12, mime_type: 'application/pdf', parent_uid: FOLDER_B });
+  });
+
+  it.each([
+    [403, 'not a writer on the group'],
+    [404, 'document or folder not found'],
+    [409, 'a name another record holds, or a stale ETag'],
+  ])('passes an upstream %i (%s) on from the write as it is', async (statusCode, message) => {
+    fetchWithETag.mockResolvedValue({ data: { name: 'Old' }, etag: 'etag-1' });
+    updateWithETag.mockRejectedValue({ statusCode, message });
+
+    await expect(service.updateCommitteeDocument(req, 'committee-1', 'doc-1', 'file', { name: 'Taken' })).rejects.toMatchObject({ statusCode, message });
+  });
+
+  it.each([403, 404])('does not write when the read comes back %i', async (statusCode) => {
+    fetchWithETag.mockRejectedValue({ statusCode });
+
+    await expect(service.updateCommitteeDocument(req, 'committee-1', 'doc-1', 'file', { name: 'New' })).rejects.toMatchObject({ statusCode });
+    expect(updateWithETag).not.toHaveBeenCalled();
+  });
+
+  it('rejects an unknown document type before any upstream call', async () => {
+    await expect(service.updateCommitteeDocument(req, 'committee-1', 'doc-1', 'meeting' as never, { name: 'New' })).rejects.toMatchObject({ statusCode: 400 });
+    expect(fetchWithETag).not.toHaveBeenCalled();
+    expect(updateWithETag).not.toHaveBeenCalled();
   });
 });
 
@@ -2110,6 +2241,158 @@ describe('CommitteeService.getManagedPendingApplications', () => {
     } finally {
       clock.mockRestore();
     }
+  });
+});
+
+describe('CommitteeService — group Social Listening access (lfx-self-serve-ops#387)', () => {
+  const FOUNDATION_UID = 'foundation-uid';
+  let service: CommitteeService;
+
+  beforeEach(async () => {
+    proxyRequest.mockReset();
+    fetchWithETag.mockReset();
+    updateWithETag.mockReset();
+    addAccessToResource.mockReset().mockImplementation((_req: Request, committee: Committee) => Promise.resolve(committee));
+    isImpersonating.mockReset().mockReturnValue(false);
+    vi.mocked(getUsernameFromAuth).mockReset().mockResolvedValue('synthetic-user');
+    const actual = await vi.importActual<typeof import('../helpers/query-service.helper')>('../helpers/query-service.helper');
+    vi.mocked(fetchAllQueryResources).mockReset().mockImplementation(actual.fetchAllQueryResources);
+    service = new CommitteeService();
+  });
+
+  describe('canGroupMemberViewSocialListening', () => {
+    /** Membership query, then one settings read per active group. */
+    function upstream(
+      memberships: string[],
+      settings: Record<string, boolean | Error>,
+      status = 'Active',
+      category: string | undefined = 'Board',
+      groupCategory = category,
+      groupProjectUid = FOUNDATION_UID
+    ): void {
+      proxyRequest.mockImplementation((_req: unknown, _svc: string, path: string) => {
+        if (path === '/query/resources') {
+          return Promise.resolve({ resources: memberships.map((uid) => ({ data: { committee_uid: uid, status, committee_category: category } })) });
+        }
+        if (!path.endsWith('/settings')) {
+          return Promise.resolve({ uid: path.split('/')[2], category: groupCategory, project_uid: groupProjectUid });
+        }
+        const value = settings[path.split('/')[2]];
+        return value instanceof Error ? Promise.reject(value) : Promise.resolve({ members_can_view_social_listening: value });
+      });
+    }
+
+    it("queries the user's group memberships on the foundation itself and reads each group's setting with M2M", async () => {
+      upstream(['board-1', 'board-1'], { 'board-1': true });
+
+      await expect(service.canGroupMemberViewSocialListening(req, FOUNDATION_UID)).resolves.toBe(true);
+
+      expect(proxyRequest.mock.calls[0][4]).toEqual({
+        type: 'committee_member',
+        tags_all: ['username:synthetic-user', `project_uid:${FOUNDATION_UID}`],
+      });
+      const settingsCalls = proxyRequest.mock.calls.filter((call) => call[2] === '/committees/board-1/settings');
+      expect(settingsCalls).toHaveLength(1);
+      expect(settingsCalls[0][7]).toEqual({ bearerToken: 'm2m-token' });
+    });
+
+    it('ignores an inactive seat without reading its settings', async () => {
+      upstream(['board-1'], { 'board-1': true }, 'Inactive');
+
+      await expect(service.canGroupMemberViewSocialListening(req, FOUNDATION_UID)).resolves.toBe(false);
+      expect(proxyRequest).toHaveBeenCalledTimes(1);
+    });
+
+    it('ignores a non-Board group even when its setting is on, without reading its settings', async () => {
+      upstream(['wg-1'], { 'wg-1': true }, 'Active', 'Working Group');
+
+      await expect(service.canGroupMemberViewSocialListening(req, FOUNDATION_UID)).resolves.toBe(false);
+      expect(proxyRequest).toHaveBeenCalledTimes(1);
+    });
+
+    it('allows a Board member whose membership lacks the category, using the group record', async () => {
+      upstream(['board-1'], { 'board-1': true }, 'Active', undefined, 'Board');
+
+      await expect(service.canGroupMemberViewSocialListening(req, FOUNDATION_UID)).resolves.toBe(true);
+    });
+
+    it('denies when the group record is not a Board, even if the membership says it is', async () => {
+      upstream(['wg-1'], { 'wg-1': true }, 'Active', 'Board', 'Working Group');
+
+      await expect(service.canGroupMemberViewSocialListening(req, FOUNDATION_UID)).resolves.toBe(false);
+    });
+
+    it("denies a Board group that belongs to another project, such as a child project's Board", async () => {
+      upstream(['child-board'], { 'child-board': true }, 'Active', 'Board', 'Board', 'child-project-uid');
+
+      await expect(service.canGroupMemberViewSocialListening(req, FOUNDATION_UID)).resolves.toBe(false);
+    });
+
+    it('denies when the group setting is off', async () => {
+      upstream(['board-1'], { 'board-1': false });
+
+      await expect(service.canGroupMemberViewSocialListening(req, FOUNDATION_UID)).resolves.toBe(false);
+    });
+
+    it('allows when any one of several groups has the setting on', async () => {
+      upstream(['board-1', 'board-2'], { 'board-1': false, 'board-2': true });
+
+      await expect(service.canGroupMemberViewSocialListening(req, FOUNDATION_UID)).resolves.toBe(true);
+    });
+
+    it('denies without reading settings when the user is in no group of the foundation', async () => {
+      upstream([], {});
+
+      await expect(service.canGroupMemberViewSocialListening(req, FOUNDATION_UID)).resolves.toBe(false);
+      expect(proxyRequest).toHaveBeenCalledTimes(1);
+    });
+
+    it("still allows when another group's settings read fails", async () => {
+      upstream(['board-1', 'board-2'], { 'board-1': new Error('settings read failed'), 'board-2': true });
+
+      await expect(service.canGroupMemberViewSocialListening(req, FOUNDATION_UID)).resolves.toBe(true);
+    });
+
+    it('surfaces a settings read failure so the caller denies without caching', async () => {
+      const error = new Error('settings read failed');
+      upstream(['board-1'], { 'board-1': error });
+
+      await expect(service.canGroupMemberViewSocialListening(req, FOUNDATION_UID)).rejects.toBe(error);
+    });
+
+    it('denies without any upstream call when there is no username', async () => {
+      vi.mocked(getUsernameFromAuth).mockResolvedValue(null);
+
+      await expect(service.canGroupMemberViewSocialListening(req, FOUNDATION_UID)).resolves.toBe(false);
+      expect(proxyRequest).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('members_can_view_social_listening writes', () => {
+    it('sends the setting on a group update', async () => {
+      proxyRequest.mockResolvedValueOnce({ uid: 'committee-1', name: 'TSC', project_uid: 'project-1' });
+      fetchWithETag.mockResolvedValueOnce({ data: { members_can_view_social_listening: false }, etag: 'settings-etag' });
+      updateWithETag.mockResolvedValueOnce(undefined);
+
+      await service.updateCommittee(req, 'committee-1', { members_can_view_social_listening: true });
+
+      expect(updateWithETag.mock.calls[0][4]).toMatchObject({ members_can_view_social_listening: true });
+    });
+
+    it('sends the setting when creating a group', async () => {
+      proxyRequest.mockResolvedValueOnce({ uid: 'committee-1', name: 'TSC', category: 'Technical Steering Committee' });
+      fetchWithETag.mockResolvedValueOnce({ data: {}, etag: 'settings-etag' });
+      updateWithETag.mockResolvedValueOnce(undefined);
+
+      const result = await service.createCommittee(req, {
+        name: 'TSC',
+        category: 'Technical Steering Committee',
+        members_can_view_social_listening: true,
+      } as never);
+
+      expect(updateWithETag.mock.calls[0][4]).toMatchObject({ members_can_view_social_listening: true });
+      expect(result).toMatchObject({ members_can_view_social_listening: true });
+    });
   });
 });
 

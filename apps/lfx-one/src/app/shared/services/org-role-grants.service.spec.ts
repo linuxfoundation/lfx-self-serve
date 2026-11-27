@@ -211,3 +211,98 @@ describe('OrgRoleGrantsService.affiliatedToMember', () => {
     expect(service.affiliatedToMember()).toBe(false);
   });
 });
+
+describe('OrgRoleGrantsService addressed full access', () => {
+  let service: OrgRoleGrantsService;
+  let http: HttpTestingController;
+  const grants = { writers: [], auditors: [], isStaff: false };
+
+  async function answer(body: Record<string, unknown>): Promise<void> {
+    const done = firstValueFrom(service.refresh());
+    http.expectOne('/api/orgs/me/role-grants').flush(body);
+    await done;
+  }
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({ providers: [provideHttpClient(), provideHttpClientTesting()] });
+    service = TestBed.inject(OrgRoleGrantsService);
+    http = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => http.verify());
+
+  it('clears an addressed full-access note when role-grants names that company employee-only (#5845)', async () => {
+    service.noteFullAccessAddressed(UID, true);
+    expect(service.fullAccessOrgUids().has(UID)).toBe(true);
+
+    await answer({ ...grants, employeeView: { orgUid: UID } });
+
+    expect(service.fullAccessOrgUids().has(UID)).toBe(false);
+  });
+
+  it('reports a failed employee-view lookup, and clears it on the next answer', async () => {
+    await answer({ ...grants, employeeViewLookup: 'failed' });
+    expect(service.employeeViewLookupFailed()).toBe(true);
+
+    await answer({ ...grants });
+    expect(service.employeeViewLookupFailed()).toBe(false);
+  });
+
+  it('keeps the note when the optional employee-view field is simply absent', async () => {
+    service.noteFullAccessAddressed(UID, true);
+
+    await answer(grants);
+
+    expect(service.fullAccessOrgUids().has(UID)).toBe(true);
+  });
+
+  it('clears both full-access sources when a selector or resolver answer later marks the company employee-only (#5845)', async () => {
+    await answer({ ...grants, fullAccessOrgUid: UID });
+    service.noteFullAccessAddressed(UID, true);
+    expect(service.fullAccessOrgUids().has(UID)).toBe(true);
+
+    service.noteEmployeeViewAddressed(UID, true);
+
+    expect(service.fullAccessOrgUids().has(UID)).toBe(false);
+    expect(service.employeeViewOrgUids().has(UID)).toBe(true);
+  });
+
+  it('keeps one current employee company: a positive answer for B replaces an addressed A, and the role-grants answer drops other notes', async () => {
+    const OTHER = '0014100000OtherAAAA';
+    service.noteEmployeeViewAddressed(UID, true);
+    service.noteEmployeeViewAddressed(OTHER, true);
+    expect(service.employeeViewOrgUids().has(UID)).toBe(false);
+    expect(service.employeeViewOrgUids().has(OTHER)).toBe(true);
+
+    await answer({ ...grants, employeeView: { orgUid: UID } });
+    expect(service.employeeViewOrgUids().has(OTHER)).toBe(false);
+    expect(service.employeeViewOrgUids().has(UID)).toBe(true);
+  });
+
+  it('drops the role-grants employee company when a fresh answer names another one (role-grants A, then addressed B)', async () => {
+    const OTHER = '0014100000OtherAAAA';
+    await answer({ ...grants, employeeView: { orgUid: UID } });
+    expect(service.employeeViewOrgUids().has(UID)).toBe(true);
+
+    service.noteEmployeeViewAddressed(OTHER, true);
+
+    expect(service.employeeViewOrgUids().has(UID)).toBe(false);
+    expect(service.employeeViewOrgUids().has(OTHER)).toBe(true);
+  });
+
+  it('clears every reduced-mode source for a company a later answer says is CLA-only, and leaves other companies alone', async () => {
+    const OTHER = '0014100000OtherAAAA';
+    await answer({ ...grants, employeeView: { orgUid: UID }, fullAccessOrgUid: OTHER });
+    service.noteEmployeeViewAddressed(UID, true);
+    service.noteFullAccessAddressed(UID, true);
+    expect(service.employeeViewOrgUids().has(UID)).toBe(true);
+    expect(service.fullAccessOrgUids().has(UID)).toBe(true);
+
+    service.clearReducedModes(UID);
+
+    expect(service.employeeViewOrgUid()).toBeNull();
+    expect(service.employeeViewOrgUids().has(UID)).toBe(false);
+    expect(service.fullAccessOrgUids().has(UID)).toBe(false);
+    expect(service.fullAccessOrgUids().has(OTHER)).toBe(true);
+  });
+});

@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { VOTE_OVERVIEW_STANDINGS_LIMIT, VOTE_RANKED_OUTCOME_EXPLANATIONS } from '../constants/vote.constants';
 import { CondorcetOutcome, PollType } from '../enums/poll.enum';
 import type {
   IndexedPollAnswer,
@@ -13,12 +14,15 @@ import type {
   RankedQuestionView,
   RankedStanding,
   UserChoice,
+  VoteOverviewOutcome,
+  VoteOverviewStanding,
   VoteParticipationStats,
   VoteResultsOption,
   VoteResultsQuestion,
   VoteResultsResponse,
   VoteResultsSummaryLine,
 } from '../interfaces/poll.interface';
+import { buildIrvRoundsView } from './irv-rounds.utils';
 import { computeParticipationPercent } from './vote-participation.utils';
 
 /** Interprets the service's Condorcet winners: one winner, a partial tie, or no winner (none or every candidate). */
@@ -164,7 +168,9 @@ export function buildVoteResultsQuestions(results: VoteResultsResponse | null, i
  * the winning choices, so it only fills ids the question does not list, and the id is the last resort. The outcome and
  * winner labels follow the server-computed winners; Condorcet returning every candidate means no winner. Condorcet standings are ordered
  * by matrix head-to-head wins; runoff and Meek STV standings put server winners first and use round summaries for
- * elimination and election order. An unrecognized `pollType` yields no outcome.
+ * elimination and election order. An instant-runoff outcome (Instant Runoff, or Condorcet-IRV that fell back to
+ * eliminations) also gets the round-by-round count (`irvRounds`, #6152), its rows in standings order; every other outcome
+ * gets null. An unrecognized `pollType` yields no outcome.
  * @param results - VoteResultsResponse from the results API, or null when not yet loaded
  * @param pollType - The vote's poll type, which selects the counting method's outcome and standings rules
  * @returns One RankedQuestionView per poll question, in API order
@@ -199,7 +205,7 @@ export function buildRankedQuestionViews(results: VoteResultsResponse | null, po
 
     const view = { questionId: pr.question.question_id, prompt: pr.question.prompt, choiceDistributions };
     const outcome = rankedVotes.length > 0 ? buildRankedOutcome(pr, pollType, textOf) : null;
-    if (!outcome) return { ...view, outcome: null, standings: [] };
+    if (!outcome) return { ...view, outcome: null, standings: [], irvRounds: null };
 
     // Candidates in ballot order (the question's configured order; unlisted ids keep payload order), plus any winner
     // the ranked votes do not carry, so a winner always gets a row.
@@ -230,7 +236,17 @@ export function buildRankedQuestionViews(results: VoteResultsResponse | null, po
             );
     }
 
-    return { ...view, outcome, standings };
+    const irvRounds =
+      outcome.kind === 'irv'
+        ? buildIrvRoundsView(
+            pr.irv_round_summary ?? [],
+            standings.map((row) => row.choiceId),
+            winnerIds,
+            textOf
+          )
+        : null;
+
+    return { ...view, outcome, standings, irvRounds };
   });
 }
 
@@ -445,42 +461,97 @@ export function joinNames(names: string[]): string {
 }
 
 /**
- * Overview line for a ranked question's final outcome: "{X} won", "Tied: {A and B}", "Elected: {A and B}" (Meek STV)
- * or "No winner could be determined"
+ * Builds the vote detail Overview outcome for an IRV or Meek STV question (#6124)
+ * @description Mirrors the Results tab banner of `lfx-vote-ranked-question-results`, without repeating the names the Overview shows above. Standings
+ * keep only the rows after the winners, capped to `VOTE_OVERVIEW_STANDINGS_LIMIT`.
+ * @param view - A view from `buildRankedQuestionViews`
+ * @returns The outcome, or null when the question has no final outcome
  */
-function rankedOutcomeSummary(outcome: RankedOutcome): string {
-  if (outcome.result === 'none') return 'No winner could be determined';
-  if (outcome.kind === 'meek_stv') return `Elected: ${joinNames(outcome.winnerTexts)}`;
-  if (outcome.result === 'tie') return `Tied: ${joinNames(outcome.winnerTexts)}`;
-  return `${outcome.winnerTexts[0]} won`;
+export function buildRankedOverviewOutcome(view: RankedQuestionView): VoteOverviewOutcome | null {
+  if (!view.outcome) return null;
+  const runnersUp = view.standings
+    .filter((row) => row.label !== 'winner' && row.label !== 'tied' && row.label !== 'elected')
+    .map((row) => ({
+      choiceId: row.choiceId,
+      choiceText: row.choiceText,
+      rank: row.rank,
+      detail:
+        row.label === 'not_elected'
+          ? 'Not elected'
+          : overviewStandingDetail(row.label === 'eliminated', row.round, row.headToHeadWins ?? 0, row.headToHeadTotal ?? 0),
+    }));
+  return buildOverviewOutcome(view.questionId, view.prompt, view.outcome, runnersUp);
+}
+
+/**
+ * Assembles a vote detail Overview outcome (#6124) from a ranked outcome and its runner-up rows; shared by the ranked
+ * and Condorcet IRV adapters so both use the same labels, explanations and standings cap.
+ */
+export function buildOverviewOutcome(questionId: string, prompt: string, outcome: RankedOutcome, runnersUp: VoteOverviewStanding[]): VoteOverviewOutcome {
+  const standings = runnersUp.slice(0, VOTE_OVERVIEW_STANDINGS_LIMIT);
+  return {
+    questionId,
+    prompt,
+    result: outcome.result,
+    label: overviewLabel(outcome),
+    winnerTexts: outcome.result === 'none' ? [] : outcome.winnerTexts,
+    explanation: overviewExplanation(outcome),
+    standings,
+    hiddenCount: runnersUp.length - standings.length,
+  };
+}
+
+/**
+ * Overview standings detail (#6124): "Eliminated in round N" (or "Eliminated") for an eliminated option, otherwise
+ * "Won X out of Y possible head-to-head matchups" (the Results tab's wording) when head-to-head data exists, otherwise null.
+ */
+export function overviewStandingDetail(eliminated: boolean, round: number | null, headToHeadWins: number, headToHeadTotal: number): string | null {
+  if (eliminated) return round !== null ? `Eliminated in round ${round}` : 'Eliminated';
+  if (headToHeadTotal > 0) return `Won ${headToHeadWins} out of ${headToHeadTotal} possible head-to-head ${headToHeadTotal === 1 ? 'matchup' : 'matchups'}`;
+  return null;
+}
+
+function overviewLabel(outcome: RankedOutcome): VoteOverviewOutcome['label'] {
+  if (outcome.result === 'none') return 'No winner';
+  if (outcome.kind === 'meek_stv') return 'Elected';
+  if (outcome.result === 'tie') return 'Tied';
+  return 'Winner';
+}
+
+/** How the outcome was decided, in the Results tab's words; null for no winner, whose names line already says so. */
+function overviewExplanation(outcome: RankedOutcome): string | null {
+  if (outcome.result === 'none') return null;
+  if (outcome.kind === 'meek_stv') return `Elected ${VOTE_RANKED_OUTCOME_EXPLANATIONS.meekStv}`;
+  if (outcome.result === 'tie') return VOTE_RANKED_OUTCOME_EXPLANATIONS.tie;
+  if (outcome.kind === 'condorcet') return VOTE_RANKED_OUTCOME_EXPLANATIONS.condorcetWinner;
+  if (outcome.condorcetFallback) return VOTE_RANKED_OUTCOME_EXPLANATIONS.condorcetIrvFallback;
+  const majority =
+    outcome.roundCount > 0
+      ? VOTE_RANKED_OUTCOME_EXPLANATIONS.irvMajorityRound.replace('{round}', String(outcome.roundCount))
+      : VOTE_RANKED_OUTCOME_EXPLANATIONS.irvMajority;
+  return `Won ${majority}`;
 }
 
 /**
  * Builds the one-line-per-question results summary shown on the vote detail Overview
  * @description Generic and majority votes read the leader/tie markers from `questions` without declaring an elected
- * winner or inferring quorum/threshold rules. Ranked votes name the server-computed outcome once the vote has ended and
- * its results are final (`rankedOutcomeFinal`); before that they use the choice(s) with the most rank-1 votes.
- * Abstentions are not part of the summary.
+ * winner or inferring quorum/threshold rules. Ranked votes use the choice(s) with the most rank-1 votes; once a ranked
+ * vote has ended with final results, the Overview shows its outcome from `buildRankedOverviewOutcome` or
+ * `buildCondorcetOverviewOutcome` instead of this line (#6124). Abstentions are not part of the summary.
  * @param questions - Processed plurality questions from `buildVoteResultsQuestions`
  * @param rankedQuestions - Ranked views from `buildRankedQuestionViews`
  * @param isGeneric - Whether the vote renders the plurality layout (otherwise the ranked views are summarised)
  * @param isClosed - Whether the vote is finalized
- * @param rankedOutcomeFinal - Whether the vote has ended with final results, so a ranked question's outcome can be named
  * @returns One VoteResultsSummaryLine per question, in API order
  */
 export function buildVoteResultsSummary(
   questions: VoteResultsQuestion[],
   rankedQuestions: RankedQuestionView[],
   isGeneric: boolean,
-  isClosed: boolean,
-  rankedOutcomeFinal = false
+  isClosed: boolean
 ): VoteResultsSummaryLine[] {
   if (!isGeneric) {
     return rankedQuestions.map((question) => {
-      if (rankedOutcomeFinal && question.outcome) {
-        return { questionId: question.questionId, question: question.prompt, text: rankedOutcomeSummary(question.outcome) };
-      }
-
       const firstChoiceCounts = question.choiceDistributions.map((row) => ({
         text: row.choiceText,
         count: row.rankCounts.find((rc) => rc.rank === 1)?.count ?? 0,

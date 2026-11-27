@@ -21,6 +21,7 @@ import { OrgLensNavigationService } from '@services/org-lens-navigation.service'
 import { OrgEditAccessService } from '@services/org-edit-access.service';
 import { OrgLensOrgScopeService } from '@services/org-lens-org-scope.service';
 import { OrgLensProjectsService } from '@services/org-lens-projects.service';
+import { OrgLensViewModeService } from '@services/org-lens-view-mode.service';
 import { OrgNavigationService } from '@services/org-navigation.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { MessageService } from 'primeng/api';
@@ -28,6 +29,10 @@ import { NEVER, of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { OrgProjectsComponent } from './org-projects.component';
+
+const employeeView = signal(false);
+
+beforeEach(() => employeeView.set(false));
 
 describe('OrgProjectsComponent', () => {
   const pageState = signal<OrgLensEmptyStateName | null>(null);
@@ -39,6 +44,7 @@ describe('OrgProjectsComponent', () => {
     pageState.set(null);
     pageReady.set(true);
     settled.set(true);
+    employeeView.set(false);
 
     await TestBed.configureTestingModule({
       imports: [OrgProjectsComponent],
@@ -48,6 +54,7 @@ describe('OrgProjectsComponent', () => {
         { provide: AccountContextService, useValue: { selectedAccount: signal({ uid: '001Dn00000ExAmPleA', accountName: 'Acme' }) } },
         { provide: OrgRoleGrantsService, useValue: { correlationId: signal(null) } },
         { provide: OrgEditAccessService, useValue: { canEditSelected: signal(false) } },
+        { provide: OrgLensViewModeService, useValue: { isEmployeeView: employeeView } },
         // The org list never finishes loading, as for an admitted contractor with no switcher access (#2961).
         { provide: OrgNavigationService, useValue: { loaded: signal(false) } },
         { provide: OrgLensNavigationService, useValue: { orgLensLink: vi.fn(() => []) } },
@@ -106,6 +113,28 @@ describe('OrgProjectsComponent', () => {
     expect(has('org-projects-table-card')).toBe(false);
     expect(has('org-projects-loading')).toBe(false);
     expect(title()).not.toContain('Acme');
+  });
+
+  it('shows the Employees filter in the full view and removes it in the all employee view', async () => {
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(has('org-projects-employee-filter')).toBe(true);
+
+    employeeView.set(true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(has('org-projects-employee-filter')).toBe(false);
+  });
+
+  it('links the contributors count to the project detail page alone in the all employee view, since no card panel opens there', async () => {
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(fixture.componentInstance['contributorsDrawerQueryParams']()).toMatchObject({ card: 'contributors' });
+
+    employeeView.set(true);
+
+    expect(fixture.componentInstance['contributorsDrawerQueryParams']()).not.toHaveProperty('card');
   });
 });
 
@@ -189,6 +218,7 @@ describe('OrgProjectsComponent — health label', () => {
         { provide: AccountContextService, useValue: { selectedAccount: signal({ uid: '001Dn00000ExAmPleA', accountName: 'Acme' }) } },
         { provide: OrgRoleGrantsService, useValue: { correlationId: signal(null) } },
         { provide: OrgEditAccessService, useValue: { canEditSelected: signal(false) } },
+        { provide: OrgLensViewModeService, useValue: { isEmployeeView: employeeView } },
         { provide: OrgNavigationService, useValue: { loaded: signal(true) } },
         { provide: OrgLensNavigationService, useValue: { orgLensLink: vi.fn(() => []) } },
         { provide: OrgLensOrgScopeService, useValue: { current: signal(null), retryFailedRead: () => undefined } },
@@ -417,6 +447,7 @@ describe('OrgProjectsComponent — Employees filter', () => {
         },
         { provide: OrgRoleGrantsService, useValue: { correlationId: signal(null) } },
         { provide: OrgEditAccessService, useValue: { canEditSelected: signal(false) } },
+        { provide: OrgLensViewModeService, useValue: { isEmployeeView: employeeView } },
         { provide: OrgNavigationService, useValue: { loaded: signal(true) } },
         { provide: OrgLensNavigationService, useValue: { orgLensLink: vi.fn(() => []) } },
         { provide: OrgLensOrgScopeService, useValue: { current: signal(null), retryFailedRead: () => undefined } },
@@ -475,6 +506,16 @@ describe('OrgProjectsComponent — Employees filter', () => {
 
     await open('/?employees=p-other');
     expect(rowNames()).toEqual([]);
+  });
+
+  it('ignores an employees link in the all employee view: every project shows, in the table and the CSV, and the selection is cleared from the URL', async () => {
+    employeeView.set(true);
+    await open('/?employees=p-known');
+
+    expect(rowNames()).toEqual(['Alpha', 'Bravo', 'Charlie']);
+    expect(await exportedProjectNames()).toEqual(['Alpha', 'Bravo', 'Charlie']);
+    await settle();
+    expect(queryParams()['employees']).toBeUndefined();
   });
 
   it('opens a link with only an unknown employee on the explained empty state, with Export disabled', async () => {

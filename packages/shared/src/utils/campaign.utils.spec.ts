@@ -33,6 +33,8 @@ import {
   keywordActionKey,
   normalizeSponsors,
   parseNegativeKeywordInput,
+  deriveNewsletterSlug,
+  newsletterBriefName,
 } from './campaign.utils';
 
 /**
@@ -718,5 +720,22 @@ describe('googleSeededFlight (#4847, #1614)', () => {
   it('seeds no budget without a usable total', () => {
     expect(googleSeededFlight(null, today, '2027-03-15', true)).toEqual({ endDate: '2027-03-15', dailyBudget: null });
     expect(googleSeededFlight(0, today, '2027-03-15', true)).toEqual({ endDate: '2027-03-15', dailyBudget: null });
+  });
+});
+
+describe('deriveNewsletterSlug', () => {
+  it('keys an issue on its brand and its issue', () => {
+    expect(deriveNewsletterSlug('OpenSSF', 'November 2026')).toBe('openssf-newsletter-november-2026');
+  });
+
+  it('is empty when either half is blank, so no brief holds every issue', () => {
+    expect(deriveNewsletterSlug('OpenSSF', '  ')).toBe('');
+    expect(deriveNewsletterSlug('', 'November 2026')).toBe('');
+  });
+});
+
+describe('newsletterBriefName', () => {
+  it('names the brief by brand and issue', () => {
+    expect(newsletterBriefName(' OpenSSF ', 'November 2026 ')).toBe('OpenSSF Newsletter - November 2026');
   });
 });

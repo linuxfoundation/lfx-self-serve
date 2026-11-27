@@ -58,7 +58,7 @@ export class OrgContributionsService {
   }
 
   /** KPI strip + filter options + server-paginated Repositories table + Commits feed. */
-  public async getContributions(accountId: string, requested: OrgContributionsQuery): Promise<OrgContributionsResponse> {
+  public async getContributions(accountId: string, requested: OrgContributionsQuery, employeeView = false): Promise<OrgContributionsResponse> {
     if (!accountId) {
       return emptyResponse(accountId, requested.dateRange);
     }
@@ -70,11 +70,11 @@ export class OrgContributionsService {
     // First Commit column (that date inclusive) is missing is never stored (lfx-self-serve#4685).
     const raw = await withOrgCache(
       accountId,
-      `contributions:v5:${contributionsSignature(query)}`,
+      `contributions:v5:${employeeView ? 'ev:' : ''}${contributionsSignature(query)}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       async () => {
         const read = await readWithOrgTeamMembersFallback(query.teamMembers, 'get_org_lens_contributions', (teamMembers) =>
-          this.fetchContributionsRaw(accountId, { ...query, teamMembers })
+          this.fetchContributionsRaw(accountId, { ...query, teamMembers }, employeeView)
         );
         return read.teamMembersUnavailable ? { ...read.value, teamMembersUnavailable: true as const } : read.value;
       },
@@ -103,7 +103,8 @@ export class OrgContributionsService {
     };
   }
 
-  private async fetchContributionsRaw(accountId: string, query: OrgContributionsQuery): Promise<ContributionsRaw> {
+  /** `employeeView` (epic #5845): the person-level reads (the Commits feed, the Employee filter options) are never run, so no name or avatar is read, cached or sent. */
+  private async fetchContributionsRaw(accountId: string, query: OrgContributionsQuery, employeeView: boolean): Promise<ContributionsRaw> {
     const commitScope = buildCommitScopeFilters(query);
     const codeScope = query.metric === 'code' ? buildCodeScopeFilters(query) : null;
     const repoSearch = buildRepoSearchFilter(query.search);
@@ -119,10 +120,12 @@ export class OrgContributionsService {
         ? this.fetchCodeRepositories(accountId, codeScope, repoSearch, query, repoPagination)
         : this.fetchRepositories(accountId, commitScope, repoSearch, query, repoPagination),
       // The Commits feed lists commits under either metric.
-      this.fetchCommits(accountId, commitScope, commitSearch, query, commitPagination),
+      employeeView
+        ? Promise.resolve({ rows: [] as ContributionsCommitRow[] })
+        : this.fetchCommits(accountId, commitScope, commitSearch, query, commitPagination),
       this.fetchFoundationOptionRows(accountId, codeScope ?? buildCodeScopeFilters(query)),
       codeScope ? this.fetchCodeProjectOptionRows(accountId, codeScope) : this.fetchProjectOptionRows(accountId, commitScope),
-      codeScope ? this.fetchCodeEmployeeOptionRows(accountId, codeScope) : this.fetchEmployeeOptionRows(accountId, commitScope),
+      this.fetchEmployeeOptions(accountId, commitScope, codeScope, employeeView),
     ]);
 
     return {
@@ -134,6 +137,17 @@ export class OrgContributionsService {
       employeeOptionRows: employeeResult.rows,
       ...(repoResult.firstCommitUnavailable ? { firstCommitUnavailable: true as const } : {}),
     };
+  }
+
+  /** The Employee filter lists named people: skipped entirely in the all employee view. */
+  private async fetchEmployeeOptions(
+    accountId: string,
+    commitScope: ScopeFilters,
+    codeScope: ScopeFilters | null,
+    employeeView: boolean
+  ): Promise<{ rows: ContributionsEmployeeOptionRow[] }> {
+    if (employeeView) return { rows: [] };
+    return codeScope ? this.fetchCodeEmployeeOptionRows(accountId, codeScope) : this.fetchEmployeeOptionRows(accountId, commitScope);
   }
 
   private async fetchKpis(accountId: string, scope: ScopeFilters, kpiSearch: SearchFilter): Promise<{ rows: ContributionsKpiRow[] }> {

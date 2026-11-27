@@ -3,11 +3,13 @@
 
 import { Component, computed, input, Signal, signal } from '@angular/core';
 import { TagComponent } from '@components/tag/tag.component';
-import { VOTE_CONDORCET_BALLOT_PREVIEW_LIMIT, VOTE_CONDORCET_RANK_COLORS } from '@lfx-one/shared/constants';
+import { VOTE_CONDORCET_BALLOT_PREVIEW_LIMIT, VOTE_CONDORCET_RANK_COLORS, VOTE_RANKED_OUTCOME_EXPLANATIONS } from '@lfx-one/shared/constants';
 import { CondorcetOutcome } from '@lfx-one/shared/enums';
 import { CondorcetBallotPatternRow, CondorcetPairwiseRow, CondorcetQuestionView, RankedChoiceDistribution } from '@lfx-one/shared/interfaces';
 import { joinNames } from '@lfx-one/shared/utils';
 import { OrdinalPipe } from '@pipes/ordinal.pipe';
+
+import { VoteIrvRoundsComponent } from '../vote-irv-rounds/vote-irv-rounds.component';
 
 /**
  * Outcome-first Condorcet IRV results for one question (#5969, #6112).
@@ -16,7 +18,7 @@ import { OrdinalPipe } from '@pipes/ordinal.pipe';
  */
 @Component({
   selector: 'lfx-vote-condorcet-results',
-  imports: [TagComponent, OrdinalPipe],
+  imports: [TagComponent, OrdinalPipe, VoteIrvRoundsComponent],
   templateUrl: './vote-condorcet-results.component.html',
   host: { class: 'contents' },
 })
@@ -68,13 +70,13 @@ export class VoteCondorcetResultsComponent {
       const { outcome, winnerNames } = this.question();
       switch (outcome) {
         case CondorcetOutcome.CONDORCET_WINNER:
-          return 'Preferred over every other option in head-to-head comparisons.';
+          return VOTE_RANKED_OUTCOME_EXPLANATIONS.condorcetWinner;
         case CondorcetOutcome.IRV_WINNER:
-          return 'No option beat every other option head-to-head, so instant-runoff elimination decided the result.';
+          return VOTE_RANKED_OUTCOME_EXPLANATIONS.condorcetIrvFallback;
         case CondorcetOutcome.TIE:
-          return `There is a tie between ${joinNames(winnerNames)}. No single winner can be determined.`;
+          return `There is a tie between ${joinNames(winnerNames)}. ${VOTE_RANKED_OUTCOME_EXPLANATIONS.tie}`;
         default:
-          return 'No winner could be determined.';
+          return VOTE_RANKED_OUTCOME_EXPLANATIONS.noWinner;
       }
     });
   }

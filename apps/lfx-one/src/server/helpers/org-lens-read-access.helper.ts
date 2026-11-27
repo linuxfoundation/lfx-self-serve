@@ -1,34 +1,56 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ORG_ACCESS_UNVERIFIABLE_MESSAGE } from '@lfx-one/shared/constants';
-import type { AccessAwareOrgsResult } from '@lfx-one/shared/interfaces';
+import { ORG_ACCESS_UNVERIFIABLE_MESSAGE, ORG_AFFILIATION_LOOKUP_TIMEOUT_MS, ORG_LENS_EMPLOYEE_VIEW, ORG_LENS_FULL_VIEW } from '@lfx-one/shared/constants';
+import type { AccessAwareOrgsResult, OrgLensReadQualification, OrgLensViewMode } from '@lfx-one/shared/interfaces';
+import { isOrgRollUpSegment } from '@lfx-one/shared/utils/org-lens-url.utils';
 import type { Request } from 'express';
 
 import { MicroserviceError } from '../errors';
 import { AccessCheckService } from '../services/access-check.service';
 import { logger } from '../services/logger.service';
+import { OrgEmployeeViewService } from '../services/org-employee-view.service';
 import { OrgRoleGrantsService } from '../services/org-role-grants.service';
 import { getEffectiveUsername } from '../utils/auth-helper';
+import { isOrgLensEmployeeViewEnabled } from './org-lens-employee-view-flag.helper';
 
 const roleGrants = new OrgRoleGrantsService();
 const accessCheck = new AccessCheckService();
+const employeeView = new OrgEmployeeViewService();
 
-/**
- * How a caller cleared the gate. Both values mean "allowed" — the distinction matters only to
- * callers that share one resolved result across requesters (GH-1809).
- *
- * `org-grant` is a grant resolved on *this* org, matching the question the upstream check asks.
- * `auditor-entitlement` is the authorizer answering `b2b_org:<uid>#auditor` for a caller with no
- * roster grant here — LF team membership, a hierarchy cascade the roster did not surface, or a
- * key-contact promotion. Sharing a resolved result lets a caller be served without reaching
- * upstream, so upstream stops being the deciding authority for that request. Callers that share
- * must therefore serve the shared copy only on `org-grant`, keeping every other caller on the
- * direct path.
- */
-export type OrgLensReadQualification = 'org-grant' | 'auditor-entitlement';
+// The qualification type lives in shared; re-exported so server callers keep importing it from the gate helper.
+export type { OrgLensReadQualification };
 
 const qualificationByRequest = new WeakMap<Request, Map<string, Promise<OrgLensReadQualification>>>();
+const viewModeByRequest = new WeakMap<Request, Map<string, OrgLensViewMode>>();
+
+/**
+ * The view mode `assertOrgLensRead` resolved for `orgUid` on this request: `'full'` unless the caller got in as
+ * `employee-view`. Synchronous so a handler can redact inline (`stripPersonalFields`) without awaiting.
+ *
+ * Fails closed: before the gate has resolved for this company on this request — it never ran, or is still in flight —
+ * the answer is `'employee'`, the most restrictive mode, so a handler that forgot to await the gate redacts rather
+ * than leaks. A roll-up segment answers `'full'`: the roll-up gate admits grant holders only and drops any company
+ * the caller reaches as an employee. That answer is NOT an authorization: it holds only because every roll-up route
+ * is mounted behind `requireOrgLensAccess` and the roll-up gate, which run first. A route that serves a roll-up
+ * without them must not rely on this function or on `blockEmployeeView` to refuse an employee. Handlers that cannot be sure the gate ran should use
+ * {@link resolveOrgLensViewMode}.
+ */
+export function getOrgLensViewMode(req: Request, orgUid: string): OrgLensViewMode {
+  if (isOrgRollUpSegment(orgUid)) {
+    return ORG_LENS_FULL_VIEW;
+  }
+  return viewModeByRequest.get(req)?.get(orgUid) ?? ORG_LENS_EMPLOYEE_VIEW;
+}
+
+/** Runs (or replays) the read gate for `orgUid`, then answers the view mode it resolved. Throws exactly when {@link assertOrgLensRead} does. */
+export async function resolveOrgLensViewMode(req: Request, orgUid: string, operation: string): Promise<OrgLensViewMode> {
+  if (isOrgRollUpSegment(orgUid)) {
+    return ORG_LENS_FULL_VIEW;
+  }
+  await assertOrgLensRead(req, orgUid, operation);
+  return getOrgLensViewMode(req, orgUid);
+}
 
 /**
  * Read gate for Org Lens analytics that expose organization-level aggregates.
@@ -77,17 +99,29 @@ export async function assertOrgLensRead(
   orgUid: string,
   operation: string,
   roster?: Promise<AccessAwareOrgsResult>,
-  checkAuditor?: (orgUid: string) => Promise<boolean>
+  checkAuditor?: (orgUid: string) => Promise<boolean>,
+  options: { employeeView?: boolean } = {}
 ): Promise<OrgLensReadQualification> {
+  const employeeViewAllowed = options.employeeView !== false;
+  // A caller that refuses the employee view (the CLA gate) must not share a memoized answer that may have tried it, nor pay for the lookup.
+  const memoKey = employeeViewAllowed ? orgUid : `${orgUid}#no-employee-view`;
   let byOrg = qualificationByRequest.get(req);
   if (!byOrg) {
     byOrg = new Map();
     qualificationByRequest.set(req, byOrg);
   }
-  let qualification = byOrg.get(orgUid);
+  let qualification = byOrg.get(memoKey);
   if (!qualification) {
-    qualification = resolveOrgLensRead(req, orgUid, operation, roster, checkAuditor);
-    byOrg.set(orgUid, qualification);
+    qualification = resolveOrgLensRead(req, orgUid, operation, roster, checkAuditor, employeeViewAllowed).then((resolved) => {
+      let modes = viewModeByRequest.get(req);
+      if (!modes) {
+        modes = new Map();
+        viewModeByRequest.set(req, modes);
+      }
+      modes.set(orgUid, resolved === 'employee-view' ? ORG_LENS_EMPLOYEE_VIEW : ORG_LENS_FULL_VIEW);
+      return resolved;
+    });
+    byOrg.set(memoKey, qualification);
   }
   return qualification;
 }
@@ -97,7 +131,8 @@ async function resolveOrgLensRead(
   orgUid: string,
   operation: string,
   roster: Promise<AccessAwareOrgsResult> | undefined,
-  checkAuditor: ((orgUid: string) => Promise<boolean>) | undefined
+  checkAuditor: ((orgUid: string) => Promise<boolean>) | undefined,
+  employeeViewAllowed: boolean
 ): Promise<OrgLensReadQualification> {
   const forbidden = (): MicroserviceError =>
     new MicroserviceError('You do not have access to Company Lens data for this company.', 403, 'FORBIDDEN', {
@@ -119,6 +154,10 @@ async function resolveOrgLensRead(
   }
 
   let hasGrant = false;
+  // What the roster says about the caller, for the employee-view entry rule (no grants, not staff).
+  let grantedOrgCount = 0;
+  let isStaff = false;
+  let staffCheckFailed = false;
   // Nothing in the answer is trustworthy — the grant roster itself never loaded.
   let lookupFailed = false;
   let rosterError: unknown;
@@ -126,7 +165,10 @@ async function resolveOrgLensRead(
   // be missing. Deliberately kept separate from `lookupFailed`: they justify different decisions.
   let rollUpIncomplete = false;
   try {
-    const { resolved, upstreamFailed, degraded } = await (roster ?? roleGrants.getAccessAwareOrgs(req, username));
+    const { resolved, upstreamFailed, degraded, isStaff: staff, staffCheck } = await (roster ?? roleGrants.getAccessAwareOrgs(req, username));
+    grantedOrgCount = resolved.size;
+    isStaff = staff;
+    staffCheckFailed = staffCheck === 'failed';
     // `getAccessAwareOrgs` degrades to an empty/partial grant map instead of throwing, so an
     // unverified lookup is indistinguishable from "no grants" unless these flags are checked.
     lookupFailed = upstreamFailed;
@@ -141,7 +183,7 @@ async function resolveOrgLensRead(
     rosterError = error;
     logger.warning(req, operation, 'Role-grants lookup failed; cannot verify Org Lens read access', {
       org_uid: orgUid,
-      err: error instanceof Error ? error.message : String(error),
+      err: error,
     });
   }
 
@@ -167,7 +209,7 @@ async function resolveOrgLensRead(
   if ('failed' in auditor) {
     logger.warning(req, operation, 'Authorizer check failed; cannot verify Org Lens read access', {
       org_uid: orgUid,
-      err: auditor.failed instanceof Error ? auditor.failed.message : String(auditor.failed),
+      err: auditor.failed,
     });
     throw unavailable(auditor.failed, '/access-check');
   }
@@ -177,6 +219,48 @@ async function resolveOrgLensRead(
   }
   if (lookupFailed || rollUpIncomplete) {
     throw unavailable(undefined, lookupFailed ? '/query/resources' : undefined);
+  }
+
+  // Last resort, and only for a caller PROVEN to hold nothing: the roster loaded in full and the authorizer said no,
+  // so no existing path could have admitted them. A roll-up check passes `roster`; a roll-up never admits the employee
+  // view, so it is not even asked. Off by default until every page story has redacted its endpoint.
+  // An unread staff check leaves "not staff" unproven: retriable 503 (as `resolveReduced` answers), never a 403 for an eligible employee.
+  if (employeeViewAllowed && !roster && staffCheckFailed && isOrgLensEmployeeViewEnabled(req)) {
+    throw unavailable(undefined);
+  }
+
+  // One rule for who enters, shared with the selector and the slug resolver: no grants and not staff.
+  if (employeeViewAllowed && !roster && isOrgLensEmployeeViewEnabled(req) && !isStaff && !staffCheckFailed && grantedOrgCount === 0) {
+    let verdict: Awaited<ReturnType<OrgEmployeeViewService['resolve']>>;
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      // Bounded like the role-grants path: an unbounded upstream must not hold every ungranted lens request. The lookup keeps
+      // running and its outcome stays cached, so a retry usually finds it done.
+      verdict = await Promise.race([
+        employeeView.resolve(req, orgUid),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () =>
+              reject(
+                new MicroserviceError(`Employee-view lookup exceeded ${ORG_AFFILIATION_LOOKUP_TIMEOUT_MS}ms budget`, 504, 'EMPLOYEE_VIEW_LOOKUP_TIMEOUT', {
+                  operation,
+                  service: 'LFX_V2_SERVICE',
+                })
+              ),
+            ORG_AFFILIATION_LOOKUP_TIMEOUT_MS
+          );
+        }),
+      ]);
+    } catch (error) {
+      // Could not check is not "not an employee": retriable 503, as for the other two upstreams.
+      logger.warning(req, operation, 'Employee-view lookup failed; cannot verify Org Lens read access', { org_uid: orgUid, err: error });
+      throw unavailable(error);
+    } finally {
+      clearTimeout(timer);
+    }
+    if (verdict.eligible) {
+      return 'employee-view';
+    }
   }
   throw forbidden();
 }

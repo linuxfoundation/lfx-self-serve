@@ -3,6 +3,7 @@
 
 import type { NextFunction, Request, Response } from 'express';
 
+import { redactForEmployeeView } from '../helpers/org-lens-employee-view.helper';
 import { assertOrgLensRead } from '../helpers/org-lens-read-access.helper';
 import { parseOrgMeetingsRange } from '../helpers/org-meetings-range.helper';
 import { assertOrgUid } from '../helpers/org-uid.helper';
@@ -34,7 +35,7 @@ export class OrgLensMeetingsController {
 
       const summary = await this.service.getKpiSummary(req, orgUid, range);
       logger.success(req, operation, startTime, { org_uid: orgUid, range });
-      this.send(res, summary);
+      this.send(req, res, orgUid, summary);
     } catch (error) {
       return next(error);
     }
@@ -59,7 +60,7 @@ export class OrgLensMeetingsController {
         meeting_type_segments: breakdown.byMeetingType.length,
         role_segments: breakdown.byRole.length,
       });
-      this.send(res, breakdown);
+      this.send(req, res, orgUid, breakdown);
     } catch (error) {
       return next(error);
     }
@@ -76,15 +77,17 @@ export class OrgLensMeetingsController {
 
       const rows = await this.service.getInfluenceRows(req, orgUid, range);
       logger.success(req, operation, startTime, { org_uid: orgUid, range, rows: rows.length });
-      this.send(res, rows);
+      this.send(req, res, orgUid, rows);
     } catch (error) {
       return next(error);
     }
   }
 
   /** Sibling Org Lens convention: analytics are cached server-side in Valkey, never by the browser. */
-  private send(res: Response, body: unknown): void {
+  private send(req: Request, res: Response, orgUid: string, body: unknown): void {
     res.setHeader('Cache-Control', 'no-store');
-    res.json(body);
+    // All employee view (#5853): these payloads are aggregates by construction; the strip is defence in depth so a
+    // person-derived field a future warehouse change adds never leaves the API. The full view is returned untouched.
+    res.json(redactForEmployeeView(req, orgUid, body, { page: 'meetings' }));
   }
 }

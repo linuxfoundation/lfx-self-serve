@@ -12,6 +12,8 @@ import { CommitteeMember, MeetingCommittee, MeetingRegistrant, MeetingRsvp, Past
 import {
   buildParticipantGuestRows,
   buildRegistrantGuestRows,
+  composerGroupMeta,
+  composerGuestSubline,
   filterMeetingGuestRows,
   getMeetingGuestFilterChips,
   getMeetingGuestFilterFields,
@@ -321,5 +323,33 @@ describe('filters and chips', () => {
 
   it('counts a committee that is not on the meeting as a direct invite', () => {
     expect(rows.map((row) => row.groups)).toEqual([[], ['c-1'], []]);
+  });
+});
+
+describe('composerGuestSubline', () => {
+  const guest = { email: 'ada@acme.example', occurrence_id: null, committee_name: null, username: null, org_name: null };
+
+  it.each([
+    ['an external guest', guest, false, 'ada@acme.example'],
+    ['an external guest with a company', { ...guest, org_name: 'Acme' }, false, 'ada@acme.example · Acme'],
+    ['an LFX member', { ...guest, username: 'ada', org_name: 'Acme' }, false, 'ada@acme.example · LFX member · Acme'],
+    ['a group guest', { ...guest, committee_name: 'TSC', org_name: 'Acme' }, false, 'ada@acme.example · via TSC'],
+    ['a series guest in an occurrence edit', { ...guest, committee_name: 'TSC' }, true, 'ada@acme.example · Series guest'],
+    ['an occurrence-only guest in an occurrence edit', { ...guest, occurrence_id: '1700000000' }, true, 'ada@acme.example'],
+    ['a guest without an email', { ...guest, email: '', committee_name: 'TSC' }, false, 'via TSC'],
+  ])('describes %s', (_label, input, occurrenceEdit, expected) => {
+    expect(composerGuestSubline(input, occurrenceEdit)).toBe(expected);
+  });
+});
+
+describe('composerGroupMeta', () => {
+  it.each([
+    ['a group with category and members', { category: 'Board', total_members: 12 }, 'Board · 12 members'],
+    ['one member', { category: 'Technical', total_members: 1 }, 'Technical · 1 member'],
+    ['no member count', { category: 'Board' }, 'Board'],
+    ['no category', { category: '', total_members: 0 }, '0 members'],
+    ['an unknown group', undefined, ''],
+  ])('describes %s', (_label, input, expected) => {
+    expect(composerGroupMeta(input)).toBe(expected);
   });
 });

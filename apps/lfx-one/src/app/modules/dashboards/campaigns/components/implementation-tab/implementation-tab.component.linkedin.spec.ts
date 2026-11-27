@@ -6,12 +6,13 @@ import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
+import { LINKEDIN_GEO_SEARCH_DEBOUNCE_MS } from '@lfx-one/shared/constants';
 import type { CampaignBriefOutput, CampaignImplementationDraft } from '@lfx-one/shared/interfaces';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
 import { of, Subject, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ImplementationTabComponent } from './implementation-tab.component';
 import { stubCreativeLibraryUpload, STATE_ONLY, tabComponentUnderTest, trackStateOnlyTests } from './implementation-tab.spec-helper';
 
@@ -27,9 +28,9 @@ describe('ImplementationTabComponent linkedin round-trip across a tab switch', (
   /** Matches the slug on the brief below — `applyDraft` ignores a draft keyed to another event. */
   const EVENT_SLUG = 'kubecon-eu-2026';
 
-  /** Two real URNs from the shared resolve map, so `addGeoTarget` can find them. */
+  /** Two real LinkedIn geo URNs. */
   const US_GEO = { urn: 'urn:li:geo:103644278', label: 'United States' };
-  const DE_GEO = { urn: 'urn:li:geo:101165590', label: 'Germany' };
+  const DE_GEO = { urn: 'urn:li:geo:101282230', label: 'Germany' };
 
   const brief = (): CampaignBriefOutput =>
     ({
@@ -56,7 +57,7 @@ describe('ImplementationTabComponent linkedin round-trip across a tab switch', (
     linkedInGeoTargets(): { urn: string; label: string }[];
     linkedInTargetingProfile(): string;
     removeGeoTarget(index: number): void;
-    addGeoTarget(urn: string): void;
+    addGeoTarget(geo: { urn: string; label: string }): void;
     setLinkedInTargetingProfile(profile: string): void;
     /**
      * The template's `(change)` handler, NOT the `setLinkedInAccount` convenience method.
@@ -114,9 +115,23 @@ describe('ImplementationTabComponent linkedin round-trip across a tab switch', (
    * neither the brief's recommendation (`[US]`) nor the empty default. Only a working restore can
    * produce it.
    */
+  // The rule is table rows in `campaign-linkedin-config.utils.spec.ts` (LFXV2-2665); this proves the restore applies it.
+  it('restores a Germany saved with the old shared map as the real Germany', STATE_ONLY, async () => {
+    const first = await mount(null);
+    // Any edit emits the draft; the saved Germany below is what a draft written before the fix carries.
+    at(first.fixture).addGeoTarget(DE_GEO);
+    first.fixture.detectChanges();
+    const saved = { ...(first.latest() as CampaignImplementationDraft), linkedInGeoTargets: [{ label: 'Germany', urn: 'urn:li:geo:101165590' }] };
+    first.fixture.destroy();
+
+    const second = await mount(saved);
+
+    expect(at(second.fixture).linkedInGeoTargets()).toEqual([DE_GEO]);
+  });
+
   it('keeps a removed geo target removed after a tab round-trip', STATE_ONLY, async () => {
     const first = await mount(null);
-    at(first.fixture).addGeoTarget(DE_GEO.urn);
+    at(first.fixture).addGeoTarget(DE_GEO);
     first.fixture.detectChanges();
     // Drop the brief's US recommendation, keeping the user's own addition.
     at(first.fixture).removeGeoTarget(0);
@@ -143,7 +158,7 @@ describe('ImplementationTabComponent linkedin round-trip across a tab switch', (
 
   it('keeps an added geo target after a tab round-trip', STATE_ONLY, async () => {
     const first = await mount(null);
-    at(first.fixture).addGeoTarget(DE_GEO.urn);
+    at(first.fixture).addGeoTarget(DE_GEO);
     first.fixture.detectChanges();
 
     const carried = first.latest();
@@ -586,7 +601,11 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
       const f = await mountWithSelection(true);
       await answer(f, chooser);
 
+      // The custom targeting editor reads the segments of the account the create names: the default until a grant is picked.
+      const audienceAccount = (f.componentInstance as unknown as { linkedInAudienceAccountId(): string | null }).linkedInAudienceAccountId;
+      expect(audienceAccount()).toBeNull();
       pick(f, GRANT.accountId);
+      expect(audienceAccount()).toBe(GRANT.accountId);
 
       expect(el(f, 'implementation-linkedin-create-account-page')?.textContent).toContain(GRANT.orgId);
       const sent = submitAndRead(f);
@@ -765,6 +784,7 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
       selectedPlatforms: { set(v: string[]): void };
       campaignForm: { controls: Record<string, { setValue(v: unknown): void }> };
       linkedInVariants: { set(v: unknown[]): void };
+      linkedInAudienceAccountId(): string | null;
       submit(): void;
     };
 
@@ -785,6 +805,8 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
 
     const sent = (posted?.['linkedInConfig'] as { adAccountId: string } | undefined)?.adAccountId;
     expect(sent).toBe(displayed.accountId);
+    // The custom targeting editor reads the segments of the same account the legacy create sends.
+    expect(internals.linkedInAudienceAccountId()).toBe(displayed.accountId);
     // And specifically not the revoked id the draft carried.
     expect(sent).not.toBe('urn:li:sponsoredAccount:revoked-999');
   });
@@ -800,13 +822,14 @@ describe('ImplementationTabComponent linkedin account defaulting', () => {
 describe('ImplementationTabComponent linkedin ad variants', () => {
   const BRIEF_ID = '6f9619ff-8b86-d011-b42d-00c04fc964ff';
   const ASSET_ID = '3f2504e0-4f89-11d3-9a0c-0305e82c3301';
-  const OTHER_ASSET_ID = '9b2d8f4e-1c3a-4e5b-8f6d-7a8b9c0d1e2f';
   const ACCOUNT = { accountId: 'urn:li:sponsoredAccount:111', label: 'First Account', orgId: 'urn:li:organization:1', status: 'ACTIVE' };
 
   let createCampaign: ReturnType<typeof vi.fn>;
   let uploadCreativeAsset: ReturnType<typeof vi.fn>;
   let resumeCreativeAssetUpload: ReturnType<typeof vi.fn>;
   let cancelCreativeAssetUpload: ReturnType<typeof vi.fn>;
+  const videoDeleting = signal<{ briefId: string; id: string } | null>(null);
+  const searchLinkedInGeoTargets = vi.fn();
 
   interface Internals {
     campaignForm: { controls: Record<string, { setValue(v: unknown): void }> };
@@ -818,6 +841,7 @@ describe('ImplementationTabComponent linkedin ad variants', () => {
     canSubmit: () => boolean;
     addLinkedInVariant(): void;
     removeLinkedInVariant(key: string): void;
+    onLinkedInVariantTextChange(key: string, field: string, value: string): void;
     submit(): void;
   }
   const at = (f: ComponentFixture<ImplementationTabComponent>): Internals => f.componentInstance as unknown as Internals;
@@ -932,13 +956,58 @@ describe('ImplementationTabComponent linkedin ad variants', () => {
             resumeCreativeAssetUpload,
             forgetCreativeAssetUpload: vi.fn(),
             cancelCreativeAssetUpload,
+            creativeVideoDeleting: videoDeleting.asReadonly(),
             getLinkedInAccounts: () => of([ACCOUNT]),
             getLinkedInTargetingProfiles: () => of([]),
             getCreativeAssetPlan: () => of({ platforms: [], assignments: [], gaps: [], unclassified: [], unused: [] }),
+            searchLinkedInGeoTargets: (...args: unknown[]) => searchLinkedInGeoTargets(...args),
           },
         },
       ],
     }).compileComponents();
+  });
+
+  // The location search (#5545); its rules are rows in `campaign-linkedin-geo.utils.spec.ts`.
+  describe('location search', () => {
+    afterEach(() => vi.useRealTimers());
+
+    it('searches after the debounce, offers each location once, and sends the one picked', STATE_ONLY, async () => {
+      const BERLIN = { urn: 'urn:li:geo:103035651', label: 'Berlin, Germany' };
+      const US = { urn: 'urn:li:geo:103644278', label: 'United States' };
+      searchLinkedInGeoTargets.mockReturnValue(of({ locations: [BERLIN, US] }));
+      const f = (await mount(null)).fixture;
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+      const c = f.componentInstance as unknown as {
+        onLinkedInGeoSearch(event: { query: string }): void;
+        onLinkedInGeoSearchSelect(event: { value: unknown }): void;
+        onLinkedInGeoSearchInput(event: { target: { value: string } }): void;
+        linkedInGeoSearchQuery(): string;
+        linkedInGeoSearchOptions(): { urn: string; disabled: boolean }[];
+      };
+
+      c.onLinkedInGeoSearch({ query: '  Berlin ' });
+      f.detectChanges();
+      await vi.advanceTimersByTimeAsync(LINKEDIN_GEO_SEARCH_DEBOUNCE_MS);
+      f.detectChanges();
+
+      expect(searchLinkedInGeoTargets).toHaveBeenCalledWith('tlf', 'Berlin');
+      // The brief already targets the United States, so that row is offered but disabled.
+      expect(c.linkedInGeoSearchOptions()).toEqual([
+        { ...BERLIN, disabled: false },
+        { ...US, disabled: true },
+      ]);
+
+      // Deleting back below two characters, where PrimeNG emits nothing, clears the query and so cancels the search.
+      c.onLinkedInGeoSearch({ query: 'Be' });
+      c.onLinkedInGeoSearchInput({ target: { value: 'B' } });
+      expect(c.linkedInGeoSearchQuery()).toBe('');
+
+      c.onLinkedInGeoSearchSelect({ value: { ...BERLIN, disabled: false } });
+      vi.useRealTimers();
+      fillForm(f);
+      at(f).submit();
+      expect((createCampaign.mock.calls[0][0]['linkedInConfig'] as { geoTargets: unknown }).geoTargets).toEqual([US, BERLIN]);
+    });
   });
 
   describe('copy', () => {
@@ -948,6 +1017,114 @@ describe('ImplementationTabComponent linkedin ad variants', () => {
       expect((q(f, 'implementation-linkedin-variant-intro-0')?.querySelector('textarea') as HTMLTextAreaElement).value).toBe('First intro');
       expect((q(f, 'implementation-linkedin-variant-headline-1')?.querySelector('input') as HTMLInputElement).value).toBe('Second headline');
       expect(submitVariants(f)).toEqual(briefVariants());
+    });
+
+    // The ad name, description and call to action (#5764 rows 16–17); the rules are rows in
+    // `campaign-linkedin-variant-fields.utils.spec.ts` and `campaign-linkedin-form.utils.spec.ts`.
+    it('offers the ad name, description and call to action only on an explicit yes, and sends them as set', async () => {
+      const f = (await mount(null)).fixture;
+      expect(q(f, 'implementation-linkedin-variant-name-0')).toBeNull();
+      expect(q(f, 'implementation-linkedin-variant-cta-0')).toBeNull();
+
+      f.componentRef.setInput('linkedInVariantCopyEnabled', true);
+      f.componentRef.setInput('linkedInCallToActionEnabled', true);
+      f.detectChanges();
+      type(f, 'implementation-linkedin-variant-name-1', 'Ad two');
+      type(f, 'implementation-linkedin-variant-description-1', 'Two days of talks');
+      at(f).onLinkedInVariantTextChange(at(f).linkedInVariants()[1].key, 'callToAction', 'REGISTER');
+
+      expect(submitVariants(f)).toEqual([
+        { introText: 'First intro', headline: 'First headline' },
+        {
+          introText: 'Second intro',
+          headline: 'Second headline',
+          imageUrn: 'urn:li:image:C4D10AQ',
+          name: 'Ad two',
+          description: 'Two days of talks',
+          callToAction: 'REGISTER',
+        },
+      ]);
+    });
+
+    // Text Ads (#5764 row 19); the rules are rows in `campaign-linkedin-text-ads-form.utils.spec.ts` and
+    // `campaign-linkedin-form.utils.spec.ts`, the editor's own wiring is in its spec.
+    interface TextAdsInternals {
+      biddingDrafts: { set(v: Record<string, unknown>): void };
+      onLinkedInFormatChange(format: string): void;
+      onLinkedInTextAdsChange(ads: { key: string; headline: string; description: string }[]): void;
+    }
+    const textAds = (f: ComponentFixture<ImplementationTabComponent>): TextAdsInternals => f.componentInstance as unknown as TextAdsInternals;
+    const textAd = { key: 'text-ad-1', headline: 'KubeCon EU', description: 'Join cloud native engineers.' };
+
+    it('offers Text Ads only on an explicit yes, and sends them with a manual bid in place of the variants', async () => {
+      const { fixture: f, latest } = await mount(null);
+      expect(q(f, 'implementation-linkedin-format')).toBeNull();
+
+      f.componentRef.setInput('linkedInTextAdsEnabled', true);
+      f.componentRef.setInput('biddingEnabled', true);
+      textAds(f).biddingDrafts.set({ 'linkedin-ads': { strategy: 'manual', bidAmount: 5 } });
+      textAds(f).onLinkedInFormatChange('text');
+      textAds(f).onLinkedInTextAdsChange([textAd]);
+      f.detectChanges();
+      expect(q(f, 'implementation-linkedin-text-ads')).not.toBeNull();
+      expect(q(f, 'implementation-linkedin-variants')).toBeNull();
+      expect(latest()).toMatchObject({ linkedInFormat: 'text', linkedInTextAds: [textAd] });
+
+      fillForm(f);
+      at(f).submit();
+      expect(createCampaign.mock.calls[0][0]['linkedInConfig']).toMatchObject({
+        format: 'text',
+        textAds: [{ headline: 'KubeCon EU', description: 'Join cloud native engineers.' }],
+        variants: [],
+      });
+    });
+
+    it('holds Create while Text Ads have no manual bid', STATE_ONLY, async () => {
+      const f = (await mount(null)).fixture;
+      f.componentRef.setInput('linkedInTextAdsEnabled', true);
+      f.componentRef.setInput('biddingEnabled', true);
+      fillForm(f);
+      textAds(f).onLinkedInFormatChange('text');
+      textAds(f).onLinkedInTextAdsChange([textAd]);
+
+      expect(at(f).createBlockedReason()).toBe('LinkedIn Ads: Text Ads need a manual bid. Choose manual bidding and set a maximum cost per click.');
+      textAds(f).biddingDrafts.set({ 'linkedin-ads': { strategy: 'manual', bidAmount: 5 } });
+      expect(at(f).createBlockedReason()).toBeNull();
+    });
+
+    it('holds Create, never sending single image ads instead, when a Text Ads choice is no longer offered', STATE_ONLY, async () => {
+      const f = (await mount(null)).fixture;
+      f.componentRef.setInput('linkedInTextAdsEnabled', true);
+      fillForm(f);
+      textAds(f).onLinkedInFormatChange('text');
+      f.componentRef.setInput('linkedInTextAdsEnabled', false);
+
+      expect(at(f).createBlockedReason()).toBe('LinkedIn Ads: Text Ads are not available right now. Choose single image ads as the ad format.');
+      textAds(f).onLinkedInFormatChange('single_image');
+      expect(at(f).createBlockedReason()).toBeNull();
+    });
+
+    it('holds Create, with the reason under the field, while two ads share a name', async () => {
+      const f = (await mount(null)).fixture;
+      f.componentRef.setInput('linkedInVariantCopyEnabled', true);
+      fillForm(f);
+      type(f, 'implementation-linkedin-variant-name-0', 'Same name');
+      type(f, 'implementation-linkedin-variant-name-1', 'Same name');
+
+      expect(at(f).createBlockedReason()).toBe('LinkedIn Ads: fix the ad name or description.');
+      expect(q(f, 'implementation-linkedin-variant-name-1')?.textContent).toContain('Ad 1 already has this name.');
+      type(f, 'implementation-linkedin-variant-name-1', 'Other name');
+      expect(at(f).createBlockedReason()).not.toBe('LinkedIn Ads: fix the ad name or description.');
+    });
+
+    it("holds Create while a name equals another ad's default, built from the stored brief's event name", async () => {
+      const f = (await mount(null)).fixture;
+      f.componentRef.setInput('linkedInVariantCopyEnabled', true);
+      fillForm(f);
+      // The brief's event is "KubeCon EU 2026"; ad 2 is left unnamed, so campaign-service names it "KubeCon EU 2026 | variant-2".
+      type(f, 'implementation-linkedin-variant-name-0', 'KubeCon EU 2026 | variant-2');
+
+      expect(at(f).createBlockedReason()).toBe('LinkedIn Ads: fix the ad name or description.');
     });
 
     it('sends the intro text and headline as edited, on that variant only', async () => {
@@ -984,19 +1161,6 @@ describe('ImplementationTabComponent linkedin ad variants', () => {
       type(f, 'implementation-linkedin-variant-intro-0', 'a'.repeat(600));
       expect(q(f, 'implementation-linkedin-variant-intro-0')?.textContent).toContain('600/600 characters');
       expect(at(f).canSubmit()).toBe(true);
-    });
-
-    it('blocks Create while a headline is over 200 characters or blank', async () => {
-      const f = (await mount(null)).fixture;
-      fillForm(f);
-
-      type(f, 'implementation-linkedin-variant-headline-1', 'h'.repeat(201));
-      expect(q(f, 'implementation-linkedin-variant-headline-1')?.textContent).toContain("The headline is 201 characters, over LinkedIn's 200. Shorten it.");
-      expect(at(f).canSubmit()).toBe(false);
-
-      type(f, 'implementation-linkedin-variant-headline-1', ' — ');
-      expect(q(f, 'implementation-linkedin-variant-headline-1')?.textContent).toContain('Enter the headline.');
-      expect(at(f).createBlockedReason()).toBe('LinkedIn Ads: fix the ad variant text.');
     });
 
     it('adds an empty variant, which holds Create until its copy is written, and sends it', async () => {
@@ -1064,38 +1228,117 @@ describe('ImplementationTabComponent linkedin ad variants', () => {
       ]);
     });
 
-    it('sends a different image on each variant', async () => {
+    it('does not hold a Text Ads create over a variant image upload still running (#5764 row 19)', async () => {
+      uploadCreativeAsset.mockReturnValue(new Subject<unknown>());
       const f = (await mount(true)).fixture;
-      choose(f, png(16, 'first.png'), 0);
-      uploadCreativeAsset.mockReturnValue(stored(OTHER_ASSET_ID));
-      choose(f, png(16, 'second.png'), 1);
+      fillForm(f);
+      choose(f, png());
+      expect(at(f).createBlockedReason()).toBe('Waiting for the LinkedIn Ads image upload to finish.');
 
-      expect(submitVariants(f).map((v) => v['imageAssetId'])).toEqual([ASSET_ID, OTHER_ASSET_ID]);
+      const c = f.componentInstance as unknown as {
+        biddingDrafts: { set(v: Record<string, unknown>): void };
+        onLinkedInFormatChange(format: string): void;
+        onLinkedInTextAdsChange(ads: { key: string; headline: string; description: string }[]): void;
+      };
+      f.componentRef.setInput('linkedInTextAdsEnabled', true);
+      f.componentRef.setInput('biddingEnabled', true);
+      c.biddingDrafts.set({ 'linkedin-ads': { strategy: 'manual', bidAmount: 5 } });
+      c.onLinkedInFormatChange('text');
+      c.onLinkedInTextAdsChange([{ key: 'text-ad-1', headline: 'KubeCon EU', description: 'Join cloud native engineers.' }]);
+      expect(at(f).createBlockedReason()).toBeNull();
     });
 
-    it('refuses a file that is not a PNG or JPEG before any upload', async () => {
+    it('does not hold a Text Ads create over a variant image it does not send (#5764 row 19)', async () => {
       const f = (await mount(true)).fixture;
-      choose(f, new File([new Uint8Array(4)], 'promo.gif', { type: 'image/gif' }));
-
-      expect(uploadCreativeAsset).not.toHaveBeenCalled();
-      expect(at(f).linkedInImageUploadStatus()).toBe('error');
-      expect(q(f, 'implementation-linkedin-variant-image-error-0')).not.toBeNull();
-    });
-
-    it("refuses an image over LinkedIn's 5,000,000-byte limit before any upload, though the shared cap would admit it", async () => {
-      const f = (await mount(true)).fixture;
+      fillForm(f);
       choose(f, png(5_000_001));
+      expect(at(f).createBlockedReason()).toBe('LinkedIn Ads: resolve the image notice.');
 
-      expect(uploadCreativeAsset).not.toHaveBeenCalled();
-      expect(q(f, 'implementation-linkedin-variant-image-error-0')?.textContent).toContain('LinkedIn accepts images up to 5 MB');
+      const c = f.componentInstance as unknown as {
+        biddingDrafts: { set(v: Record<string, unknown>): void };
+        onLinkedInFormatChange(format: string): void;
+        onLinkedInTextAdsChange(ads: { key: string; headline: string; description: string }[]): void;
+      };
+      f.componentRef.setInput('linkedInTextAdsEnabled', true);
+      f.componentRef.setInput('biddingEnabled', true);
+      c.biddingDrafts.set({ 'linkedin-ads': { strategy: 'manual', bidAmount: 5 } });
+      c.onLinkedInFormatChange('text');
+      c.onLinkedInTextAdsChange([{ key: 'text-ad-1', headline: 'KubeCon EU', description: 'Join cloud native engineers.' }]);
+      expect(at(f).createBlockedReason()).toBeNull();
     });
 
-    it('uploads an image of exactly 5,000,000 bytes', async () => {
+    // A text ad's image (#5764 row 19): the size and file rules are rows in `campaign-linkedin-text-ads-form.utils.spec.ts`,
+    // and the picker's wiring is in the editor's spec. These check the pick reaches the upload and the create.
+    async function textAdsWithImage(size: { width: number; height: number }): Promise<ComponentFixture<ImplementationTabComponent>> {
       const f = (await mount(true)).fixture;
-      choose(f, png(5_000_000));
+      const c = f.componentInstance as unknown as {
+        biddingDrafts: { set(v: Record<string, unknown>): void };
+        onLinkedInFormatChange(format: string): void;
+        onLinkedInTextAdsChange(ads: { key: string; headline: string; description: string }[]): void;
+        onLinkedInTextAdImageFileChange(pick: { key: string; event: Event }): void;
+        readImageSize(file: Blob): Promise<{ width: number; height: number } | null>;
+      };
+      vi.spyOn(c, 'readImageSize').mockResolvedValue(size);
+      f.componentRef.setInput('linkedInTextAdsEnabled', true);
+      f.componentRef.setInput('biddingEnabled', true);
+      c.biddingDrafts.set({ 'linkedin-ads': { strategy: 'manual', bidAmount: 5 } });
+      c.onLinkedInFormatChange('text');
+      c.onLinkedInTextAdsChange([{ key: 'text-ad-1', headline: 'KubeCon EU', description: 'Join cloud native engineers.' }]);
+      fillForm(f);
+      c.onLinkedInTextAdImageFileChange({ key: 'text-ad-1', event: { target: { files: [png()], value: '' } } as unknown as Event });
+      // The size read settles on a later microtask.
+      await new Promise((resolve) => setTimeout(resolve));
+      return f;
+    }
 
-      expect(uploadCreativeAsset).toHaveBeenCalled();
-      expect(at(f).linkedInVariants()[0].imageAssetId).toBe(ASSET_ID);
+    it('uploads a 100x100 text ad image for the saved brief and sends it on that text ad', STATE_ONLY, async () => {
+      const f = await textAdsWithImage({ width: 100, height: 100 });
+
+      expect(uploadCreativeAsset).toHaveBeenCalledWith(expect.any(File), 'tlf', BRIEF_ID, 'linkedin');
+      at(f).submit();
+      expect(createCampaign.mock.calls[0][0]['linkedInConfig']).toMatchObject({
+        format: 'text',
+        textAds: [{ headline: 'KubeCon EU', description: 'Join cloud native engineers.', imageAssetId: ASSET_ID }],
+      });
+    });
+
+    it('never uploads a text ad image that is not 100x100, and holds Create until it is removed', STATE_ONLY, async () => {
+      const f = await textAdsWithImage({ width: 120, height: 120 });
+
+      expect(uploadCreativeAsset).not.toHaveBeenCalled();
+      expect(at(f).createBlockedReason()).toBe('LinkedIn Ads: resolve the image notice.');
+      (f.componentInstance as unknown as { onLinkedInTextAdImageRemove(key: string): void }).onLinkedInTextAdImageRemove('text-ad-1');
+      expect(at(f).createBlockedReason()).toBeNull();
+    });
+
+    it('drops a text ad image upload in flight when its text ad is removed, and no other', STATE_ONLY, async () => {
+      uploadCreativeAsset.mockReturnValue(new Subject<unknown>());
+      const f = await textAdsWithImage({ width: 100, height: 100 });
+      const c = f.componentInstance as unknown as { onLinkedInTextAdsChange(ads: { key: string; headline: string; description: string }[]): void };
+      const kept = { key: 'text-ad-1', headline: 'KubeCon EU', description: 'Join cloud native engineers.' };
+      const other = { key: 'text-ad-2', headline: 'KubeCon NA', description: 'Meet the maintainers.' };
+      expect(at(f).createBlockedReason()).toBe('Waiting for the LinkedIn Ads image upload to finish.');
+
+      c.onLinkedInTextAdsChange([kept, other]);
+      c.onLinkedInTextAdsChange([kept]);
+      expect(at(f).createBlockedReason()).toBe('Waiting for the LinkedIn Ads image upload to finish.');
+
+      c.onLinkedInTextAdsChange([other]);
+      expect(at(f).createBlockedReason()).not.toBe('Waiting for the LinkedIn Ads image upload to finish.');
+    });
+
+    it('lets a variant take a pick after switching back from Text Ads with a failed text ad image', STATE_ONLY, async () => {
+      const f = await textAdsWithImage({ width: 120, height: 120 });
+      const c = f.componentInstance as unknown as {
+        linkedInVariants(): { key: string }[];
+        onLinkedInFormatChange(format: string): void;
+        onLinkedInVariantImageFileChange(key: string, event: Event): void;
+      };
+      c.onLinkedInFormatChange('single_image');
+      const file = png();
+      c.onLinkedInVariantImageFileChange(c.linkedInVariants()[0].key, { target: { files: [file], value: '' } } as unknown as Event);
+
+      expect(uploadCreativeAsset).toHaveBeenCalledWith(file, 'tlf', BRIEF_ID, 'linkedin');
     });
 
     it.each([
@@ -1129,12 +1372,10 @@ describe('ImplementationTabComponent linkedin ad variants', () => {
       );
     });
 
-    it.each([
-      ['has no id yet', { status: 'saving', briefId: null, message: null, approved: true }],
-      ['is saving', { status: 'saving', briefId: '6f9619ff-8b86-d011-b42d-00c04fc964ff', message: null, approved: true }],
-    ])('disables every picker while the brief %s', async (_label, persistence) => {
+    // One row proves the brief's save state reaches the picker; the rest are rows in `campaign-linkedin-image.utils.spec.ts` (#5980).
+    it('disables every picker while the brief is saving', async () => {
       const f = (await mount(true)).fixture;
-      f.componentRef.setInput('briefPersistence', persistence);
+      f.componentRef.setInput('briefPersistence', { status: 'saving', briefId: '6f9619ff-8b86-d011-b42d-00c04fc964ff', message: null, approved: true });
       f.detectChanges();
 
       expect((q(f, 'implementation-linkedin-variant-image-file-0') as HTMLInputElement).disabled).toBe(true);
@@ -1182,16 +1423,6 @@ describe('ImplementationTabComponent linkedin ad variants', () => {
       expect(at(f).linkedInImageUploadStatus()).toBe('idle');
     });
 
-    it('removes one variant image, after which that variant goes out without it and the other keeps its own', async () => {
-      const f = (await mount(true)).fixture;
-      choose(f, png(), 0);
-      uploadCreativeAsset.mockReturnValue(stored(OTHER_ASSET_ID));
-      choose(f, png(), 1);
-      click(f, 'implementation-linkedin-variant-image-remove-0');
-
-      expect(submitVariants(f).map((v) => v['imageAssetId'])).toEqual([undefined, OTHER_ASSET_ID]);
-    });
-
     it('carries the upload in the draft, and a remount resumes an upload still in flight onto its variant', async () => {
       const pending = new Subject<unknown>();
       uploadCreativeAsset.mockReturnValue(pending);
@@ -1216,16 +1447,9 @@ describe('ImplementationTabComponent linkedin ad variants', () => {
       expect(second.latest()?.linkedInVariants?.[1].imageAssetId).toBe(ASSET_ID);
     });
 
-    it('restores a finished upload from the draft and sends it on its variant', async () => {
-      const draft = await uploadedDraft();
-      const f = (await mount(true, draft)).fixture;
-
-      expect(submitVariants(f).map((v) => v['imageAssetId'])).toEqual([ASSET_ID, undefined]);
-    });
-
     it.each([
       ['off', false, 'ready', 'unsupported'],
-      ['unanswered, with the read failed', null, 'failed', 'failed'],
+      // Pending proves `createCapabilityRead` reaches the rule; the other kinds are rows in `campaign-linkedin-image.utils.spec.ts` (#5980).
       ['unanswered, with the read pending', null, 'pending', 'pending'],
     ] as const)('blocks Create for a restored upload while the capability is %s, until it is removed', async (_label, upload, read, kind) => {
       const draft = await uploadedDraft();
@@ -1240,19 +1464,6 @@ describe('ImplementationTabComponent linkedin ad variants', () => {
       expect(q(f, `implementation-linkedin-variant-image-asset-block-${kind}-0`)).toBeNull();
       expect(at(f).canSubmit()).toBe(true);
       expect(submitVariants(f).some((v) => 'imageAssetId' in v)).toBe(false);
-    });
-
-    it('never sends an upload made for another brief, and says so on its variant', async () => {
-      const uploaded = await uploadedDraft();
-      const draft = {
-        ...uploaded,
-        linkedInVariants: uploaded.linkedInVariants?.map((v, i) => (i === 0 ? { ...v, imageAssetBriefId: '0f8fad5b-d9cb-469f-a165-70867728950e' } : v)),
-      };
-      const f = (await mount(true, draft)).fixture;
-      fillForm(f);
-
-      expect(q(f, 'implementation-linkedin-variant-image-asset-block-otherBrief-0')).not.toBeNull();
-      expect(at(f).canSubmit()).toBe(false);
     });
 
     it('keeps an upload running through a re-seed when the parent restores its draft, and lands it on its variant', async () => {
@@ -1281,24 +1492,6 @@ describe('ImplementationTabComponent linkedin ad variants', () => {
       f.detectChanges();
       expect(at(f).linkedInImageUploadStatus()).toBe('idle');
       expect(submitVariants(f).map((variant) => variant['imageAssetId'])).toEqual([undefined, ASSET_ID]);
-    });
-
-    it('lets an upload orphaned by a re-seed hold neither the pickers nor Create', async () => {
-      uploadCreativeAsset.mockReturnValue(new Subject<unknown>());
-      const f = (await mount(true)).fixture;
-      fillForm(f);
-      choose(f, png(), 1);
-      expect(at(f).canSubmit()).toBe(false);
-
-      f.componentRef.setInput('briefData', brief());
-      f.detectChanges();
-      await f.whenStable();
-      f.detectChanges();
-
-      expect((q(f, 'implementation-linkedin-variant-image-file-0') as HTMLInputElement).disabled).toBe(false);
-      expect((q(f, 'implementation-linkedin-variant-image-file-1') as HTMLInputElement).disabled).toBe(false);
-      expect(at(f).createBlockedReason()).not.toBe('Waiting for the LinkedIn Ads image upload to finish.');
-      expect(at(f).canSubmit()).toBe(true);
     });
 
     it('frees the upload slot when an upload fails after the brief re-seeded its variant away', async () => {
@@ -1340,6 +1533,146 @@ describe('ImplementationTabComponent linkedin ad variants', () => {
       expect(q(f, 'implementation-linkedin-variant-image-asset-block-uploadFailed-1')).toBeNull();
       expect(at(f).canSubmit()).toBe(true);
       expect((q(f, 'implementation-linkedin-variant-image-file-0') as HTMLInputElement).disabled).toBe(false);
+    });
+  });
+
+  // Video ads (#5764 row 18): the file and payload rules are rows in `campaign-linkedin-video-form.utils.spec.ts`; these
+  // keep the wiring.
+  describe('videos', () => {
+    const VIDEO_ID = '9a7b1c2d-3e4f-4a6b-8c1e-5d4a3f2b4e6f';
+    const mp4 = (size = 100 * 1024, name = 'promo.mp4'): File => new File([new Uint8Array(size)], name, { type: 'video/mp4' });
+    interface VideoInternals {
+      onLinkedInFormatChange(format: string): void;
+      onLinkedInVariantVideoFileChange(key: string, event: Event): void;
+    }
+    const video = (f: ComponentFixture<ImplementationTabComponent>): VideoInternals => f.componentInstance as unknown as VideoInternals;
+    const pick = (f: ComponentFixture<ImplementationTabComponent>, index: number, file: File): void =>
+      video(f).onLinkedInVariantVideoFileChange(at(f).linkedInVariants()[index].key, { target: { files: [file], value: '' } } as unknown as Event);
+
+    beforeEach(() => videoDeleting.set(null));
+
+    async function mountVideo(): Promise<ComponentFixture<ImplementationTabComponent>> {
+      const f = (await mount(true)).fixture;
+      f.componentRef.setInput('linkedInVideoAdsEnabled', true);
+      f.componentRef.setInput('linkedInVariantCopyEnabled', true);
+      fillForm(f);
+      video(f).onLinkedInFormatChange('video');
+      return f;
+    }
+
+    it('offers video ads only on an explicit yes, with a video picker in place of the image and no description', async () => {
+      const f = (await mount(true)).fixture;
+      f.componentRef.setInput('linkedInVariantCopyEnabled', true);
+      f.detectChanges();
+      expect(q(f, 'implementation-linkedin-format')).toBeNull();
+
+      f.componentRef.setInput('linkedInVideoAdsEnabled', true);
+      video(f).onLinkedInFormatChange('video');
+      f.detectChanges();
+      expect(q(f, 'implementation-linkedin-format')).not.toBeNull();
+      expect(q(f, 'implementation-linkedin-variant-video-file-0')?.getAttribute('accept')).toBe('video/mp4');
+      expect(q(f, 'implementation-linkedin-variant-image-file-0')).toBeNull();
+      expect(q(f, 'implementation-linkedin-variant-description-0')).toBeNull();
+    });
+
+    it('uploads a video for each ad and sends it with no image or description, holding Create until every ad has one', STATE_ONLY, async () => {
+      uploadCreativeAsset.mockReturnValue(of({ id: VIDEO_ID, mimeType: 'video/mp4', byteSize: 102_400, checksum: 'ab'.repeat(32), created: true }));
+      const f = await mountVideo();
+      at(f).onLinkedInVariantTextChange(at(f).linkedInVariants()[0].key, 'description', 'Two days of talks');
+
+      pick(f, 0, mp4());
+      expect(uploadCreativeAsset).toHaveBeenCalledWith(expect.any(File), 'tlf', BRIEF_ID, 'linkedin');
+      expect(at(f).createBlockedReason()).toBe('LinkedIn Ads: upload a video for every ad.');
+
+      pick(f, 1, mp4());
+      expect(at(f).createBlockedReason()).toBeNull();
+      at(f).submit();
+      expect((createCampaign.mock.calls[0][0]['linkedInConfig'] as { variants: unknown[] }).variants).toEqual([
+        { introText: 'First intro', headline: 'First headline', videoAssetId: VIDEO_ID },
+        { introText: 'Second intro', headline: 'Second headline', videoAssetId: VIDEO_ID },
+      ]);
+    });
+
+    it("keeps the ad's video when a refused file is picked over it, without holding Create", STATE_ONLY, async () => {
+      uploadCreativeAsset.mockReturnValue(of({ id: VIDEO_ID, mimeType: 'video/mp4', byteSize: 102_400, checksum: 'ab'.repeat(32), created: true }));
+      const f = await mountVideo();
+      pick(f, 0, mp4());
+      pick(f, 1, mp4());
+      uploadCreativeAsset.mockClear();
+
+      pick(f, 0, png());
+
+      expect(uploadCreativeAsset).not.toHaveBeenCalled();
+      expect(at(f).linkedInImageUploadError()).toBe('Only MP4 videos can be uploaded.');
+      expect(at(f).linkedInVariants()[0]).toMatchObject({ videoAssetId: VIDEO_ID });
+      expect(at(f).createBlockedReason()).toBeNull();
+    });
+
+    it('refuses a file that is not an MP4 before uploading it', STATE_ONLY, async () => {
+      const f = await mountVideo();
+
+      pick(f, 0, png());
+
+      expect(uploadCreativeAsset).not.toHaveBeenCalled();
+      expect(at(f).linkedInImageUploadError()).toBe('Only MP4 videos can be uploaded.');
+    });
+
+    it("clears the variant's video, not its image, from the notice's Remove", STATE_ONLY, async () => {
+      // A video made for another brief, as a restored draft can hold.
+      uploadCreativeAsset.mockReturnValue(of({ id: VIDEO_ID, mimeType: 'video/mp4', byteSize: 102_400, checksum: 'ab'.repeat(32), created: true }));
+      const f = await mountVideo();
+      pick(f, 0, mp4());
+      pick(f, 1, mp4());
+      const c = f.componentInstance as unknown as {
+        linkedInVariants: { update(fn: (v: Record<string, unknown>[]) => Record<string, unknown>[]): void };
+        linkedInVariantViews(): { imageBlock: { kind: string } | null }[];
+        onLinkedInVariantMediaRemove(key: string): void;
+      };
+      c.linkedInVariants.update((variants) =>
+        variants.map((v, i) => (i === 0 ? { ...v, imageAssetId: 'img', imageAssetBriefId: BRIEF_ID, videoAssetBriefId: 'another-brief' } : v))
+      );
+      expect(c.linkedInVariantViews()[0].imageBlock?.kind).toBe('otherBrief');
+
+      c.onLinkedInVariantMediaRemove(at(f).linkedInVariants()[0].key);
+      expect(c.linkedInVariantViews()[0].imageBlock).toBeNull();
+      expect(at(f).linkedInVariants()[0]).toMatchObject({ imageAssetId: 'img', videoAssetId: '' });
+    });
+
+    it('holds the video picker while the library deletes a video, and clears a deleted video from the ads', STATE_ONLY, async () => {
+      uploadCreativeAsset.mockReturnValue(of({ id: VIDEO_ID, mimeType: 'video/mp4', byteSize: 102_400, checksum: 'ab'.repeat(32), created: true }));
+      const f = await mountVideo();
+      const c = f.componentInstance as unknown as { onLibraryVideoDeleted(id: string): void };
+
+      videoDeleting.set({ briefId: BRIEF_ID, id: 'another-video' });
+      pick(f, 0, mp4());
+      expect(uploadCreativeAsset).not.toHaveBeenCalled();
+
+      videoDeleting.set(null);
+      pick(f, 0, mp4());
+      expect(at(f).linkedInVariants()[0]).toMatchObject({ videoAssetId: VIDEO_ID });
+      c.onLibraryVideoDeleted(VIDEO_ID);
+      expect(at(f).linkedInVariants()[0]).toMatchObject({ videoAssetId: '' });
+    });
+
+    it('keeps a video in use whatever the format, until it is taken off the ads', STATE_ONLY, async () => {
+      uploadCreativeAsset.mockReturnValue(of({ id: VIDEO_ID, mimeType: 'video/mp4', byteSize: 102_400, checksum: 'ab'.repeat(32), created: true }));
+      const f = await mountVideo();
+      pick(f, 0, mp4());
+      const c = f.componentInstance as unknown as { linkedInVideoIdsInUse(): string[]; onLibraryVideoDeleted(id: string): void };
+
+      video(f).onLinkedInFormatChange('single_image');
+      expect(c.linkedInVideoIdsInUse()).toEqual([VIDEO_ID]);
+      c.onLibraryVideoDeleted(VIDEO_ID);
+      expect(c.linkedInVideoIdsInUse()).toEqual([]);
+    });
+
+    it('holds Create, never sending image ads instead, when a video choice is no longer offered', STATE_ONLY, async () => {
+      const f = await mountVideo();
+      f.componentRef.setInput('linkedInVideoAdsEnabled', false);
+
+      expect(at(f).createBlockedReason()).toBe('LinkedIn Ads: video ads are not available right now. Choose single image ads as the ad format.');
+      video(f).onLinkedInFormatChange('single_image');
+      expect(at(f).createBlockedReason()).toBeNull();
     });
   });
 });

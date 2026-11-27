@@ -8,8 +8,6 @@ import { accountPathForProfileTab } from '@lfx-one/shared/utils';
 
 import { accountUnsavedChangesGuard } from '../../shared/guards/account-unsaved-changes.guard';
 
-const loadAccountSettings = () => import('../settings/account-settings/account-settings.component').then((m) => m.AccountSettingsComponent);
-
 /**
  * A full-page load of an old `/profile/settings#password` link reaches the server without its fragment, so the server sends
  * it here; the browser still has the fragment and moves on to the section's own page.
@@ -24,8 +22,8 @@ const withUnsavedChangesGuard = (routes: Route[]): Route[] =>
   routes.map((route) => (route.loadComponent ? { ...route, canDeactivate: [...(route.canDeactivate ?? []), accountUnsavedChangesGuard] } : route));
 
 /**
- * Account & Settings (#6067), behind the profile redesign flag. Each page reuses the Profile & Account hub tab it
- * replaces until its own redesign lands; the three settings pages share the settings page, one section each.
+ * Account & Settings (#6067), behind the profile redesign flag. Each page is its own redesign, most extending the
+ * Profile & Account hub tab it replaces so the hub keeps working unchanged until it is removed (#6094).
  */
 export const ACCOUNT_ROUTES: Routes = [
   {
@@ -38,8 +36,11 @@ export const ACCOUNT_ROUTES: Routes = [
         title: 'Account & Settings',
         loadComponent: () => import('./landing/account-landing.component').then((m) => m.AccountLandingComponent),
       },
-      // Personal information is still the hub's Edit profile drawer until #6072.
-      { path: 'personal-information', redirectTo: '/profile' },
+      {
+        path: 'personal-information',
+        title: 'Personal information',
+        loadComponent: () => import('./personal-information/account-personal-information.component').then((m) => m.AccountPersonalInformationComponent),
+      },
       {
         path: 'work-history',
         title: 'Work history & Affiliations',
@@ -48,46 +49,47 @@ export const ACCOUNT_ROUTES: Routes = [
       {
         path: 'identities',
         title: 'Identities',
-        loadComponent: () => import('../profile/identities/profile-identities.component').then((m) => m.ProfileIdentitiesComponent),
+        loadComponent: () => import('./identities/account-identities.component').then((m) => m.AccountIdentitiesComponent),
       },
-      // Linux.com email still sits at the foot of Identities, which feeds it the verified addresses, until #6075. A function
-      // redirect, so a Flow C return keeps its query.
-      { path: 'linux-email', redirectTo: ({ queryParams }) => inject(Router).createUrlTree(['/account/identities'], { queryParams }) },
+      {
+        path: 'linux-email',
+        title: 'Linux.com email',
+        loadComponent: () => import('./linux-email/account-linux-email-page.component').then((m) => m.AccountLinuxEmailPageComponent),
+      },
       {
         path: 'individual-enrollment',
         title: 'Individual Enrollment',
-        loadComponent: () =>
-          import('../profile/individual-enrollment/profile-individual-enrollment.component').then((m) => m.ProfileIndividualEnrollmentComponent),
+        loadComponent: () => import('./individual-enrollment/account-individual-enrollment.component').then((m) => m.AccountIndividualEnrollmentComponent),
       },
       {
         path: 'clas',
         title: 'CLAs',
-        loadComponent: () => import('../profile/clas/profile-clas.component').then((m) => m.ProfileClasComponent),
+        loadComponent: () => import('./clas/account-clas.component').then((m) => m.AccountClasComponent),
       },
       {
         path: 'transactions',
         title: 'Transactions',
         data: { embedded: true },
-        loadComponent: () => import('../transactions/transactions-dashboard/transactions-dashboard.component').then((m) => m.TransactionsDashboardComponent),
+        loadComponent: () => import('./transactions/account-transactions.component').then((m) => m.AccountTransactionsComponent),
       },
       {
         path: 'email-settings',
         title: 'Email settings',
         canActivate: [settingsSectionFragmentGuard],
         data: { embedded: true, section: ACCOUNT_SETTINGS_SECTIONS.EMAIL_SETTINGS },
-        loadComponent: loadAccountSettings,
+        loadComponent: () => import('./email-settings/account-email-settings.component').then((m) => m.AccountEmailSettingsComponent),
       },
       {
         path: 'password',
         title: 'Password',
         data: { embedded: true, section: ACCOUNT_SETTINGS_SECTIONS.PASSWORD },
-        loadComponent: loadAccountSettings,
+        loadComponent: () => import('./password/account-password.component').then((m) => m.AccountPasswordComponent),
       },
       {
         path: 'developer-settings',
         title: 'Developer settings',
         data: { embedded: true, section: ACCOUNT_SETTINGS_SECTIONS.DEVELOPER_SETTINGS },
-        loadComponent: loadAccountSettings,
+        loadComponent: () => import('./developer-settings/account-developer-settings.component').then((m) => m.AccountDeveloperSettingsComponent),
       },
     ]),
   },

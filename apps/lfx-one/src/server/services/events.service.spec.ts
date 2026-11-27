@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Imported from source, not through the mocked '@lfx-one/shared/utils' barrel, so the SQL/JS
 // whitespace-agreement assertion below checks the real implementation.
@@ -49,7 +49,9 @@ vi.mock('@lfx-one/shared/utils', async () => {
   return {
     isBackfillEventSource: eventUtils.isBackfillEventSource,
     normalizeToUrl: urlUtils.normalizeToUrl,
+    dateOnlyToUtcMidnightIso: dateUtils.dateOnlyToUtcMidnightIso,
     formatDateToUTC: dateUtils.formatDateToUTC,
+    isLocalDateOnlyString: dateUtils.isLocalDateOnlyString,
   };
 });
 vi.mock('./snowflake.service', () => ({
@@ -63,6 +65,7 @@ vi.mock('./logger.service', () => ({
 }));
 
 const { EventsService } = await import('./events.service');
+const { logger } = await import('./logger.service');
 
 const USER_EMAIL = 'delegate@acme-motors.example';
 const SALESFORCE_ID = '003000000000001AAA';
@@ -732,5 +735,84 @@ describe('EventsService.getVisaRequests event-ended gate', () => {
     const result = await service.getVisaRequests({} as never, REGISTRANT, { pageSize: 10, offset: 0 } as never);
 
     expect(result.data[0].eventEnded).toBe(expected);
+  });
+});
+
+// #6052: user-service keeps only the UTC day of the value it gets, so the picked calendar day must go
+// out as UTC midnight rather than the applicant's local midnight.
+describe('EventsService.submitVisaRequestApplication dates', () => {
+  let service: InstanceType<typeof EventsService>;
+  const fetchMock = vi.fn();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv('API_GW_AUDIENCE', 'https://api-gw.example/');
+    vi.stubGlobal('fetch', fetchMock);
+    fetchMock.mockResolvedValue({ ok: true });
+    service = new EventsService();
+    (service as unknown as { userService: unknown }).userService = {
+      getApiGatewayProfile: vi.fn().mockResolvedValue({ ID: SALESFORCE_ID }),
+    };
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  async function submit(dates: { birthDate: string | null; passportExpiryDate: string | null }): Promise<Record<string, unknown>> {
+    const applicantInfo = {
+      firstName: 'Ada',
+      lastName: 'Example',
+      email: USER_EMAIL,
+      passportNumber: 'X0000000',
+      citizenshipCountry: 'Example Country',
+      embassyCity: 'Example City',
+      organizationID: 'org-1',
+      company: 'Example Account',
+      mailingAddress: '1 Example Street',
+      attendeeAccommodationPaidBy: 'delegate',
+      attendeeType: 'attendee',
+      ...dates,
+    };
+    await service.submitVisaRequestApplication(
+      { apiGatewayToken: 'token' } as never,
+      {
+        eventId: 'evt-1',
+        eventName: 'Example Community Summit',
+        termsAccepted: true,
+        userId: '',
+        applicantInfo,
+      } as never
+    );
+    return JSON.parse(fetchMock.mock.calls[0][1].body);
+  }
+
+  it('sends calendar dates as UTC midnight', async () => {
+    const body = await submit({ birthDate: '1990-05-10', passportExpiryDate: '2030-01-31' });
+
+    expect(body['birthDate']).toBe('1990-05-10T00:00:00.000Z');
+    expect(body['passportExpiryDate']).toBe('2030-01-31T00:00:00.000Z');
+    expect(logger.warning).not.toHaveBeenCalled();
+  });
+
+  it('rejects an impossible birth date instead of rolling it into the next month', async () => {
+    await expect(submit({ birthDate: '1990-02-31', passportExpiryDate: null })).rejects.toMatchObject({ code: 'INVALID_REQUEST_FIELDS' });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects an impossible passport expiry instead of sending it as null', async () => {
+    await expect(submit({ birthDate: '1990-05-10', passportExpiryDate: '2030-02-31' })).rejects.toMatchObject({
+      code: 'INVALID_REQUEST_FIELDS',
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('still accepts a full timestamp from an older client and warns without logging the value', async () => {
+    const body = await submit({ birthDate: '1990-05-09T23:00:00.000Z', passportExpiryDate: null });
+
+    expect(body['birthDate']).toBe('1990-05-09T23:00:00.000Z');
+    expect(body).not.toHaveProperty('passportExpiryDate');
+    expect(logger.warning).toHaveBeenCalledWith(expect.anything(), 'submit_visa_request_application', expect.any(String), { field: 'birthDate' });
   });
 });

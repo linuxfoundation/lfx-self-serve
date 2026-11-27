@@ -1,0 +1,101 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@let view = rounds();
+<section class="flex flex-col gap-3" [attr.data-testid]="testIds() ? 'vote-irv-rounds' : null">
+  <h5 class="text-sm font-semibold text-gray-900">Round-by-round count</h5>
+  <p class="text-sm text-slate-600">
+    Each round counts every ballot for its highest-ranked option still in the race. The option with the fewest votes is eliminated and its ballots move to their
+    next choice; ballots with no remaining choices are exhausted. An option wins with a majority of continuing ballots.
+  </p>
+
+  <div
+    class="relative overflow-x-auto rounded-lg border border-gray-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-600"
+    tabindex="0"
+    role="region"
+    aria-label="Round-by-round count">
+    <table class="w-full border-collapse text-sm" [attr.data-testid]="testIds() ? 'vote-irv-rounds-table' : null">
+      <caption class="sr-only">
+        Votes for each option in each counting round, with continuing ballots, exhausted ballots and the majority needed per round
+      </caption>
+      <thead>
+        <tr class="bg-gray-50">
+          <th scope="col" class="sticky left-0 z-10 bg-gray-50 px-3 py-3 text-left font-medium text-gray-600">Option</th>
+          @for (column of view.rounds; track column.roundNumber) {
+            <th scope="col" class="whitespace-nowrap px-3 py-3 text-left font-medium text-gray-600">
+              <span class="flex flex-col gap-0.5">
+                Round {{ column.roundNumber }}
+                @if (column.isFinal) {
+                  <span class="text-xs font-semibold text-emerald-700">Final round</span>
+                }
+              </span>
+            </th>
+          }
+        </tr>
+      </thead>
+      <tbody>
+        @for (row of rows(); track row.choiceId) {
+          <tr class="border-t border-gray-100">
+            <th scope="row" class="sticky left-0 z-10 bg-white px-3 py-3 text-left font-semibold text-gray-900">
+              <span class="block w-32 break-words whitespace-normal sm:w-40">{{ row.choiceText }}</span>
+            </th>
+            @for (cell of row.cells; track cell.roundNumber) {
+              <td
+                class="whitespace-nowrap px-3 py-3 align-top"
+                [class.text-emerald-700]="cell.status === 'winner' || cell.status === 'tied'"
+                [class.font-semibold]="cell.status === 'winner' || cell.status === 'tied'"
+                [class.text-slate-500]="cell.status === 'eliminated' || cell.status === 'out'"
+                [class.text-gray-700]="cell.status === 'continuing'"
+                [attr.data-status]="cell.status"
+                [attr.data-testid]="testIds() ? 'vote-irv-rounds-cell-' + row.choiceId + '-' + cell.roundNumber : null">
+                @if (cell.status === 'out') {
+                  <span aria-hidden="true">{{ cell.votesText }}</span>
+                  <span class="sr-only">Not in this round</span>
+                } @else {
+                  <span class="flex flex-col gap-0.5">
+                    <span>
+                      {{ cell.votesText }}
+                      <span class="text-xs font-normal text-slate-500">({{ cell.percentageText }})</span>
+                    </span>
+                    @if (cell.statusLabel; as label) {
+                      <span class="text-xs font-medium">{{ label }}</span>
+                    }
+                  </span>
+                }
+              </td>
+            }
+          </tr>
+        }
+      </tbody>
+      <tfoot class="bg-gray-50 text-gray-700">
+        <tr class="border-t border-gray-200">
+          <th scope="row" class="sticky left-0 z-10 bg-gray-50 px-3 py-2 text-left font-medium text-gray-600">Continuing ballots</th>
+          @for (column of view.rounds; track column.roundNumber) {
+            <td class="whitespace-nowrap px-3 py-2">{{ column.continuingBallots }}</td>
+          }
+        </tr>
+        <tr class="border-t border-gray-100">
+          <th scope="row" class="sticky left-0 z-10 bg-gray-50 px-3 py-2 text-left font-medium text-gray-600">Exhausted ballots</th>
+          @for (column of view.rounds; track column.roundNumber) {
+            <td class="whitespace-nowrap px-3 py-2">{{ column.exhaustedBallots }}</td>
+          }
+        </tr>
+        <tr class="border-t border-gray-100">
+          <th scope="row" class="sticky left-0 z-10 bg-gray-50 px-3 py-2 text-left font-medium text-gray-600">Majority needed</th>
+          @for (column of view.rounds; track column.roundNumber) {
+            <td class="whitespace-nowrap px-3 py-2">{{ column.threshold }}</td>
+          }
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+
+  <ol class="flex flex-col gap-2 text-sm text-slate-700">
+    @for (line of stepLines(); track line.roundNumber) {
+      <li class="break-words" [attr.data-testid]="testIds() ? 'vote-irv-rounds-step-' + line.roundNumber : null">
+        <span class="font-semibold text-gray-900">Round {{ line.roundNumber }}:</span>
+        {{ line.text }}
+      </li>
+    }
+  </ol>
+</section>

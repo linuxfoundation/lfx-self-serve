@@ -23,6 +23,7 @@ import { authenticatedMatchGuard } from './shared/guards/authenticated-match.gua
 import { newsletterAnonymousSsrMatchGuard } from './shared/guards/newsletter-anonymous-ssr-match.guard';
 import { dashboardAccessGuard } from './shared/guards/dashboard-access.guard';
 import { campaignAccessGuard } from './shared/guards/campaign-access.guard';
+import { orgLensFullViewOnlyGuard } from './shared/guards/org-lens-full-view-only.guard';
 import { formationEnabledGuard } from './shared/guards/formation-enabled.guard';
 import { formationMeEnabledGuard } from './shared/guards/formation-me-enabled.guard';
 import { formationOverviewRedirectGuard } from './shared/guards/formation-overview-redirect.guard';
@@ -39,16 +40,17 @@ import { newsletterAccessGuard } from './shared/guards/newsletter-access.guard';
 import { legacyOrgLensMatcher, legacyOrgLensRedirect } from './shared/utils/legacy-org-lens-redirect.utils';
 import { orgPathParamGuard } from './shared/guards/org-path-param.guard';
 import { orgClaOnlyPageGuard } from './shared/guards/org-cla-only-page.guard';
+import { socialListeningAccessGuard } from './shared/guards/social-listening-access.guard';
 import { orgRollUpSingleOrgPageGuard } from './shared/guards/org-rollup-single-org-page.guard';
 import { orgRollUpUnavailablePageGuard } from './shared/guards/org-rollup-unavailable-page.guard';
 import { orgSegmentMatchGuard } from './shared/guards/org-segment-match.guard';
-import { cfOrgDonationsGuard } from './shared/guards/org-lens-flag.guard';
+import { cfOrgDonationsTabGuard } from './shared/guards/org-lens-flag.guard';
 import { orgLensLfStaffOnlyGuard } from './shared/guards/org-lens-lf-staff-only.guard';
 import { akritesEnabledGuard } from './shared/guards/akrites-enabled.guard';
 import { mktgOsAgentsEnabledGuard } from './shared/guards/mktg-os-agents-enabled.guard';
 import { myEventsRequestLensGuard } from './shared/guards/my-events-request-lens.guard';
 import { openprofileMeLensGuard } from './shared/guards/openprofile-me-lens.guard';
-import { profileRedesignEnabledGuard } from './shared/guards/profile-redesign.guard';
+import { profileRedesignEnabledGuard, profileRedesignOnlyGuard, profileRedesignReadGuard } from './shared/guards/profile-redesign.guard';
 import { projectQueryParamGuard } from './shared/guards/project-query-param.guard';
 import { settingsLensRedirectGuard } from './shared/guards/settings-lens-redirect.guard';
 import { votePermalinkMatchGuard } from './shared/guards/vote-permalink-match.guard';
@@ -56,6 +58,7 @@ import { voteAnonymousSsrMatchGuard } from './shared/guards/vote-anonymous-ssr-m
 import { voteTokenMatchGuard } from './shared/guards/vote-token-match.guard';
 import { votePresenterGuard } from './shared/guards/vote-presenter.guard';
 import { meetingPageRedesignGuard } from './shared/guards/meeting-page-redesign.guard';
+import { publicCalendarRedesignGuard } from './shared/guards/public-calendar-redesign.guard';
 import { AccountContextService } from './shared/services/account-context.service';
 
 const loadOrgProfilePage = () => import('./modules/dashboards/org/org-profile/org-profile.component').then((m) => m.OrgProfileComponent);
@@ -74,7 +77,7 @@ function orgLensPageRoutes(): Routes {
     {
       path: 'easycla',
       // A corporate CLA belongs to one company, so the roll-up redirects to its own home page (#4415, #4133).
-      canActivate: [orgRollUpSingleOrgPageGuard],
+      canActivate: [orgRollUpSingleOrgPageGuard, orgLensFullViewOnlyGuard(undefined, { keepForClaManager: true })],
       data: {
         lens: 'org',
         title: 'EasyCLA',
@@ -104,38 +107,46 @@ function orgLensPageRoutes(): Routes {
       ],
     },
     {
-      // Initiatives attributed to the organization (#348): the My Initiatives page and detail scoped by `data.lens`.
-      // Componentless parent so both children share its data.
-      path: 'initiatives',
-      data: { lens: 'org', title: 'Initiatives', description: 'Fundraising initiatives run on behalf of your company.', icon: 'fa-light fa-box-dollar' },
-      // The crowdfunding list and stats take one `orgUid`, so the roll-up redirects (#4415).
-      canActivate: [orgRollUpSingleOrgPageGuard],
+      // One Crowdfunding page for the company (#5838): Initiatives (#348) and Donations (#415) as tabs under a shared
+      // header. Componentless parent; the shell renders the header and tab bar, each tab is a child route.
+      path: 'crowdfunding',
+      data: { lens: 'org', title: 'Crowdfunding', description: 'Crowdfunding initiatives and donations for your company.', icon: 'fa-light fa-box-dollar' },
+      // Both tabs take one `orgUid`, so the roll-up redirects (#4415).
+      // Hidden entirely in the all employee view (epic #5845): the route redirects to Overview and the API refuses an employee.
+      canActivate: [orgRollUpSingleOrgPageGuard, orgLensFullViewOnlyGuard()],
       children: [
         {
+          // The bare address has no tab child: the shell lands on the viewer's first tab once their grants have loaded.
           path: '',
-          loadComponent: () => import('./modules/crowdfunding/my-initiatives/my-initiatives.component').then((m) => m.MyInitiativesComponent),
+          loadComponent: () => import('./modules/crowdfunding/org-crowdfunding/org-crowdfunding.component').then((m) => m.OrgCrowdfundingComponent),
+          children: [
+            {
+              // `data` sits on each tab: a child of a component route only inherits it from an empty-path parent.
+              path: 'initiatives',
+              data: { lens: 'org', title: 'Crowdfunding', embedded: true },
+              loadComponent: () => import('./modules/crowdfunding/my-initiatives/my-initiatives.component').then((m) => m.MyInitiativesComponent),
+            },
+            {
+              // Dark-launched behind `cf-org-donations`.
+              path: 'donations',
+              canMatch: [cfOrgDonationsTabGuard],
+              data: { lens: 'org', title: 'Crowdfunding', embedded: true },
+              loadComponent: () => import('./modules/crowdfunding/org-donations/org-donations.component').then((m) => m.OrgDonationsComponent),
+            },
+            // The flag is off, so the Donations tab declined to match: land on Initiatives rather than leave Crowdfunding.
+            { path: 'donations', redirectTo: 'initiatives' },
+          ],
         },
         {
-          path: ':slug',
+          path: 'initiatives/:slug',
           data: { title: 'Initiative' },
           loadComponent: () => import('./modules/crowdfunding/initiative-detail/initiative-detail.component').then((m) => m.InitiativeDetailComponent),
         },
       ],
     },
-    {
-      // Crowdfunding donations matched to the organization (#415), dark-launched behind `cf-org-donations`.
-      path: 'donations',
-      canMatch: [cfOrgDonationsGuard],
-      // `/api/crowdfunding/org-donations` takes one organization, so the roll-up redirects (#4415).
-      canActivate: [orgRollUpSingleOrgPageGuard],
-      data: {
-        lens: 'org',
-        title: 'Donations',
-        description: 'Crowdfunding donations made on behalf of your company.',
-        icon: 'fa-light fa-hand-holding-heart',
-      },
-      loadComponent: () => import('./modules/crowdfunding/org-donations/org-donations.component').then((m) => m.OrgDonationsComponent),
-    },
+    // The pages before they became tabs (#5838): keep every old link, including an initiative's detail page.
+    { path: 'initiatives', redirectTo: 'crowdfunding/initiatives' },
+    { path: 'donations', redirectTo: 'crowdfunding/donations' },
     {
       path: 'overview',
       data: {
@@ -149,11 +160,13 @@ function orgLensPageRoutes(): Routes {
     },
     {
       path: 'memberships',
+      canActivate: [orgLensFullViewOnlyGuard()],
       data: { lens: 'org', title: 'Memberships', description: 'Active memberships and tier history.', icon: 'fa-light fa-display' },
       loadComponent: () => import('./modules/dashboards/org/org-memberships/org-memberships.component').then((m) => m.OrgMembershipsComponent),
     },
     {
       path: 'memberships/:foundationSlug',
+      canActivate: [orgLensFullViewOnlyGuard()],
       data: {
         lens: 'org',
         title: 'Membership Detail',
@@ -210,6 +223,7 @@ function orgLensPageRoutes(): Routes {
     },
     {
       path: 'people',
+      canActivate: [orgLensFullViewOnlyGuard()],
       data: { lens: 'org', title: 'People', description: 'Employees and contributors associated with your company.', icon: 'fa-light fa-users' },
       loadComponent: () => import('./modules/dashboards/org/org-people/org-people.component').then((m) => m.OrgPeopleComponent),
     },
@@ -256,13 +270,14 @@ function orgLensPageRoutes(): Routes {
         description: "Working groups and committees your company's employees participate in.",
         icon: 'fa-light fa-users-rectangle',
       },
+      canActivate: [orgLensFullViewOnlyGuard()],
       loadComponent: () => import('./modules/dashboards/org/org-groups/org-groups.component').then((m) => m.OrgGroupsComponent),
     },
     {
       path: 'profile',
       data: { lens: 'org', title: 'Profile', description: 'Public-facing details about your company.', icon: 'fa-light fa-file' },
       // Single-organization by definition, so the roll-up redirects to its own home page (#4415, #4133).
-      canActivate: [orgRollUpSingleOrgPageGuard],
+      canActivate: [orgRollUpSingleOrgPageGuard, orgLensFullViewOnlyGuard()],
       loadComponent: loadOrgProfilePage,
     },
   ]);
@@ -328,6 +343,14 @@ export const routes: Routes = [
     canMatch: [newsletterAnonymousSsrMatchGuard],
     loadComponent: () =>
       import('./modules/newsletters/newsletter-share-preview/newsletter-share-preview.component').then((m) => m.NewsletterSharePreviewComponent),
+  },
+  // Public event share kit (#6059): a chrome-less page any visitor can open, signed in or not. Declared ahead of the
+  // shell because the shell owns `/events` (the events dashboard) and its trailing catch-all would otherwise claim it.
+  {
+    path: 'events/:eventSlug/share-kit',
+    pathMatch: 'full',
+    title: 'Share kit',
+    loadComponent: () => import('./modules/events/share-kit/share-kit-page/share-kit-page.component').then((m) => m.ShareKitPageComponent),
   },
   {
     path: '',
@@ -416,12 +439,12 @@ export const routes: Routes = [
         canActivate: [campaignAccessGuard, projectQueryParamGuard],
         loadComponent: () => import('./modules/dashboards/campaigns/campaigns.component').then((m) => m.CampaignsComponent),
       },
-      // Foundation Lens — Social Listening page (ED + LF Staff)
+      // Foundation Lens — Social Listening page (ED + LF Staff; members of the foundation's groups that opt in)
       {
         path: 'foundation/social-listening',
         title: 'Social Listening',
         data: { lens: 'foundation' },
-        canActivate: [dashboardAccessGuard, projectQueryParamGuard],
+        canActivate: [socialListeningAccessGuard], // also seeds the foundation from ?project=
         loadComponent: () => import('./modules/dashboards/social-listening/social-listening.component').then((m) => m.SocialListeningComponent),
       },
       // Foundation Lens — Participating Companies page (ED + LF Staff, same policy as Health Metrics; #5697)
@@ -908,6 +931,15 @@ export const routes: Routes = [
         loadChildren: () => import('./modules/settings/settings.routes').then((m) => m.SETTINGS_ROUTES),
       },
       {
+        // The Profile page (#6082), behind the profile redesign flag; with it off, `/profile` falls through to the hub below.
+        path: 'profile',
+        pathMatch: 'full',
+        title: 'Profile',
+        data: { lens: 'me' },
+        canMatch: [profileRedesignOnlyGuard],
+        loadComponent: () => import('./modules/profile/profile-page/profile-page.component').then((m) => m.ProfilePageComponent),
+      },
+      {
         // A Me page, like crowdfunding/mentorship/formations: `data.lens: 'me'` makes every way in (a
         // link from another lens, a deep link, a refresh, back/forward) switch to the Me lens and its
         // menu (MainLayoutComponent.syncLensFromRoute), rather than keeping the previous lens (#2533).
@@ -1072,6 +1104,8 @@ export const routes: Routes = [
   {
     path: 'u/:username',
     title: 'Profile',
+    // Settles the profile redesign flag so the page renders the redesign for a signed-in viewer it is on for (#6088).
+    canActivate: [profileRedesignReadGuard],
     loadComponent: () => import('./modules/public-profile/public-profile-page/public-profile-page.component').then((m) => m.PublicProfilePageComponent),
   },
   // Public foundation groups directory — lists all public groups for a foundation (no auth required).
@@ -1087,7 +1121,14 @@ export const routes: Routes = [
     loadComponent: () => import('./modules/groups/public-project-groups/public-project-groups.component').then((m) => m.PublicProjectGroupsComponent),
   },
   // Public project calendar — month/week calendar of a project's public meetings, optionally scoped
-  // to a single committee via ?committee=<uid> (no auth required).
+  // to a single committee via ?committee=<uid> (no auth required). Paired like `meetings/:id`: the redesign when
+  // `publicCalendarRedesignGuard` matches, else the legacy page below.
+  {
+    path: 'projects/:projectSlug/calendar',
+    title: 'Calendar',
+    canMatch: [publicCalendarRedesignGuard],
+    loadComponent: () => import('./modules/meetings/public-calendar-page/public-calendar-page.component').then((m) => m.PublicCalendarPageComponent),
+  },
   {
     path: 'projects/:projectSlug/calendar',
     title: 'Calendar',

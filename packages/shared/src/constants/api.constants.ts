@@ -41,6 +41,17 @@ export const LFX_CACHE_BYPASS_HEADER = 'X-LFX-CACHE';
 export const QUERY_SERVICE_FILTERS_OR_BATCH_SIZE = 100;
 
 /**
+ * Matches the query service's "unsatisfiable filter" 400 message.
+ * @description With `UNSATISFIABLE_FILTER_REJECTION` on (the default), the query service answers a
+ * zero-result query with a 400 when its filter names a dimension that no indexed document of the type
+ * carries: `<date_field|parent kind|tag prefix|filter field|group_by prefix|metric prefix> "<x>" is not
+ * carried by any indexed <type> document`. It probes only after the public and authorized private
+ * counts are both zero, so a match means a genuine empty result, not a failed or partial one (#6184).
+ * See `lfx-v2-query-service/docs/query-service-contract.md` § "Unsatisfiable filters".
+ */
+export const QUERY_SERVICE_UNSATISFIABLE_FILTER_PATTERN = /is not carried by any indexed [a-z0-9_]+ document/;
+
+/**
  * Upstream ceiling for `page_size` on query-service `/query/resources` requests.
  * @description The query-service rejects `page_size` above 1000 (`InvalidRangeError`). Passing
  * this on every paginated walk (registrant rosters, RSVP lists) fetches the fewest possible pages

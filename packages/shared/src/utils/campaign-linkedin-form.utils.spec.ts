@@ -129,6 +129,26 @@ describe('linkedInVariantsForCreate', () => {
   ])('sends %s', (_name, draft, uploadAvailable, image) => {
     expect(linkedInVariantsForCreate([draft], uploadAvailable, 'b1')).toEqual([{ introText: 'Join us', headline: 'Summit', ...image }]);
   });
+
+  const withFields = variant({ name: 'Ad A', description: 'Talks', callToAction: 'REGISTER' });
+  it.each([
+    ['nothing on a deployment that sends none', { copy: false, callToAction: false }, {}],
+    ['the name and description', { copy: true, callToAction: false }, { name: 'Ad A', description: 'Talks' }],
+    ['the call to action', { copy: false, callToAction: true }, { callToAction: 'REGISTER' }],
+    ['all three', { copy: true, callToAction: true }, { name: 'Ad A', description: 'Talks', callToAction: 'REGISTER' }],
+  ])('sends %s', (_name, fields, expected) => {
+    expect(linkedInVariantsForCreate([withFields], true, 'b1', fields)).toEqual([{ introText: 'Join us', headline: 'Summit', ...expected }]);
+  });
+
+  it('sends a name of only a byte order mark, which campaign-service keeps as a name', () => {
+    const bom = variant({ name: '\uFEFF' });
+    expect(linkedInVariantsForCreate([bom], true, 'b1', { copy: true, callToAction: false })[0].name).toBe('\uFEFF');
+  });
+
+  it('sends no blank name, description or call to action', () => {
+    const blank = variant({ name: ' ', description: '', callToAction: '' });
+    expect(linkedInVariantsForCreate([blank], true, 'b1', { copy: true, callToAction: true })).toEqual([{ introText: 'Join us', headline: 'Summit' }]);
+  });
 });
 
 describe('linkedInCreateRefusal', () => {
@@ -155,6 +175,53 @@ describe('linkedInCreateRefusal', () => {
     ['no variant', { variantCount: 0 }, 'LinkedIn Ads: add at least one ad variant.'],
     ['16 variants', { variantCount: 16 }, 'LinkedIn Ads: remove ad variants until there are at most 15.'],
     ['bad variant text', { variantTextInvalid: true }, 'LinkedIn Ads: fix the ad variant text.'],
+    ['a bad ad name or description', { variantFieldsInvalid: true }, 'LinkedIn Ads: fix the ad name or description.'],
+    // Text Ads (#5764 row 19) replace the variant checks: no variants is fine, and their own refusal wins.
+    [
+      'Text Ads no longer offered',
+      { textAdsUnavailable: true },
+      'LinkedIn Ads: Text Ads are not available right now. Choose single image ads as the ad format.',
+    ],
+    // Video ads (#5764 row 18): held rather than sent as image ads, and every ad needs its video.
+    [
+      'video ads no longer offered',
+      { videoAdsUnavailable: true },
+      'LinkedIn Ads: video ads are not available right now. Choose single image ads as the ad format.',
+    ],
+    ['an ad with no video', { videoMissing: true }, 'LinkedIn Ads: upload a video for every ad.'],
+    // A document (campaign-service#665): held rather than sent as image ads, and it replaces the variant checks.
+    [
+      'a document no longer offered',
+      { documentUnavailable: true },
+      'LinkedIn Ads: document ads are not available right now. Choose single image ads as the ad format.',
+    ],
+    ['a document that can be sent, with no variants', { document: { refusal: null }, variantCount: 0 }, null],
+    ['a document that cannot be sent', { document: { refusal: 'LinkedIn Ads: Choose the PDF.' } }, 'LinkedIn Ads: Choose the PDF.'],
+    // A boost (campaign-service#673): held rather than sent as image ads, and its post replaces the variant checks.
+    [
+      'a boost no longer offered',
+      { boostUnavailable: true },
+      'LinkedIn Ads: boosting a post is not available right now. Choose single image ads as the ad format.',
+    ],
+    ['a boost that can be sent, with no variants', { boost: { refusal: null }, variantCount: 0 }, null],
+    ['a boost that cannot be sent', { boost: { refusal: 'LinkedIn Ads: Choose the post.' } }, 'LinkedIn Ads: Choose the post.'],
+    [
+      'custom targeting no longer offered',
+      { customTargetingUnavailable: true },
+      'LinkedIn Ads: custom targeting is not available right now. Choose a targeting profile.',
+    ],
+    // Lead generation has no Text Ads: change the format, never "add a manual bid", which lead generation refuses.
+    [
+      'Text Ads beside lead generation',
+      { textAdsWithLeadGen: true, textAds: { count: 1, textInvalid: false, manualBid: false } },
+      'LinkedIn Ads: lead generation campaigns have no Text Ads. Choose single image or video ads as the ad format.',
+    ],
+    ['Text Ads with no variants', { variantCount: 0, textAds: { count: 1, textInvalid: false, manualBid: true } }, null],
+    [
+      'Text Ads without a manual bid',
+      { textAds: { count: 1, textInvalid: false, manualBid: false } },
+      'LinkedIn Ads: Text Ads need a manual bid. Choose manual bidding and set a maximum cost per click.',
+    ],
     ['removals without the capability', { removalsHeld: true }, 'LinkedIn Ads: targeting changes are not available right now. Reset the targeting profile.'],
     [
       'removals without the profile',
@@ -162,6 +229,18 @@ describe('linkedInCreateRefusal', () => {
       "LinkedIn Ads: the targeting profile's details have not loaded. Reload the page, or reset the targeting profile.",
     ],
     ['removals that can be sent', { removalsHeld: true, targetingEditAvailable: true, profileLoaded: true }, null],
+    // Custom targeting (#5764 rows 8–11) replaces the profile: its own refusal holds, and removals hold nothing.
+    ['custom targeting refused', { customTargeting: { refusal: 'Add a value.' } }, 'LinkedIn Ads: fix the custom targeting. Add a value.'],
+    ['custom targeting with profile removals', { removalsHeld: true, customTargeting: { refusal: null } }, null],
+    // The objective (#5764 rows 2 and 4) arrives as a whole message.
+    ['an objective refused', { objectiveRefusal: 'LinkedIn Ads: pick a rule.' }, 'LinkedIn Ads: pick a rule.'],
+    ['an objective that can be sent', { objectiveRefusal: null }, null],
+    // The target cost (campaign-service#674) arrives as a whole message too.
+    ['a target cost refused', { targetCostRefusal: 'LinkedIn Ads: fix it.' }, 'LinkedIn Ads: fix it.'],
+    ['a target cost that can be sent', { targetCostRefusal: null }, null],
+    // The delivery options (campaign-service#667) arrive as a whole message too.
+    ['delivery options held', { deliveryOptionsRefusal: 'LinkedIn Ads: wait.' }, 'LinkedIn Ads: wait.'],
+    ['delivery options that can be sent', { deliveryOptionsRefusal: null }, null],
     ['an account the catalog does not list', { accountInCatalog: false }, 'LinkedIn Ads: choose an ad account.'],
     ['an unlisted account the connection decides', { accountInCatalog: false, accountSetByConnection: true }, null],
     [

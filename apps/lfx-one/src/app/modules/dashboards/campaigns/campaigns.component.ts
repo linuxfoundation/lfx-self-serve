@@ -11,6 +11,7 @@ import { Router } from '@angular/router';
 
 import {
   CAMPAIGN_DELIVERY_TYPES,
+  AUDIENCE_DESCRIBE_MAX_LIST_IDS,
   CAMPAIGN_EVENT_URL_QUERY_PARAM,
   CAMPAIGN_EMAIL_SEGMENT_LABELS,
   CAMPAIGN_EMAIL_STAGES,
@@ -20,6 +21,11 @@ import {
   CAMPAIGN_SURVEY_EMAIL_COUNT_OPTIONS,
   CAMPAIGN_SURVEY_SERIES_RESTART_STORAGE_PREFIX,
   CAMPAIGN_SURVEY_TYPES,
+  CAMPAIGN_NEWSLETTER_PROGRAM_OPTION,
+  CAMPAIGN_NEWSLETTER_REFERENCE_LIMIT,
+  CAMPAIGN_NEWSLETTER_TYPES,
+  CAMPAIGNS_NEWSLETTER_ENABLED_FLAG,
+  DEFAULT_CAMPAIGN_NEWSLETTER_TYPE_ID,
   DEFAULT_CAMPAIGN_SURVEY_TYPE_ID,
   CAMPAIGN_JOB_POLL_INTERVAL_MS,
   CAMPAIGN_PAID_UNOWNED_BRIEF_MESSAGE,
@@ -27,6 +33,9 @@ import {
   CAMPAIGN_TABS,
   DEFAULT_CAMPAIGN_EMAIL_TYPE_ID,
   EMAIL_BRIEF_REQUIRED_HINT,
+  EMAIL_TEMPLATE_RANK_SAME_PLACE_WEIGHT,
+  EMAIL_TEMPLATE_RANK_SENT_WEIGHT,
+  EMAIL_TEMPLATE_RANK_THIS_EDITION_WEIGHT,
   EVENT_TEMPLATE_SUGGESTION_MIN_SCORE,
   EVENT_TERM_DISTINCTIVE_LENGTH,
   EVENT_TERM_GENERIC,
@@ -68,6 +77,12 @@ import type {
   CampaignEmailStage,
   CampaignSendStage,
   CampaignSurveyTypeOption,
+  AudienceSelectionSummaryItem,
+  CampaignNewsletterAudienceState,
+  CampaignNewsletterAudienceSuggestion,
+  CampaignNewsletterTypeOption,
+  CampaignProgramPickerId,
+  CampaignProgramPickerOption,
   CampaignEmailTab,
   CampaignEventSponsor,
   CampaignImplementationDraft,
@@ -80,15 +95,23 @@ import type {
   CampaignServiceEmailMetrics,
   CampaignSitelink,
   CampaignTabOption,
+  CampaignEmailTemplateFit,
+  CampaignEmailTemplateScope,
   EmailBriefCopy,
   EventTemplateTerms,
   HubSpotMarketingEmail,
 } from '@lfx-one/shared/interfaces';
 import {
   canonicalHttpUrl,
+  classifyEmailTemplate,
+  deriveEmailTemplateScope,
   emailLinkDestinations,
+  emailLinkMatchKey,
   escapeHtml,
+  extractHttpLinks,
   hasVisibleHtmlText,
+  isSentEmailTemplate,
+  namesEditionPlace,
   normalizeSponsors,
   sanitizeDisplayText,
   stripDiacritics,
@@ -106,13 +129,14 @@ import { CampaignService } from '@services/campaign.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { filter, finalize, firstValueFrom, from, skip, Subscription, switchMap, take } from 'rxjs';
+import { distinctUntilChanged, filter, finalize, firstValueFrom, from, skip, Subscription, switchMap, take } from 'rxjs';
 
 import { HubSpotTemplateLabelPipe } from '../../../shared/pipes/hubspot-template-label.pipe';
 import { HubSpotUpdatedAtPipe } from '../../../shared/pipes/hubspot-updated-at.pipe';
 import { readCampaignWriteErrorMessage } from '../../../shared/utils/campaign-write-error.utils';
 import { SelectComponent } from '../../../shared/components/select/select.component';
 import { AudienceBuilderTabComponent } from './components/audience-builder-tab/audience-builder-tab.component';
+import { AudienceSelectionSummaryComponent } from './components/audience-selection-summary/audience-selection-summary.component';
 import { ImplementationTabComponent } from './components/implementation-tab/implementation-tab.component';
 import { MonitoringTabComponent } from './components/monitoring-tab/monitoring-tab.component';
 import { OptimizationTabComponent } from './components/optimization-tab/optimization-tab.component';
@@ -210,6 +234,21 @@ function ctaDestinationFor(ctaUrl: string | undefined, registrationUrl: string |
   return sameTarget(generated) === sameTarget(fromBrief) ? generated : '';
 }
 
+/**
+ * Where a NEWSLETTER issue's button may point: the generated `ctaUrl`, but only when it is one of
+ * the addresses in the issue's notes; otherwise '' and no button is staged.
+ *
+ * `ctaDestinationFor`'s rule for a surface with no registration URL. A newsletter's one button
+ * ("Read More") goes to the destination the notes name, and the notes are the only place a
+ * newsletter's links come from, so anything else is a destination the operator never wrote.
+ * Compared as `emailLinkMatchKey` compares, the way the body's links are.
+ */
+function noteLinkDestination(ctaUrl: string | undefined, noteLinks: readonly string[]): string {
+  const generated = canonicalHttpUrl(ctaUrl);
+  const key = emailLinkMatchKey(generated);
+  return key !== '' && noteLinks.some((link) => emailLinkMatchKey(link) === key) ? generated : '';
+}
+
 @Component({
   selector: 'lfx-campaigns',
   imports: [
@@ -228,6 +267,7 @@ function ctaDestinationFor(ctaUrl: string | undefined, registrationUrl: string |
     ImplementationTabComponent,
     MonitoringTabComponent,
     AudienceBuilderTabComponent,
+    AudienceSelectionSummaryComponent,
     OptimizationTabComponent,
     HubSpotUpdatedAtPipe,
     HubSpotTemplateLabelPipe,
@@ -252,19 +292,32 @@ export class CampaignsComponent {
   private readonly removedKeywordsService = inject(CampaignRemovedKeywordsService);
   /** Dual-gated with `ServerFeatureFlag.MarketingOpsFga` — see LFXV2-2235/LFXV2-2236. */
   private readonly marketingOpsFgaEnabled = this.featureFlagService.getBooleanFlag(MARKETING_OPS_FGA_ENABLED_FLAG, false);
+  /** Dark-launch gate for the Newsletter surface; the picker offers it only while this is on. */
+  private readonly newsletterEnabled = this.featureFlagService.getBooleanFlag(CAMPAIGNS_NEWSLETTER_ENABLED_FLAG, false);
 
   protected readonly tabs = CAMPAIGN_TABS;
   protected readonly programTypes = CAMPAIGN_PROGRAM_TYPES;
   protected readonly deliveryTypes = CAMPAIGN_DELIVERY_TYPES;
   // lfx-select's `options` input is typed as a mutable `any[]`, so pass a shallow
   // mutable copy of the readonly constants rather than the `readonly` arrays directly.
-  protected readonly programTypeOptions = [...CAMPAIGN_PROGRAM_TYPES];
-  protected readonly deliveryTypeOptions = [...CAMPAIGN_DELIVERY_TYPES];
+  /**
+   * The first selector: the program types, plus Newsletter while its flag is on. Newsletter is a
+   * picker entry, not a program type -- choosing it switches the send surface (see the
+   * `programPicker` subscription), and the brief stays under the default program upstream.
+   */
+  protected readonly programTypeOptions = computed<CampaignProgramPickerOption[]>(() => [
+    ...CAMPAIGN_PROGRAM_TYPES.map((type) => ({ id: type.id, label: type.label })),
+    ...(this.newsletterEnabled() ? [CAMPAIGN_NEWSLETTER_PROGRAM_OPTION] : []),
+  ]);
+  // Newsletter is never a delivery choice: the first selector reaches it, and then this one hides.
+  protected readonly deliveryTypeOptions = computed(() => CAMPAIGN_DELIVERY_TYPES.filter((type) => type.id !== 'newsletter'));
 
   // The two selectors are reactive-form controls so they can bind to the lfx-select
   // wrapper (form-driven). nonNullable keeps the value typed to the union, never `| null`.
   protected readonly selectorForm = new FormGroup({
     programType: new FormControl<CampaignProgramType>('events', { nonNullable: true }),
+    // What the first selector shows: a program type, or Newsletter. See `programTypeOptions`.
+    programPicker: new FormControl<CampaignProgramPickerId>('events', { nonNullable: true }),
     deliveryType: new FormControl<CampaignDeliveryType>('paid-marketing', { nonNullable: true }),
     // Same reason as the two above, and it replaces a raw <select>: `frontend-checklist.md` 14.1
     // makes `lfx-select` mandatory for changed controls, and the wrapper is form-driven. The
@@ -325,7 +378,7 @@ export class CampaignsComponent {
    * hands the hidden planner no `paid-marketing` (which resets it) and keeps the selected type,
    * brief and copy for the return.
    */
-  protected readonly sendSurface = signal<'email' | 'survey'>('email');
+  protected readonly sendSurface = signal<'email' | 'survey' | 'newsletter'>('email');
   protected readonly briefOutput = signal<CampaignBriefOutput | null>(null);
   protected readonly briefPersistence = signal<CampaignBriefPersistenceState>(this.idlePersistence);
 
@@ -1110,6 +1163,8 @@ export class CampaignsComponent {
   protected readonly briefCampaignsMetaCreativeEnabled = signal<boolean | null>(null);
   /** Whether the Reddit section offers a conversion pixel override — `CampaignListResult.redditConversionPixelEnabled`, read and cleared like the capabilities above. */
   protected readonly briefCampaignsRedditConversionPixelEnabled = signal<boolean | null>(null);
+  /** Whether the Reddit section offers a conversion event — `CampaignListResult.redditConversionEventEnabled`, read and cleared like the capabilities above. */
+  protected readonly briefCampaignsRedditConversionEventEnabled = signal<boolean | null>(null);
   /** Whether the Meta section offers an image upload — `CampaignListResult.metaAssetUploadEnabled`, read and cleared like the capabilities above. */
   protected readonly briefCampaignsMetaAssetUploadEnabled = signal<boolean | null>(null);
   /** Whether the Google image slots offer the brief's stored-image library — `CampaignListResult.googleAssetUploadEnabled`, read and cleared like the capabilities above. */
@@ -1122,6 +1177,31 @@ export class CampaignsComponent {
   protected readonly briefCampaignsLinkedInAccountSelectionEnabled = signal<boolean | null>(null);
   /** Whether the LinkedIn section offers a daily cap — `CampaignListResult.linkedInDailyCapEnabled` (#5774), read and cleared like the capabilities above. */
   protected readonly briefCampaignsLinkedInDailyCapEnabled = signal<boolean | null>(null);
+  /** Whether LinkedIn variants offer an ad name and description, and a call to action (#5764 rows 16–17), read and cleared like the cap. */
+  protected readonly briefCampaignsLinkedInVariantCopyEnabled = signal<boolean | null>(null);
+  protected readonly briefCampaignsLinkedInCallToActionEnabled = signal<boolean | null>(null);
+  /** Whether the LinkedIn section offers Text Ads (`CampaignListResult.linkedInTextAdsEnabled`, #5764 row 19). */
+  protected readonly briefCampaignsLinkedInTextAdsEnabled = signal<boolean | null>(null);
+  /** Whether the LinkedIn section offers video ads (`CampaignListResult.linkedInVideoAdsEnabled`, #5764 row 18). */
+  protected readonly briefCampaignsLinkedInVideoAdsEnabled = signal<boolean | null>(null);
+  /** Whether the LinkedIn section offers custom targeting (`CampaignListResult.linkedInTargetingEnabled`, #5764 rows 8–11). */
+  protected readonly briefCampaignsLinkedInTargetingEnabled = signal<boolean | null>(null);
+  /** Whether the LinkedIn section offers an objective and conversion tracking (`CampaignListResult.linkedInConversionsEnabled`, #5764 rows 2 and 4). */
+  protected readonly briefCampaignsLinkedInConversionsEnabled = signal<boolean | null>(null);
+  /** Whether the LinkedIn section offers lead generation (`CampaignListResult.linkedInLeadGenEnabled`, campaign-service#664). */
+  protected readonly briefCampaignsLinkedInLeadGenEnabled = signal<boolean | null>(null);
+  /** Whether the LinkedIn section offers carousel ads (`CampaignListResult.linkedInCarouselEnabled`, campaign-service#665). */
+  protected readonly briefCampaignsLinkedInCarouselEnabled = signal<boolean | null>(null);
+  /** Whether the LinkedIn section offers document ads (`CampaignListResult.linkedInDocumentEnabled`, campaign-service#665). */
+  protected readonly briefCampaignsLinkedInDocumentEnabled = signal<boolean | null>(null);
+  /** Whether the LinkedIn section offers boosting an existing post (`CampaignListResult.linkedInBoostEnabled`, campaign-service#673). */
+  protected readonly briefCampaignsLinkedInBoostEnabled = signal<boolean | null>(null);
+  /** Whether the LinkedIn section offers a target cost (`CampaignListResult.linkedInTargetCostEnabled`, campaign-service#674). */
+  protected readonly briefCampaignsLinkedInTargetCostEnabled = signal<boolean | null>(null);
+  /** Whether the LinkedIn section offers its delivery options (`CampaignListResult.linkedInDeliveryOptionsEnabled`, campaign-service#667). */
+  protected readonly briefCampaignsLinkedInDeliveryOptionsEnabled = signal<boolean | null>(null);
+  /** Whether a LinkedIn traffic create may take a manual bid (`CampaignListResult.linkedInTrafficManualBidEnabled`, campaign-service#676). */
+  protected readonly briefCampaignsLinkedInTrafficManualBidEnabled = signal<boolean | null>(null);
   /** Whether the Microsoft section offers an image upload — `CampaignListResult.microsoftAssetUploadEnabled`, read and cleared like the capabilities above. */
   protected readonly briefCampaignsMicrosoftAssetUploadEnabled = signal<boolean | null>(null);
   /** Whether the create flow offers the Bidding control (#3299) — `CampaignListResult.biddingEnabled`, read and cleared like the capabilities above. */
@@ -1135,13 +1215,25 @@ export class CampaignsComponent {
   /** Meta audience targeting (#5905) — `CampaignListResult.metaAudienceTargetingEnabled`, and whether THIS caller may pick custom audiences (`metaCustomAudiencesEnabled`), read and cleared like the capabilities above. */
   protected readonly briefCampaignsMetaAudienceTargetingEnabled = signal<boolean | null>(null);
   protected readonly briefCampaignsMetaCustomAudiencesEnabled = signal<boolean | null>(null);
+  /** Whether THIS caller may pick Reddit custom audiences (#6108 row 1) — `CampaignListResult.redditCustomAudiencesEnabled`, read and cleared like the capabilities above. */
+  protected readonly briefCampaignsRedditCustomAudiencesEnabled = signal<boolean | null>(null);
+  /** `CampaignListResult.redditTargetingExclusionsEnabled` (#6108 row 3): whether a Reddit create may carry excluded communities and countries. */
+  protected readonly briefCampaignsRedditTargetingExclusionsEnabled = signal<boolean | null>(null);
+  /** `CampaignListResult.redditPlacementsEnabled`, `redditBudgetTypeEnabled` and `redditPixelListEnabled` (#6108 row 5): Reddit placements, devices and expansion; the budget type; the pixel list. */
+  protected readonly briefCampaignsRedditPlacementsEnabled = signal<boolean | null>(null);
+  protected readonly briefCampaignsRedditBudgetTypeEnabled = signal<boolean | null>(null);
+  protected readonly briefCampaignsRedditPixelListEnabled = signal<boolean | null>(null);
+  /** `CampaignListResult.redditTargetingResolutionEnabled` (#6108 row 4): whether the Reddit subreddits and interests are editable. */
+  protected readonly briefCampaignsRedditTargetingResolutionEnabled = signal<boolean | null>(null);
   /** The Meta call to action, conversion event and optimization goal (#5934), one capability each, read and cleared like the capabilities above. */
   protected readonly briefCampaignsMetaCallToActionEnabled = signal<boolean | null>(null);
   /** Meta lead forms (#5940) — `CampaignListResult.metaLeadFormsEnabled`: whether THIS caller may create a lead ad. */
   protected readonly briefCampaignsMetaLeadFormsEnabled = signal<boolean | null>(null);
-  /** Meta interests, and behaviors with job titles (#5904 row 4): deployment-wide answers, read and cleared like the capabilities above. */
+  /** Meta interests, behaviors with job titles, languages (#5904 row 4), and regions with cities (row 6): deployment-wide answers, read and cleared like the capabilities above. */
   protected readonly briefCampaignsMetaInterestTargetingEnabled = signal<boolean | null>(null);
   protected readonly briefCampaignsMetaBehaviorTargetingEnabled = signal<boolean | null>(null);
+  protected readonly briefCampaignsMetaLocaleTargetingEnabled = signal<boolean | null>(null);
+  protected readonly briefCampaignsMetaRegionTargetingEnabled = signal<boolean | null>(null);
   /** The Meta ad schedule and frequency cap (#5904 row 5): deployment-wide answers, read and cleared like the capabilities above. */
   protected readonly briefCampaignsMetaAdScheduleEnabled = signal<boolean | null>(null);
   protected readonly briefCampaignsMetaFrequencyCapEnabled = signal<boolean | null>(null);
@@ -1283,6 +1375,103 @@ export class CampaignsComponent {
   protected readonly emailTemplateSubmittedQuery = signal('');
 
   /**
+   * The event's brand and edition, which the picker searches with before anyone types.
+   *
+   * The LF portal holds every brand's email -- newsletters, education promos, surveys, dozens of
+   * events -- and an unfiltered listing is its newest 500 rows, roughly a week of mixed mail. The
+   * clone decides the send's sender, subscription type and office location, so an event email
+   * should be offered its own brand's templates and nothing else: "KubeCon + CloudNativeCon North
+   * America 2026" searches `kubecon` OR `cloudnativecon` across the whole scan range instead.
+   *
+   * Only an EVENT email has one. A survey picks its template automatically and a newsletter clones
+   * the issue chosen on the Plan tab, so neither shows this picker. Null also when the brief names
+   * no usable brand; the picker then lists the portal exactly as it did before.
+   */
+  protected readonly emailTemplateScope = computed<CampaignEmailTemplateScope | null>(() =>
+    this.isSurvey() || this.isNewsletter() ? null : deriveEmailTemplateScope(this.emailBriefOutput()?.eventDetails)
+  );
+
+  /** Whether the list on screen came from the scoped search, as opposed to a typed query or "Show all". */
+  protected readonly emailTemplatesScoped = signal(false);
+
+  /** The operator asked for every template rather than the event's brand: the scope is skipped until they return to it. */
+  protected readonly emailTemplatesShowAll = signal(false);
+
+  /**
+   * The scoped search found nothing that can be cloned (or failed), so the unfiltered listing was
+   * loaded instead. Said on screen, so an operator does not read the portal's mixed list as the
+   * brand's templates.
+   */
+  protected readonly emailTemplatesScopeFellBack = signal(false);
+
+  /**
+   * How many of the scoped search's rows were hidden as not clone sources: automated workflow
+   * emails, the B half of an A/B pair, this app's own staged drafts, tests, newsletters and draft
+   * copies. Counted rather than silently dropped, so the operator knows they exist.
+   */
+  protected readonly emailTemplatesHiddenCount = signal(0);
+
+  /**
+   * Each scoped row's place relative to the event: this edition, or another edition of the brand.
+   * Empty when the list is not scoped. A Record rather than a Map so the template can index it.
+   */
+  protected readonly emailTemplateFitById = computed<Readonly<Record<string, CampaignEmailTemplateFit>>>(() => {
+    const scope = this.emailTemplateScope();
+    const templates = this.emailTemplates();
+    if (!this.emailTemplatesScoped() || scope === null || templates === null) {
+      return {};
+    }
+    const fits: Record<string, CampaignEmailTemplateFit> = {};
+    for (const template of templates) {
+      fits[template.id] = classifyEmailTemplate(template, scope);
+    }
+    return fits;
+  });
+
+  /** How many scoped rows belong to this edition, for the line above the list. */
+  protected readonly emailTemplateThisEditionCount = computed<number>(
+    () => Object.values(this.emailTemplateFitById()).filter((fit) => fit === 'this-edition').length
+  );
+
+  /** How many scoped rows belong to the brand's OTHER editions. */
+  protected readonly emailTemplateOtherEditionCount = computed<number>(
+    () => Object.values(this.emailTemplateFitById()).filter((fit) => fit === 'other-edition').length
+  );
+
+  /**
+   * Whether the scoped list also shows the brand's other editions. Off for every new scoped search:
+   * the operator wants this event's own templates, and last year's or another region's are one
+   * click away instead of making up most of the list (live: 96 of 114 KubeCon rows were other
+   * editions for a Europe 2028 brief).
+   */
+  protected readonly emailTemplatesShowOtherEditions = signal(false);
+
+  /**
+   * Whether other editions are held back right now: only while this edition HAS templates, since
+   * hiding the rest of a brand with none of its own would leave an empty picker.
+   */
+  protected readonly emailTemplatesHidingOtherEditions = computed<boolean>(
+    () =>
+      this.emailTemplatesScoped() &&
+      !this.emailTemplatesShowOtherEditions() &&
+      this.emailTemplateThisEditionCount() > 0 &&
+      this.emailTemplateOtherEditionCount() > 0
+  );
+
+  /**
+   * The scope the in-flight or current search was dispatched with, as a comparable key ('' when
+   * unscoped). Captured at dispatch, so a handoff for a DIFFERENT event is not mistaken for the
+   * search already on the wire.
+   */
+  private emailSearchScopeKey = '';
+
+  /**
+   * The brief and stage the email copy was last generated for AUTOMATICALLY, so arriving at
+   * Implement again does not redraft over the operator's review. See `generateEmailCopyOnArrival`.
+   */
+  private emailCopyAutoGeneratedFor = '';
+
+  /**
    * What a screen reader announces about the template search.
    *
    * A computed feeding a PERSISTENT region, matching the pattern in implementation-tab: an
@@ -1310,7 +1499,11 @@ export class CampaignsComponent {
       // this is the only place the two texts said different things.
       return q ? `No templates match “${q}”.` : 'This portal has no marketing emails yet.';
     }
-    const count = `${templates.length} template${templates.length === 1 ? '' : 's'} found.`;
+    // A scoped list names its brand, so the count is not heard as the portal's whole template set.
+    const scope = this.emailTemplatesScoped() ? this.emailTemplateScope() : null;
+    const count = scope
+      ? `${templates.length} ${scope.label} template${templates.length === 1 ? '' : 's'} found, ${this.emailTemplateThisEditionCount()} from this edition.`
+      : `${templates.length} template${templates.length === 1 ? '' : 's'} found.`;
     // The truncation cue must carry over, for the same reason the sibling appends its reload
     // instruction: announcing the count alone gives the reassurance without the instruction, and
     // the instruction is the part a screen-reader user cannot recover on their own — nothing else
@@ -1341,10 +1534,11 @@ export class CampaignsComponent {
   /**
    * Whether the listing may have been cut off by the service's unfiltered cap.
    *
-   * Only ever true for an EMPTY query, where a complete portal listing and a truncated first
-   * screen are indistinguishable on the wire. A filtered search is complete-or-error, so this
-   * stays false there — telling someone to narrow a search that was already exhaustive would
-   * send them looking for a template that does not exist.
+   * Only ever true for an EMPTY, unscoped query, where a complete portal listing and a truncated
+   * first screen are indistinguishable on the wire. A filtered or brand-scoped search reads the
+   * newest ~2,000 emails and fails rather than answer "none" when it reaches that bound without
+   * a match, so this stays false there: "search to narrow it" would not help, because a narrower
+   * query reads the same emails.
    */
   protected readonly emailTemplatesTruncated = signal(false);
 
@@ -1437,7 +1631,12 @@ export class CampaignsComponent {
     // RANK BEFORE SLICING. The cap keeps the first N rows, so ranking afterwards could only
     // reorder what survived -- a matching template past the cap would be cut before it could rise,
     // which is exactly the template the operator was looking for.
-    const ranked = this.rankTemplatesForSelectedType(templates);
+    const rankedAll = this.rankTemplatesForSelectedType(templates);
+    // While other editions are held back, only this edition's rows are drawn. Pinned rows below are
+    // still looked up in the FULL ranking, so a selection or suggestion from another edition stays
+    // on screen rather than vanishing behind the filter.
+    const fits = this.emailTemplateFitById();
+    const ranked = this.emailTemplatesHidingOtherEditions() ? rankedAll.filter((t) => fits[t.id] === 'this-edition') : rankedAll;
     const drawn = ranked.slice(0, HUBSPOT_TEMPLATE_RENDER_LIMIT);
 
     // Two rows are always DRAWN, whatever the ranking or the cap does to them:
@@ -1462,11 +1661,11 @@ export class CampaignsComponent {
     const selectedId = this.selectedEmailTemplateId();
     const suggestedId = this.emailTemplateSuggestionId();
     if (suggestedId !== '' && suggestedId !== selectedId) {
-      const suggested = ranked.find((t) => t.id === suggestedId);
+      const suggested = rankedAll.find((t) => t.id === suggestedId);
       if (suggested) pinned.push(suggested);
     }
     if (selectedId !== '') {
-      const selected = ranked.find((t) => t.id === selectedId) ?? this.selectedEmailTemplateRow();
+      const selected = rankedAll.find((t) => t.id === selectedId) ?? this.selectedEmailTemplateRow();
       if (selected) pinned.push(selected);
     }
     const missing = pinned.filter((row) => !drawn.some((t) => t.id === row.id));
@@ -1484,7 +1683,10 @@ export class CampaignsComponent {
   });
 
   /** How many rows the search returned, as opposed to how many are drawn. */
-  protected readonly emailTemplateRenderTotal = computed<number>(() => this.emailTemplates()?.length ?? 0);
+  protected readonly emailTemplateRenderTotal = computed<number>(() =>
+    // While other editions are held back, the list being capped is this edition's, not the brand's.
+    this.emailTemplatesHidingOtherEditions() ? this.emailTemplateThisEditionCount() : (this.emailTemplates()?.length ?? 0)
+  );
 
   /** Whether the render cap actually bit — i.e. rows were fetched that are not on screen. */
   protected readonly emailTemplatesRenderCapped = computed<boolean>(() => this.emailTemplateRenderTotal() > HUBSPOT_TEMPLATE_RENDER_LIMIT);
@@ -1681,8 +1883,13 @@ export class CampaignsComponent {
    * refuses a cross-surface pair, so offering the event stages on the survey surface would offer a
    * choice the server rejects.
    */
-  protected readonly sendTypes = computed<readonly CampaignEmailTypeOption[] | readonly CampaignSurveyTypeOption[]>(() =>
-    this.isSurvey() ? this.surveyAssetTypes() : CAMPAIGN_EMAIL_TYPES
+  protected readonly sendTypes = computed<readonly CampaignEmailTypeOption[] | readonly CampaignSurveyTypeOption[] | readonly CampaignNewsletterTypeOption[]>(
+    () => {
+      if (this.isSurvey()) {
+        return this.surveyAssetTypes();
+      }
+      return this.isNewsletter() ? CAMPAIGN_NEWSLETTER_TYPES : CAMPAIGN_EMAIL_TYPES;
+    }
   );
 
   /**
@@ -1756,7 +1963,7 @@ export class CampaignsComponent {
    * along with a survey generate. The raw id is kept, so returning to email shows the choice again.
    */
   protected readonly selectedEmailSegment = computed<CampaignEmailSegment | undefined>(() =>
-    this.isSurvey() ? undefined : CAMPAIGN_EMAIL_SEGMENTS.find((segment) => segment === this.selectedEmailSegmentId())
+    this.isSurvey() || this.isNewsletter() ? undefined : CAMPAIGN_EMAIL_SEGMENTS.find((segment) => segment === this.selectedEmailSegmentId())
   );
 
   /**
@@ -1921,8 +2128,27 @@ export class CampaignsComponent {
    * filter here with the validated list closes the gap and makes A's preview agree with what the
    * controller stages -- exactly as `abTestBodyHtmlBPreview` does for B.
    */
-  protected readonly emailBodyHtmlPreview = computed<string>(() =>
-    stripResourceLoadingHtml(this.emailCopy()?.body ?? '', this.generatedDestinations(), this.emailCtaDestination())
+  protected readonly emailBodyHtmlPreview = computed<string>(() => {
+    // A newsletter's links are the addresses in its notes, each judged on its own; no host is
+    // vouched for. See `emailNoteLinks`.
+    const noteLinks = this.emailNoteLinks();
+    if (noteLinks !== null) {
+      return stripResourceLoadingHtml(this.emailCopy()?.body ?? '', [], '', noteLinks);
+    }
+    return stripResourceLoadingHtml(this.emailCopy()?.body ?? '', this.generatedDestinations(), this.emailCtaDestination());
+  });
+
+  /**
+   * NEWSLETTER only: the addresses in the issue's notes, which are the only links its body and
+   * its button may keep. `null` on every other surface, which keeps the host rule.
+   *
+   * A newsletter has no registration page and no event page, so the host rule (the button's host,
+   * or an LF-owned domain) vouched for nothing and every link an operator had written into the
+   * notes reached the preview and the draft as dead text. The controller judges the staged body
+   * against the same notes, read from the stored brief, so the preview and the draft agree.
+   */
+  protected readonly emailNoteLinks = computed<string[] | null>(() =>
+    this.isNewsletter() ? extractHttpLinks(this.emailBriefOutput()?.eventDetails?.sourceText) : null
   );
 
   /**
@@ -2233,9 +2459,13 @@ export class CampaignsComponent {
    * field -- never invent one -- so an absent url is a deliberate "registration is not the right
    * destination for this stage", not a gap for the UI to fill.
    */
-  protected readonly emailCtaDestination = computed<string>(() =>
-    ctaDestinationFor(this.emailCopy()?.ctaUrl, this.emailBriefOutput()?.eventDetails?.registrationUrl)
-  );
+  protected readonly emailCtaDestination = computed<string>(() => {
+    const noteLinks = this.emailNoteLinks();
+    if (noteLinks !== null) {
+      return noteLinkDestination(this.emailCopy()?.ctaUrl, noteLinks);
+    }
+    return ctaDestinationFor(this.emailCopy()?.ctaUrl, this.emailBriefOutput()?.eventDetails?.registrationUrl);
+  });
 
   /**
    * Whether variant B copy can be (re)generated: same brief precondition as variant A, gated on
@@ -2642,7 +2872,10 @@ export class CampaignsComponent {
       // whose draft may exist, a single-send create could clone a second draft for it.
       !this.sequenceLocksSingleSend() &&
       // Email may stage the template as it is; a survey email has to carry its generated copy.
-      (!this.isSurvey() || this.emailCopy() !== null)
+      // So does a newsletter: its template is the PREVIOUS ISSUE, so a draft staged without copy
+      // is last issue's newsletter under this issue's name. `onStageEmailSend` already refused
+      // it, but the button stayed enabled and did nothing when pressed.
+      (!(this.isSurvey() || this.isNewsletter()) || this.emailCopy() !== null)
   );
 
   /**
@@ -2725,6 +2958,8 @@ export class CampaignsComponent {
 
   /** Survey & Report — the surface whose brief is written from a pasted document, not a scraped event. */
   protected readonly isSurvey = computed(() => this.sendSurface() === 'survey');
+  /** Newsletter: one issue of a brand's recurring newsletter, cloned from its previous issue. */
+  protected readonly isNewsletter = computed(() => this.sendSurface() === 'newsletter');
 
   /**
    * Both SEND surfaces: email and survey.
@@ -2741,13 +2976,16 @@ export class CampaignsComponent {
   protected readonly isEmailLike = computed(() => this.selectedDeliveryType() !== 'paid-marketing');
 
   /**
-   * The Email side's tab set — a plain field, NOT a computed over the active delivery type.
+   * The send container's tab set: `CAMPAIGN_EMAIL_TABS`, minus Audience for a newsletter, which
+   * reuses its previous issue's lists and has no Audience step.
    *
-   * That distinction is the whole point. Both containers stay MOUNTED, so a list keyed on
-   * `isEmail()` would describe *the page* rather than *this container*: while Paid Marketing is
-   * showing, the hidden Email tablist would render the unfiltered four — including the Optimize
-   * button this channel must never offer — and the keyboard handler's bounds would disagree
-   * with the DOM it indexes into. A per-container constant cannot drift with ambient state.
+   * It reads ONE fact, whether the send is a newsletter, and deliberately not which container is
+   * showing. Both containers stay MOUNTED, so a list keyed on `isEmail()` would describe *the
+   * page* rather than *this container*: while Paid Marketing is showing, the hidden Email tablist
+   * would render the unfiltered four — including the Optimize button this channel must never
+   * offer — and the keyboard handler's bounds would disagree with the DOM it indexes into.
+   * Because the set can now shrink, the surface switch moves `selectedEmailTab` off a tab the new
+   * set does not have (see the delivery-type subscription).
    *
    * Email drops **Optimize** because the tab has no meaning here, not because it is unbuilt.
    * Optimize drives keyword and status actions, and `HubSpotDispatcher` implements no
@@ -2766,7 +3004,50 @@ export class CampaignsComponent {
    * one. `MonitoringTabComponent`'s `PlatformType` is
    * `'google' | 'linkedin' | 'reddit' | 'meta'`, none of which is HubSpot.
    */
-  protected readonly emailTabs: readonly CampaignTabOption[] = CAMPAIGN_EMAIL_TABS;
+  protected readonly emailTabs = computed<readonly CampaignTabOption[]>(() =>
+    this.isNewsletter() ? CAMPAIGN_EMAIL_TABS.filter((tab) => tab.id !== 'audience') : CAMPAIGN_EMAIL_TABS
+  );
+
+  /** The breadcrumb's program crumb; a newsletter is its own campaign kind, with no delivery crumb. */
+  protected readonly programBreadcrumbLabel = computed(() =>
+    this.isNewsletter() ? CAMPAIGN_NEWSLETTER_PROGRAM_OPTION.label : this.activeProgramTypeConfig().breadcrumbLabel
+  );
+
+  /** Where the newsletter's recipients stand on Implement, and what to suggest when they cannot be reused. */
+  protected readonly newsletterAudienceState = signal<CampaignNewsletterAudienceState>('idle');
+  protected readonly newsletterAudienceSuggestion = signal<CampaignNewsletterAudienceSuggestion | null>(null);
+  protected readonly newsletterAudienceError = signal('');
+  /** The previous issue whose lists the newsletter was sent to, when they were reused as they were. */
+  protected readonly newsletterAudiencePrecedent = signal('');
+  /**
+   * Name of the previous issue the newsletter is cloned from: the first previous newsletter ticked
+   * on the Plan tab. Implement shows it instead of a template picker, because the template was
+   * already chosen there.
+   */
+  protected readonly newsletterTemplateName = signal('');
+  /**
+   * Who the newsletter issue goes to, and who is kept off it: each attached list by name, size and
+   * its own HubSpot rules. A newsletter has no Audience tab, and its recipients are attached for
+   * the operator rather than by them, so without this the only thing on screen before staging to
+   * tens of thousands of subscribers was "Master list 3797". See `describeNewsletterAudience`.
+   */
+  protected readonly newsletterAudienceIncludes = signal<AudienceSelectionSummaryItem[]>([]);
+  protected readonly newsletterAudienceExcludes = signal<AudienceSelectionSummaryItem[]>([]);
+  protected readonly newsletterAudienceDescribing = signal(false);
+  protected readonly newsletterAudienceDescribeError = signal<string | null>(null);
+  /** Bumped by every describe, so a slower earlier read cannot overwrite a later audience's lists. */
+  private newsletterAudienceDescribeGeneration = 0;
+
+  /** The hint under the email type on Implement, per send surface. */
+  protected readonly emailTypeHint = computed(() => {
+    if (this.isSurvey()) {
+      return 'Change the asset type above the planner — each one is its own brief.';
+    }
+    if (this.isNewsletter()) {
+      return 'Change the brand or the issue on the Plan tab — each issue is its own brief.';
+    }
+    return 'Change the type above the planner — each stage is its own brief.';
+  });
 
   /**
    * Rows from the brief's metrics read, narrowed to the email channel.
@@ -2997,6 +3278,26 @@ export class CampaignsComponent {
   });
 
   public constructor() {
+    // Re-read what the newsletter's recipients are whenever the attached audience changes: a list
+    // attached from the previous issue, one confirmed from the suggestion, one restored with a
+    // saved brief. Keyed on the row, so a re-render of the same audience reads nothing.
+    toObservable(
+      computed(() => {
+        const audience = this.emailAudience();
+        return this.isNewsletter() && audience?.status === 'built'
+          ? [
+              this.activeFoundationSlug(),
+              audience.id,
+              audience.version,
+              audience.platformMasterListId ?? '',
+              (audience.suppressionListIds ?? []).join(','),
+            ].join('|')
+          : '';
+      })
+    )
+      .pipe(distinctUntilChanged(), takeUntilDestroyed())
+      .subscribe(() => this.describeNewsletterAudience());
+
     // The Optimize tab's negative-keyword and keyword-targeting results belong to this page's (project, brief): the same
     // address the tab is given. Reported from here, not from the tab, because the tab is destroyed
     // whenever another tab is open, and a switch made there would otherwise never clear anything.
@@ -3077,6 +3378,13 @@ export class CampaignsComponent {
         this.emailTemplatesTruncated.set(false);
         this.emailChannelEnabled.set(null);
         this.emailTemplatesError.set(null);
+        // The brand scope is per-search, and "Show all" was a choice about the previous portal.
+        this.emailTemplatesScoped.set(false);
+        this.emailTemplatesShowAll.set(false);
+        this.emailTemplatesShowOtherEditions.set(false);
+        this.emailTemplatesScopeFellBack.set(false);
+        this.emailTemplatesHiddenCount.set(0);
+        this.emailSearchScopeKey = '';
         this.selectedEmailTemplateId.set('');
         this.selectedEmailTemplateRow.set(null);
         // The brief-derived state too. `emailBriefId` is scoped to a (project, event) row, and
@@ -3113,12 +3421,26 @@ export class CampaignsComponent {
         this.briefCampaignsRedditAssetUploadEnabled.set(null);
         this.briefCampaignsMetaCreativeEnabled.set(null);
         this.briefCampaignsRedditConversionPixelEnabled.set(null);
+        this.briefCampaignsRedditConversionEventEnabled.set(null);
         this.briefCampaignsMetaAssetUploadEnabled.set(null);
         this.briefCampaignsGoogleAssetUploadEnabled.set(null);
         this.briefCampaignsLinkedInAssetUploadEnabled.set(null);
         this.briefCampaignsLinkedInTargetingEditEnabled.set(null);
         this.briefCampaignsLinkedInAccountSelectionEnabled.set(null);
         this.briefCampaignsLinkedInDailyCapEnabled.set(null);
+        this.briefCampaignsLinkedInVariantCopyEnabled.set(null);
+        this.briefCampaignsLinkedInCallToActionEnabled.set(null);
+        this.briefCampaignsLinkedInTextAdsEnabled.set(null);
+        this.briefCampaignsLinkedInVideoAdsEnabled.set(null);
+        this.briefCampaignsLinkedInTargetingEnabled.set(null);
+        this.briefCampaignsLinkedInConversionsEnabled.set(null);
+        this.briefCampaignsLinkedInLeadGenEnabled.set(null);
+        this.briefCampaignsLinkedInCarouselEnabled.set(null);
+        this.briefCampaignsLinkedInDocumentEnabled.set(null);
+        this.briefCampaignsLinkedInBoostEnabled.set(null);
+        this.briefCampaignsLinkedInTargetCostEnabled.set(null);
+        this.briefCampaignsLinkedInDeliveryOptionsEnabled.set(null);
+        this.briefCampaignsLinkedInTrafficManualBidEnabled.set(null);
         this.briefCampaignsMicrosoftAssetUploadEnabled.set(null);
         this.briefCampaignsBiddingEnabled.set(null);
         this.briefCampaignsMicrosoftScheduleEnabled.set(null);
@@ -3129,6 +3451,8 @@ export class CampaignsComponent {
         this.briefCampaignsMetaLeadFormsEnabled.set(null);
         this.briefCampaignsMetaInterestTargetingEnabled.set(null);
         this.briefCampaignsMetaBehaviorTargetingEnabled.set(null);
+        this.briefCampaignsMetaLocaleTargetingEnabled.set(null);
+        this.briefCampaignsMetaRegionTargetingEnabled.set(null);
         this.briefCampaignsMetaAdScheduleEnabled.set(null);
         this.briefCampaignsMetaFrequencyCapEnabled.set(null);
         this.briefCampaignsMetaDeviceTargetingEnabled.set(null);
@@ -3136,6 +3460,12 @@ export class CampaignsComponent {
         this.briefCampaignsMetaConversionEventEnabled.set(null);
         this.briefCampaignsMetaOptimizationGoalEnabled.set(null);
         this.briefCampaignsMetaCustomAudiencesEnabled.set(null);
+        this.briefCampaignsRedditCustomAudiencesEnabled.set(null);
+        this.briefCampaignsRedditTargetingExclusionsEnabled.set(null);
+        this.briefCampaignsRedditPlacementsEnabled.set(null);
+        this.briefCampaignsRedditBudgetTypeEnabled.set(null);
+        this.briefCampaignsRedditPixelListEnabled.set(null);
+        this.briefCampaignsRedditTargetingResolutionEnabled.set(null);
         this.briefCampaignsGoogleAudienceSegmentsEnabled.set(null);
         this.briefCampaignsGoogleConversionActionsEnabled.set(null);
         this.briefCampaignsGoogleDemandGenAudienceEnabled.set(null);
@@ -3187,7 +3517,29 @@ export class CampaignsComponent {
 
     // Mirror the program control into the signal. A program switch changes the whole
     // brief context (URL scrape, copy), so it resets the brief + returns to planning.
+    // The first selector. Newsletter switches the SEND SURFACE and leaves the program alone; a
+    // program type switches the program and leaves Newsletter for Email.
+    this.selectorForm.controls.programPicker.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => {
+      if (value === 'newsletter') {
+        if (this.selectorForm.controls.deliveryType.value !== 'newsletter') {
+          this.selectorForm.controls.deliveryType.setValue('newsletter');
+        }
+        return;
+      }
+      if (this.selectorForm.controls.deliveryType.value === 'newsletter') {
+        this.selectorForm.controls.deliveryType.setValue('email');
+      }
+      if (value !== this.selectorForm.controls.programType.value) {
+        this.selectorForm.controls.programType.setValue(value);
+      }
+    });
+
     this.selectorForm.controls.programType.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => {
+      // Keep the first selector in step when the program moves on its own (a restore adopting the
+      // brief's program), except on the newsletter surface, where the selector says Newsletter.
+      if (this.selectorForm.controls.programPicker.value !== 'newsletter' && this.selectorForm.controls.programPicker.value !== value) {
+        this.selectorForm.controls.programPicker.setValue(value, { emitEvent: false });
+      }
       if (value === this.selectedProgramType()) {
         return;
       }
@@ -3255,7 +3607,21 @@ export class CampaignsComponent {
     this.abTestForm.controls.enabled.valueChanges.pipe(takeUntilDestroyed()).subscribe((enabled) => {
       if (!enabled) {
         this.clearAbTestDraft();
+        return;
       }
+      // Ticking the box IS asking for a variant B, so it is drafted straight away rather than after
+      // a second "Generate variant B" click; the three B fields stay editable for review. Only when
+      // B is still empty -- a tick never overwrites a variant the operator already wrote or edited.
+      // Deferred a tick so `abTestEnabled`, which `canGenerateAbTestCopy` reads, has seen the value.
+      queueMicrotask(() => {
+        const empty =
+          this.abTestForm.controls.subjectB.value.trim() === '' &&
+          this.abTestForm.controls.bodyHtmlB.value.trim() === '' &&
+          this.abTestForm.controls.preheaderB.value.trim() === '';
+        if (empty && this.canGenerateAbTestCopy()) {
+          void this.onGenerateAbTestCopy();
+        }
+      });
     });
 
     this.selectorForm.controls.deliveryType.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => {
@@ -3284,15 +3650,20 @@ export class CampaignsComponent {
       // Only when the SURFACE changes. Returning to the surface last used -- the round trip
       // through Paid Marketing -- keeps its selection: its type is valid there, and resetting it
       // discarded a chosen stage's brief, audience and copy.
-      if ((value === 'survey' || value === 'email') && value !== this.sendSurface()) {
+      if ((value === 'survey' || value === 'email' || value === 'newsletter') && value !== this.sendSurface()) {
         this.sendSurface.set(value);
-        // Survey has no A/B control, so a variant B left armed on Email would stage invisibly.
-        if (value === 'survey' && this.abTestForm.controls.enabled.value) {
+        // Survey and newsletter have no A/B control, so a variant B left armed on Email would stage invisibly.
+        if ((value === 'survey' || value === 'newsletter') && this.abTestForm.controls.enabled.value) {
           this.abTestForm.controls.enabled.setValue(false);
         }
-        const defaultTypeId = value === 'survey' ? DEFAULT_CAMPAIGN_SURVEY_TYPE_ID : DEFAULT_CAMPAIGN_EMAIL_TYPE_ID;
+        const defaultTypeId = defaultSendTypeId(value);
         this.onSelectEmailType(defaultTypeId);
         this.selectorForm.controls.emailType.setValue(defaultTypeId, { emitEvent: false });
+        // A newsletter has no Audience tab (`emailTabs`). Left on it, the audience panel stayed
+        // on screen with no tab button selected and no way to tell which step this was.
+        if (value === 'newsletter' && this.selectedEmailTab() === 'audience') {
+          this.selectedEmailTab.set('planning');
+        }
       }
 
       // Re-evaluate the picker on RETURN to email, for the reason the foundation-switch handler
@@ -3345,6 +3716,7 @@ export class CampaignsComponent {
         // operator is already searching, and skipped while a request is in flight.
         if (tab === 'implementation') {
           this.loadEmailTemplatesIfNeverAnswered();
+          this.generateEmailCopyOnArrival();
         }
         // Re-read on every entry rather than once, unlike the picker above. The picker's contents
         // change only when someone edits templates in HubSpot; these numbers change the moment a
@@ -3409,7 +3781,7 @@ export class CampaignsComponent {
    */
   protected onTabKeydown(event: KeyboardEvent, currentIndex: number, owner: CampaignDeliveryType): void {
     // Both send surfaces share the email tab set; only paid has its own (it alone has Optimize).
-    const tabs = owner === 'paid-marketing' ? this.tabs : this.emailTabs;
+    const tabs = owner === 'paid-marketing' ? this.tabs : this.emailTabs();
     let newIndex: number | null = null;
 
     if (event.key === 'ArrowRight') {
@@ -3727,7 +4099,12 @@ export class CampaignsComponent {
     if (restoringBriefId !== undefined && restoringBriefId !== '') {
       this.emailBriefId.set(restoringBriefId);
     }
-    this.selectedEmailTab.set('audience');
+    // A newsletter has no Audience tab: it goes straight to Implement and reuses its previous
+    // issue's lists there (prepareNewsletterAudience).
+    this.selectedEmailTab.set(this.isNewsletter() ? 'implementation' : 'audience');
+    if (this.isNewsletter()) {
+      void this.prepareNewsletterAudience(brief);
+    }
     // Set directly rather than through `selectTab`, so the two things that tab's entry does have
     // to be done here as well. Saving the plan is the one that matters: a compose with no brief
     // id creates a real HubSpot list and attaches it to nothing.
@@ -3741,10 +4118,29 @@ export class CampaignsComponent {
     // Not when that very search is already on the wire: the reset above starts it on Survey when
     // the selection came from a filtered list, and a second one would walk the portal again only
     // for the generation check to discard the first.
+    // The SCOPE must match too: a scoped search still running for the previous event's brand is not
+    // the one this event needs, and skipping on it would leave the wrong brand's templates listed.
+    const pendingScopeKey = this.emailTemplatesShowAll() ? '' : (this.emailTemplateScope()?.phrases.join('|') ?? '');
     const unfilteredSearchPending =
-      this.emailTemplatesLoading() && this.emailTemplateSubmittedQuery() === '' && this.emailSearchProjectSlug() === this.activeFoundationSlug();
+      this.emailTemplatesLoading() &&
+      this.emailTemplateSubmittedQuery() === '' &&
+      this.emailSearchProjectSlug() === this.activeFoundationSlug() &&
+      this.emailSearchScopeKey === pendingScopeKey;
+    // A newsletter is cloned from the brand's previous issue, whose id the planner already found
+    // and stored as the first reference: select it by id. Not a brand SEARCH -- a filtered search
+    // walks the whole portal and can outrun the template lookup's time budget on a large one,
+    // which failed the whole picker. Staging reads the id, so the row need not be in the list.
+    const newsletterTemplateId = this.isNewsletter() ? (brief.eventDetails?.referenceEmailIds?.[0] ?? '') : '';
+    if (newsletterTemplateId !== '') {
+      this.selectedEmailTemplateId.set(newsletterTemplateId);
+    }
     if (!unfilteredSearchPending) {
       this.searchEmailTemplates('');
+    }
+    // A newsletter lands on Implement directly (above), not through `selectTab`, so the draft
+    // that tab's entry starts is started here.
+    if (this.isNewsletter()) {
+      this.generateEmailCopyOnArrival();
     }
   }
 
@@ -3909,6 +4305,119 @@ export class CampaignsComponent {
     this.emailAudienceSkipped.set(false);
   }
 
+  /** Attach the suggested newsletter recipients the operator reviewed on Implement. */
+  protected async onConfirmNewsletterAudience(): Promise<void> {
+    const suggestion = this.newsletterAudienceSuggestion();
+    const brief = this.emailBriefOutput();
+    const projectSlug = this.activeFoundationSlug();
+    if (suggestion === null || brief === null || projectSlug === '' || suggestion.includeLists.length === 0 || suggestion.suppressionLists.length === 0) {
+      return;
+    }
+    this.newsletterAudienceState.set('loading');
+    // The attach is awaited, and the operator can plan another issue meanwhile: what it answers
+    // is written to the page only while this brief is still the one on it.
+    const isCurrent = (): boolean => this.emailBriefOutput() === brief && this.activeFoundationSlug() === projectSlug;
+    try {
+      const briefId = await this.ensureEmailBriefId(brief, projectSlug);
+      if (!isCurrent()) {
+        return;
+      }
+      const attached = await this.attachNewsletterLists(
+        projectSlug,
+        briefId,
+        suggestion.includeLists.map((list) => list.listId),
+        suggestion.suppressionLists.map((list) => list.listId),
+        'Brand newsletter subscription lists',
+        isCurrent
+      );
+      if (attached) {
+        this.newsletterAudiencePrecedent.set('');
+      }
+    } catch (error) {
+      if (!isCurrent()) {
+        return;
+      }
+      this.newsletterAudienceState.set('failed');
+      this.newsletterAudienceError.set(this.sendWorkflowErrorText(error, 'The recipients could not be attached.'));
+    }
+  }
+
+  /**
+   * Read what the newsletter's attached lists are, for the "Who this issue goes to" panel.
+   *
+   * Driven by the audience row itself (see the constructor), so it answers for a list attached a
+   * moment ago, one confirmed from the suggestion and one restored with a saved brief alike. The
+   * ids are shown at once and each is replaced by its name, size and rules when the read lands;
+   * a failed read leaves the ids and says so, because the audience is attached either way.
+   */
+  protected describeNewsletterAudience(): void {
+    const generation = ++this.newsletterAudienceDescribeGeneration;
+    const audience = this.emailAudience();
+    const projectSlug = this.activeFoundationSlug();
+    this.newsletterAudienceDescribeError.set(null);
+    if (!this.isNewsletter() || audience === null || audience.status !== 'built' || projectSlug === '') {
+      this.newsletterAudienceIncludes.set([]);
+      this.newsletterAudienceExcludes.set([]);
+      this.newsletterAudienceDescribing.set(false);
+      return;
+    }
+    const master = (audience.platformMasterListId ?? '').trim();
+    const includeIds = (audience.includeListIds?.length ?? 0) > 0 ? [...(audience.includeListIds ?? [])] : [master].filter((id) => id !== '');
+    const excludeIds = [...(audience.suppressionListIds ?? [])];
+    const unnamed = (listId: string): AudienceSelectionSummaryItem => ({ listId, name: `List ${listId}`, hubspotUrl: '', description: null });
+    this.newsletterAudienceIncludes.set(includeIds.map(unnamed));
+    this.newsletterAudienceExcludes.set(excludeIds.map(unnamed));
+    const listIds = [...new Set([...includeIds, ...excludeIds])].slice(0, AUDIENCE_DESCRIBE_MAX_LIST_IDS);
+    if (listIds.length === 0) {
+      this.newsletterAudienceDescribing.set(false);
+      return;
+    }
+    this.newsletterAudienceDescribing.set(true);
+    this.campaignService
+      .describeAudienceLists(projectSlug, { listIds })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (descriptions) => {
+          if (generation !== this.newsletterAudienceDescribeGeneration) {
+            return;
+          }
+          const byId = new Map(descriptions.map((description) => [description.listId, description]));
+          const described = (listId: string): AudienceSelectionSummaryItem => {
+            const description = byId.get(listId);
+            if (description === undefined) {
+              return unnamed(listId);
+            }
+            return {
+              listId,
+              name: description.name || `List ${listId}`,
+              ...(description.size !== undefined ? { size: description.size } : {}),
+              hubspotUrl: description.hubspotUrl,
+              description,
+            };
+          };
+          this.newsletterAudienceIncludes.set(includeIds.map(described));
+          this.newsletterAudienceExcludes.set(excludeIds.map(described));
+          this.newsletterAudienceDescribing.set(false);
+        },
+        error: (error: unknown) => {
+          if (generation !== this.newsletterAudienceDescribeGeneration) {
+            return;
+          }
+          console.error("Failed to read what the newsletter's lists contain:", error);
+          this.newsletterAudienceDescribing.set(false);
+          this.newsletterAudienceDescribeError.set('The lists could not be read from HubSpot, so only their ids are shown. Check them there before sending.');
+        },
+      });
+  }
+
+  /** Try the newsletter's recipients again after a failed read or attach. */
+  protected onRetryNewsletterAudience(): void {
+    const brief = this.emailBriefOutput();
+    if (brief !== null) {
+      void this.prepareNewsletterAudience(brief);
+    }
+  }
+
   /** The operator checked HubSpot after a stage that ended without an answer; release ITS locks only. */
   protected onAcknowledgeStagingUnresolved(): void {
     // Not while this scope's create is still on the wire: the draft may not have appeared YET.
@@ -3998,6 +4507,9 @@ export class CampaignsComponent {
     this.emailCopyGeneration++;
     this.emailCopy.set(null);
     this.emailCopyState.set('idle');
+    // The copy is gone, so the once-per-stage auto-draft latch goes with it: left set, the next
+    // arrival for the same stage skipped the draft and Stage cloned the template's old content.
+    this.emailCopyAutoGeneratedFor = '';
     this.emailCopyError.set('');
 
     // Variant B is segment-scoped the same way variant A is -- its draft was composed against the
@@ -4067,6 +4579,9 @@ export class CampaignsComponent {
     this.resetSurveySequence();
     this.emailCopy.set(null);
     this.emailCopyState.set('idle');
+    // The copy is gone, so the once-per-stage auto-draft latch goes with it: left set, the next
+    // arrival for the same stage skipped the draft and Stage cloned the template's old content.
+    this.emailCopyAutoGeneratedFor = '';
     this.emailCopyError.set('');
 
     // Variant B is brief-scoped the same way variant A is — a stale draft from the previous
@@ -4188,7 +4703,8 @@ export class CampaignsComponent {
           projectSlug,
           briefId,
           this.selectedEmailStage(),
-          this.isSurvey() ? undefined : 'urgency-fomo',
+          // Nor for a newsletter: an issue is news, and the variant frames it as a deadline.
+          this.isSurvey() || this.isNewsletter() ? undefined : 'urgency-fomo',
           this.selectedEmailSegment()
         )
       );
@@ -4773,7 +5289,9 @@ export class CampaignsComponent {
       this.surveySeriesMode() ||
       // A survey email is its generated copy: with none, the draft would keep the template's own
       // content instead of promoting the survey.
-      (this.isSurvey() && copy === null)
+      (this.isSurvey() && copy === null) ||
+      // Likewise a newsletter: staged without copy, the clone would carry LAST issue's content.
+      (this.isNewsletter() && copy === null)
     ) {
       return;
     }
@@ -5026,7 +5544,7 @@ export class CampaignsComponent {
    * search is genuinely expensive — firing one per character would be the wrong trade.
    */
 
-  protected searchEmailTemplates(rawQuery: string): void {
+  protected searchEmailTemplates(rawQuery: string, scopeMode: 'auto' | 'none' = 'auto'): void {
     // Trimmed to match what the SERVER actually searches: the controller trims `q` before
     // calling upstream, so a whitespace-only input runs the UNFILTERED portal search. Storing
     // it raw made the empty state read `No templates match "   "` about a search that had no
@@ -5043,6 +5561,19 @@ export class CampaignsComponent {
       this.emailChannelEnabled.set(null);
       this.emailTemplatesError.set('Select a foundation before searching for a template.');
       return;
+    }
+
+    // An event email with no query searches its BRAND rather than listing the portal: the brand's
+    // phrases go upstream as `match` and come back as one walk over the scan range. A typed query
+    // and "Show all templates" both search the whole portal, as before. 'none' is the fallback a
+    // scoped search runs on itself when the brand yields nothing, so it never re-scopes.
+    const scope = scopeMode === 'auto' && query === '' && !this.emailTemplatesShowAll() ? this.emailTemplateScope() : null;
+    this.emailTemplatesScoped.set(scope !== null);
+    this.emailTemplatesHiddenCount.set(0);
+    this.emailTemplatesShowOtherEditions.set(false);
+    this.emailSearchScopeKey = scope === null ? '' : scope.phrases.join('|');
+    if (scopeMode === 'auto') {
+      this.emailTemplatesScopeFellBack.set(false);
     }
 
     this.emailTemplateQuery.set(query);
@@ -5073,64 +5604,95 @@ export class CampaignsComponent {
     const generation = ++this.emailSearchGeneration;
     const isCurrent = (): boolean => generation === this.emailSearchGeneration;
 
-    this.campaignService
-      .searchHubSpotEmails(projectSlug, query)
-      .pipe(take(1))
-      .subscribe({
-        next: (result) => {
-          if (!isCurrent()) {
-            return;
-          }
-          this.emailTemplatesLoading.set(false);
-          this.emailChannelEnabled.set(result.enabled);
-          if (!result.enabled) {
-            // Not an error: HubSpot simply is not connected for this project, which is the steady
-            // state everywhere the channel is not set up.
-            this.emailTemplates.set(null);
-            this.dropEmailTemplateList();
-            return;
-          }
-          if (result.error) {
-            // The service reached HubSpot and HubSpot refused. Leave the list NULL rather than
-            // empty — an empty list would claim the portal has no templates.
-            this.emailTemplates.set(null);
-            this.dropEmailTemplateList();
-            this.emailTemplatesError.set(result.error);
-            return;
-          }
-          // A row with no id cannot be selected — `sourceEmailId` takes that value — so it is
-          // dropped rather than rendered as a choice that cannot be made.
-          const selectable = result.emails.filter((e) => !!e?.id);
-          if (selectable.length === 0 && result.emails.length > 0) {
-            // The response CARRIED rows and every one of them was unusable. Reporting that as an
-            // empty list would render "This portal has no marketing emails yet" — a claim about
-            // the portal, made from a response that proves the opposite. The server already drops
-            // id-less rows (campaign-service.service.ts), so reaching here means the contract was
-            // violated somewhere upstream; that is a read failure, not an empty portal.
-            //
-            // NULL rather than [], for the same reason the error arms use null: only a search
-            // that genuinely came back with nothing can support the empty-portal claim.
-            this.emailTemplates.set(null);
-            this.dropEmailTemplateList();
-            this.emailTemplatesError.set('Could not load templates. Try again.');
-            return;
-          }
-          this.emailTemplates.set(selectable);
-          this.emailTemplatesTruncated.set(result.possiblyTruncated);
-          this.applyEventTemplateSuggestion(selectable);
-          this.autoSelectSurveyTemplate(selectable);
-        },
-        error: () => {
-          if (!isCurrent()) {
-            return;
-          }
-          this.emailTemplatesLoading.set(false);
-          // NULL, not []. A failed search says nothing about what the portal holds.
+    // A scoped search that cannot answer for the brand -- nothing cloneable in the scan range, or
+    // a failure -- lists the portal instead and says so. Replacing the list rather than dropping
+    // it, so an operator's selection survives exactly as it does across any other search.
+    const fallBackToPortal = (): void => {
+      this.emailTemplatesScopeFellBack.set(true);
+      this.searchEmailTemplates('', 'none');
+    };
+
+    // An unscoped search is the exact request it always was; only a scoped one carries `match`.
+    const search$ =
+      scope === null
+        ? this.campaignService.searchHubSpotEmails(projectSlug, query)
+        : this.campaignService.searchHubSpotEmails(projectSlug, query, scope.phrases);
+    search$.pipe(take(1)).subscribe({
+      next: (result) => {
+        if (!isCurrent()) {
+          return;
+        }
+        this.emailTemplatesLoading.set(false);
+        this.emailChannelEnabled.set(result.enabled);
+        if (!result.enabled) {
+          // Not an error: HubSpot simply is not connected for this project, which is the steady
+          // state everywhere the channel is not set up.
+          this.emailTemplates.set(null);
+          this.dropEmailTemplateList();
+          return;
+        }
+        if (result.error && scope !== null) {
+          fallBackToPortal();
+          return;
+        }
+        if (result.error) {
+          // The service reached HubSpot and HubSpot refused. Leave the list NULL rather than
+          // empty — an empty list would claim the portal has no templates.
+          this.emailTemplates.set(null);
+          this.dropEmailTemplateList();
+          this.emailTemplatesError.set(result.error);
+          return;
+        }
+        // A row with no id cannot be selected — `sourceEmailId` takes that value — so it is
+        // dropped rather than rendered as a choice that cannot be made.
+        const selectable = result.emails.filter((e) => !!e?.id);
+        if (selectable.length === 0 && result.emails.length > 0) {
+          // The response CARRIED rows and every one of them was unusable. Reporting that as an
+          // empty list would render "This portal has no marketing emails yet" — a claim about
+          // the portal, made from a response that proves the opposite. The server already drops
+          // id-less rows (campaign-service.service.ts), so reaching here means the contract was
+          // violated somewhere upstream; that is a read failure, not an empty portal.
+          //
+          // NULL rather than [], for the same reason the error arms use null: only a search
+          // that genuinely came back with nothing can support the empty-portal claim.
           this.emailTemplates.set(null);
           this.dropEmailTemplateList();
           this.emailTemplatesError.set('Could not load templates. Try again.');
-        },
-      });
+          return;
+        }
+        // Scoped: keep only rows that can be a clone source for this send. What is left over is
+        // counted, not silently lost; nothing left at all means the brand has no template in the
+        // scan range, which the portal listing answers better than an empty picker.
+        let rows = selectable;
+        if (scope !== null) {
+          rows = selectable.filter((template) => classifyEmailTemplate(template, scope) !== 'excluded');
+          if (rows.length === 0) {
+            fallBackToPortal();
+            return;
+          }
+          this.emailTemplatesHiddenCount.set(selectable.length - rows.length);
+        }
+        this.emailTemplates.set(rows);
+        this.emailTemplatesTruncated.set(result.possiblyTruncated);
+        this.applyEventTemplateSuggestion(rows);
+        this.autoSelectSurveyTemplate(rows);
+        this.autoSelectNewsletterTemplate(rows);
+      },
+      error: () => {
+        if (!isCurrent()) {
+          return;
+        }
+        if (scope !== null) {
+          fallBackToPortal();
+          return;
+        }
+        this.emailTemplatesLoading.set(false);
+        // NULL, not []. A failed search says nothing about what the portal holds.
+        this.emailTemplates.set(null);
+        this.dropEmailTemplateList();
+        this.emailTemplatesError.set('Could not load templates. Try again.');
+      },
+    });
   }
 
   /**
@@ -5175,6 +5737,28 @@ export class CampaignsComponent {
     // without this the selection went invisible while `canStageEmail` stayed enabled on the id
     // alone, and staging would clone a template no longer on screen.
     this.selectedEmailTemplateRow.set(this.emailTemplates()?.find((t) => t.id === id) ?? null);
+  }
+
+  /**
+   * Leave the brand scope and list the portal's recent emails: the escape hatch for an operator
+   * who knows a template the brand search does not find. Refused while a search is in flight, for
+   * the reason `onEmailTemplateSearchSubmit` gives.
+   */
+  protected onShowAllEmailTemplates(): void {
+    if (this.emailTemplatesLoading()) {
+      return;
+    }
+    this.emailTemplatesShowAll.set(true);
+    this.searchEmailTemplates('');
+  }
+
+  /** Return to the event brand's templates after a typed search or "Show all". */
+  protected onShowScopedEmailTemplates(): void {
+    if (this.emailTemplatesLoading()) {
+      return;
+    }
+    this.emailTemplatesShowAll.set(false);
+    this.searchEmailTemplates('');
   }
 
   /** Retry a failed campaign list — the action the failure state exists to offer. */
@@ -5947,12 +6531,26 @@ export class CampaignsComponent {
           this.briefCampaignsRedditAssetUploadEnabled.set(result.redditAssetUploadEnabled);
           this.briefCampaignsMetaCreativeEnabled.set(result.metaCreativeEnabled);
           this.briefCampaignsRedditConversionPixelEnabled.set(result.redditConversionPixelEnabled);
+          this.briefCampaignsRedditConversionEventEnabled.set(result.redditConversionEventEnabled);
           this.briefCampaignsMetaAssetUploadEnabled.set(result.metaAssetUploadEnabled);
           this.briefCampaignsGoogleAssetUploadEnabled.set(result.googleAssetUploadEnabled);
           this.briefCampaignsLinkedInAssetUploadEnabled.set(result.linkedInAssetUploadEnabled);
           this.briefCampaignsLinkedInTargetingEditEnabled.set(result.linkedInTargetingEditEnabled);
           this.briefCampaignsLinkedInAccountSelectionEnabled.set(result.linkedInAccountSelectionEnabled ?? null);
           this.briefCampaignsLinkedInDailyCapEnabled.set(result.linkedInDailyCapEnabled);
+          this.briefCampaignsLinkedInVariantCopyEnabled.set(result.linkedInVariantCopyEnabled);
+          this.briefCampaignsLinkedInCallToActionEnabled.set(result.linkedInCallToActionEnabled);
+          this.briefCampaignsLinkedInTextAdsEnabled.set(result.linkedInTextAdsEnabled);
+          this.briefCampaignsLinkedInVideoAdsEnabled.set(result.linkedInVideoAdsEnabled);
+          this.briefCampaignsLinkedInTargetingEnabled.set(result.linkedInTargetingEnabled);
+          this.briefCampaignsLinkedInConversionsEnabled.set(result.linkedInConversionsEnabled);
+          this.briefCampaignsLinkedInLeadGenEnabled.set(result.linkedInLeadGenEnabled);
+          this.briefCampaignsLinkedInCarouselEnabled.set(result.linkedInCarouselEnabled);
+          this.briefCampaignsLinkedInDocumentEnabled.set(result.linkedInDocumentEnabled);
+          this.briefCampaignsLinkedInBoostEnabled.set(result.linkedInBoostEnabled);
+          this.briefCampaignsLinkedInTargetCostEnabled.set(result.linkedInTargetCostEnabled);
+          this.briefCampaignsLinkedInDeliveryOptionsEnabled.set(result.linkedInDeliveryOptionsEnabled);
+          this.briefCampaignsLinkedInTrafficManualBidEnabled.set(result.linkedInTrafficManualBidEnabled);
           this.briefCampaignsMicrosoftAssetUploadEnabled.set(result.microsoftAssetUploadEnabled);
           this.briefCampaignsBiddingEnabled.set(result.biddingEnabled);
           this.briefCampaignsMicrosoftScheduleEnabled.set(result.microsoftScheduleEnabled);
@@ -5963,6 +6561,8 @@ export class CampaignsComponent {
           this.briefCampaignsMetaLeadFormsEnabled.set(result.metaLeadFormsEnabled ?? null);
           this.briefCampaignsMetaInterestTargetingEnabled.set(result.metaInterestTargetingEnabled ?? null);
           this.briefCampaignsMetaBehaviorTargetingEnabled.set(result.metaBehaviorTargetingEnabled ?? null);
+          this.briefCampaignsMetaLocaleTargetingEnabled.set(result.metaLocaleTargetingEnabled ?? null);
+          this.briefCampaignsMetaRegionTargetingEnabled.set(result.metaRegionTargetingEnabled ?? null);
           this.briefCampaignsMetaAdScheduleEnabled.set(result.metaAdScheduleEnabled ?? null);
           this.briefCampaignsMetaFrequencyCapEnabled.set(result.metaFrequencyCapEnabled ?? null);
           this.briefCampaignsMetaDeviceTargetingEnabled.set(result.metaDeviceTargetingEnabled ?? null);
@@ -5970,6 +6570,12 @@ export class CampaignsComponent {
           this.briefCampaignsMetaConversionEventEnabled.set(result.metaConversionEventEnabled ?? null);
           this.briefCampaignsMetaOptimizationGoalEnabled.set(result.metaOptimizationGoalEnabled ?? null);
           this.briefCampaignsMetaCustomAudiencesEnabled.set(result.metaCustomAudiencesEnabled ?? null);
+          this.briefCampaignsRedditCustomAudiencesEnabled.set(result.redditCustomAudiencesEnabled ?? null);
+          this.briefCampaignsRedditTargetingExclusionsEnabled.set(result.redditTargetingExclusionsEnabled ?? null);
+          this.briefCampaignsRedditPlacementsEnabled.set(result.redditPlacementsEnabled ?? null);
+          this.briefCampaignsRedditBudgetTypeEnabled.set(result.redditBudgetTypeEnabled ?? null);
+          this.briefCampaignsRedditPixelListEnabled.set(result.redditPixelListEnabled ?? null);
+          this.briefCampaignsRedditTargetingResolutionEnabled.set(result.redditTargetingResolutionEnabled ?? null);
           this.briefCampaignsGoogleAudienceSegmentsEnabled.set(result.googleAudienceSegmentsEnabled);
           this.briefCampaignsGoogleConversionActionsEnabled.set(result.googleConversionActionsEnabled ?? null);
           this.briefCampaignsGoogleDemandGenAudienceEnabled.set(result.googleDemandGenAudienceEnabled ?? null);
@@ -5997,12 +6603,26 @@ export class CampaignsComponent {
           this.briefCampaignsRedditAssetUploadEnabled.set(null);
           this.briefCampaignsMetaCreativeEnabled.set(null);
           this.briefCampaignsRedditConversionPixelEnabled.set(null);
+          this.briefCampaignsRedditConversionEventEnabled.set(null);
           this.briefCampaignsMetaAssetUploadEnabled.set(null);
           this.briefCampaignsGoogleAssetUploadEnabled.set(null);
           this.briefCampaignsLinkedInAssetUploadEnabled.set(null);
           this.briefCampaignsLinkedInTargetingEditEnabled.set(null);
           this.briefCampaignsLinkedInAccountSelectionEnabled.set(null);
           this.briefCampaignsLinkedInDailyCapEnabled.set(null);
+          this.briefCampaignsLinkedInVariantCopyEnabled.set(null);
+          this.briefCampaignsLinkedInCallToActionEnabled.set(null);
+          this.briefCampaignsLinkedInTextAdsEnabled.set(null);
+          this.briefCampaignsLinkedInVideoAdsEnabled.set(null);
+          this.briefCampaignsLinkedInTargetingEnabled.set(null);
+          this.briefCampaignsLinkedInConversionsEnabled.set(null);
+          this.briefCampaignsLinkedInLeadGenEnabled.set(null);
+          this.briefCampaignsLinkedInCarouselEnabled.set(null);
+          this.briefCampaignsLinkedInDocumentEnabled.set(null);
+          this.briefCampaignsLinkedInBoostEnabled.set(null);
+          this.briefCampaignsLinkedInTargetCostEnabled.set(null);
+          this.briefCampaignsLinkedInDeliveryOptionsEnabled.set(null);
+          this.briefCampaignsLinkedInTrafficManualBidEnabled.set(null);
           this.briefCampaignsMicrosoftAssetUploadEnabled.set(null);
           this.briefCampaignsBiddingEnabled.set(null);
           this.briefCampaignsMicrosoftScheduleEnabled.set(null);
@@ -6013,6 +6633,8 @@ export class CampaignsComponent {
           this.briefCampaignsMetaLeadFormsEnabled.set(null);
           this.briefCampaignsMetaInterestTargetingEnabled.set(null);
           this.briefCampaignsMetaBehaviorTargetingEnabled.set(null);
+          this.briefCampaignsMetaLocaleTargetingEnabled.set(null);
+          this.briefCampaignsMetaRegionTargetingEnabled.set(null);
           this.briefCampaignsMetaAdScheduleEnabled.set(null);
           this.briefCampaignsMetaFrequencyCapEnabled.set(null);
           this.briefCampaignsMetaDeviceTargetingEnabled.set(null);
@@ -6020,6 +6642,12 @@ export class CampaignsComponent {
           this.briefCampaignsMetaConversionEventEnabled.set(null);
           this.briefCampaignsMetaOptimizationGoalEnabled.set(null);
           this.briefCampaignsMetaCustomAudiencesEnabled.set(null);
+          this.briefCampaignsRedditCustomAudiencesEnabled.set(null);
+          this.briefCampaignsRedditTargetingExclusionsEnabled.set(null);
+          this.briefCampaignsRedditPlacementsEnabled.set(null);
+          this.briefCampaignsRedditBudgetTypeEnabled.set(null);
+          this.briefCampaignsRedditPixelListEnabled.set(null);
+          this.briefCampaignsRedditTargetingResolutionEnabled.set(null);
           this.briefCampaignsGoogleAudienceSegmentsEnabled.set(null);
           this.briefCampaignsGoogleConversionActionsEnabled.set(null);
           this.briefCampaignsGoogleDemandGenAudienceEnabled.set(null);
@@ -6092,12 +6720,26 @@ export class CampaignsComponent {
       this.briefCampaignsRedditAssetUploadEnabled.set(null);
       this.briefCampaignsMetaCreativeEnabled.set(null);
       this.briefCampaignsRedditConversionPixelEnabled.set(null);
+      this.briefCampaignsRedditConversionEventEnabled.set(null);
       this.briefCampaignsMetaAssetUploadEnabled.set(null);
       this.briefCampaignsGoogleAssetUploadEnabled.set(null);
       this.briefCampaignsLinkedInAssetUploadEnabled.set(null);
       this.briefCampaignsLinkedInTargetingEditEnabled.set(null);
       this.briefCampaignsLinkedInAccountSelectionEnabled.set(null);
       this.briefCampaignsLinkedInDailyCapEnabled.set(null);
+      this.briefCampaignsLinkedInVariantCopyEnabled.set(null);
+      this.briefCampaignsLinkedInCallToActionEnabled.set(null);
+      this.briefCampaignsLinkedInTextAdsEnabled.set(null);
+      this.briefCampaignsLinkedInVideoAdsEnabled.set(null);
+      this.briefCampaignsLinkedInTargetingEnabled.set(null);
+      this.briefCampaignsLinkedInConversionsEnabled.set(null);
+      this.briefCampaignsLinkedInLeadGenEnabled.set(null);
+      this.briefCampaignsLinkedInCarouselEnabled.set(null);
+      this.briefCampaignsLinkedInDocumentEnabled.set(null);
+      this.briefCampaignsLinkedInBoostEnabled.set(null);
+      this.briefCampaignsLinkedInTargetCostEnabled.set(null);
+      this.briefCampaignsLinkedInDeliveryOptionsEnabled.set(null);
+      this.briefCampaignsLinkedInTrafficManualBidEnabled.set(null);
       this.briefCampaignsMicrosoftAssetUploadEnabled.set(null);
       this.briefCampaignsBiddingEnabled.set(null);
       this.briefCampaignsMicrosoftScheduleEnabled.set(null);
@@ -6108,6 +6750,8 @@ export class CampaignsComponent {
       this.briefCampaignsMetaLeadFormsEnabled.set(null);
       this.briefCampaignsMetaInterestTargetingEnabled.set(null);
       this.briefCampaignsMetaBehaviorTargetingEnabled.set(null);
+      this.briefCampaignsMetaLocaleTargetingEnabled.set(null);
+      this.briefCampaignsMetaRegionTargetingEnabled.set(null);
       this.briefCampaignsMetaAdScheduleEnabled.set(null);
       this.briefCampaignsMetaFrequencyCapEnabled.set(null);
       this.briefCampaignsMetaDeviceTargetingEnabled.set(null);
@@ -6115,6 +6759,12 @@ export class CampaignsComponent {
       this.briefCampaignsMetaConversionEventEnabled.set(null);
       this.briefCampaignsMetaOptimizationGoalEnabled.set(null);
       this.briefCampaignsMetaCustomAudiencesEnabled.set(null);
+      this.briefCampaignsRedditCustomAudiencesEnabled.set(null);
+      this.briefCampaignsRedditTargetingExclusionsEnabled.set(null);
+      this.briefCampaignsRedditPlacementsEnabled.set(null);
+      this.briefCampaignsRedditBudgetTypeEnabled.set(null);
+      this.briefCampaignsRedditPixelListEnabled.set(null);
+      this.briefCampaignsRedditTargetingResolutionEnabled.set(null);
       this.briefCampaignsGoogleAudienceSegmentsEnabled.set(null);
       this.briefCampaignsGoogleConversionActionsEnabled.set(null);
       this.briefCampaignsGoogleDemandGenAudienceEnabled.set(null);
@@ -6157,12 +6807,26 @@ export class CampaignsComponent {
             this.briefCampaignsRedditAssetUploadEnabled.set(result.redditAssetUploadEnabled);
             this.briefCampaignsMetaCreativeEnabled.set(result.metaCreativeEnabled);
             this.briefCampaignsRedditConversionPixelEnabled.set(result.redditConversionPixelEnabled);
+            this.briefCampaignsRedditConversionEventEnabled.set(result.redditConversionEventEnabled);
             this.briefCampaignsMetaAssetUploadEnabled.set(result.metaAssetUploadEnabled);
             this.briefCampaignsGoogleAssetUploadEnabled.set(result.googleAssetUploadEnabled);
             this.briefCampaignsLinkedInAssetUploadEnabled.set(result.linkedInAssetUploadEnabled);
             this.briefCampaignsLinkedInTargetingEditEnabled.set(result.linkedInTargetingEditEnabled);
             this.briefCampaignsLinkedInAccountSelectionEnabled.set(result.linkedInAccountSelectionEnabled ?? null);
             this.briefCampaignsLinkedInDailyCapEnabled.set(result.linkedInDailyCapEnabled);
+            this.briefCampaignsLinkedInVariantCopyEnabled.set(result.linkedInVariantCopyEnabled);
+            this.briefCampaignsLinkedInCallToActionEnabled.set(result.linkedInCallToActionEnabled);
+            this.briefCampaignsLinkedInTextAdsEnabled.set(result.linkedInTextAdsEnabled);
+            this.briefCampaignsLinkedInVideoAdsEnabled.set(result.linkedInVideoAdsEnabled);
+            this.briefCampaignsLinkedInTargetingEnabled.set(result.linkedInTargetingEnabled);
+            this.briefCampaignsLinkedInConversionsEnabled.set(result.linkedInConversionsEnabled);
+            this.briefCampaignsLinkedInLeadGenEnabled.set(result.linkedInLeadGenEnabled);
+            this.briefCampaignsLinkedInCarouselEnabled.set(result.linkedInCarouselEnabled);
+            this.briefCampaignsLinkedInDocumentEnabled.set(result.linkedInDocumentEnabled);
+            this.briefCampaignsLinkedInBoostEnabled.set(result.linkedInBoostEnabled);
+            this.briefCampaignsLinkedInTargetCostEnabled.set(result.linkedInTargetCostEnabled);
+            this.briefCampaignsLinkedInDeliveryOptionsEnabled.set(result.linkedInDeliveryOptionsEnabled);
+            this.briefCampaignsLinkedInTrafficManualBidEnabled.set(result.linkedInTrafficManualBidEnabled);
             this.briefCampaignsMicrosoftAssetUploadEnabled.set(result.microsoftAssetUploadEnabled);
             this.briefCampaignsBiddingEnabled.set(result.biddingEnabled);
             this.briefCampaignsMicrosoftScheduleEnabled.set(result.microsoftScheduleEnabled);
@@ -6173,6 +6837,8 @@ export class CampaignsComponent {
             this.briefCampaignsMetaLeadFormsEnabled.set(result.metaLeadFormsEnabled ?? null);
             this.briefCampaignsMetaInterestTargetingEnabled.set(result.metaInterestTargetingEnabled ?? null);
             this.briefCampaignsMetaBehaviorTargetingEnabled.set(result.metaBehaviorTargetingEnabled ?? null);
+            this.briefCampaignsMetaLocaleTargetingEnabled.set(result.metaLocaleTargetingEnabled ?? null);
+            this.briefCampaignsMetaRegionTargetingEnabled.set(result.metaRegionTargetingEnabled ?? null);
             this.briefCampaignsMetaAdScheduleEnabled.set(result.metaAdScheduleEnabled ?? null);
             this.briefCampaignsMetaFrequencyCapEnabled.set(result.metaFrequencyCapEnabled ?? null);
             this.briefCampaignsMetaDeviceTargetingEnabled.set(result.metaDeviceTargetingEnabled ?? null);
@@ -6180,6 +6846,12 @@ export class CampaignsComponent {
             this.briefCampaignsMetaConversionEventEnabled.set(result.metaConversionEventEnabled ?? null);
             this.briefCampaignsMetaOptimizationGoalEnabled.set(result.metaOptimizationGoalEnabled ?? null);
             this.briefCampaignsMetaCustomAudiencesEnabled.set(result.metaCustomAudiencesEnabled ?? null);
+            this.briefCampaignsRedditCustomAudiencesEnabled.set(result.redditCustomAudiencesEnabled ?? null);
+            this.briefCampaignsRedditTargetingExclusionsEnabled.set(result.redditTargetingExclusionsEnabled ?? null);
+            this.briefCampaignsRedditPlacementsEnabled.set(result.redditPlacementsEnabled ?? null);
+            this.briefCampaignsRedditBudgetTypeEnabled.set(result.redditBudgetTypeEnabled ?? null);
+            this.briefCampaignsRedditPixelListEnabled.set(result.redditPixelListEnabled ?? null);
+            this.briefCampaignsRedditTargetingResolutionEnabled.set(result.redditTargetingResolutionEnabled ?? null);
             this.briefCampaignsGoogleAudienceSegmentsEnabled.set(result.googleAudienceSegmentsEnabled);
             this.briefCampaignsGoogleConversionActionsEnabled.set(result.googleConversionActionsEnabled ?? null);
             this.briefCampaignsGoogleDemandGenAudienceEnabled.set(result.googleDemandGenAudienceEnabled ?? null);
@@ -6205,12 +6877,26 @@ export class CampaignsComponent {
             this.briefCampaignsRedditAssetUploadEnabled.set(null);
             this.briefCampaignsMetaCreativeEnabled.set(null);
             this.briefCampaignsRedditConversionPixelEnabled.set(null);
+            this.briefCampaignsRedditConversionEventEnabled.set(null);
             this.briefCampaignsMetaAssetUploadEnabled.set(null);
             this.briefCampaignsGoogleAssetUploadEnabled.set(null);
             this.briefCampaignsLinkedInAssetUploadEnabled.set(null);
             this.briefCampaignsLinkedInTargetingEditEnabled.set(null);
             this.briefCampaignsLinkedInAccountSelectionEnabled.set(null);
             this.briefCampaignsLinkedInDailyCapEnabled.set(null);
+            this.briefCampaignsLinkedInVariantCopyEnabled.set(null);
+            this.briefCampaignsLinkedInCallToActionEnabled.set(null);
+            this.briefCampaignsLinkedInTextAdsEnabled.set(null);
+            this.briefCampaignsLinkedInVideoAdsEnabled.set(null);
+            this.briefCampaignsLinkedInTargetingEnabled.set(null);
+            this.briefCampaignsLinkedInConversionsEnabled.set(null);
+            this.briefCampaignsLinkedInLeadGenEnabled.set(null);
+            this.briefCampaignsLinkedInCarouselEnabled.set(null);
+            this.briefCampaignsLinkedInDocumentEnabled.set(null);
+            this.briefCampaignsLinkedInBoostEnabled.set(null);
+            this.briefCampaignsLinkedInTargetCostEnabled.set(null);
+            this.briefCampaignsLinkedInDeliveryOptionsEnabled.set(null);
+            this.briefCampaignsLinkedInTrafficManualBidEnabled.set(null);
             this.briefCampaignsMicrosoftAssetUploadEnabled.set(null);
             this.briefCampaignsBiddingEnabled.set(null);
             this.briefCampaignsMicrosoftScheduleEnabled.set(null);
@@ -6221,6 +6907,8 @@ export class CampaignsComponent {
             this.briefCampaignsMetaLeadFormsEnabled.set(null);
             this.briefCampaignsMetaInterestTargetingEnabled.set(null);
             this.briefCampaignsMetaBehaviorTargetingEnabled.set(null);
+            this.briefCampaignsMetaLocaleTargetingEnabled.set(null);
+            this.briefCampaignsMetaRegionTargetingEnabled.set(null);
             this.briefCampaignsMetaAdScheduleEnabled.set(null);
             this.briefCampaignsMetaFrequencyCapEnabled.set(null);
             this.briefCampaignsMetaDeviceTargetingEnabled.set(null);
@@ -6228,6 +6916,12 @@ export class CampaignsComponent {
             this.briefCampaignsMetaConversionEventEnabled.set(null);
             this.briefCampaignsMetaOptimizationGoalEnabled.set(null);
             this.briefCampaignsMetaCustomAudiencesEnabled.set(null);
+            this.briefCampaignsRedditCustomAudiencesEnabled.set(null);
+            this.briefCampaignsRedditTargetingExclusionsEnabled.set(null);
+            this.briefCampaignsRedditPlacementsEnabled.set(null);
+            this.briefCampaignsRedditBudgetTypeEnabled.set(null);
+            this.briefCampaignsRedditPixelListEnabled.set(null);
+            this.briefCampaignsRedditTargetingResolutionEnabled.set(null);
             this.briefCampaignsGoogleAudienceSegmentsEnabled.set(null);
             this.briefCampaignsGoogleConversionActionsEnabled.set(null);
             this.briefCampaignsGoogleDemandGenAudienceEnabled.set(null);
@@ -6289,6 +6983,37 @@ export class CampaignsComponent {
    * a channel-off or failed search also leaves `emailTemplates` null, and re-firing on those
    * would retry a refusal on every entry and overwrite the error the operator needs to read.
    */
+
+  /**
+   * Draft the email on the first arrival at Implement, for an EVENT email that has no copy yet.
+   *
+   * Writing the email is the first thing every event send needs and the first control on this
+   * tab, and it was a click an operator could miss: staging does not require copy, so a missed
+   * click cloned the template's OLD subject and body -- another send's content -- into the new
+   * draft. Generating on arrival removes the click and that failure together.
+   *
+   * Once per brief and stage, and only from a clean state: a regenerate stays the operator's call,
+   * a failed attempt is not retried behind their back, and nothing runs over existing copy, a
+   * staging in flight or a survey series (Write all owns its copy).
+   *
+   * A NEWSLETTER issue is drafted on arrival too. Its notes are the whole brief, so there is
+   * nothing left to decide before writing, and it cannot be staged without copy at all: the
+   * click was only a wait in front of a disabled Stage button.
+   */
+  private generateEmailCopyOnArrival(): void {
+    if (this.isSurvey() || this.surveySeriesMode()) {
+      return;
+    }
+    if (this.emailCopy() !== null || this.emailCopyState() !== 'idle' || this.emailStaging() === 'staging' || !this.canGenerateEmailCopy()) {
+      return;
+    }
+    const key = `${this.activeFoundationSlug()}|${this.emailEventKey()}|${this.selectedEmailStage() ?? ''}`;
+    if (this.emailCopyAutoGeneratedFor === key) {
+      return;
+    }
+    this.emailCopyAutoGeneratedFor = key;
+    void this.onGenerateEmailCopy();
+  }
 
   private loadEmailTemplatesIfNeverAnswered(): void {
     if (this.emailTemplates() === null && !this.emailTemplatesLoading() && this.emailChannelEnabled() === null && this.emailTemplatesError() === null) {
@@ -6354,11 +7079,7 @@ export class CampaignsComponent {
           this.emailStagingDraftUrl.set(this.hubspotDraftUrl(hubspotResult?.hubspotUrl));
           // The draft exists, so this stays a success; a warning says part of it did not apply (today: no hero).
           this.emailStagingWarnings.set(hubspotResult?.warnings ?? []);
-          this.emailStagingMessage.set(
-            draftId === ''
-              ? 'Draft created in HubSpot. Review and send it from there.'
-              : `Draft created in HubSpot (id ${draftId}). Review and send it from there.`
-          );
+          this.emailStagingMessage.set(this.stagedDraftMessage(draftId, hubspotResult?.reused === true));
         },
         error: () => {
           this.emailStaging.set('error');
@@ -6395,9 +7116,30 @@ export class CampaignsComponent {
     const keywords = this.sendTypes().find((t) => t.id === this.selectedEmailTypeId())?.keywords ?? [];
     const eventTerms = this.eventTemplateTerms();
     const hasEventTerms = eventTerms.decisive.length > 0 || eventTerms.ranking.length > 0 || eventTerms.year !== '';
-    if (keywords.length === 0 && !hasEventTerms) {
+    // A SCOPED list is already the event's brand, so its order adds tiers above the usual score:
+    // this edition's templates first, then other editions in this edition's place (last year's
+    // Europe sends for a Europe brief, before the brand's other regional series), then emails that
+    // actually went out (a proven design with a working sender and subscription), then the
+    // type-and-event ordering below.
+    const fits = this.emailTemplateFitById();
+    const scoped = Object.keys(fits).length > 0;
+    const scope = this.emailTemplateScope();
+    if (keywords.length === 0 && !hasEventTerms && !scoped) {
       return templates;
     }
+    const scopeRank = (template: HubSpotMarketingEmail): number => {
+      let rank = 0;
+      if (fits[template.id] === 'this-edition') {
+        rank += EMAIL_TEMPLATE_RANK_THIS_EDITION_WEIGHT;
+      }
+      if (scoped && scope !== null && namesEditionPlace(template, scope)) {
+        rank += EMAIL_TEMPLATE_RANK_SAME_PLACE_WEIGHT;
+      }
+      if (scoped && isSentEmailTemplate(template)) {
+        rank += EMAIL_TEMPLATE_RANK_SENT_WEIGHT;
+      }
+      return rank;
+    };
     // Score once per row rather than inside the comparator: a comparator that lowercases and
     // scans both operands runs O(n log n) times over strings that never change.
     //
@@ -6423,6 +7165,7 @@ export class CampaignsComponent {
       // below EVENT_TERM_WEIGHT keeps the docblock's promise -- city and year sharpen the choice
       // among real matches, they never manufacture one.
       score:
+        scopeRank(template) +
         this.templateKeywordScore(template, keywords) +
         this.eventMatchScore(template, eventTerms) +
         Math.min(this.eventRankBonus(template, eventTerms), EVENT_TERM_WEIGHT - 1),
@@ -6481,6 +7224,12 @@ export class CampaignsComponent {
     // new results no longer support is never still badged.
     this.clearEventTemplateSuggestion();
 
+    // Not on a newsletter: its template is the previous issue, selected from the brief. Ranked on
+    // event terms, the suggester badged LAST YEAR's issue of the same month.
+    if (this.isNewsletter()) {
+      return;
+    }
+
     const eventTerms = this.eventTemplateTerms();
     // DECISIVE terms only. With no name or slug tokens there is nothing that identifies the event,
     // and city or year matches alone are not evidence it is the right template.
@@ -6502,6 +7251,41 @@ export class CampaignsComponent {
     // The type is a TIE-BREAK, never a gate: it cannot rescue a template the event did not
     // identify, and a type that matches nothing leaves the event ordering untouched.
     const typeKeywords = CAMPAIGN_EMAIL_TYPES.find((t) => t.id === this.selectedEmailTypeId())?.keywords ?? [];
+    // A SCOPED list knows which rows are this edition's. The suggestion is "the template this
+    // portal uses for THIS event", so when any of this edition's rows is eligible the others are not
+    // considered: observed live, a Europe 2028 brief suggested a "KubeCon NA 2026" template that
+    // tied on the brand words and won on server order. Before the edition has templates of its own,
+    // the brand's sends for the same place come next -- last year's Europe emails carry the sender,
+    // subscription and office location this region uses -- and only then the whole brand.
+    const fits = this.emailTemplateFitById();
+    const scope = this.emailTemplateScope();
+    const thisEdition = templates.filter((template) => fits[template.id] === 'this-edition');
+    const samePlace = scope === null ? [] : templates.filter((template) => fits[template.id] === 'other-edition' && namesEditionPlace(template, scope));
+    const best =
+      this.bestEventTemplate(thisEdition, eventTerms, typeKeywords) ??
+      this.bestEventTemplate(samePlace, eventTerms, typeKeywords) ??
+      this.bestEventTemplate(templates, eventTerms, typeKeywords);
+
+    // Every candidate that reached `best` already cleared the non-generic threshold above, so
+    // this only has to answer "was there one at all".
+    //
+    // The threshold reads NON-GENERIC evidence, not the full match score. `bestScore` ranks and
+    // counts generic words, because among templates the event has already identified a generic
+    // word usefully separates them. It cannot be what justifies offering a suggestion: two
+    // generic terms sum to exactly EVENT_TEMPLATE_SUGGESTION_MIN_SCORE, so "Community Training
+    // Workshop" would suggest "Community training newsletter" on vocabulary that describes
+    // neither event.
+    if (best === null) {
+      return;
+    }
+    this.markEventTemplateSuggestion(best, eventTerms);
+  }
+
+  /**
+   * The best-scoring template among `templates` that may justify a suggestion, or null. See
+   * `applyEventTemplateSuggestion` for the scoring and its ordered tie-breaks.
+   */
+  private bestEventTemplate(templates: HubSpotMarketingEmail[], eventTerms: EventTemplateTerms, typeKeywords: readonly string[]): HubSpotMarketingEmail | null {
     let best: HubSpotMarketingEmail | null = null;
     let bestScore = 0;
     let bestBonus = 0;
@@ -6538,20 +7322,11 @@ export class CampaignsComponent {
         bestTypeScore = typeScore;
       }
     }
+    return best;
+  }
 
-    // Every candidate that reached `best` already cleared the non-generic threshold above, so
-    // this only has to answer "was there one at all".
-    //
-    // The threshold reads NON-GENERIC evidence, not the full match score. `bestScore` ranks and
-    // counts generic words, because among templates the event has already identified a generic
-    // word usefully separates them. It cannot be what justifies offering a suggestion: two
-    // generic terms sum to exactly EVENT_TEMPLATE_SUGGESTION_MIN_SCORE, so "Community Training
-    // Workshop" would suggest "Community training newsletter" on vocabulary that describes
-    // neither event.
-    if (best === null) {
-      return;
-    }
-
+  /** Badge `best` as the suggestion and record the terms that justified it. */
+  private markEventTemplateSuggestion(best: HubSpotMarketingEmail, eventTerms: EventTemplateTerms): void {
     this.emailTemplateSuggestionId.set(best.id);
     // The DECISIVE terms only. These are what justified offering the suggestion at all, and they
     // are what an operator needs to judge it -- listing a city or year match here would present
@@ -8197,6 +8972,9 @@ export class CampaignsComponent {
     this.emailAudienceScope.update((n) => n + 1);
     this.emailCopy.set(null);
     this.emailCopyState.set('idle');
+    // The copy is gone, so the once-per-stage auto-draft latch goes with it: left set, the next
+    // arrival for the same stage skipped the draft and Stage cloned the template's old content.
+    this.emailCopyAutoGeneratedFor = '';
     this.emailCopyError.set('');
     // Variant B belongs to the same brief as variant A — reset it alongside for the same reason.
     this.abTestForm.controls.enabled.setValue(false);
@@ -8288,6 +9066,195 @@ export class CampaignsComponent {
     // Selected, not merely suggested as the event picker does (#2057): this surface has no picker
     // to choose from, and the Template note above Stage names the one taken.
     this.selectedEmailTemplateId.set(best.id);
+  }
+
+  /**
+   * Select the newsletter's clone source: the previous issue the planner chose as its template
+   * (the first reference id on the brief), and nothing else. Only fills an empty selection, so the
+   * operator's own pick in the picker is never replaced.
+   *
+   * There is deliberately no "any newsletter in the portal" fallback: a clone takes its sender,
+   * subscription type, header and footer from the source, so a guess could stage this brand's
+   * issue in another brand's chrome. With no previous issue named, the picker asks instead.
+   */
+  private autoSelectNewsletterTemplate(templates: HubSpotMarketingEmail[]): void {
+    if (!this.isNewsletter() || this.selectedEmailTemplateId() !== '' || templates.length === 0) {
+      return;
+    }
+    const templateId = this.emailBriefOutput()?.eventDetails?.referenceEmailIds?.[0] ?? '';
+    const chosen = templateId === '' ? undefined : templates.find((template) => template.id === templateId);
+    if (chosen) {
+      this.selectedEmailTemplateId.set(chosen.id);
+    }
+  }
+
+  /**
+   * Set a newsletter's recipients without an Audience tab: reuse exactly the lists its previous
+   * issue (the clone template, `referenceEmailIds[0]`) was sent to and excluded. When there is no
+   * previous issue, or its lists cannot be read or reused, suggest the brand's newsletter
+   * subscription lists with the standard and brand suppressions, for the operator to confirm.
+   */
+  private async prepareNewsletterAudience(brief: CampaignBriefOutput): Promise<void> {
+    const projectSlug = this.activeFoundationSlug();
+    const brand = (brief.eventDetails?.newsletterBrand ?? '').trim();
+    this.newsletterAudienceSuggestion.set(null);
+    this.newsletterAudienceError.set('');
+    this.newsletterAudiencePrecedent.set('');
+    this.newsletterTemplateName.set('');
+    if (projectSlug === '' || brand === '') {
+      this.newsletterAudienceState.set('idle');
+      return;
+    }
+    this.newsletterAudienceState.set('loading');
+    const isCurrent = (): boolean => this.emailBriefOutput() === brief && this.activeFoundationSlug() === projectSlug;
+    try {
+      const briefId = await this.ensureEmailBriefId(brief, projectSlug);
+      if (!isCurrent()) {
+        return;
+      }
+      // Read first, even for a brief whose audience is already attached: it also names the issue
+      // being cloned. Served from the cache the Plan tab filled, so it costs nothing there.
+      const issues = await firstValueFrom(this.campaignService.getAudienceBrandNewsletters(projectSlug, brand, CAMPAIGN_NEWSLETTER_REFERENCE_LIMIT));
+      if (!isCurrent()) {
+        return;
+      }
+      const templateId = brief.eventDetails?.referenceEmailIds?.[0];
+      this.newsletterTemplateName.set(issues.find((email) => email.emailId === templateId)?.emailName ?? '');
+      if (this.emailAudience()?.status === 'built') {
+        this.newsletterAudienceState.set('attached');
+        return;
+      }
+      // The page not holding an audience is not the brief not having one. When a saved issue is
+      // reopened its stored audience is still being read back as this runs (the issues above come
+      // from a cache), so deciding on the signal alone attached the previous issue's lists again:
+      // a second audience row on every reopen, and lists the operator had confirmed from the
+      // suggestion replaced by the previous issue's. The stored row is the authority, so it is
+      // read HERE, by this decision, and nothing is attached unless that read says there is none.
+      const stored = await this.builtAudienceFor(projectSlug, briefId);
+      if (!isCurrent()) {
+        return;
+      }
+      if (stored.state === 'unknown') {
+        this.newsletterAudienceState.set('failed');
+        this.newsletterAudienceError.set("This issue's recipients could not be read, so nothing was attached. Try again in a moment.");
+        return;
+      }
+      if (stored.state === 'built') {
+        this.adoptStoredEmailAudience(stored.audience);
+        this.newsletterAudienceState.set('attached');
+        return;
+      }
+      // The newest issue stands in only when the brief names no template. When it names one that
+      // is not among the issues read (it aged out of the newest few, or belongs to another
+      // portal), the draft still clones THAT email, so attaching the newest issue's lists would
+      // send the clone to a different issue's recipients without anyone choosing them. Nothing is
+      // attached then: the suggestion below is shown for the operator to confirm.
+      const named = typeof templateId === 'string' && templateId !== '';
+      const previous = named ? issues.find((email) => email.emailId === templateId) : issues[0];
+      const readable = previous !== undefined && previous.listsUnavailable !== true;
+      // Unresolved is a failed READ, not a list: its id may be an unrecovered legacy one, so it is not reused either.
+      const resolves = (list: { missing?: boolean; unresolved?: boolean; listId: string }): boolean =>
+        !list.missing && list.unresolved !== true && list.listId !== '';
+      const include = readable ? previous.includedLists.filter(resolves) : [];
+      const exclude = readable ? previous.suppressionLists.filter(resolves) : [];
+      // Reused automatically only when EVERY list the previous issue recorded still resolves. With
+      // one gone, the rest is a different audience from the one the page would claim to reuse (the
+      // past-send flow refuses the same case), so the operator reviews a suggestion instead.
+      const allResolve = readable && previous.includedLists.every(resolves) && previous.suppressionLists.every(resolves);
+      if (previous !== undefined && allResolve && include.length > 0 && exclude.length > 0) {
+        const attached = await this.attachNewsletterLists(
+          projectSlug,
+          briefId,
+          include.map((list) => list.listId),
+          exclude.map((list) => list.listId),
+          `Same lists as ${previous.emailName}`,
+          isCurrent
+        );
+        // Not for a brief the operator has left: the page now shows another issue, and naming
+        // this one's precedent there would say its recipients are attached when they are not.
+        if (attached) {
+          this.newsletterAudiencePrecedent.set(previous.emailName);
+        }
+        return;
+      }
+
+      // Nothing to reuse as it was: suggest the brand's subscription lists and the suppressions.
+      const [found, suppression] = await Promise.all([
+        firstValueFrom(this.campaignService.searchAudienceLists(projectSlug, brand)),
+        firstValueFrom(this.campaignService.getAudienceSuppressionLists(projectSlug, brand)),
+      ]);
+      if (!isCurrent()) {
+        return;
+      }
+      this.newsletterAudienceSuggestion.set({
+        includeLists: found
+          .filter((list) => /newsletter/i.test(list.name))
+          .map((list) => ({ listId: list.listId, name: list.name, ...(list.size !== undefined ? { size: list.size } : {}) })),
+        suppressionLists: suppression.lists
+          .filter((row) => row.listId !== '' && (row.category === 'standard' || row.category === 'brand'))
+          .map((row) => ({ listId: row.listId, name: row.name, ...(row.size !== undefined ? { size: row.size } : {}) })),
+        ...(previous !== undefined ? { precedentName: previous.emailName } : {}),
+      });
+      this.newsletterAudienceState.set('suggested');
+    } catch (error) {
+      if (!isCurrent()) {
+        return;
+      }
+      this.newsletterAudienceState.set('failed');
+      this.newsletterAudienceError.set(this.sendWorkflowErrorText(error, "The previous issue's recipients could not be read."));
+    }
+  }
+
+  /**
+   * Put a brief's STORED audience on the page, as the read-back after a reload does. For a caller
+   * that has just read the row to make a decision, where a second read to show it would only
+   * repeat the first.
+   */
+  private adoptStoredEmailAudience(audience: CampaignAudience): void {
+    // Bumped first, like every write to this signal: a read-back still in flight could only
+    // return this row or an older one, and must not land on top of it.
+    this.emailAudienceGeneration++;
+    this.emailAudienceReadPending.set(false);
+    this.emailAudienceReadFailed.set(false);
+    this.emailAudience.set(audience);
+    this.emailAudienceOrigin.set('restored');
+  }
+
+  /**
+   * Attach existing lists to the newsletter's brief and adopt the recorded audience.
+   *
+   * Answers whether the page took the result. The write is awaited, so the operator may have
+   * moved to another issue by the time it answers: `isCurrent` is asked then, and when it says no
+   * the page's newsletter state is left alone (the row itself is the other brief's, and
+   * `onAudienceComposed` already refuses a row for a brief the page is not on).
+   */
+  private async attachNewsletterLists(
+    projectSlug: string,
+    briefId: string,
+    includeListIds: string[],
+    suppressionListIds: string[],
+    summary: string,
+    isCurrent: () => boolean
+  ): Promise<boolean> {
+    this.emailAudienceWriteInFlight.set(true);
+    try {
+      const result = await firstValueFrom(
+        this.campaignService.attachExistingAudience(projectSlug, { briefId, includeListIds, suppressionListIds, inclusionSummary: summary })
+      );
+      // The row an attach returns is slim: it names the send lists, not the suppression lists,
+      // which arrive beside it in the same response as what upstream recorded. They are kept on
+      // the row the page holds, because this surface has no Audience tab to show them: without
+      // them "Who this issue goes to" said an issue attached a moment ago went to everyone in the
+      // included list, and named its exclusions only once the brief was restored.
+      if (!isCurrent()) {
+        return false;
+      }
+      this.onAudienceComposed({ ...result.audience, suppressionListIds: [...result.suppressionListIds] });
+      this.newsletterAudienceState.set('attached');
+      return true;
+    } finally {
+      this.emailAudienceWriteInFlight.set(false);
+    }
   }
 
   /** A send's operator-facing name, read off the shared type list so the two cannot disagree. */
@@ -8696,6 +9663,24 @@ export class CampaignsComponent {
     this.sendWorkflowResult.set(null);
   }
 
+  /**
+   * What the staging panel says once HubSpot answers. A REUSED result is this send's EARLIER draft,
+   * returned instead of a second clone: campaign-service's create is idempotent per brief, and a
+   * HubSpot slot takes no new version. It must not read "created" -- observed live, a draft staged a
+   * month earlier and since deleted in HubSpot was announced as created, linked to "Email not found".
+   * campaign-service now checks before it reuses and stages a new draft when HubSpot says the old one
+   * is gone, so staging again is the remedy for a draft deleted in HubSpot.
+   */
+  private stagedDraftMessage(draftId: string, reused: boolean): string {
+    if (reused) {
+      const draft = draftId === '' ? 'a HubSpot draft' : `HubSpot draft ${draftId}`;
+      return `This send was already staged as ${draft}, so nothing new was created. Open it to review it; if it has been deleted in HubSpot, staging again creates a new one.`;
+    }
+    return draftId === ''
+      ? 'Draft created in HubSpot. Review and send it from there.'
+      : `Draft created in HubSpot (id ${draftId}). Review and send it from there.`;
+  }
+
   /** Pick the survey template from the list already loaded, when the selection is empty. */
   private ensureSurveyTemplateSelected(): void {
     // A list filtered by an Email search is not the portal's: fetch the unfiltered one, whose
@@ -8732,4 +9717,12 @@ export class CampaignsComponent {
       twitterImageUploadFailedBriefId: previous.twitterImageUploadFailedBriefId,
     };
   }
+}
+
+/** The type a fresh selection starts on, per send surface. */
+function defaultSendTypeId(surface: 'email' | 'survey' | 'newsletter'): string {
+  if (surface === 'survey') {
+    return DEFAULT_CAMPAIGN_SURVEY_TYPE_ID;
+  }
+  return surface === 'newsletter' ? DEFAULT_CAMPAIGN_NEWSLETTER_TYPE_ID : DEFAULT_CAMPAIGN_EMAIL_TYPE_ID;
 }

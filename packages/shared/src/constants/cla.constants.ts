@@ -14,6 +14,9 @@ export const CLA_GROUP_SEARCH_DEBOUNCE_MS = 250;
  */
 export const CLA_GROUP_SEARCH_MIN_CHARS = 3;
 
+/** What a "Sign a CLA" step can put focus on: an enabled field or button. */
+export const ACCOUNT_SIGN_DIALOG_FOCUSABLE = 'input:not([disabled]):not([aria-disabled="true"]), button:not([disabled])';
+
 /** Stands in for a result the producer could name neither by project nor by CLA group (FR-008). */
 export const UNNAMED_CLA_GROUP = 'Unnamed CLA group';
 
@@ -169,6 +172,19 @@ const CLA_MANAGER_REQUEST_RECEIPT = {
   recorded: { summary: 'Request recorded', detail: 'The request was recorded, but no CLA manager email could be delivered.' },
 } as const;
 
+/** Copy for Account & Settings › CLAs and its CCLA request dialog (#6077). */
+export const ACCOUNT_CLAS_COPY = {
+  subtitle:
+    'Your signed ICLAs (Individual CLA) and CCLA coverage (Corporate CLA), matched to your Identities. Already-connected GitLab accounts are matched too. New GitLab linking is coming soon.',
+  subtitleGitlabOpen: 'Your signed ICLAs (Individual CLA) and CCLA coverage (Corporate CLA), matched to your Identities, including GitLab accounts.',
+  emptyTitle: 'No CLAs on file yet',
+  emptyText: 'We haven’t found any signed ICLAs or CCLA coverage for your linked identities.',
+  footerLink: 'Link your email or GitHub accounts',
+  footerLinkGitlabOpen: 'Link your email, GitHub or GitLab accounts',
+  requestTitles: { approval: 'Request CCLA approval', removal: 'Request removal from CCLA', contact: 'Contact CLA manager' },
+  messagePlaceholder: 'Add context for the CLA manager',
+} as const;
+
 /** v17 `mgrCopy` — titles also used as DialogService headers by the kebab factory. */
 export const CLA_MANAGER_MODAL_COPY = {
   approval: {
@@ -241,6 +257,13 @@ export const ORG_CLA_EASYCLA_ROLE_MISSING_COPY = {
   supportLabel: 'contact support',
   supportTail: 'if you need EasyCLA assistance.',
   signClaAriaLabel: "Sign a corporate CLA — you don't have an EasyCLA role at this company",
+} as const;
+
+export const ORG_CLA_ACCESS_REFUSED_COPY = {
+  title: "You don't have access to this company's CLAs",
+  retryLead: 'Just added as a CLA manager? Access can take up to a minute.',
+  retryLabel: 'Try again',
+  signClaAriaLabel: "Sign a corporate CLA — you don't have access to this company's CLAs",
 } as const;
 
 /**

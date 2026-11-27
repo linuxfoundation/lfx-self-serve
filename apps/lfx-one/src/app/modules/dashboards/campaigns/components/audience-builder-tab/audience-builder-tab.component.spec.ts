@@ -62,11 +62,13 @@ describe('AudienceBuilderTabComponent', () => {
   const searchAudienceLists = vi.fn();
   const getAudienceSuppressionLists = vi.fn();
   const getAudienceLastSent = vi.fn();
+  const getAudienceBrandNewsletters = vi.fn();
   const getAudienceExistingMasterLists = vi.fn();
   const previewAudienceCount = vi.fn();
   const composeAudienceMaster = vi.fn();
   const runAudienceQa = vi.fn();
   const attachExistingAudience = vi.fn();
+  const describeAudienceLists = vi.fn();
 
   beforeEach(async () => {
     for (const mock of [
@@ -75,14 +77,17 @@ describe('AudienceBuilderTabComponent', () => {
       searchAudienceLists,
       getAudienceSuppressionLists,
       getAudienceLastSent,
+      getAudienceBrandNewsletters,
       getAudienceExistingMasterLists,
       previewAudienceCount,
       composeAudienceMaster,
       runAudienceQa,
       attachExistingAudience,
+      describeAudienceLists,
     ]) {
       mock.mockReset();
     }
+    describeAudienceLists.mockReturnValue(of([]));
 
     stream = new Subject<SSEEvent<AudienceDiscoverySSEEventType>>();
     getAudienceCapabilities.mockReturnValue(of({ hubspotConfigured: true }));
@@ -102,6 +107,7 @@ describe('AudienceBuilderTabComponent', () => {
       ])
     );
     getAudienceLastSent.mockReturnValue(of([]));
+    getAudienceBrandNewsletters.mockReturnValue(of([]));
     getAudienceExistingMasterLists.mockReturnValue(of([]));
 
     await TestBed.configureTestingModule({
@@ -132,11 +138,13 @@ describe('AudienceBuilderTabComponent', () => {
                 map((value) => (Array.isArray(value) ? { lists: value } : value))
               ),
             getAudienceLastSent,
+            getAudienceBrandNewsletters,
             getAudienceExistingMasterLists,
             previewAudienceCount,
             composeAudienceMaster,
             runAudienceQa,
             attachExistingAudience,
+            describeAudienceLists,
           },
         },
       ],
@@ -146,6 +154,39 @@ describe('AudienceBuilderTabComponent', () => {
   function host(): HTMLElement {
     return fixture.nativeElement as HTMLElement;
   }
+
+  describe('newsletter mode', () => {
+    it("skips discovery and loads the brand's previous newsletters as reuse precedent", async () => {
+      getAudienceBrandNewsletters.mockReturnValue(
+        of([
+          {
+            emailId: '900',
+            emailName: '26Q3 - OpenSSF - Newsletter - October',
+            sentAt: '2026-10-15T16:00:00Z',
+            hubspotUrl: 'https://app.hubspot.com/email/1/details/900',
+            includedLists: [
+              { listId: '501', name: 'OpenSSF Newsletter Subscribers', missing: false, hubspotUrl: 'https://app.hubspot.com/contacts/1/objectLists/501' },
+            ],
+            suppressionLists: [],
+          },
+        ])
+      );
+      fixture = TestBed.createComponent(AudienceBuilderTabComponent);
+      fixture.componentRef.setInput('projectSlug', 'tlf');
+      fixture.componentRef.setInput('active', true);
+      fixture.componentRef.setInput('newsletterBrand', 'OpenSSF');
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(discoverAudience).not.toHaveBeenCalled();
+      expect(getAudienceLastSent).not.toHaveBeenCalled();
+      expect(getAudienceBrandNewsletters).toHaveBeenCalledWith('tlf', 'OpenSSF');
+      expect(getAudienceSuppressionLists.mock.calls[0]?.[1]).toBe('OpenSSF');
+      expect(host().querySelector('[data-testid="campaigns-audience-step-reuse"]')).not.toBeNull();
+      expect(host().textContent).toContain('26Q3 - OpenSSF - Newsletter - October');
+    });
+  });
 
   /**
    * Renders the tab as active.
@@ -2580,6 +2621,31 @@ describe('AudienceBuilderTabComponent', () => {
       click('campaigns-audience-discover');
       completeDiscovery();
     }
+
+    it('scrolls the attach confirmation into view, since it renders above the button that started it', async () => {
+      await renderWithPastSend('brief-1');
+      attachExistingAudience.mockReturnValue(
+        of({
+          master: { listId: '501', name: 'Synthetic Summit - Prospects', hubspotUrl: 'u' },
+          suppressionListIds: ['201', '777'],
+          audience: ATTACHED_AUDIENCE,
+        })
+      );
+      const scrolled: Element[] = [];
+      const original = Element.prototype.scrollIntoView;
+      Element.prototype.scrollIntoView = function (this: Element) {
+        scrolled.push(this);
+      };
+      try {
+        click('audience-last-sent-use-em-7');
+        confirmReuseIfAsked();
+        await fixture.whenStable();
+      } finally {
+        Element.prototype.scrollIntoView = original;
+      }
+
+      expect(scrolled.map((el) => el.getAttribute('data-testid'))).toContain('campaigns-audience-attach-result');
+    });
 
     it("attaches a past send's include and suppression lists as they are", async () => {
       await renderWithPastSend('brief-1');
@@ -5098,6 +5164,229 @@ describe('AudienceBuilderTabComponent', () => {
       toggleStandardRow('lf_events_gdpr');
 
       expect(host().querySelector('[data-testid="audience-last-sent-attach-note"]')?.textContent).not.toContain('nothing new is created');
+    });
+  });
+  /**
+   * Input the tab no longer asks for: discovery on opening "Use existing lists", the registrants
+   * exclusion on a Post-Event send, and "What this audience means" without a click.
+   */
+  describe('input shortcuts', () => {
+    it('runs discovery on opening Use existing lists when the event page is already known, once per page', async () => {
+      await render({ initialEventUrl: 'https://events.example.org/synthetic-summit' });
+
+      click('campaigns-audience-mode-reuse');
+      expect(discoverAudience).toHaveBeenCalledTimes(1);
+      expect(discoverAudience.mock.calls[0]?.[1]).toEqual({ eventUrl: 'https://events.example.org/synthetic-summit' });
+
+      click('campaigns-audience-mode-build');
+      click('campaigns-audience-mode-reuse');
+      expect(discoverAudience, 'the same page was discovered twice').toHaveBeenCalledTimes(1);
+    });
+
+    // An arrow key moves along the tab strip and may only be passing through. Discovery is a paid
+    // run that resets the tab, so a focus move never starts it.
+    it('does not run discovery when an arrow key moves onto Use existing lists', async () => {
+      await render({ initialEventUrl: 'https://events.example.org/synthetic-summit' });
+
+      host()
+        .querySelector('[role="tablist"]')
+        ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+      fixture.detectChanges();
+
+      expect(host().querySelector('[data-testid="campaigns-audience-mode-reuse"]')?.getAttribute('aria-selected')).toBe('true');
+      expect(discoverAudience).not.toHaveBeenCalled();
+    });
+
+    // Criteria typed into the custom builder are not visible to the tab until they are created,
+    // so the discovery that opening the tab starts must not reset the builder under them.
+    it('leaves the custom builder alone when opening Use existing lists starts discovery', async () => {
+      await render({ initialEventUrl: 'https://events.example.org/synthetic-summit' });
+      const resetKey = (): number => (fixture.componentInstance as unknown as { customResetKey(): number }).customResetKey();
+      const before = resetKey();
+
+      click('campaigns-audience-mode-reuse');
+
+      expect(discoverAudience).toHaveBeenCalledTimes(1);
+      expect(resetKey(), 'the builder was reset by a discovery nobody asked for').toBe(before);
+    });
+
+    it('does not start a second discovery by itself once another event page has been discovered', async () => {
+      await render({ initialEventUrl: 'https://events.example.org/synthetic-summit' });
+      click('campaigns-audience-mode-reuse');
+      completeDiscovery();
+      const staleNotice = (): Element | null => host().querySelector('[data-testid="campaigns-audience-reuse-stale-discovery"]');
+      expect(staleNotice(), 'the lists are for the page in the field: nothing to warn about').toBeNull();
+      click('campaigns-audience-mode-build');
+
+      typeEventUrl('https://events.example.org/another-summit');
+      click('campaigns-audience-mode-reuse');
+
+      expect(discoverAudience, 'a different event started over without the Discover button').toHaveBeenCalledTimes(1);
+      // The panel still shows the first page's lists, so it has to say whose they are.
+      expect(staleNotice()?.textContent, 'lists for one event were shown under another with no cue').toContain('https://events.example.org/synthetic-summit');
+    });
+
+    it('does not run discovery on opening Use existing lists with no event page', async () => {
+      await render();
+
+      click('campaigns-audience-mode-reuse');
+
+      expect(discoverAudience).not.toHaveBeenCalled();
+    });
+
+    it('leaves the current-registrants exclusion unticked on a Post-Event send, and ticks it otherwise', async () => {
+      const rows = [
+        {
+          key: 'lf_events_gdpr',
+          label: 'LF Events GDPR',
+          listId: '201',
+          name: 'LF Events - GDPR Suppression',
+          size: 5000,
+          category: 'standard',
+          hubspotUrl: 'u',
+        },
+        {
+          key: 'current_registrants',
+          label: 'Current registrants',
+          listId: '9001',
+          name: 'Synthetic Summit 2026 - Current Registrants',
+          category: 'current_registrants',
+          hubspotUrl: 'u',
+        },
+      ];
+      getAudienceSuppressionLists.mockReturnValue(of(rows));
+
+      for (const [stage, ticked] of [
+        ['Post-Event', false],
+        ['Final Countdown', true],
+      ] as const) {
+        await render();
+        fixture.componentRef.setInput('emailStage', stage);
+        fixture.detectChanges();
+        typeEventUrl('https://events.example.org/synthetic-summit');
+        click('campaigns-audience-discover');
+        completeDiscovery();
+        click('audience-card-grid-toggle-101');
+
+        expect(host().querySelector<HTMLInputElement>('[data-testid="audience-suppression-grid-toggle-current_registrants"]')?.checked, stage).toBe(ticked);
+      }
+    });
+
+    it('follows a later switch to and from Post-Event, until the operator sets the row themselves', async () => {
+      getAudienceSuppressionLists.mockReturnValue(
+        of([
+          {
+            key: 'current_registrants',
+            label: 'Current registrants',
+            listId: '9001',
+            name: 'Synthetic Summit 2026 - Current Registrants',
+            category: 'current_registrants',
+            hubspotUrl: 'u',
+          },
+        ])
+      );
+      await render();
+      fixture.componentRef.setInput('emailStage', 'Final Countdown');
+      fixture.detectChanges();
+      typeEventUrl('https://events.example.org/synthetic-summit');
+      click('campaigns-audience-discover');
+      completeDiscovery();
+      click('audience-card-grid-toggle-101');
+      const toggle = (): HTMLInputElement | null =>
+        host().querySelector<HTMLInputElement>('[data-testid="audience-suppression-grid-toggle-current_registrants"]');
+      expect(toggle()?.checked).toBe(true);
+
+      // The same discovery run, moved to a thank-you send: the registrants are who it is for.
+      fixture.componentRef.setInput('emailStage', 'Post-Event');
+      fixture.detectChanges();
+      expect(toggle()?.checked).toBe(false);
+      fixture.componentRef.setInput('emailStage', 'Final Countdown');
+      fixture.detectChanges();
+      expect(toggle()?.checked).toBe(true);
+
+      // Once the operator sets the row, a stage change leaves it alone.
+      toggle()?.click();
+      fixture.detectChanges();
+      fixture.componentRef.setInput('emailStage', 'Post-Event');
+      fixture.detectChanges();
+      fixture.componentRef.setInput('emailStage', 'Final Countdown');
+      fixture.detectChanges();
+      expect(toggle()?.checked).toBe(false);
+    });
+
+    it('explains the audience already attached to the email while nothing new is selected', async () => {
+      describeAudienceLists.mockImplementation((_project: string, request: { listIds: string[] }) =>
+        of(
+          request.listIds.map((listId) => ({
+            listId,
+            name: listId === '31' ? 'Synthetic Summit 2026 - Master' : 'LFX Standard Suppressions - tlf',
+            hubspotUrl: '',
+            status: 'described',
+            summary:
+              listId === '31'
+                ? 'Contacts matching one rule: is a member of the list “Synthetic Prospects”.'
+                : 'Contacts matching any of 9 groups of rules, based on list membership.',
+            match: 'any',
+            groups: [],
+            complete: true,
+          }))
+        )
+      );
+      await render();
+      fixture.componentRef.setInput('existingAudience', {
+        id: 'aud-1',
+        briefId: 'brief-1',
+        platform: 'hubspot',
+        platformMasterListId: '31',
+        suppressionListIds: ['900'],
+        status: 'built',
+        version: 1,
+      });
+      fixture.detectChanges();
+
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      fixture.detectChanges();
+
+      expect(describeAudienceLists.mock.calls[0]?.[1].listIds).toEqual(expect.arrayContaining(['31', '900']));
+      expect(host().querySelector('[data-testid="campaigns-audience-meaning"] h5')?.textContent?.trim()).toBe('What the attached audience means');
+      expect(host().querySelector('[data-testid="campaigns-audience-meaning-summary-31"]')?.textContent).toContain('Synthetic Prospects');
+    });
+
+    it('describes the selected lists in plain English once the selection settles', async () => {
+      describeAudienceLists.mockReturnValue(
+        of([
+          {
+            listId: '101',
+            name: 'Synthetic Summit 2025 Registrants',
+            size: 900,
+            processingType: 'DYNAMIC',
+            hubspotUrl: 'https://app.hubspot.com/contacts/1/objectLists/101',
+            status: 'described',
+            summary: 'Contacts matching one rule: registered for an event where event name is “Synthetic Summit 2025”.',
+            match: 'any',
+            groups: [{ conditions: ['Registered for an event where event name is “Synthetic Summit 2025”'] }],
+            complete: true,
+          },
+        ])
+      );
+      await render();
+      typeEventUrl('https://events.example.org/synthetic-summit');
+      click('campaigns-audience-discover');
+      completeDiscovery();
+      click('audience-card-grid-toggle-101');
+
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      fixture.detectChanges();
+
+      expect(describeAudienceLists).toHaveBeenCalledTimes(1);
+      expect(describeAudienceLists.mock.calls[0]?.[0]).toBe('tlf');
+      expect(describeAudienceLists.mock.calls[0]?.[1].listIds).toEqual(expect.arrayContaining(['101', '201']));
+      expect(host().querySelector('[data-testid="campaigns-audience-meaning-summary-101"]')?.textContent).toContain('registered for an event');
+
+      // A second settle with nothing new selected asks for nothing.
+      fixture.detectChanges();
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      expect(describeAudienceLists).toHaveBeenCalledTimes(1);
     });
   });
 });

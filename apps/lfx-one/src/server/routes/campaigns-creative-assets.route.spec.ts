@@ -58,6 +58,11 @@ vi.mock('../middleware/require-marketing-access.middleware', () => ({
   requireGoogleAudiencesAccess: (_req: express.Request, _res: express.Response, next: express.NextFunction) => next(),
   requireMetaCustomAudiencesAccess: (_req: express.Request, _res: express.Response, next: express.NextFunction) => next(),
   requireMetaLeadFormsAccess: (_req: express.Request, _res: express.Response, next: express.NextFunction) => next(),
+  requireLinkedInAudiencesAccess: (_req: express.Request, _res: express.Response, next: express.NextFunction) => next(),
+  requireLinkedInConversionsAccess: (_req: express.Request, _res: express.Response, next: express.NextFunction) => next(),
+  requireLinkedInLeadFormsAccess: (_req: express.Request, _res: express.Response, next: express.NextFunction) => next(),
+  requireRedditCustomAudiencesAccess: (_req: express.Request, _res: express.Response, next: express.NextFunction) => next(),
+  requireRedditPixelsAccess: (_req: express.Request, _res: express.Response, next: express.NextFunction) => next(),
 }));
 vi.mock('../services/logger.service', () => ({
   logger: {
@@ -74,12 +79,28 @@ vi.mock('../services/logger.service', () => ({
 const campaignsRouter = (await import('./campaigns.route')).default;
 const { apiErrorHandler } = await import('../middleware/error-handler.middleware');
 const { MicroserviceError } = await import('../errors/microservice.error');
-const { CREATIVE_ASSET_MAX_BYTES, CREATIVE_ASSET_TOO_LARGE_MESSAGE, CREATIVE_ASSET_WRONG_TYPE_MESSAGE } = await import('@lfx-one/shared/constants');
+const {
+  CREATIVE_ASSET_DOCUMENT_DISABLED_MESSAGE,
+  CREATIVE_ASSET_DOCUMENT_MAX_BYTES,
+  CREATIVE_ASSET_DOCUMENT_TOO_LARGE_MESSAGE,
+  CREATIVE_ASSET_DOCUMENT_WRONG_TYPE_MESSAGE,
+  CREATIVE_ASSET_MAX_BYTES,
+  CREATIVE_ASSET_TOO_LARGE_MESSAGE,
+  CREATIVE_ASSET_VIDEO_MAX_BYTES,
+  CREATIVE_ASSET_VIDEO_TOO_LARGE_MESSAGE,
+  CREATIVE_ASSET_VIDEO_WRONG_TYPE_MESSAGE,
+  CREATIVE_ASSET_WRONG_TYPE_MESSAGE,
+} = await import('@lfx-one/shared/constants');
 const { ServerFeatureFlag } = await import('../helpers/server-feature-flag.helper');
 
 const BRIEF = '6f9619ff-8b86-d011-b42d-00c04fc964ff';
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d]);
 const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
+/** An MP4's opening ftyp box (major brand `isom`); the BFF reads only this, campaign-service walks the rest. */
+const ftyp = (brand: string) => Buffer.concat([Buffer.from([0, 0, 0, 0x10]), Buffer.from(`ftyp${brand}`, 'latin1'), Buffer.alloc(4)]);
+const MP4 = ftyp('isom');
+/** A structurally complete PDF of `size` bytes: the header, padding, and the final `%%EOF` (campaign-service's check). */
+const pdf = (size = 128) => Buffer.concat([Buffer.from('%PDF-1.7\n', 'latin1'), Buffer.alloc(size - 15, 0x20), Buffer.from('%%EOF\n', 'latin1')]);
 const ASSET = { id: '3f2504e0-4f89-11d3-9a0c-0305e82c3301', mimeType: 'image/png', byteSize: PNG.byteLength, checksum: 'ab'.repeat(32), created: true };
 
 let server: Server;
@@ -160,6 +181,114 @@ describe('POST /api/campaigns/brief/creative-assets', () => {
     expect(response.status).toBe(415);
     expect((await response.json()).error).toBe(CREATIVE_ASSET_WRONG_TYPE_MESSAGE);
     expect(uploadCreativeAsset).not.toHaveBeenCalled();
+  });
+
+  // LinkedIn video ads (#5764 row 18): an MP4 has its own parser and limit, and needs the video capability.
+  describe('an MP4 video', () => {
+    it('forwards an MP4 above the image limit, typed video/mp4', async () => {
+      uploadCreativeAsset.mockResolvedValue({ ...ASSET, mimeType: 'video/mp4' });
+      const video = Buffer.concat([MP4, Buffer.alloc(CREATIVE_ASSET_MAX_BYTES)]);
+
+      const response = await upload(video, 'video/mp4');
+
+      expect(response.status).toBe(201);
+      const [, , , contentType, bytes] = uploadCreativeAsset.mock.calls[0];
+      expect(contentType).toBe('video/mp4');
+      expect((bytes as Buffer).byteLength).toBe(video.byteLength);
+    });
+
+    it('refuses an MP4 over the video limit with a 413 and the video message', async () => {
+      const response = await upload(Buffer.concat([MP4, Buffer.alloc(CREATIVE_ASSET_VIDEO_MAX_BYTES)]), 'video/mp4');
+
+      expect(response.status).toBe(413);
+      expect((await response.json()).error).toBe(CREATIVE_ASSET_VIDEO_TOO_LARGE_MESSAGE);
+      expect(uploadCreativeAsset).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['a QuickTime movie', ftyp('qt  ')],
+      ['image bytes', PNG],
+    ])('refuses %s declared as MP4 with a 415', async (_label, body) => {
+      const response = await upload(body, 'video/mp4');
+
+      expect(response.status).toBe(415);
+      expect((await response.json()).error).toBe(CREATIVE_ASSET_VIDEO_WRONG_TYPE_MESSAGE);
+      expect(uploadCreativeAsset).not.toHaveBeenCalled();
+    });
+
+    // A Reddit video post (#6108 row 8) uses the same upload, so either video capability admits an MP4.
+    it('forwards an MP4 while only Reddit video posts are on', async () => {
+      isServerFeatureEnabled.mockImplementation((flag) => flag !== ServerFeatureFlag.CampaignServiceLinkedInVideo);
+      uploadCreativeAsset.mockResolvedValue({ ...ASSET, mimeType: 'video/mp4' });
+
+      const response = await upload(Buffer.concat([MP4, Buffer.alloc(CREATIVE_ASSET_MAX_BYTES)]), 'video/mp4');
+
+      expect(response.status).toBe(201);
+      expect(uploadCreativeAsset.mock.calls[0][3]).toBe('video/mp4');
+    });
+
+    it('refuses an MP4 while LinkedIn video ads and Reddit video posts are off without reading it, so even one over the limit is a 415', async () => {
+      isServerFeatureEnabled.mockImplementation(
+        (flag) => flag !== ServerFeatureFlag.CampaignServiceLinkedInVideo && flag !== ServerFeatureFlag.CampaignServiceRedditVideo
+      );
+
+      const response = await upload(Buffer.concat([MP4, Buffer.alloc(CREATIVE_ASSET_VIDEO_MAX_BYTES)]), 'video/mp4');
+
+      expect(response.status).toBe(415);
+      expect((await response.json()).error).toBe(CREATIVE_ASSET_VIDEO_WRONG_TYPE_MESSAGE);
+      expect(uploadCreativeAsset).not.toHaveBeenCalled();
+    });
+  });
+
+  // LinkedIn document ads (campaign-service#665): a PDF has its own parser and limit, and needs the document capability.
+  describe('a PDF document', () => {
+    it('forwards a complete PDF above the image limit, typed application/pdf', async () => {
+      uploadCreativeAsset.mockResolvedValue({ ...ASSET, mimeType: 'application/pdf' });
+      const document = pdf(CREATIVE_ASSET_MAX_BYTES + 1024);
+
+      const response = await upload(document, 'application/pdf');
+
+      expect(response.status).toBe(201);
+      const [, , , contentType, bytes] = uploadCreativeAsset.mock.calls[0];
+      expect(contentType).toBe('application/pdf');
+      expect((bytes as Buffer).byteLength).toBe(document.byteLength);
+    });
+
+    it('refuses a PDF over the document limit with a 413 and the PDF message', async () => {
+      const response = await upload(pdf(CREATIVE_ASSET_DOCUMENT_MAX_BYTES + 1), 'application/pdf');
+
+      expect(response.status).toBe(413);
+      expect((await response.json()).error).toBe(CREATIVE_ASSET_DOCUMENT_TOO_LARGE_MESSAGE);
+      expect(uploadCreativeAsset).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['a truncated PDF', pdf().subarray(0, 100)],
+      ['image bytes', PNG],
+    ])('refuses %s declared as PDF with a 415', async (_label, body) => {
+      const response = await upload(body, 'application/pdf');
+
+      expect(response.status).toBe(415);
+      expect((await response.json()).error).toBe(CREATIVE_ASSET_DOCUMENT_WRONG_TYPE_MESSAGE);
+      expect(uploadCreativeAsset).not.toHaveBeenCalled();
+    });
+
+    it('refuses a PDF while LinkedIn document ads are off without reading it, so even one over the limit is a 415 saying so', async () => {
+      isServerFeatureEnabled.mockImplementation((flag) => flag !== ServerFeatureFlag.CampaignServiceLinkedInDocument);
+
+      const response = await upload(pdf(CREATIVE_ASSET_DOCUMENT_MAX_BYTES + 1), 'application/pdf');
+
+      expect(response.status).toBe(415);
+      expect((await response.json()).error).toBe(CREATIVE_ASSET_DOCUMENT_DISABLED_MESSAGE);
+      expect(uploadCreativeAsset).not.toHaveBeenCalled();
+    });
+
+    it('keeps an image over the 10 MiB image limit a 413 while PDFs of up to 30 MiB are taken', async () => {
+      const response = await upload(Buffer.concat([PNG, Buffer.alloc(2 * CREATIVE_ASSET_MAX_BYTES)]), 'image/png');
+
+      expect(response.status).toBe(413);
+      expect((await response.json()).error).toBe(CREATIVE_ASSET_TOO_LARGE_MESSAGE);
+    });
   });
 
   it('keeps a body-parser refusal other than size as a 4xx, not a 500', async () => {
@@ -296,6 +425,8 @@ describe('creative-asset library reads and prune', () => {
   const ASSET_ID = '3f2504e0-4f89-11d3-9a0c-0305e82c3301';
   const LIBRARY = {
     assets: [{ id: ASSET_ID, projectId: 'tlf', briefId: BRIEF, mimeType: 'image/png', byteSize: 12, checksum: 'ab'.repeat(32) }],
+    videos: [],
+    documents: [],
     count: 1,
     countLimit: 100,
     bytesUsed: 12,

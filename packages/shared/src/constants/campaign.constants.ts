@@ -6,6 +6,7 @@ import type {
   AudienceCustomOperator,
   AudienceCustomReuseRecommendation,
   AudienceLastSentMatchReason,
+  AudienceListDescriptionStatus,
   AudienceOptInLookup,
   AudienceOptInSignal,
   AudienceSignal,
@@ -21,17 +22,11 @@ import type {
   CampaignDeliveryTypeOption,
   CampaignEmailSegment,
   CampaignEmailTypeOption,
+  CampaignNewsletterSuggestionKind,
+  CampaignNewsletterTypeOption,
+  CampaignProgramPickerOption,
   CampaignFunnelStage,
   CampaignGoalOption,
-  MetaAdOptionField,
-  MetaAudienceGender,
-  MetaAudienceTargetingDraft,
-  MetaCustomAudienceListView,
-  MetaAdSchedule,
-  MetaAdScheduleDayOption,
-  MetaDeviceOsOption,
-  MetaFrequencyCap,
-  MetaTargetingKind,
   CampaignKeyword,
   CampaignLabelOption,
   CampaignNegativeKeywordMatchType,
@@ -52,6 +47,7 @@ import type {
   CampaignToggleAction,
   CampaignToggleStatus,
   CreativeAssetMimeType,
+  CreativeAssetUploadMimeType,
   CreativeAssetQueueItemStatus,
   CreativeAssetQueueStatusView,
   GoogleCreativeEitherOrRule,
@@ -64,11 +60,26 @@ import type {
   GoogleDisplayDemographics,
   KeywordActionOutcome,
   KeywordActionPlatform,
+  LinkedInCallToActionOption,
   LinkedInGeoTarget,
+  LinkedInGeoUrnCorrection,
+  LinkedInTargetingEditorFacetOption,
+  LinkedInTargetingEntity,
+  LinkedInTargetingStaticFacet,
   LinkedInTargetingProfile,
+  MetaAdOptionField,
+  MetaAdSchedule,
+  MetaAdScheduleDayOption,
+  MetaAudienceGender,
+  MetaAudienceTargetingDraft,
+  MetaCustomAudienceListView,
+  MetaDeviceOsOption,
+  MetaFrequencyCap,
   MetaObjective,
   MetaObjectiveParams,
   MetaPlacement,
+  MetaTargetingBox,
+  MetaTargetingPickKey,
   MicrosoftKeywordsWindow,
   MicrosoftKeywordsWindowOption,
   MonitorConnectionPlatform,
@@ -76,6 +87,17 @@ import type {
   MonitorTabPlatform,
   NegativeKeywordCampaignPlatform,
   ParsedCampaignName,
+  RedditBudgetCopy,
+  RedditBudgetType,
+  RedditConversionEvent,
+  RedditCustomAudienceListView,
+  RedditDeliveryDraft,
+  RedditDevicePlatform,
+  RedditPlacement,
+  RedditCustomAudiencesDraft,
+  RedditTargetingExclusionListView,
+  RedditTargetingExclusionsDraft,
+  RedditTargetingListView,
   RedditObjective,
   RedditObjectiveParams,
   RedditVideoGoal,
@@ -195,6 +217,9 @@ export const CAMPAIGN_DELIVERY_TYPES: readonly CampaignDeliveryTypeOption[] = [
   { id: 'paid-marketing', label: 'Paid Marketing', breadcrumbLabel: 'Paid Marketing' },
   { id: 'email', label: 'Email', breadcrumbLabel: 'Email' },
   { id: 'survey', label: 'Survey & Report', breadcrumbLabel: 'Survey & Report' },
+  // The wire value of the newsletter surface. Never offered in the delivery picker: the page
+  // reaches it through the first selector's Newsletter entry (CAMPAIGN_NEWSLETTER_PROGRAM_OPTION).
+  { id: 'newsletter', label: 'Newsletter', breadcrumbLabel: 'Newsletter Campaigns' },
 ] as const;
 
 export const CAMPAIGN_PROGRAM_TYPES: readonly CampaignProgramTypeOption[] = [
@@ -798,6 +823,454 @@ export const LINKEDIN_MIN_VARIANTS = 1;
  */
 export const LINKEDIN_MAX_VARIANTS = 15;
 
+/**
+ * The calls to action a LinkedIn variant may carry (#5764 rows 16–17), campaign-service's `CallToActionLabels`
+ * (`internal/platform/linkedin/variants.go`, v1.0.38): the Posts API's `ContentCallToActionLabel` values. campaign-service
+ * matches them exactly, so the create route sends each upper-cased.
+ */
+export const LINKEDIN_CALL_TO_ACTION_LABELS = [
+  'APPLY',
+  'DOWNLOAD',
+  'VIEW_QUOTE',
+  'LEARN_MORE',
+  'SIGN_UP',
+  'SUBSCRIBE',
+  'REGISTER',
+  'JOIN',
+  'ATTEND',
+  'REQUEST_DEMO',
+  'SEE_MORE',
+  'BUY_NOW',
+  'SHOP_NOW',
+] as const;
+
+/** How each of `LINKEDIN_CALL_TO_ACTION_LABELS` reads in the LinkedIn variant editor; a missing or misspelt label fails type-checking. */
+const LINKEDIN_CALL_TO_ACTION_TEXT: Record<(typeof LINKEDIN_CALL_TO_ACTION_LABELS)[number], string> = {
+  APPLY: 'Apply',
+  DOWNLOAD: 'Download',
+  VIEW_QUOTE: 'View quote',
+  LEARN_MORE: 'Learn more',
+  SIGN_UP: 'Sign up',
+  SUBSCRIBE: 'Subscribe',
+  REGISTER: 'Register',
+  JOIN: 'Join',
+  ATTEND: 'Attend',
+  REQUEST_DEMO: 'Request demo',
+  SEE_MORE: 'See more',
+  BUY_NOW: 'Buy now',
+  SHOP_NOW: 'Shop now',
+};
+
+/** The calls to action the LinkedIn variant editor offers, in `LINKEDIN_CALL_TO_ACTION_LABELS` order. */
+export const LINKEDIN_CALL_TO_ACTION_OPTIONS: readonly LinkedInCallToActionOption[] = LINKEDIN_CALL_TO_ACTION_LABELS.map((value) => ({
+  value,
+  label: LINKEDIN_CALL_TO_ACTION_TEXT[value],
+}));
+
+/**
+ * The longest LinkedIn ad name and description, in runes after campaign-service's normalization (`maxCreativeNameLen`,
+ * `maxDescriptionLen`). campaign-service cuts longer ones without saying so, so the create route refuses them instead.
+ */
+export const LINKEDIN_VARIANT_FIELD_LIMITS = {
+  name: 255,
+  description: 300,
+} as const;
+
+/**
+ * The ad formats a LinkedIn create may name (#5764 row 19), campaign-service's `FormatSingleImage`, `FormatText`
+ * (`internal/platform/linkedin/text_ads.go`, #586), `FormatCarousel` (`carousel.go`, #665), `FormatDocument`
+ * (`documents.go`, #665) and `FormatBoost` (`boost.go`, #673). Omitted is the single-image default.
+ */
+export const LINKEDIN_AD_FORMATS = ['single_image', 'text', 'carousel', 'document', 'boost'] as const;
+
+/** The field a LinkedIn boost refusal names (linuxfoundation/lfx-v2-campaign-service#673). */
+export const LINKEDIN_BOOST_POST_FIELD = 'linkedInConfig.boostPost';
+
+/**
+ * A post a LinkedIn boost may sponsor, campaign-service's `postURNRe` (`internal/platform/linkedin/client.go`): exactly
+ * `urn:li:share:<digits>` or `urn:li:ugcPost:<digits>`, the two references a creative accepts. Go's `\d` is ASCII only.
+ */
+export const LINKEDIN_BOOST_POST_URN_PATTERN = /^urn:li:(share|ugcPost):[0-9]+$/;
+
+/** The field a LinkedIn Audience Expansion refusal names (linuxfoundation/lfx-v2-campaign-service#667). */
+export const LINKEDIN_AUDIENCE_EXPANSION_FIELD = 'linkedInConfig.audienceExpansionEnabled';
+
+/** The field a LinkedIn Audience Network refusal names (linuxfoundation/lfx-v2-campaign-service#667). */
+export const LINKEDIN_OFFSITE_DELIVERY_FIELD = 'linkedInConfig.offsiteDeliveryEnabled';
+
+/**
+ * LinkedIn Text Ads limits (#5764 row 19), campaign-service's `TextAdHeadlineMaxChars`, `TextAdDescriptionMaxChars`
+ * and `maxTextAds`: characters after the creative normalization, and text ads per campaign.
+ */
+export const LINKEDIN_TEXT_AD_LIMITS = {
+  headline: 25,
+  description: 75,
+  ads: 100,
+} as const;
+
+/** The keys one LinkedIn text ad may carry, spelled exactly (`LinkedInTextAd`). */
+export const LINKEDIN_TEXT_AD_REQUEST_KEYS = ['headline', 'description', 'imageUrn', 'imageAssetId'] as const;
+
+/**
+ * LinkedIn carousel limits (linuxfoundation/lfx-v2-campaign-service#665), campaign-service's `MinCarouselCards`,
+ * `MaxCarouselCards`, `CarouselHeadlineMaxChars`, `CarouselIntroTextMaxChars` and `MaxCarouselLandingPageChars`
+ * (`internal/platform/linkedin/carousel.go`): cards per carousel, characters after the creative normalization, bytes
+ * of a card's destination link, and a card image's bytes and longest side (`MaxCarouselImageBytes`, `carouselImageMaxSide`).
+ */
+export const LINKEDIN_CAROUSEL_LIMITS = {
+  minCards: 2,
+  maxCards: 10,
+  headline: 45,
+  introText: 255,
+  destinationBytes: 2000,
+  imageBytes: 10_000_000,
+  imageMaxSide: 4320,
+} as const;
+
+/** The keys one LinkedIn carousel card may carry, spelled exactly (`LinkedInCarouselCard`). */
+export const LINKEDIN_CAROUSEL_CARD_REQUEST_KEYS = ['imageAssetId', 'headline', 'destinationUrl'] as const;
+
+/** The field a LinkedIn carousel card list refusal names (campaign-service#665). */
+export const LINKEDIN_CAROUSEL_CARDS_FIELD = 'linkedInConfig.carouselCards';
+
+/** The field a LinkedIn carousel intro text refusal names (campaign-service#665). */
+export const LINKEDIN_CAROUSEL_INTRO_TEXT_FIELD = 'linkedInConfig.carouselIntroText';
+
+/**
+ * LinkedIn document ad limits (linuxfoundation/lfx-v2-campaign-service#665), campaign-service's `DocumentTitleMaxChars`
+ * and `DocumentIntroTextMaxChars` (`internal/platform/linkedin/documents.go`): characters after the creative
+ * normalization. `recommendedIntroText` is LinkedIn's recommended length for a document's intro text, which the Implement
+ * tab suggests without refusing a longer one (decision 2026-11-25: the limit stays 600).
+ */
+export const LINKEDIN_DOCUMENT_LIMITS = {
+  title: 70,
+  introText: 600,
+  recommendedIntroText: 150,
+} as const;
+
+/** The field a LinkedIn document asset refusal names (campaign-service#665). */
+export const LINKEDIN_DOCUMENT_ASSET_FIELD = 'linkedInConfig.documentAssetId';
+
+/** The field a LinkedIn document title refusal names (campaign-service#665). */
+export const LINKEDIN_DOCUMENT_TITLE_FIELD = 'linkedInConfig.documentTitle';
+
+/** The field a LinkedIn document intro text refusal names (campaign-service#665). */
+export const LINKEDIN_DOCUMENT_INTRO_TEXT_FIELD = 'linkedInConfig.documentIntroText';
+
+/** A LinkedIn document's request keys, spelled exactly, with the field each refusal names, in the order they are checked. */
+export const LINKEDIN_DOCUMENT_REQUEST_FIELDS = [
+  ['documentAssetId', LINKEDIN_DOCUMENT_ASSET_FIELD],
+  ['documentTitle', LINKEDIN_DOCUMENT_TITLE_FIELD],
+  ['documentIntroText', LINKEDIN_DOCUMENT_INTRO_TEXT_FIELD],
+] as const;
+
+/** The field a LinkedIn targeting refusal names (#5764 rows 8–11). */
+export const LINKEDIN_TARGETING_FIELD = 'linkedInConfig.targeting';
+
+/**
+ * LinkedIn custom targeting limits (#5764 rows 8–11), campaign-service's `MaxTargetingClauses`, `maxFacetValues` and
+ * `maxEmployerFacetValues` (`internal/platform/linkedin/targeting_criteria.go`, #552): include clauses, distinct values
+ * per facet, and distinct employers (by id) per employers list, including the merged `employerExclusions`.
+ */
+export const LINKEDIN_TARGETING_LIMITS = {
+  clauses: 10,
+  facetValues: 100,
+  employerValues: 200,
+} as const;
+
+/** LinkedIn's nine company-size buckets, campaign-service's `staffCountRangeValues`: the only `staffCountRanges` values. */
+export const LINKEDIN_STAFF_COUNT_RANGES = [
+  'urn:li:staffCountRange:(1,1)',
+  'urn:li:staffCountRange:(2,10)',
+  'urn:li:staffCountRange:(11,50)',
+  'urn:li:staffCountRange:(51,200)',
+  'urn:li:staffCountRange:(201,500)',
+  'urn:li:staffCountRange:(501,1000)',
+  'urn:li:staffCountRange:(1001,5000)',
+  'urn:li:staffCountRange:(5001,10000)',
+  'urn:li:staffCountRange:(10001,2147483647)',
+] as const;
+
+/**
+ * The facets `linkedInConfig.targeting` accepts, campaign-service's `targetingFacets`: each value's shape (a pattern,
+ * or `null` for `LINKEDIN_STAFF_COUNT_RANGES`) and whether LinkedIn takes it only under `include`. Ids are numeric with
+ * no leading zero. `employers` is recognised by its key, not by an attribute here: its values compare by id and are
+ * capped at `LINKEDIN_TARGETING_LIMITS.employerValues` (see `linkedInTargetingRefusal`).
+ */
+export const LINKEDIN_TARGETING_FACETS: Readonly<Record<string, { pattern: RegExp | null; includeOnly: boolean }>> = {
+  skills: { pattern: /^urn:li:skill:[1-9][0-9]{0,18}$/, includeOnly: false },
+  groups: { pattern: /^urn:li:group:[1-9][0-9]{0,18}$/, includeOnly: true },
+  industries: { pattern: /^urn:li:industry:[1-9][0-9]{0,18}$/, includeOnly: false },
+  titles: { pattern: /^urn:li:title:[1-9][0-9]{0,18}$/, includeOnly: false },
+  seniorities: { pattern: /^urn:li:seniority:[1-9][0-9]{0,18}$/, includeOnly: false },
+  jobFunctions: { pattern: /^urn:li:function:[1-9][0-9]{0,18}$/, includeOnly: false },
+  employers: { pattern: /^urn:li:(organization|company):[1-9][0-9]{0,18}$/, includeOnly: false },
+  staffCountRanges: { pattern: null, includeOnly: false },
+  interfaceLocales: { pattern: /^urn:li:locale:[a-z]{2}_[A-Z]{2}$/, includeOnly: true },
+  interests: { pattern: /^urn:li:interest:[1-9][0-9]{0,18}$/, includeOnly: false },
+  audienceMatchingSegments: { pattern: /^urn:li:adSegment:[1-9][0-9]{0,18}$/, includeOnly: false },
+  dynamicSegments: { pattern: /^urn:li:adSegment:[1-9][0-9]{0,18}$/, includeOnly: false },
+};
+
+/**
+ * The error `code` (HTTP 403) of a LinkedIn audience read, or a create whose `targeting` names an ad segment, refused
+ * because the caller does not hold `global_marketing_ops` on the project: the ad account is shared by every foundation,
+ * so campaign-service answers both on that relation.
+ */
+export const LINKEDIN_AUDIENCES_RESTRICTED_CODE = 'LINKEDIN_AUDIENCES_RESTRICTED';
+export const LINKEDIN_AUDIENCES_RESTRICTED_MESSAGE =
+  'LinkedIn audiences can only be used by the LF marketing team, because every foundation shares one LinkedIn ad account.';
+/** The error `code` (HTTP 503) when that relation could not be checked. Nothing was read or created. */
+export const LINKEDIN_AUDIENCES_ACCESS_UNAVAILABLE_CODE = 'LINKEDIN_AUDIENCES_ACCESS_UNAVAILABLE';
+export const LINKEDIN_AUDIENCES_ACCESS_UNAVAILABLE_MESSAGE = 'Your access to LinkedIn audiences could not be verified. Try again in a few minutes.';
+
+/**
+ * The goals `linkedInConfig.objective` may name (#5764 row 2), campaign-service's `linkedinObjectiveTraffic` and
+ * `linkedinObjectiveConversions` (`internal/dispatch/linkedin.go`, #582), spelled exactly. Omitted lets the bidding decide.
+ */
+export const LINKEDIN_OBJECTIVES = ['traffic', 'conversions'] as const;
+
+/** The fields a LinkedIn objective or conversions refusal names (#5764 rows 2 and 4). */
+export const LINKEDIN_OBJECTIVE_FIELD = 'linkedInConfig.objective';
+export const LINKEDIN_CONVERSIONS_FIELD = 'linkedInConfig.conversions';
+
+/**
+ * campaign-service's `linkedin.MaxConversions` (#552): distinct conversion rule ids per create. A list longer than twice
+ * that is refused before any id is read.
+ */
+export const LINKEDIN_MAX_CONVERSIONS = 20;
+
+/** The field a LinkedIn target cost refusal names (linuxfoundation/lfx-v2-campaign-service#674). */
+export const LINKEDIN_TARGET_AMOUNT_FIELD = 'linkedInConfig.bidding.targetAmount';
+
+/**
+ * The error `code` (HTTP 403) of a LinkedIn conversion rule read, or a create naming `conversions`, refused because the
+ * caller does not hold `global_marketing_ops` on the project: conversion rules belong to the shared ad account, so
+ * campaign-service answers both on that relation.
+ */
+export const LINKEDIN_CONVERSIONS_RESTRICTED_CODE = 'LINKEDIN_CONVERSIONS_RESTRICTED';
+export const LINKEDIN_CONVERSIONS_RESTRICTED_MESSAGE =
+  'LinkedIn conversion tracking can only be set by the LF marketing team, because every foundation shares one LinkedIn ad account.';
+/** The error `code` (HTTP 503) when that relation could not be checked. Nothing was read or created. */
+export const LINKEDIN_CONVERSIONS_ACCESS_UNAVAILABLE_CODE = 'LINKEDIN_CONVERSIONS_ACCESS_UNAVAILABLE';
+export const LINKEDIN_CONVERSIONS_ACCESS_UNAVAILABLE_MESSAGE = 'Your access to LinkedIn conversion tracking could not be verified. Try again in a few minutes.';
+
+/** What the objective picker says while the ad account's conversion rules load (#5764 row 4). */
+export const LINKEDIN_CONVERSIONS_LOADING_MESSAGE = 'Loading LinkedIn conversion rules…';
+
+/** What it says when the conversion rule read failed another way than the coded 403 or 503. */
+export const LINKEDIN_CONVERSIONS_FAILED_MESSAGE = "LinkedIn conversion rules didn't load. Try again.";
+
+/** Why a create is held while the draft's conversion rules were picked for another foundation or ad account than its own. */
+export const LINKEDIN_CONVERSIONS_OWNER_MESSAGE = 'Conversion rules were picked for another LinkedIn ad account. Remove them, then pick them again.';
+
+/**
+ * The `linkedInConfig.objective` of a Lead Gen Form campaign (linuxfoundation/lfx-v2-campaign-service#664),
+ * campaign-service's `linkedinObjectiveLeadGeneration`, spelled exactly. Gated on its own flag, apart from
+ * `LINKEDIN_OBJECTIVES`.
+ */
+export const LINKEDIN_LEAD_GEN_OBJECTIVE = 'lead_generation';
+
+/** The fields a LinkedIn lead gen refusal names (campaign-service#664). */
+export const LINKEDIN_LEAD_GEN_FORM_FIELD = 'linkedInConfig.leadGenForm';
+export const LINKEDIN_LEAD_GEN_CALL_TO_ACTION_FIELD = 'linkedInConfig.leadGenCallToAction';
+
+/**
+ * The button labels a lead gen creative may carry, campaign-service's `LeadGenCallToActionLabels`
+ * (`internal/platform/linkedin/lead_gen.go`, li-lms-2026-11), in its order and matched exactly. Unlike a variant's call to
+ * action it includes `UNLOCK_FULL_DOCUMENT`.
+ */
+export const LINKEDIN_LEAD_GEN_CALL_TO_ACTION_LABELS = [
+  'APPLY',
+  'DOWNLOAD',
+  'VIEW_QUOTE',
+  'LEARN_MORE',
+  'SIGN_UP',
+  'SUBSCRIBE',
+  'REGISTER',
+  'REQUEST_DEMO',
+  'JOIN',
+  'ATTEND',
+  'UNLOCK_FULL_DOCUMENT',
+  'SHOP_NOW',
+  'BUY_NOW',
+  'SEE_MORE',
+] as const;
+
+/** campaign-service's `DefaultLeadGenCallToAction`: the button a lead gen create gets when it names none. */
+export const LINKEDIN_LEAD_GEN_DEFAULT_CALL_TO_ACTION = 'REGISTER';
+
+/** How each of `LINKEDIN_LEAD_GEN_CALL_TO_ACTION_LABELS` reads in the button select; a missing label fails type-checking. */
+const LINKEDIN_LEAD_GEN_CALL_TO_ACTION_TEXT: Record<(typeof LINKEDIN_LEAD_GEN_CALL_TO_ACTION_LABELS)[number], string> = {
+  ...LINKEDIN_CALL_TO_ACTION_TEXT,
+  UNLOCK_FULL_DOCUMENT: 'Unlock full document',
+};
+
+/** The button labels the lead gen select offers, in `LINKEDIN_LEAD_GEN_CALL_TO_ACTION_LABELS` order. */
+export const LINKEDIN_LEAD_GEN_CALL_TO_ACTION_OPTIONS: readonly LinkedInCallToActionOption[] = LINKEDIN_LEAD_GEN_CALL_TO_ACTION_LABELS.map((value) => ({
+  value,
+  label: LINKEDIN_LEAD_GEN_CALL_TO_ACTION_TEXT[value],
+}));
+
+/**
+ * The error `code` (HTTP 403) of a LinkedIn lead form read, or a create naming `leadGenForm`, refused because the caller
+ * does not hold `global_marketing_ops` on the project: a form is a resource of the shared ad account, so campaign-service
+ * answers both on that relation (#664).
+ */
+export const LINKEDIN_LEAD_FORMS_RESTRICTED_CODE = 'LINKEDIN_LEAD_FORMS_RESTRICTED';
+export const LINKEDIN_LEAD_FORMS_RESTRICTED_MESSAGE =
+  'LinkedIn lead gen forms can only be picked by the LF marketing team, because every foundation shares one LinkedIn ad account.';
+/** The error `code` (HTTP 503) when that relation could not be checked. Nothing was read or created. */
+export const LINKEDIN_LEAD_FORMS_ACCESS_UNAVAILABLE_CODE = 'LINKEDIN_LEAD_FORMS_ACCESS_UNAVAILABLE';
+export const LINKEDIN_LEAD_FORMS_ACCESS_UNAVAILABLE_MESSAGE = 'Your access to LinkedIn lead gen forms could not be verified. Try again in a few minutes.';
+
+/** What the lead form picker says while the ad account's forms load. */
+export const LINKEDIN_LEAD_FORMS_LOADING_MESSAGE = 'Loading LinkedIn lead gen forms…';
+
+/** What it says when the lead form read failed another way than the coded 403 or 503. */
+export const LINKEDIN_LEAD_FORMS_FAILED_MESSAGE = "LinkedIn lead gen forms didn't load. Try again.";
+
+/** Why a create is held while the draft's form was picked for another foundation or ad account than its own. */
+export const LINKEDIN_LEAD_FORM_OWNER_MESSAGE = 'The lead gen form was picked for another LinkedIn ad account. Pick a form again.';
+
+/**
+ * The coded 403 and 503 of each LinkedIn ad account resource answered on `global_marketing_ops`: audience segments,
+ * conversion rules and Lead Gen Forms. Read by the campaign controller's `requireLinkedInAudienceAccess`.
+ */
+export const LINKEDIN_MARKETING_OPS_ACCESS_ERRORS = {
+  audiences: {
+    restricted: { code: LINKEDIN_AUDIENCES_RESTRICTED_CODE, message: LINKEDIN_AUDIENCES_RESTRICTED_MESSAGE },
+    unavailable: { code: LINKEDIN_AUDIENCES_ACCESS_UNAVAILABLE_CODE, message: LINKEDIN_AUDIENCES_ACCESS_UNAVAILABLE_MESSAGE },
+  },
+  conversions: {
+    restricted: { code: LINKEDIN_CONVERSIONS_RESTRICTED_CODE, message: LINKEDIN_CONVERSIONS_RESTRICTED_MESSAGE },
+    unavailable: { code: LINKEDIN_CONVERSIONS_ACCESS_UNAVAILABLE_CODE, message: LINKEDIN_CONVERSIONS_ACCESS_UNAVAILABLE_MESSAGE },
+  },
+  leadForms: {
+    restricted: { code: LINKEDIN_LEAD_FORMS_RESTRICTED_CODE, message: LINKEDIN_LEAD_FORMS_RESTRICTED_MESSAGE },
+    unavailable: { code: LINKEDIN_LEAD_FORMS_ACCESS_UNAVAILABLE_CODE, message: LINKEDIN_LEAD_FORMS_ACCESS_UNAVAILABLE_MESSAGE },
+  },
+} as const;
+
+/**
+ * The facets campaign-service's targeting typeahead searches for `linkedInConfig.targeting` (`search-linkedin-ads-targeting-entities`,
+ * #585): its `locations` answer `geoTargets`, and seniorities, job functions, company sizes, locales and segments are
+ * not searched (segments come from `GET /api/campaigns/linkedin/audiences`).
+ */
+export const LINKEDIN_TARGETING_SEARCH_FACETS = ['employers', 'groups', 'industries', 'interests', 'skills', 'titles'] as const;
+
+/** The message a LinkedIn targeting search answers while LinkedIn throttles or fails it (an upstream 503, not retried). */
+export const LINKEDIN_TARGETING_SEARCH_BUSY_MESSAGE = "LinkedIn targeting search isn't available right now. Wait a few seconds, then search again.";
+
+/** The message a LinkedIn targeting search answers when it fails another way. */
+export const LINKEDIN_TARGETING_SEARCH_FAILED_MESSAGE = "LinkedIn search didn't answer. Search again.";
+
+/** How long the custom targeting typeahead waits after the last keystroke before it searches (#5764 rows 8–11). */
+export const LINKEDIN_TARGETING_SEARCH_DEBOUNCE_MS = 400;
+
+/**
+ * The facets the Implement tab's custom targeting editor offers (#5764 rows 8–11), in the order shown: the searched
+ * ones (`LINKEDIN_TARGETING_SEARCH_FACETS`), the four fixed lists and the two ad segment facets.
+ */
+export const LINKEDIN_TARGETING_EDITOR_FACETS: readonly LinkedInTargetingEditorFacetOption[] = [
+  { key: 'skills', label: 'Skills', kind: 'search' },
+  { key: 'titles', label: 'Job titles', kind: 'search' },
+  { key: 'seniorities', label: 'Seniorities', kind: 'static' },
+  { key: 'jobFunctions', label: 'Job functions', kind: 'static' },
+  { key: 'employers', label: 'Employers', kind: 'search' },
+  { key: 'industries', label: 'Industries', kind: 'search' },
+  { key: 'staffCountRanges', label: 'Company sizes', kind: 'static' },
+  { key: 'groups', label: 'Member groups', kind: 'search' },
+  { key: 'interests', label: 'Interests', kind: 'search' },
+  { key: 'interfaceLocales', label: 'Interface languages', kind: 'static' },
+  { key: 'audienceMatchingSegments', label: 'Matched audiences', kind: 'segment' },
+  { key: 'dynamicSegments', label: 'Retargeting audiences', kind: 'segment' },
+];
+
+/** What the editor's segment area says while the ad account's segments load (#5764 rows 8–11). */
+export const LINKEDIN_AUDIENCES_LOADING_MESSAGE = 'Loading LinkedIn audiences…';
+
+/** What it says when the segment read failed another way than the coded 403 or 503. */
+export const LINKEDIN_AUDIENCES_FAILED_MESSAGE = "LinkedIn audiences didn't load. Try again.";
+
+/** Why a create is held while the draft's segments were picked for another ad account than the one it uses. */
+export const LINKEDIN_TARGETING_SEGMENTS_ACCOUNT_MESSAGE = 'Audience segments were picked for another LinkedIn ad account. Remove them or pick them again.';
+
+function numbered(prefix: string, names: readonly string[]): LinkedInTargetingEntity[] {
+  return names.map((name, index) => ({ urn: `${prefix}${index + 1}`, name }));
+}
+
+/**
+ * The values of the four fixed-list facets, with LinkedIn's names: seniorities, job functions, company sizes and the
+ * languages LinkedIn's interface is offered in (`urn:li:locale:<language>_<COUNTRY>`, include-only).
+ */
+export const LINKEDIN_TARGETING_STATIC_VALUES: Readonly<Record<LinkedInTargetingStaticFacet, readonly LinkedInTargetingEntity[]>> = {
+  seniorities: numbered('urn:li:seniority:', ['Unpaid', 'Training', 'Entry', 'Senior', 'Manager', 'Director', 'VP', 'CXO', 'Partner', 'Owner']),
+  jobFunctions: numbered('urn:li:function:', [
+    'Accounting',
+    'Administrative',
+    'Arts and Design',
+    'Business Development',
+    'Community and Social Services',
+    'Consulting',
+    'Education',
+    'Engineering',
+    'Entrepreneurship',
+    'Finance',
+    'Healthcare Services',
+    'Human Resources',
+    'Information Technology',
+    'Legal',
+    'Marketing',
+    'Media and Communication',
+    'Military and Protective Services',
+    'Operations',
+    'Product Management',
+    'Program and Project Management',
+    'Purchasing',
+    'Quality Assurance',
+    'Real Estate',
+    'Research',
+    'Sales',
+    'Support',
+  ]),
+  staffCountRanges: LINKEDIN_STAFF_COUNT_RANGES.map((urn, index) => ({
+    urn,
+    name: ['1 employee', '2–10', '11–50', '51–200', '201–500', '501–1,000', '1,001–5,000', '5,001–10,000', '10,001+'][index],
+  })),
+  // The interface locales LinkedIn accepts for ads targeting, with its names: the live
+  // `adTargetingEntities?q=adTargetingFacet&facet=urn:li:adTargetingFacet:interfaceLocales` answer (26 Nov 2026).
+  // LinkedIn's older docs table differs (Finnish, Thai, Tagalog, Ukrainian and Chinese are not offered for targeting).
+  interfaceLocales: (
+    [
+      ['ar_AE', 'Arabic'],
+      ['cs_CZ', 'Czech'],
+      ['da_DK', 'Danish'],
+      ['nl_NL', 'Dutch'],
+      ['en_US', 'English'],
+      ['fr_FR', 'French'],
+      ['de_DE', 'German'],
+      ['hi_IN', 'Hindi'],
+      ['in_ID', 'Indonesian'],
+      ['it_IT', 'Italian'],
+      ['ja_JP', 'Japanese'],
+      ['ko_KR', 'Korean'],
+      ['ms_MY', 'Malaysian'],
+      ['no_NO', 'Norwegian'],
+      ['pl_PL', 'Polish'],
+      ['pt_BR', 'Portuguese'],
+      ['ro_RO', 'Romanian'],
+      ['ru_RU', 'Russian'],
+      ['es_ES', 'Spanish'],
+      ['sv_SE', 'Swedish'],
+      ['tr_TR', 'Turkish'],
+    ] as const
+  ).map(([locale, name]) => ({ urn: `urn:li:locale:${locale}`, name })),
+};
+
+/** An Images-API image URN as campaign-service accepts it (`imageURNRE`, `internal/platform/linkedin/targeting.go`). */
+export const LINKEDIN_IMAGE_URN_PATTERN = /^urn:li:image:[A-Za-z0-9_-]+$/;
+
 export const META_CHAR_LIMITS = {
   primaryText: 125,
   headline: 40,
@@ -970,6 +1443,18 @@ export const META_CUSTOM_AUDIENCE_ID_PATTERN = /^[1-9][0-9]*$/;
 export const META_MAX_DETAILED_TARGETING_IDS = 25;
 /** At most this many distinct `locales` (Meta `adlocale` keys). */
 export const META_MAX_LOCALES = 50;
+/** At most this many distinct keys in each of `regions` and `cities` (Meta `adgeolocation` keys; #5904 row 6, campaign-service#671). */
+export const META_MAX_GEO_LOCATIONS = 25;
+/** The Meta location types the targeting search keeps and a create takes, each with its own `metaConfig.targeting` list. */
+export const META_LOCATION_TYPES = ['region', 'city'] as const;
+/**
+ * The Meta creative formats `metaConfig.format` takes (#6331; campaign-service#550 gap 10, `meta.NormalizeFormat`): `single`
+ * (one ad per variant, the default for an absent or blank format) or `carousel` (one ad whose cards are the variants).
+ */
+export const META_AD_FORMATS = ['single', 'carousel'] as const;
+/** A Meta carousel's card count, one card per variant (Meta `child_attachments`; campaign-service `MinCarouselCards`/`MaxCarouselCards`). */
+export const META_CAROUSEL_MIN_CARDS = 2;
+export const META_CAROUSEL_MAX_CARDS = 10;
 /** The Meta device platforms a create may name (#5904 row 6; campaign-service#612). */
 export const META_DEVICE_PLATFORMS = ['mobile', 'desktop'] as const;
 /** The device checkboxes the Implement tab offers, as a create sends them. */
@@ -1010,19 +1495,42 @@ export const META_AD_SCHEDULE_DAY_OPTIONS: readonly MetaAdScheduleDayOption[] = 
 export const DEFAULT_META_AD_SCHEDULE: MetaAdSchedule = { days: [1, 2, 3, 4, 5], startMinute: 540, endMinute: 1020 };
 /** What turning the frequency cap on starts from: 2 impressions per person every 7 days. */
 export const DEFAULT_META_FREQUENCY_CAP: MetaFrequencyCap = { maxImpressions: 2, intervalDays: 7 };
-/** The Meta targeting search's kinds, as campaign-service names them. */
-export const META_TARGETING_SEARCH_TYPES = ['interest', 'behavior', 'work_position'] as const;
+/** The Meta targeting search's kinds, as campaign-service names them (`locale` and `location` since campaign-service#671). */
+export const META_TARGETING_SEARCH_TYPES = ['interest', 'behavior', 'work_position', 'locale', 'location'] as const;
 /** A targeting search query is 2–100 characters after trimming, as campaign-service checks it. */
 export const META_TARGETING_QUERY_MIN_LENGTH = 2;
 export const META_TARGETING_QUERY_MAX_LENGTH = 100;
 /** How long the Implement tab's targeting search waits after the last keystroke before it asks Meta. */
 export const META_TARGETING_SEARCH_DEBOUNCE_MS = 300;
-/** The detailed-targeting lists the Implement tab offers, in order, with the search kind behind each. */
-export const META_TARGETING_KINDS: readonly MetaTargetingKind[] = [
-  { type: 'interest', key: 'interests', label: 'Interests' },
-  { type: 'behavior', key: 'behaviors', label: 'Behaviors' },
-  { type: 'work_position', key: 'workPositions', label: 'Job titles' },
+/**
+ * The search boxes the Implement tab's Meta targeting picker offers, in order, with the search kind behind each and
+ * the lists it fills: one location box fills regions and cities by each row's location type (#5904 rows 4 and 6).
+ */
+export const META_TARGETING_BOXES: readonly MetaTargetingBox[] = [
+  { type: 'interest', key: 'interests', lists: ['interests'], label: 'Interests', max: META_MAX_DETAILED_TARGETING_IDS, matchAny: true },
+  { type: 'behavior', key: 'behaviors', lists: ['behaviors'], label: 'Behaviors', max: META_MAX_DETAILED_TARGETING_IDS, matchAny: true },
+  { type: 'work_position', key: 'workPositions', lists: ['workPositions'], label: 'Job titles', max: META_MAX_DETAILED_TARGETING_IDS, matchAny: true },
+  {
+    type: 'locale',
+    key: 'locales',
+    lists: ['locales'],
+    label: 'Languages',
+    max: META_MAX_LOCALES,
+    matchAny: false,
+    hint: 'Only people who use one of these languages are reached.',
+  },
+  {
+    type: 'location',
+    key: 'locations',
+    lists: ['regions', 'cities'],
+    label: 'Regions and cities',
+    max: META_MAX_GEO_LOCATIONS,
+    matchAny: false,
+    hint: 'Ads also reach these places. Meta refuses a place inside a chosen country, or a city inside a chosen region, when the campaign is created.',
+  },
 ];
+/** Every list of Meta targeting picks the Implement tab keeps, in the order a draft and a create read them. */
+export const META_TARGETING_PICK_KEYS: readonly MetaTargetingPickKey[] = ['interests', 'behaviors', 'workPositions', 'locales', 'regions', 'cities'];
 export const META_AUDIENCE_GENDERS: readonly MetaAudienceGender[] = ['male', 'female'];
 /** The custom-audience lists the Implement tab offers, in order. */
 export const META_CUSTOM_AUDIENCE_LISTS: readonly MetaCustomAudienceListView[] = [
@@ -1371,6 +1879,27 @@ export const CAMPAIGN_BIDDING_CREATE_PLATFORMS: readonly CampaignBiddingPlatform
 export const CAMPAIGN_SERVICE_BIDDING_REFUSAL_PATTERN = /invalid campaign config: (?:linkedIn|meta|microsoft|reddit|twitter)Config\.bidding: .+/;
 
 /**
+ * campaign-service's synchronous refusal of a Reddit community or interest it could not resolve (#6108 row 4,
+ * `internal/dispatch/reddit_targeting_resolution.go`, #573), e.g.
+ * `invalid campaign config: redditConfig.interests: entry 2 names 3 Reddit interests; send the interest id instead`.
+ * The entry is named by position, and the only caller value it can echo passes `domain.CallerValue` (letters, digits and
+ * `._:-`, at most 64, quoted; anything else is withheld). So, like the bidding refusal, the BFF may show it: it tells
+ * the operator which entry to fix.
+ */
+export const CAMPAIGN_SERVICE_REDDIT_TARGETING_REFUSAL_PATTERN = /invalid campaign config: redditConfig\.(?:subreddits|interests): entry \d+ .+/;
+
+/**
+ * campaign-service's synchronous refusal of a Reddit region, city or DMA (#6108 row 7, `ValidateSubCountryGeoTargets` in
+ * `internal/platform/reddit/subcountry_geo.go`, mapped by `redditLookupPreflightError`, #549), e.g.
+ * `invalid campaign config: redditConfig.subCountryGeoTargets: entry 2 ("US-ZZ") is not a targetable Reddit geolocation`.
+ * Reddit's own reason is not quoted: the entry is named by position, and the only caller value it can echo passes
+ * `domain.CallerValue`. So, like the community and interest refusal, the BFF may show it: it tells the operator which
+ * location to fix. It also matches campaign-service's config-only `NormalizeSubCountryGeoTargets` refusals, which the
+ * create route refuses first anyway.
+ */
+export const CAMPAIGN_SERVICE_REDDIT_SUBCOUNTRY_GEO_REFUSAL_PATTERN = /invalid campaign config: redditConfig\.subCountryGeoTargets: entry \d+ .+/;
+
+/**
  * campaign-service's two refusals of a create whose brief is no longer the approved version this page
  * read (#4983). Both mean the stored brief moved since this tab loaded it, most often because it was
  * edited and saved in another tab: a replace resets it to `draft` and bumps its version.
@@ -1629,6 +2158,12 @@ export const MONITOR_KEYWORD_PAGE_SIZE = 10;
  * account (LinkedIn's default) or refuse it as off the allowlist (Reddit, Meta).
  */
 export const MONITOR_ACCOUNT_SOURCE_PARAM = 'accountSource';
+
+/**
+ * The monitor-read query parameter the Monitor tab sends, as `true`, to ask for every campaign on the account
+ * (#6209). The Optimize tab never sends it, so its levers only ever see the project's own campaigns.
+ */
+export const MONITOR_ACCOUNT_WIDE_PARAM = 'accountWide';
 export const MONITOR_ACCOUNT_SOURCE_CONNECTION = 'connection';
 /**
  * The inverse marker: the Monitor tab's read whose account came from a LEGACY picker, i.e. from a
@@ -1736,11 +2271,19 @@ export const META_BEHAVIOR_TARGETING_OFF_MESSAGE =
   'Meta behavior and job title targeting is not available on this deployment. Reload the page, then create again without it.';
 /** The 400 a create gets for Meta languages while language targeting is off on this deployment. */
 export const META_LOCALE_TARGETING_OFF_MESSAGE = 'Meta language targeting is not available on this deployment. Reload the page, then create again without it.';
+/** The 400 a create gets for Meta regions or cities while region targeting is off on this deployment. */
+export const META_REGION_TARGETING_OFF_MESSAGE =
+  'Meta region and city targeting is not available on this deployment. Reload the page, then create again without it.';
 /** The 400 a create gets for Meta device targeting while it is off on this deployment. */
 export const META_DEVICE_TARGETING_OFF_MESSAGE = 'Meta device targeting is not available on this deployment. Reload the page, then create again without it.';
 /** The 400 a create gets for Meta operating-system targeting while it is off on this deployment. */
 export const META_OS_TARGETING_OFF_MESSAGE =
   'Meta operating system targeting is not available on this deployment. Reload the page, then create again without it.';
+/**
+ * The 400 a create gets for a Meta `format` other than single while carousel ads are off on this deployment. It names no
+ * format, as campaign-service's own refusal, so it never advertises one the deployment cannot build.
+ */
+export const META_CAROUSEL_OFF_MESSAGE = 'This Meta ad format is not available on this deployment. Reload the page, then create again with single-image ads.';
 /** The 400 a create gets for a Meta ad schedule while scheduling is off on this deployment. */
 export const META_AD_SCHEDULE_OFF_MESSAGE = 'Meta ad scheduling is not available on this deployment. Reload the page, then create again without it.';
 /** The 400 a create gets for a Meta frequency cap while it is off on this deployment. */
@@ -3764,6 +4307,21 @@ export const DEFAULT_MICROSOFT_KEYWORDS_WINDOW: MicrosoftKeywordsWindow = 'last_
 // They are kept out of source control entirely so vendor IDs never ship in the
 // client bundle or the public chart repo.
 
+/**
+ * The LinkedIn location search query bounds (#5545): campaign-service's `search-linkedin-ads-targeting-entities` takes
+ * 2 to 100 characters with no control characters, so the BFF checks the same before any upstream call.
+ */
+export const LINKEDIN_GEO_SEARCH_BOUNDS = { minQueryLength: 2, maxQueryLength: 100 } as const;
+
+/** How long the Implement tab's LinkedIn location search waits after the last keystroke, as Google's picker does. */
+export const LINKEDIN_GEO_SEARCH_DEBOUNCE_MS = 400;
+
+/** A LinkedIn geo URN as campaign-service accepts it in `linkedInConfig.geoTargets` (`internal/platform/linkedin/targeting.go`). */
+export const LINKEDIN_GEO_URN_PATTERN = /^urn:li:geo:[0-9]+$/;
+
+/** The message a LinkedIn location search answers while LinkedIn throttles or fails it (an upstream 503, not retried). */
+export const LINKEDIN_GEO_SEARCH_BUSY_MESSAGE = "LinkedIn location search isn't available right now. Wait a few seconds, then search again.";
+
 export const LINKEDIN_GEO_RESOLVE_MAP: Readonly<Record<string, LinkedInGeoTarget>> = {
   japan: { label: 'Japan', urn: 'urn:li:geo:101355337' },
   india: { label: 'India', urn: 'urn:li:geo:102713980' },
@@ -3774,9 +4332,22 @@ export const LINKEDIN_GEO_RESOLVE_MAP: Readonly<Record<string, LinkedInGeoTarget
   'hong kong': { label: 'Hong Kong', urn: 'urn:li:geo:103291313' },
   'united states': { label: 'United States', urn: 'urn:li:geo:103644278' },
   usa: { label: 'United States', urn: 'urn:li:geo:103644278' },
-  germany: { label: 'Germany', urn: 'urn:li:geo:101165590' },
-  'united kingdom': { label: 'United Kingdom', urn: 'urn:li:geo:106693272' },
+  // Corrected (campaign-service LFXV2-2665): 101165590 is the United Kingdom and 106693272 Switzerland, which this map
+  // used to send for Germany and the United Kingdom. `LINKEDIN_GEO_URN_CORRECTIONS` fixes briefs and drafts saved before.
+  germany: { label: 'Germany', urn: 'urn:li:geo:101282230' },
+  'united kingdom': { label: 'United Kingdom', urn: 'urn:li:geo:101165590' },
 } as const;
+
+/**
+ * The LinkedIn geo targets `LINKEDIN_GEO_RESOLVE_MAP` used to resolve wrongly, by label and URN, and the URN each
+ * should send. A brief or draft saved before the fix still carries them, so the create route corrects them
+ * (`correctLinkedInGeoTargets`). Keyed on the pair, so a genuine United Kingdom (101165590) or Switzerland (106693272)
+ * target is left alone.
+ */
+export const LINKEDIN_GEO_URN_CORRECTIONS: readonly LinkedInGeoUrnCorrection[] = [
+  { label: 'Germany', from: 'urn:li:geo:101165590', to: 'urn:li:geo:101282230' },
+  { label: 'United Kingdom', from: 'urn:li:geo:106693272', to: 'urn:li:geo:101165590' },
+];
 
 // ---------------------------------------------------------------------------
 // Reddit Ads — Objective Parameters
@@ -3921,6 +4492,95 @@ export const CREATIVE_ASSET_TOO_LARGE_MESSAGE = 'The image is larger than 10 MB.
 /** Shown, and answered by the BFF, when a file is not one of `CREATIVE_ASSET_MIME_TYPES`. */
 export const CREATIVE_ASSET_WRONG_TYPE_MESSAGE = 'Only PNG and JPEG images can be uploaded.';
 
+/**
+ * The video type a creative-asset upload accepts (#5764 row 18): campaign-service's `MimeTypeMP4`, checked structurally
+ * there (`validateMP4Upload`). Only a LinkedIn video ad or a Reddit video post (#6108 row 8) consumes one here, so the
+ * BFF admits it only while `canSetLinkedInVideoAds() || canSetRedditVideo()`. Kept apart from `CREATIVE_ASSET_MIME_TYPES`,
+ * which every image slot and the image library check against.
+ */
+export const CREATIVE_ASSET_VIDEO_MIME_TYPE = 'video/mp4';
+
+/**
+ * The document type a creative-asset upload accepts (linuxfoundation/lfx-v2-campaign-service#665): campaign-service's
+ * `MimeTypePDF`, checked structurally there (`validatePDFUpload`). Only a LinkedIn document ad consumes one, so the BFF
+ * admits it only while `canSetLinkedInDocument()`. Kept apart from `CREATIVE_ASSET_MIME_TYPES`, like the video.
+ */
+export const CREATIVE_ASSET_DOCUMENT_MIME_TYPE = 'application/pdf';
+
+/** Every type the creative-asset upload route parses: the images, the MP4 video and the PDF document. */
+export const CREATIVE_ASSET_UPLOAD_MIME_TYPES = [...CREATIVE_ASSET_MIME_TYPES, CREATIVE_ASSET_VIDEO_MIME_TYPE, CREATIVE_ASSET_DOCUMENT_MIME_TYPE] as const;
+
+/**
+ * The largest video this app uploads as a creative asset, in bytes (30 MiB): campaign-service's own decoded ceiling for
+ * any asset. Images keep `CREATIVE_ASSET_MAX_BYTES`, so a 30 MiB PNG is still refused. The BFF buffers the video and
+ * writes a base64 body a third larger straight into one buffer (`creativeAssetUploadBody`): about 70 MiB for one upload,
+ * only on the upload route, and only while a video can be used.
+ */
+export const CREATIVE_ASSET_VIDEO_MAX_BYTES = 30 * 1024 * 1024;
+
+/** Shown, and answered by the BFF, when a video exceeds `CREATIVE_ASSET_VIDEO_MAX_BYTES`. */
+export const CREATIVE_ASSET_VIDEO_TOO_LARGE_MESSAGE = 'The video is larger than 30 MB. Choose a smaller MP4.';
+
+/** Shown, and answered by the BFF, when a video is not an MP4, or is one while this deployment takes no video. */
+export const CREATIVE_ASSET_VIDEO_WRONG_TYPE_MESSAGE = 'Only MP4 videos can be uploaded.';
+
+/**
+ * The largest PDF this app uploads as a creative asset, in bytes (30 MiB): campaign-service's own decoded ceiling for any
+ * asset, as for the video. Images keep `CREATIVE_ASSET_MAX_BYTES`. LinkedIn's own 100 MB document limit is above it.
+ */
+export const CREATIVE_ASSET_DOCUMENT_MAX_BYTES = 30 * 1024 * 1024;
+
+/** Shown, and answered by the BFF, when a PDF exceeds `CREATIVE_ASSET_DOCUMENT_MAX_BYTES`. */
+export const CREATIVE_ASSET_DOCUMENT_TOO_LARGE_MESSAGE = 'The PDF is larger than 30 MB. Choose a smaller PDF.';
+
+/** Shown, and answered by the BFF, when a file declared as a PDF is not a complete one. */
+export const CREATIVE_ASSET_DOCUMENT_WRONG_TYPE_MESSAGE = 'Only complete PDF documents can be uploaded.';
+
+/**
+ * Answered by the BFF with its 415 when a PDF is uploaded while LinkedIn document ads are off on this deployment
+ * (`LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_DOCUMENT`), so a sound PDF is not reported as a broken one.
+ */
+export const CREATIVE_ASSET_DOCUMENT_DISABLED_MESSAGE =
+  'PDF uploads are turned off on this deployment because LinkedIn document ads are not enabled. Reload the page, or choose another ad format.';
+
+/**
+ * campaign-service's structural PDF check (`pdfStructurally`, `internal/service/creative_asset_document.go`): the
+ * smallest file worth a look (`minPDFBytes`), and how far from the end the final `%%EOF` may sit (`pdfTrailerWindow`).
+ */
+export const CREATIVE_ASSET_PDF_LIMITS = {
+  minBytes: 64,
+  trailerWindow: 1024,
+} as const;
+
+/**
+ * The smallest video LinkedIn takes as a video ad, in bytes (75 KiB): campaign-service's `linkedin.MinVideoBytes`, which
+ * it checks only at dispatch, after the campaign exists. The Implement tab refuses a smaller one before uploading.
+ */
+export const LINKEDIN_VIDEO_MIN_BYTES = 75 * 1024;
+
+/** Shown when a LinkedIn video is under `LINKEDIN_VIDEO_MIN_BYTES`. */
+export const LINKEDIN_VIDEO_TOO_SMALL_MESSAGE = 'LinkedIn video ads need a video of at least 75 KB. Choose a longer or higher-quality MP4.';
+
+/**
+ * The ftyp major brands campaign-service accepts as MP4 (`mp4MajorBrands`, `internal/service/creative_asset_video.go`).
+ * QuickTime (`qt  `) and the HEIF/AVIF still-image brands also open with ftyp and are refused.
+ */
+export const CREATIVE_ASSET_MP4_MAJOR_BRANDS: readonly string[] = [
+  'isom',
+  'iso2',
+  'iso3',
+  'iso4',
+  'iso5',
+  'iso6',
+  'mp41',
+  'mp42',
+  'avc1',
+  'M4V ',
+  'mmp4',
+  'dash',
+  'MSNV',
+];
+
 /** A library upload's refusal when campaign-service answers 409: the brief's count or byte quota is spent. */
 export const CREATIVE_ASSET_QUOTA_MESSAGE = "This brief's image library is full. Delete an image it no longer needs, then try again.";
 
@@ -4003,6 +4663,19 @@ export const LINKEDIN_IMAGE_MAX_BYTES = 5_000_000;
 export const LINKEDIN_IMAGE_TOO_LARGE_MESSAGE = 'LinkedIn accepts images up to 5 MB. Choose a smaller PNG or JPEG.';
 
 /**
+ * A LinkedIn Text Ad image's limits (#5764 row 19): campaign-service's `MaxTextAdImageBytes` (the decimal reading of
+ * "<= 2MB") and the exact `100 x 100` pixels it requires. campaign-service checks them only while it creates the
+ * campaign, after the campaign group exists, so the Implement tab checks them before uploading.
+ */
+export const LINKEDIN_TEXT_AD_IMAGE_LIMITS = {
+  maxBytes: 2_000_000,
+  side: 100,
+} as const;
+
+/** Shown when a LinkedIn Text Ad image exceeds `LINKEDIN_TEXT_AD_IMAGE_LIMITS.maxBytes`. */
+export const LINKEDIN_TEXT_AD_IMAGE_TOO_LARGE_MESSAGE = 'LinkedIn text ad images can be up to 2 MB. Choose a smaller PNG or JPEG.';
+
+/**
  * The largest image X takes on an authored tweet, in bytes: campaign-service's
  * `twitter.MaxImageBytes` (`5 << 20`, X's simple-upload limit). It refuses a larger stored asset at
  * dispatch, so the Implement tab checks it before uploading rather than storing an image the create
@@ -4081,6 +4754,76 @@ export function sniffCreativeAssetMimeType(bytes: unknown): CreativeAssetMimeTyp
   return null;
 }
 
+/**
+ * Whether `bytes` pass campaign-service's structural PDF check (`pdfStructurally`): at least
+ * `CREATIVE_ASSET_PDF_LIMITS.minBytes`, a `%PDF-` header with a 1.x or 2.x version, and a final `%%EOF` within the last
+ * `CREATIVE_ASSET_PDF_LIMITS.trailerWindow` bytes followed only by CR, LF, space, tab or NUL, so a truncated upload is
+ * refused here rather than by campaign-service's 400. Nothing is rendered: whether LinkedIn can use it is LinkedIn's call.
+ */
+function pdfStructurally(bytes: Uint8Array): boolean {
+  const { minBytes, trailerWindow } = CREATIVE_ASSET_PDF_LIMITS;
+  const ascii = (from: number, to: number) => String.fromCharCode(...bytes.subarray(from, to));
+  if (bytes.length < minBytes || ascii(0, 5) !== '%PDF-') return false;
+  // "%PDF-1.7" or "%PDF-2.0": a major version of 1 or 2, a dot, a digit.
+  if (!/^[12]\.[0-9]$/.test(ascii(5, 8))) return false;
+  // The FINAL marker must end the file. Only the trailer window is read: an earlier marker does not count.
+  const tail = ascii(Math.max(0, bytes.length - trailerWindow), bytes.length);
+  const last = tail.lastIndexOf('%%EOF');
+  return last !== -1 && /^[\r\n \t\0]*$/.test(tail.slice(last + 5));
+}
+
+/**
+ * The upload type the leading bytes actually are, or `null`: an image as `sniffCreativeAssetMimeType` reads it, an MP4,
+ * which opens with an ftyp box whose major brand is one of `CREATIVE_ASSET_MP4_MAJOR_BRANDS`, or a PDF that passes
+ * `pdfStructurally`. Only an MP4's opening box is read; campaign-service walks the whole file and refuses a truncated one
+ * with a readable 400.
+ */
+export function sniffCreativeAssetUploadMimeType(bytes: unknown): CreativeAssetUploadMimeType | null {
+  // Only a real byte buffer is read, as in `sniffCreativeAssetMimeType`: a request body tampered into an array or a
+  // string would otherwise have its `length` and indexes read as bytes.
+  if (Array.isArray(bytes) || !(bytes instanceof Uint8Array)) return null;
+  const image = sniffCreativeAssetMimeType(bytes);
+  if (image !== null) return image;
+  // A PDF (campaign-service#665) opens with `%PDF-`, which no image or MP4 does.
+  if (pdfStructurally(bytes)) return CREATIVE_ASSET_DOCUMENT_MIME_TYPE;
+  if (bytes.length < 12) return null;
+  const ascii = (from: number) => String.fromCharCode(...bytes.subarray(from, from + 4));
+  // A box whose 32-bit size is 1 carries a 64-bit size after its type, which moves the brand to offset 16.
+  const largeSize = bytes[0] === 0 && bytes[1] === 0 && bytes[2] === 0 && bytes[3] === 1;
+  const brandAt = largeSize ? 16 : 8;
+  if (bytes.length < brandAt + 4) return null;
+  return ascii(4) === 'ftyp' && CREATIVE_ASSET_MP4_MAJOR_BRANDS.includes(ascii(brandAt)) ? CREATIVE_ASSET_VIDEO_MIME_TYPE : null;
+}
+
+/** Whether a declared MIME type is one `CREATIVE_ASSET_UPLOAD_MIME_TYPES` admits: an image, the MP4 video or the PDF document. */
+export function isCreativeAssetUploadMimeType(value: unknown): value is CreativeAssetUploadMimeType {
+  return typeof value === 'string' && (CREATIVE_ASSET_UPLOAD_MIME_TYPES as readonly string[]).includes(value);
+}
+
+/**
+ * The largest upload of `type`, in bytes: `CREATIVE_ASSET_VIDEO_MAX_BYTES` for the video, `CREATIVE_ASSET_DOCUMENT_MAX_BYTES`
+ * for the PDF, `CREATIVE_ASSET_MAX_BYTES` otherwise.
+ */
+export function creativeAssetUploadMaxBytes(type: CreativeAssetUploadMimeType): number {
+  if (type === CREATIVE_ASSET_VIDEO_MIME_TYPE) return CREATIVE_ASSET_VIDEO_MAX_BYTES;
+  if (type === CREATIVE_ASSET_DOCUMENT_MIME_TYPE) return CREATIVE_ASSET_DOCUMENT_MAX_BYTES;
+  return CREATIVE_ASSET_MAX_BYTES;
+}
+
+/** The 413 message for an upload of `type`: each kind names its own limit. */
+export function creativeAssetTooLargeMessage(type: unknown): string {
+  if (type === CREATIVE_ASSET_VIDEO_MIME_TYPE) return CREATIVE_ASSET_VIDEO_TOO_LARGE_MESSAGE;
+  if (type === CREATIVE_ASSET_DOCUMENT_MIME_TYPE) return CREATIVE_ASSET_DOCUMENT_TOO_LARGE_MESSAGE;
+  return CREATIVE_ASSET_TOO_LARGE_MESSAGE;
+}
+
+/** The 415 message for an upload declared as `type`: a video or a PDF is named as such, anything else as an image. */
+export function creativeAssetWrongTypeMessage(type: unknown): string {
+  if (type === CREATIVE_ASSET_VIDEO_MIME_TYPE) return CREATIVE_ASSET_VIDEO_WRONG_TYPE_MESSAGE;
+  if (type === CREATIVE_ASSET_DOCUMENT_MIME_TYPE) return CREATIVE_ASSET_DOCUMENT_WRONG_TYPE_MESSAGE;
+  return CREATIVE_ASSET_WRONG_TYPE_MESSAGE;
+}
+
 /** Whether a declared MIME type is one `CREATIVE_ASSET_MIME_TYPES` admits. */
 export function isCreativeAssetMimeType(value: unknown): value is CreativeAssetMimeType {
   return typeof value === 'string' && (CREATIVE_ASSET_MIME_TYPES as readonly string[]).includes(value);
@@ -4104,6 +4847,270 @@ export const REDDIT_VIDEO_GOALS = ['VIDEO_VIEW_6S', 'VIDEO_VIEW_15S'] as const;
 export const REDDIT_VIDEO_GOAL_LABELS: Readonly<Record<RedditVideoGoal, string>> = {
   VIDEO_VIEW_6S: '6-second video views',
   VIDEO_VIEW_15S: '15-second video views',
+} as const;
+
+/**
+ * The pixel events a Reddit `conversions` campaign may optimize toward (#6108 row 2), sent as
+ * `redditConfig.conversionEvent`. Mirrors `conversionEvents` in lfx-v2-campaign-service
+ * `internal/platform/reddit/client.go` (#549), in its order; upstream matches case-insensitively and
+ * refuses anything else.
+ */
+export const REDDIT_CONVERSION_EVENTS = ['PURCHASE', 'SIGN_UP', 'LEAD', 'PAGE_VISIT', 'VIEW_CONTENT', 'ADD_TO_CART', 'ADD_TO_WISHLIST', 'SEARCH'] as const;
+
+/** The event a conversions campaign optimizes toward when none is sent: campaign-service's own, so the picker starts on it and a create leaves it out. */
+export const DEFAULT_REDDIT_CONVERSION_EVENT: RedditConversionEvent = 'PURCHASE';
+
+/** Readable names for `REDDIT_CONVERSION_EVENTS`, for the picker. Total over `RedditConversionEvent`. */
+export const REDDIT_CONVERSION_EVENT_LABELS: Readonly<Record<RedditConversionEvent, string>> = {
+  PURCHASE: 'Purchase',
+  SIGN_UP: 'Sign up',
+  LEAD: 'Lead',
+  PAGE_VISIT: 'Page visit',
+  VIEW_CONTENT: 'View content',
+  ADD_TO_CART: 'Add to cart',
+  ADD_TO_WISHLIST: 'Add to wishlist',
+  SEARCH: 'Search',
+} as const;
+
+/** The create field a Reddit conversion event refusal names. */
+export const REDDIT_CONVERSION_EVENT_FIELD = 'redditConfig.conversionEvent';
+
+/**
+ * The two Reddit targeting exclusion lists a create may carry (#6108 row 3), as campaign-service spells the `redditConfig`
+ * keys (`redditExclusionFields`, lfx-v2-campaign-service `internal/dispatch/reddit_targeting_exclusions.go`, #549).
+ */
+export const REDDIT_TARGETING_EXCLUSION_KEYS = ['excludedSubreddits', 'excludedGeoTargets'] as const;
+
+/**
+ * Reddit targeting exclusion caps (#6108 row 3), campaign-service's `MaxExcludedSubreddits` and `MaxExcludedGeoTargets`
+ * (`internal/platform/reddit/targeting_exclusions.go`), counted on the raw list.
+ */
+export const REDDIT_TARGETING_EXCLUSION_LIMITS = { excludedSubreddits: 100, excludedGeoTargets: 50 } as const;
+
+/** A subreddit name campaign-service accepts (`subredditNameRE`): 2 to 21 ASCII letters, digits or underscores. */
+export const REDDIT_SUBREDDIT_NAME_PATTERN = /^[A-Za-z0-9_]{2,21}$/;
+
+/** The create field a Reddit sub-country location refusal names (#6108 row 7). */
+export const REDDIT_SUBCOUNTRY_GEO_FIELD = 'redditConfig.subCountryGeoTargets';
+
+/**
+ * The most Reddit sub-country locations a create may carry (#6108 row 7), campaign-service's `MaxSubCountryGeoTargets`
+ * (`internal/platform/reddit/subcountry_geo.go`), counted on the raw list.
+ */
+export const REDDIT_MAX_SUBCOUNTRY_GEO_TARGETS = 50;
+
+/**
+ * Reddit sub-country geolocation id shapes campaign-service accepts (`subCountryRegionRE`, `subCountryCityRE`,
+ * `subCountryDMARE`), matched on the trimmed, upper-cased id. A region is a country, a hyphen and an ISO 3166-2
+ * subdivision part (`US-CA`; a longer digit run is a postal code, refused); a city is a country, a colon and a positive
+ * numeric id (`CA:6167865`); a DMA is a three-digit Nielsen market code (`662`), always in the US. The first group is the
+ * country.
+ */
+export const REDDIT_SUBCOUNTRY_REGION_PATTERN = /^([A-Z]{2})-([A-Z0-9]{1,3})$/;
+export const REDDIT_SUBCOUNTRY_CITY_PATTERN = /^([A-Z]{2}):[1-9][0-9]{0,9}$/;
+export const REDDIT_SUBCOUNTRY_DMA_PATTERN = /^[1-9][0-9]{2}$/;
+
+/** The Reddit targeting exclusion lists the Implement tab offers, in order (#6108 row 3). */
+export const REDDIT_TARGETING_EXCLUSION_LISTS: readonly RedditTargetingExclusionListView[] = [
+  { key: 'excludedSubreddits', label: 'Exclude communities', placeholder: 'Enter a subreddit, e.g. r/politics', emptyText: 'Press Enter to add it' },
+  { key: 'excludedGeoTargets', label: 'Exclude countries', placeholder: 'Search countries or enter a country code', emptyText: 'No country matches' },
+];
+/**
+ * Reddit's targeting list caps while campaign-service resolves them (#6108 row 4): `MaxResolvedSubreddits` and
+ * `MaxResolvedInterests` (lfx-v2-campaign-service `internal/platform/reddit/targeting_resolution.go`, #573).
+ */
+export const REDDIT_TARGETING_LIST_LIMITS = { subreddits: 100, interests: 200 } as const;
+
+/** The Reddit targeting lists the Implement tab can edit, in order (#6108 row 4). */
+export const REDDIT_TARGETING_LISTS: readonly RedditTargetingListView[] = [
+  { key: 'subreddits', label: 'Subreddits', placeholder: 'Enter a subreddit, e.g. r/kubernetes' },
+  { key: 'interests', label: 'Interests', placeholder: 'Enter a Reddit interest name or id' },
+];
+/** The Reddit targeting exclusions a fresh form starts from, which sends nothing. */
+export const DEFAULT_REDDIT_TARGETING_EXCLUSIONS: Readonly<RedditTargetingExclusionsDraft> = { excludedSubreddits: [], excludedGeoTargets: [] };
+
+/**
+ * The two Reddit custom audience lists a create may carry (#6108 row 1), as campaign-service spells the
+ * `redditConfig` keys (`redditCustomAudienceFields`, lfx-v2-campaign-service `internal/dispatch/reddit_custom_audiences.go`, #549).
+ */
+export const REDDIT_CUSTOM_AUDIENCE_KEYS = ['customAudienceIds', 'excludedCustomAudienceIds'] as const;
+
+/**
+ * One Reddit custom audience id: 1–64 letters, digits or underscores, compared exactly (never trimmed). Mirrors
+ * `ValidCustomAudienceID` (`maxCustomAudienceIDLen` and `accountIDRe`) in lfx-v2-campaign-service
+ * `internal/platform/reddit/custom_audiences.go` (#549).
+ */
+export const REDDIT_CUSTOM_AUDIENCE_ID_PATTERN = /^[A-Za-z0-9_]{1,64}$/;
+
+/** At most this many ids in EACH list: campaign-service's `MaxCustomAudienceIDs` (#549). */
+export const MAX_REDDIT_CUSTOM_AUDIENCE_IDS = 100;
+
+/** The Reddit custom-audience lists the Implement tab offers, in order (#6108 row 1). */
+export const REDDIT_CUSTOM_AUDIENCE_LISTS: readonly RedditCustomAudienceListView[] = [
+  { key: 'customAudienceIds', label: 'Target custom audiences' },
+  { key: 'excludedCustomAudienceIds', label: 'Exclude custom audiences' },
+];
+/** The Reddit custom audiences a fresh form starts from, which sends nothing. */
+export const DEFAULT_REDDIT_CUSTOM_AUDIENCES: Readonly<RedditCustomAudiencesDraft> = { customAudienceIds: [], excludedCustomAudienceIds: [] };
+/** What the Reddit custom-audience picker says while it loads, finds none, lists only part, or cannot read the account. */
+export const REDDIT_CUSTOM_AUDIENCE_PICKER_LOADING = "Loading the Reddit ad account's custom audiences…";
+export const REDDIT_CUSTOM_AUDIENCE_PICKER_EMPTY = 'The Reddit ad account has no custom audiences to pick from. Enter audience ids instead.';
+export const REDDIT_CUSTOM_AUDIENCE_PICKER_TRUNCATED =
+  "The Reddit ad account has more custom audiences than the picker shows. If one isn't listed, enter its id.";
+export const REDDIT_CUSTOM_AUDIENCE_PICKER_REASONS = {
+  unavailable: "The Reddit ad account's custom audiences can't be listed here. Enter audience ids instead.",
+  failed: "Couldn't load the Reddit ad account's custom audiences. Enter audience ids instead, or reload the page to try again.",
+} as const;
+
+/**
+ * The error `code` (HTTP 403) of a Reddit custom-audience read, or a create naming custom audiences, refused because the
+ * caller does not hold `global_marketing_ops` on the project: the Reddit ad account is shared by every foundation, so
+ * campaign-service answers both on that relation (linuxfoundation/lfx-v2-campaign-service#549).
+ */
+export const REDDIT_CUSTOM_AUDIENCES_RESTRICTED_CODE = 'REDDIT_CUSTOM_AUDIENCES_RESTRICTED';
+export const REDDIT_CUSTOM_AUDIENCES_RESTRICTED_MESSAGE =
+  'Reddit custom audiences can only be used by the LF marketing team, because every foundation shares one Reddit ad account.';
+/** The error `code` (HTTP 503) when that relation could not be checked. Nothing was read or created. */
+export const REDDIT_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE_CODE = 'REDDIT_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE';
+export const REDDIT_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE_MESSAGE = 'Your access to Reddit custom audiences could not be verified. Try again in a few minutes.';
+/** The 403 and 503 a Reddit custom-audience read or create answers, shaped like `LINKEDIN_MARKETING_OPS_ACCESS_ERRORS`. */
+export const REDDIT_CUSTOM_AUDIENCES_ACCESS_ERRORS = {
+  restricted: { code: REDDIT_CUSTOM_AUDIENCES_RESTRICTED_CODE, message: REDDIT_CUSTOM_AUDIENCES_RESTRICTED_MESSAGE },
+  unavailable: { code: REDDIT_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE_CODE, message: REDDIT_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE_MESSAGE },
+} as const;
+
+/**
+ * The Reddit ad placements a create may name in `redditConfig.placements` (#6108 row 5), campaign-service's
+ * `placementValues` (`internal/platform/reddit/placement_targeting.go`, #549), in its order. Omitted or empty is both.
+ */
+export const REDDIT_PLACEMENTS = ['FEED', 'COMMENTS_PAGE'] as const;
+
+/**
+ * The Reddit device platforms a create may name in `redditConfig.platforms` (#6108 row 5), campaign-service's
+ * `platformValues`, in its order. Omitted or empty is every device; `ALL` itself is refused there, so it is not listed.
+ */
+export const REDDIT_DEVICE_PLATFORMS = ['DESKTOP', 'MOBILE_NATIVE', 'MOBILE_WEB'] as const;
+
+/** The `redditConfig.budgetType` values campaign-service accepts (#6108 row 5, `ResolveBudgetGoalType`). Omitted is `lifetime`. */
+export const REDDIT_BUDGET_TYPES = ['lifetime', 'daily'] as const;
+
+/** The three `redditConfig` keys of the Reddit placement choices (#6108 row 5), as campaign-service spells them. */
+export const REDDIT_PLACEMENT_KEYS = ['placements', 'platforms', 'expandTargeting'] as const;
+
+/**
+ * The most variants a Reddit create that authors its post may carry while one ad per variant is on (#6108 row 6):
+ * campaign-service's `MaxAdVariants` (`internal/platform/reddit/ad_variants.go`, #549). Each headline is held to
+ * `MAX_REDDIT_HEADLINE_LENGTH`.
+ */
+export const MAX_REDDIT_AD_VARIANTS = 5;
+
+/**
+ * The `redditConfig.gender` values campaign-service accepts (#6108 row 9), its `genderValues`
+ * (`internal/platform/reddit/demographic_targeting.go`, #549). Read trimmed and upper-cased; omitted is every gender.
+ */
+export const REDDIT_GENDERS = ['FEMALE', 'MALE'] as const;
+
+/**
+ * The `redditConfig.languages` codes campaign-service accepts (#6108 row 9), its `languageValues`: Reddit's
+ * `components_enum_targeting_language_codes` (ISO 639-1, upper-case), in that order. Omitted or empty is every language.
+ */
+export const REDDIT_LANGUAGES = [
+  'AR',
+  'CS',
+  'DA',
+  'DE',
+  'EL',
+  'EN',
+  'ES',
+  'FI',
+  'FR',
+  'HU',
+  'IT',
+  'JA',
+  'KO',
+  'NL',
+  'NO',
+  'PL',
+  'PT',
+  'RO',
+  'SV',
+  'VI',
+  'ZH',
+] as const;
+
+/** The most `redditConfig.schedule` windows one create may carry (#6108 row 9): campaign-service's `MaxScheduleWindows`. */
+export const REDDIT_MAX_SCHEDULE_WINDOWS = 50;
+
+/** The three `redditConfig` keys of the Reddit gender, language and dayparting choices (#6108 row 9), as campaign-service spells them. */
+export const REDDIT_DEMOGRAPHIC_KEYS = ['gender', 'languages', 'schedule'] as const;
+
+/** The four fields of one `redditConfig.schedule` window (#6108 row 9), as campaign-service's `ScheduleWindow` spells them. */
+export const REDDIT_SCHEDULE_WINDOW_KEYS = ['startDay', 'startHour', 'endDay', 'endHour'] as const;
+
+/**
+ * The two `redditConfig` keys of a Reddit video post (#6108 row 8), as campaign-service spells them: the stored MP4 and
+ * its stored PNG or JPEG thumbnail (`internal/dispatch/reddit_video.go`, #549).
+ */
+export const REDDIT_VIDEO_KEYS = ['videoAssetId', 'thumbnailAssetId'] as const;
+
+/** A Reddit pixel id campaign-service offers (`ValidPixelID`): 1 to 64 letters, digits or underscores. */
+export const REDDIT_PIXEL_ID_PATTERN = /^[A-Za-z0-9_]{1,64}$/;
+
+/**
+ * The error `code` (HTTP 403) of a Reddit pixel read refused because the caller does not hold `global_marketing_ops` on
+ * the project: the Reddit ad account is shared by every foundation, so campaign-service answers the read on that relation
+ * (linuxfoundation/lfx-v2-campaign-service#549).
+ */
+export const REDDIT_PIXELS_RESTRICTED_CODE = 'REDDIT_PIXELS_RESTRICTED';
+export const REDDIT_PIXELS_RESTRICTED_MESSAGE =
+  'Reddit pixels can only be listed by the LF marketing team, because every foundation shares one Reddit ad account.';
+/** The error `code` (HTTP 503) when that relation could not be checked. Nothing was read. */
+export const REDDIT_PIXELS_ACCESS_UNAVAILABLE_CODE = 'REDDIT_PIXELS_ACCESS_UNAVAILABLE';
+export const REDDIT_PIXELS_ACCESS_UNAVAILABLE_MESSAGE = 'Your access to Reddit pixels could not be verified. Try again in a few minutes.';
+/** The 403 and 503 a Reddit pixel read answers, shaped like `REDDIT_CUSTOM_AUDIENCES_ACCESS_ERRORS`. */
+export const REDDIT_PIXELS_ACCESS_ERRORS = {
+  restricted: { code: REDDIT_PIXELS_RESTRICTED_CODE, message: REDDIT_PIXELS_RESTRICTED_MESSAGE },
+  unavailable: { code: REDDIT_PIXELS_ACCESS_UNAVAILABLE_CODE, message: REDDIT_PIXELS_ACCESS_UNAVAILABLE_MESSAGE },
+} as const;
+
+/** What the Implement tab calls each Reddit placement (#6108 row 5). */
+export const REDDIT_PLACEMENT_LABELS: Readonly<Record<RedditPlacement, string>> = { FEED: 'Feed', COMMENTS_PAGE: 'Conversation pages' };
+/** What the Implement tab calls each Reddit device platform (#6108 row 5). */
+export const REDDIT_DEVICE_PLATFORM_LABELS: Readonly<Record<RedditDevicePlatform, string>> = {
+  DESKTOP: 'Desktop',
+  MOBILE_NATIVE: 'Mobile app',
+  MOBILE_WEB: 'Mobile web',
+};
+/** What the Implement tab calls each Reddit budget type (#6108 row 5). */
+export const REDDIT_BUDGET_TYPE_LABELS: Readonly<Record<RedditBudgetType, string>> = { lifetime: 'Lifetime (whole flight)', daily: 'Daily' };
+/**
+ * The Reddit delivery choices a fresh form starts from (#6108 row 5): every placement, every device, expansion on and a
+ * lifetime budget, campaign-service's defaults, so a create that sends none of them builds the same campaign.
+ */
+export const DEFAULT_REDDIT_DELIVERY: Readonly<RedditDeliveryDraft> = {
+  budgetType: 'lifetime',
+  placements: [...REDDIT_PLACEMENTS],
+  platforms: [...REDDIT_DEVICE_PLATFORMS],
+  expandTargeting: true,
+};
+/** The Reddit budget box's label and hint for each budget type (#6108 row 5); `lifetime` is what the box always said. */
+export const REDDIT_BUDGET_COPY: Readonly<Record<RedditBudgetType, RedditBudgetCopy>> = {
+  lifetime: {
+    label: 'Reddit Budget (USD, lifetime)',
+    hint: 'A lifetime cap for the whole flight, not a daily spend — unlike the Meta and LinkedIn budgets above, which default to daily. Reddit campaigns are created paused.',
+  },
+  daily: {
+    label: 'Reddit Budget (USD, daily)',
+    hint: 'Spent each day of the flight, like the Meta and LinkedIn daily budgets above. Reddit campaigns are created paused.',
+  },
+};
+/** What the Reddit pixel picker says while it loads, lists only part, or falls back to a typed pixel id (#6108 row 5). */
+export const REDDIT_PIXEL_PICKER_LOADING = "Loading the Reddit ad account's pixels…";
+export const REDDIT_PIXEL_PICKER_TRUNCATED = 'The Reddit ad account has more pixels than this list shows.';
+export const REDDIT_PIXEL_PICKER_REASONS = {
+  restricted: "Only the LF marketing team can list the Reddit ad account's pixels. Enter a pixel id instead, or leave it blank.",
+  failed: "Couldn't load the Reddit ad account's pixels. Enter a pixel id instead, or leave it blank.",
+  empty: 'The Reddit ad account has no pixels to pick from. Enter a pixel id instead, or leave it blank.',
 } as const;
 
 /**
@@ -4477,6 +5484,72 @@ export const CAMPAIGN_SURVEY_TYPES: readonly CampaignSurveyTypeOption[] = [
   },
 ] as const;
 
+/**
+ * Every stage a NEWSLETTER campaign can occupy: one. A newsletter brief is ONE ISSUE of a brand's
+ * recurring newsletter, and issues are told apart by their slug (brand + issue), not by stage.
+ * Upstream keeps it as its own vocabulary, so `(newsletter, 'Final Countdown')` is refused.
+ */
+export const CAMPAIGN_NEWSLETTER_STAGES = ['Newsletter'] as const;
+
+/** The newsletter surface's type picker: a single entry, so the picker reads the same on every surface. */
+export const CAMPAIGN_NEWSLETTER_TYPES: readonly CampaignNewsletterTypeOption[] = [
+  { id: 'newsletter-issue', label: 'Newsletter Issue', stage: 'Newsletter', keywords: ['newsletter'] },
+] as const;
+
+/** The newsletter type a fresh selection starts on. */
+export const DEFAULT_CAMPAIGN_NEWSLETTER_TYPE_ID = 'newsletter-issue';
+
+/**
+ * The Newsletter entry of the campaigns page's first selector. Offered only while
+ * CAMPAIGNS_NEWSLETTER_ENABLED_FLAG is on; choosing it switches the send surface to newsletter.
+ */
+export const CAMPAIGN_NEWSLETTER_PROGRAM_OPTION: CampaignProgramPickerOption = { id: 'newsletter', label: 'Newsletter Campaigns' };
+
+/** How many pages of the brand's site one suggestions request may read. */
+export const CAMPAIGN_NEWSLETTER_SUGGESTION_MAX_URLS = 3;
+
+/** Longest newsletter brand name the BFF accepts; campaign-service's `MaxLength(120)` on `brand`. */
+export const CAMPAIGN_NEWSLETTER_BRAND_MAX_LENGTH = 120;
+
+/** Longest brand name a suggestions request may carry; the same bound the brand-newsletter listing uses. */
+export const CAMPAIGN_NEWSLETTER_SUGGESTION_BRAND_MAX_LENGTH = CAMPAIGN_NEWSLETTER_BRAND_MAX_LENGTH;
+
+/** Response types a suggestions page may answer with. Anything else is not a web page to read. */
+export const CAMPAIGN_NEWSLETTER_SUGGESTION_CONTENT_TYPES = ['text/html', 'application/xhtml+xml'] as const;
+
+/** How many suggestions are returned at most, newest deadline-bound offers first. */
+export const CAMPAIGN_NEWSLETTER_SUGGESTION_LIMIT = 12;
+
+/** Operator-facing label per suggestion kind. */
+export const CAMPAIGN_NEWSLETTER_SUGGESTION_KIND_LABELS: Readonly<Record<CampaignNewsletterSuggestionKind, string>> = {
+  offer: 'Offer',
+  cfp: 'Call for papers',
+  event: 'Event',
+  report: 'Free report',
+  post: 'Post',
+};
+
+/**
+ * How long the campaigns page reuses a brand's previous-issue read and the newsletter-brand list.
+ * Long enough to cover the planner and Implement asking for the same brand in one sitting, short
+ * enough that an issue sent in HubSpot meanwhile appears without a browser reload.
+ */
+export const CAMPAIGN_NEWSLETTER_CACHE_TTL_MS = 5 * 60 * 1000;
+
+/** The suggestion kinds a newsletter suggestion may carry, derived from the labels so the two cannot drift; anything else is dropped. */
+export const CAMPAIGN_NEWSLETTER_SUGGESTION_KINDS: ReadonlySet<CampaignNewsletterSuggestionKind> = new Set(
+  Object.keys(CAMPAIGN_NEWSLETTER_SUGGESTION_KIND_LABELS) as CampaignNewsletterSuggestionKind[]
+);
+
+/** localStorage key prefix for the pages last checked for a brand's suggestions (per viewer, per brand). */
+export const CAMPAIGN_NEWSLETTER_SOURCE_STORAGE_PREFIX = 'lfx-campaign-newsletter-sources:';
+
+/** How many previous issues the newsletter planner offers as references (upstream reads at most three). */
+export const CAMPAIGN_NEWSLETTER_REFERENCE_LIMIT = 3;
+
+/** A HubSpot marketing-email id: digits only. Anything else cannot name an email upstream reads. */
+export const CAMPAIGN_HUBSPOT_EMAIL_ID_PATTERN = /^\d{1,20}$/;
+
 /** The survey type a fresh selection starts on. */
 export const DEFAULT_CAMPAIGN_SURVEY_TYPE_ID = 'survey-promo';
 
@@ -4484,7 +5557,7 @@ export const DEFAULT_CAMPAIGN_SURVEY_TYPE_ID = 'survey-promo';
  * Every stage a SEND surface can carry, email and survey together. For the places that only
  * CARRY a stage (restoring a stored brief); a picker offers its own surface's list instead.
  */
-export const CAMPAIGN_SEND_STAGES = [...CAMPAIGN_EMAIL_STAGES, ...CAMPAIGN_SURVEY_STAGES] as const;
+export const CAMPAIGN_SEND_STAGES = [...CAMPAIGN_EMAIL_STAGES, ...CAMPAIGN_SURVEY_STAGES, ...CAMPAIGN_NEWSLETTER_STAGES] as const;
 
 /**
  * Last URL path segments that name a survey tool's PAGE rather than the survey (Google Forms ends
@@ -4771,6 +5844,12 @@ export const AUDIENCE_CUSTOM_REUSE_RECOMMENDATIONS: Readonly<Record<AudienceCust
   unrelated: 'Probably a different audience',
 };
 
+/**
+ * Every outcome a list description can report, as a runtime list, so the BFF can refuse a status a
+ * newer campaign-service adds before the UI has copy for it.
+ */
+export const AUDIENCE_LIST_DESCRIPTION_STATUSES: readonly AudienceListDescriptionStatus[] = ['described', 'static', 'not_found', 'unreadable'];
+
 /** Why a prior send is listed, with its label; brand-only and related-word rows are weaker precedent. */
 export const AUDIENCE_LAST_SENT_MATCH_REASONS: Readonly<Record<AudienceLastSentMatchReason, string>> = {
   event_name: 'Matched on the event name',
@@ -4872,6 +5951,14 @@ export const LF_OWNED_EMAIL_LINK_DOMAINS: readonly string[] = ['linuxfoundation.
 export const EMAIL_SECONDARY_LINK_LIMIT = 4;
 
 /**
+ * At most this many addresses are read from a newsletter issue's notes as the links its body may
+ * keep (`extractHttpLinks`). Far above any real issue: the notes are held to
+ * `CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS` characters, and an address with its item's words takes
+ * well over thirty of them.
+ */
+export const EMAIL_NOTE_LINK_LIMIT = 100;
+
+/**
  * The inline-style properties a generated email body may keep (#3306). campaign-service styles every
  * generated section inline (`internal/service/email_body_style.go`), because mail clients drop most
  * other CSS, so stripping `style` previewed and staged the email unstyled. Only typography, colour,
@@ -4956,6 +6043,28 @@ export const AUDIENCE_ATTACH_MAX_LIST_IDS = 50;
 
 /** The most list ids campaign-service's preview-count unions in one request (a 400 past it). */
 export const AUDIENCE_PREVIEW_MAX_LIST_IDS = 50;
+
+/**
+ * How many lists one describe request may carry: campaign-service's `list_ids` MaxLength. Each id
+ * is a HubSpot read plus the lookups its rules need, so the bound is a fan-out budget.
+ */
+export const AUDIENCE_DESCRIBE_MAX_LIST_IDS = 25;
+
+/**
+ * How long the Audience tab waits after the selection last changed before asking what the newly
+ * selected lists mean. Ticking several lists in a row is one request, not one per tick.
+ */
+export const AUDIENCE_DESCRIBE_DEBOUNCE_MS = 400;
+
+/**
+ * HubSpot's processingType in the words HubSpot's own UI uses: a DYNAMIC list is an "active" list
+ * whose members change as contacts start or stop matching its rules.
+ */
+export const AUDIENCE_LIST_PROCESSING_TYPE_LABELS: Readonly<Record<string, string>> = {
+  DYNAMIC: 'Active list',
+  MANUAL: 'Static list',
+  SNAPSHOT: 'Snapshot list',
+};
 
 /** The longest `inclusionSummary` the BFF accepts on an attach; it is stored on the audience row. */
 export const AUDIENCE_INCLUSION_SUMMARY_MAX_LENGTH = 2_000;

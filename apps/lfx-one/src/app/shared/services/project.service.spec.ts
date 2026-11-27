@@ -357,3 +357,53 @@ describe('ProjectService.getProjectStrict', () => {
     expect((httpGet.mock.calls[1][1].params as HttpParams).get('strict_writer')).toBe('true');
   });
 });
+
+describe('ProjectService.updateProjectDocument', () => {
+  let service: ProjectService;
+  let patch: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    patch = vi.fn().mockReturnValue(of({ uid: 'doc-1', type: 'file', name: 'Renamed' }));
+    TestBed.configureTestingModule({ providers: [{ provide: HttpClient, useValue: { get: vi.fn(), post: vi.fn(), put: vi.fn(), patch, delete: vi.fn() } }] });
+    service = TestBed.inject(ProjectService);
+  });
+
+  afterEach(() => {
+    TestBed.resetTestingModule();
+  });
+
+  it('patches the document with the changes, naming its type in the query', () => {
+    let result: unknown = null;
+    service.updateProjectDocument('project-1', 'doc-1', 'file', { name: 'Renamed' }).subscribe((doc) => (result = doc));
+
+    expect(patch).toHaveBeenCalledTimes(1);
+    const [url, body, options] = patch.mock.calls[0];
+    expect(url).toBe('/api/projects/project-1/documents/doc-1');
+    expect(body).toEqual({ name: 'Renamed' });
+    expect((options.params as HttpParams).get('type')).toBe('file');
+    expect(result).toEqual({ uid: 'doc-1', type: 'file', name: 'Renamed' });
+  });
+
+  it('encodes the ids it puts in the path', () => {
+    service.updateProjectDocument('a/b', 'c d?e', 'file', { name: 'Renamed' }).subscribe();
+
+    expect(patch.mock.calls[0][0]).toBe('/api/projects/a%2Fb/documents/c%20d%3Fe');
+  });
+
+  it('sends a move into a folder and a move to the root as given', () => {
+    service.updateProjectDocument('project-1', 'doc-1', 'link', { parent_uid: '3f2a8c1e-5b7d-4e69-9a0f-1c2d3e4f5a6b' }).subscribe();
+    service.updateProjectDocument('project-1', 'doc-1', 'link', { parent_uid: null }).subscribe();
+
+    expect(patch.mock.calls[0][1]).toEqual({ parent_uid: '3f2a8c1e-5b7d-4e69-9a0f-1c2d3e4f5a6b' });
+    expect(patch.mock.calls[1][1]).toEqual({ parent_uid: null });
+  });
+
+  it('passes a conflict from the BFF on to the caller', () => {
+    patch.mockReturnValue(throwError(() => ({ status: 409 })));
+    let error: unknown = null;
+
+    service.updateProjectDocument('project-1', 'doc-1', 'folder', { name: 'Taken' }).subscribe({ error: (err) => (error = err) });
+
+    expect(error).toEqual({ status: 409 });
+  });
+});

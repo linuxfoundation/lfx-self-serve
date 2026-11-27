@@ -7,6 +7,10 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import {
   CAMPAIGN_JOB_POLL_INTERVAL_MS,
   CREATIVE_ASSET_CANCELLED_UPLOADING_MESSAGE,
+  CREATIVE_ASSET_DOCUMENT_MAX_BYTES,
+  CREATIVE_ASSET_DOCUMENT_MIME_TYPE,
+  CREATIVE_ASSET_DOCUMENT_TOO_LARGE_MESSAGE,
+  CREATIVE_ASSET_DOCUMENT_WRONG_TYPE_MESSAGE,
   CREATIVE_ASSET_CANCELLED_WAITING_MESSAGE,
   CREATIVE_ASSET_EMPTY_MESSAGE,
   CREATIVE_ASSET_FAILED_FALLBACK_MESSAGE,
@@ -21,11 +25,15 @@ import {
   CREATIVE_ASSET_TOO_LARGE_MESSAGE,
   CREATIVE_ASSET_UPLOADED_MESSAGE,
   CREATIVE_ASSET_WRONG_TYPE_MESSAGE,
+  creativeAssetTooLargeMessage,
+  creativeAssetWrongTypeMessage,
   isCreativeAssetMimeType,
   JOB_LOST_MESSAGE,
   MONITOR_ACCOUNT_SOURCE_CONNECTION,
   MONITOR_ACCOUNT_SOURCE_LEGACY,
   MONITOR_ACCOUNT_SOURCE_PARAM,
+  MONITOR_ACCOUNT_WIDE_PARAM,
+  CAMPAIGN_NEWSLETTER_CACHE_TTL_MS,
 } from '@lfx-one/shared/constants';
 import {
   AudienceAttachExistingRequest,
@@ -37,8 +45,13 @@ import {
   AudienceDiscoverRequest,
   AudienceDiscoverySSEEventType,
   AudienceLastSentEmail,
+  AudienceNewsletterBrand,
+  CampaignNewsletterSuggestionsRequest,
+  CampaignNewsletterSuggestionsResult,
   AudienceListSearchResult,
   AudienceMasterListBrief,
+  AudienceDescribeListsRequest,
+  AudienceListDescription,
   AudiencePreviewCount,
   AudiencePreviewCountRequest,
   AudienceQaResult,
@@ -90,6 +103,12 @@ import {
   GoogleAdsConversionActionsResult,
   GoogleAdsGeoTargetSearchOptions,
   GoogleAdsGeoTargetSearchResult,
+  LinkedInGeoSearchResult,
+  LinkedInAudiencesResult,
+  LinkedInConversionsResult,
+  LinkedInLeadFormsResult,
+  LinkedInTargetingSearchFacet,
+  LinkedInTargetingSearchResult,
   GoogleAdsAudienceReadType,
   GoogleAdsAudiencesResult,
   GoogleAdsUserListsResult,
@@ -99,6 +118,8 @@ import {
   HubSpotUtmLookupResult,
   KeywordMetricsResponse,
   MetaCustomAudiencesResult,
+  RedditCustomAudiencesResult,
+  RedditPixelsResult,
   MetaLeadFormsResult,
   MetaTargetingSearchResult,
   MetaTargetingSearchType,
@@ -141,7 +162,8 @@ import type {
   RedditKeywordMetricsResponse,
   RedditKeywordsWindow,
 } from '@lfx-one/shared/interfaces';
-import { extractErrorMessage, isTransientHttpError, retryTransientHttpError } from '@shared/utils/http-error.utils';
+import { redditPixelsQueryParams } from '@lfx-one/shared/utils';
+import { extractErrorMessage, isTransientHttpError, retryTransientHttpError, serverAuthoredMessage } from '@shared/utils/http-error.utils';
 import { strictHttpParams } from '@shared/utils/http-params.utils';
 import {
   catchError,
@@ -158,6 +180,7 @@ import {
   ReplaySubject,
   retry,
   share,
+  shareReplay,
   Subject,
   take,
   takeUntil,
@@ -171,6 +194,10 @@ import { SseService } from './sse.service';
 @Injectable({ providedIn: 'root' })
 export class CampaignService {
   private readonly http = inject(HttpClient);
+  /** Brand-newsletter reads, keyed project|brand|limit. See getAudienceBrandNewsletters. */
+  private readonly brandNewsletterCache = new Map<string, { read: Observable<AudienceLastSentEmail[]>; at: number }>();
+  /** Newsletter-brand listings, keyed by project. See getAudienceNewsletterBrands. */
+  private readonly newsletterBrandsCache = new Map<string, { read: Observable<AudienceNewsletterBrand[]>; at: number }>();
   /** Each owner's latest creative-asset upload, kept until its answer is taken up or it is cancelled: see `uploadCreativeAsset`. */
   private readonly creativeAssetUploads = new Map<
     CreativeAssetUploadOwner,
@@ -196,9 +223,13 @@ export class CampaignService {
    * cancelled by the caller.
    */
   private readonly creativeAssetQueueAbort = new Subject<void>();
+  /** The stored creative asset being deleted and its brief (#5764 row 18), or `null`: see `deleteCreativeAsset`. */
+  private readonly creativeVideoDelete = signal<{ briefId: string; id: string } | null>(null);
 
   /** Every library upload item, in pick order. Each carries its brief; a reader shows only its own brief's. */
   public readonly creativeAssetUploadQueue = this.creativeAssetQueue.asReadonly();
+  /** The stored video being deleted and its brief (#5764 row 18), `null` when none is. */
+  public readonly creativeVideoDeleting = this.creativeVideoDelete.asReadonly();
 
   public constructor() {
     this.creativeAssetQueueWork
@@ -488,10 +519,15 @@ export class CampaignService {
    * Each item carries its brief, so files picked for another brief wait their turn in the same
    * serial lane and the first brief's outcomes stay listed for when the operator returns to it.
    */
-  public enqueueCreativeAssetUploads(files: readonly File[], projectSlug: string, briefId: string, options: { folder?: boolean } = {}): void {
+  public enqueueCreativeAssetUploads(
+    files: readonly File[],
+    projectSlug: string,
+    briefId: string,
+    options: { folder?: boolean; documents?: boolean } = {}
+  ): void {
     const added = files.map((file): CreativeAssetQueueItem => {
       const id = `asset-${++this.creativeAssetQueueSequence}`;
-      const refused = this.refuseQueuedCreativeAsset(file, options.folder === true);
+      const refused = this.refuseQueuedCreativeAsset(file, options.folder === true, options.documents === true);
       if (!refused) {
         this.creativeAssetQueueFiles.set(id, file);
       }
@@ -546,6 +582,27 @@ export class CampaignService {
       this.creativeAssetQueueAttempts.delete(item.id);
     });
     this.creativeAssetQueue.set(kept);
+  }
+
+  /**
+   * Permanently delete one stored creative asset of the brief: a video (#5764 row 18) or a PDF (campaign-service#665) the
+   * library lists. campaign-service answers 409 `creative_asset_in_use` while a live campaign could still need it, with its
+   * own remedy text.
+   *
+   * While the request runs, `creativeVideoDeleting` names it, and it is cleared however the request ends, including a
+   * caller that unsubscribes because it was destroyed. The Implement tab holds its video pickers on it, since an upload
+   * of identical bytes would answer with the asset being deleted.
+   */
+  public deleteCreativeAsset(projectSlug: string, briefId: string, assetId: string): Observable<void> {
+    return defer(() => {
+      const mine = { briefId, id: assetId };
+      this.creativeVideoDelete.set(mine);
+      return this.http
+        .delete<void>(`/api/campaigns/brief/creative-assets/${encodeURIComponent(assetId)}`, {
+          params: new HttpParams().set('project', projectSlug).set('brief_id', briefId),
+        })
+        .pipe(finalize(() => this.creativeVideoDelete.update((current) => (current === mine ? null : current))));
+    });
   }
 
   /**
@@ -645,8 +702,13 @@ export class CampaignService {
     );
   }
 
-  public getMonitorData(projectSlug: string, days: number = 30): Observable<CampaignMonitorResponse> {
-    return this.http.get<CampaignMonitorResponse>('/api/campaigns/monitor', { params: { project: projectSlug, days } });
+  /**
+   * `accountWide` asks for every campaign on the account (#6209). Only the Monitor tab sends it; the server honours it
+   * only behind its flag and for a caller holding `global_marketing_ops` on the project, and the Optimize tab, whose
+   * levers act on the project's own campaigns, never does. The same holds for the LinkedIn, Reddit, Meta and X reads.
+   */
+  public getMonitorData(projectSlug: string, days: number = 30, accountWide = false): Observable<CampaignMonitorResponse> {
+    return this.http.get<CampaignMonitorResponse>('/api/campaigns/monitor', { params: { project: projectSlug, days, ...this.accountWideParam(accountWide) } });
   }
 
   public getLinkedInAccounts(projectSlug: string): Observable<LinkedInAccount[]> {
@@ -685,10 +747,17 @@ export class CampaignService {
     projectSlug: string,
     accountKey: string | null,
     days: number = 30,
-    accountSource: MonitorAccountSource | null = null
+    accountSource: MonitorAccountSource | null = null,
+    accountWide = false
   ): Observable<LinkedInMonitorResponse> {
     return this.http.get<LinkedInMonitorResponse>('/api/campaigns/linkedin/monitor', {
-      params: { project: projectSlug, days, ...(accountKey ? { accountKey } : {}), ...this.monitorAccountSource(accountSource) },
+      params: {
+        project: projectSlug,
+        days,
+        ...(accountKey ? { accountKey } : {}),
+        ...this.monitorAccountSource(accountSource),
+        ...this.accountWideParam(accountWide),
+      },
     });
   }
 
@@ -700,10 +769,17 @@ export class CampaignService {
     projectSlug: string,
     accountKey: string | null,
     days: number = 30,
-    accountSource: MonitorAccountSource | null = null
+    accountSource: MonitorAccountSource | null = null,
+    accountWide = false
   ): Observable<RedditMonitorResponse> {
     return this.http.get<RedditMonitorResponse>('/api/campaigns/reddit/monitor', {
-      params: { project: projectSlug, days, ...(accountKey ? { accountKey } : {}), ...this.monitorAccountSource(accountSource) },
+      params: {
+        project: projectSlug,
+        days,
+        ...(accountKey ? { accountKey } : {}),
+        ...this.monitorAccountSource(accountSource),
+        ...this.accountWideParam(accountWide),
+      },
     });
   }
 
@@ -767,6 +843,24 @@ export class CampaignService {
   }
 
   /**
+   * The custom audiences on the Reddit ad account a create for this project uses, for the Implement tab's picker
+   * (#6108 row 1). A coded 403 without `global_marketing_ops` on the project, a coded 503 when that check cannot be made,
+   * and a 404 while Reddit custom audiences are off.
+   */
+  public getRedditCustomAudiences(projectSlug: string): Observable<RedditCustomAudiencesResult> {
+    return this.http.get<RedditCustomAudiencesResult>('/api/campaigns/reddit/custom-audiences', { params: { project: projectSlug } });
+  }
+
+  /**
+   * The conversion pixels on the Reddit ad account a create for this project uses, for the `conversionPixelId` picker
+   * (#6108 row 5). A coded 403 without `global_marketing_ops` on the project, a coded 503 when that check cannot be made,
+   * and a 404 while the pixel list is off.
+   */
+  public getRedditPixels(projectSlug: string): Observable<RedditPixelsResult> {
+    return this.http.get<RedditPixelsResult>('/api/campaigns/reddit/pixels', { params: redditPixelsQueryParams(projectSlug) });
+  }
+
+  /**
    * The Instant Forms on the Facebook Page a Meta create for this project uses, for the Implement tab's lead form
    * picker (#5940). A coded 403 without `global_marketing_ops` on the project, a 404 while Meta lead forms are off,
    * and a 503 when Meta refuses the read or the Page holds more forms than campaign-service lists.
@@ -804,6 +898,61 @@ export class CampaignService {
   }
 
   /**
+   * Search LinkedIn locations for the Implement tab's location picker (#5545): campaign-service's targeting typeahead,
+   * `facet=locations`, answered as geo targets ready to add. Unflagged.
+   */
+  public searchLinkedInGeoTargets(projectSlug: string, query: string): Observable<LinkedInGeoSearchResult> {
+    // `strictHttpParams`, because the query is user-typed text (see `searchGoogleAdsGeoTargets`).
+    const params = strictHttpParams().set('project', projectSlug).set('q', query);
+    return this.http.get<LinkedInGeoSearchResult>('/api/campaigns/linkedin/geo-targets', { params });
+  }
+
+  /**
+   * Search one LinkedIn targeting facet for the Implement tab's custom targeting editor (#5764 rows 8–11): campaign-service's
+   * targeting typeahead. 404 while custom targeting is off on the server.
+   */
+  public searchLinkedInTargeting(projectSlug: string, facet: LinkedInTargetingSearchFacet, query: string): Observable<LinkedInTargetingSearchResult> {
+    // `strictHttpParams`, because the query is user-typed text (see `searchGoogleAdsGeoTargets`).
+    const params = strictHttpParams().set('project', projectSlug).set('facet', facet).set('q', query);
+    return this.http.get<LinkedInTargetingSearchResult>('/api/campaigns/linkedin/targeting-entities', { params });
+  }
+
+  /**
+   * The ad segments (matched and retargeting audiences) on the LinkedIn ad account a create uses, for the custom
+   * targeting editor (#5764 rows 8–11). `accountId` names a non-default account the caller chose; without it the
+   * default is read. A coded 403 for a caller without `global_marketing_ops` on the project, a coded 503 when that
+   * check cannot be made, and a 404 while custom targeting is off on the server.
+   */
+  public getLinkedInAudiences(projectSlug: string, accountId?: string): Observable<LinkedInAudiencesResult> {
+    // `strictHttpParams`, as the targeting search beside it, so every param is encoded the same way.
+    let params = strictHttpParams().set('project', projectSlug);
+    if (accountId) params = params.set('accountId', accountId);
+    return this.http.get<LinkedInAudiencesResult>('/api/campaigns/linkedin/audiences', { params });
+  }
+
+  /**
+   * The enabled conversion rules on the LinkedIn ad account a create uses, for the objective picker (#5764 row 4), with
+   * `accountId` as for `getLinkedInAudiences`. A coded 403 for a caller without `global_marketing_ops` on the project, a
+   * coded 503 when that check cannot be made, and a 404 while conversions are off on the server.
+   */
+  public getLinkedInConversions(projectSlug: string, accountId?: string): Observable<LinkedInConversionsResult> {
+    let params = strictHttpParams().set('project', projectSlug);
+    if (accountId) params = params.set('accountId', accountId);
+    return this.http.get<LinkedInConversionsResult>('/api/campaigns/linkedin/conversions', { params });
+  }
+
+  /**
+   * The Lead Gen Forms on the LinkedIn ad account a create uses, for the lead form picker (campaign-service#664), with
+   * `accountId` as for `getLinkedInConversions`. A coded 403 for a caller without `global_marketing_ops` on the project, a
+   * coded 503 when that check cannot be made, and a 404 while lead gen is off on the server.
+   */
+  public getLinkedInLeadForms(projectSlug: string, accountId?: string): Observable<LinkedInLeadFormsResult> {
+    let params = strictHttpParams().set('project', projectSlug);
+    if (accountId) params = params.set('accountId', accountId);
+    return this.http.get<LinkedInLeadFormsResult>('/api/campaigns/linkedin/lead-forms', { params });
+  }
+
+  /**
    * Search Google's geo target table for the Implement tab's location picker (campaign-service #411).
    * 404 while the server's geo-search flag is off. `targetTypes` repeats on the query string; an
    * omitted option is left off rather than sent empty, so upstream's own default applies.
@@ -827,10 +976,17 @@ export class CampaignService {
     projectSlug: string,
     accountKey: string | null,
     days: number = 30,
-    accountSource: MonitorAccountSource | null = null
+    accountSource: MonitorAccountSource | null = null,
+    accountWide = false
   ): Observable<MetaMonitorResponse> {
     return this.http.get<MetaMonitorResponse>('/api/campaigns/meta/monitor', {
-      params: { project: projectSlug, days, ...(accountKey ? { accountKey } : {}), ...this.monitorAccountSource(accountSource) },
+      params: {
+        project: projectSlug,
+        days,
+        ...(accountKey ? { accountKey } : {}),
+        ...this.monitorAccountSource(accountSource),
+        ...this.accountWideParam(accountWide),
+      },
     });
   }
 
@@ -856,9 +1012,9 @@ export class CampaignService {
   }
 
   /** X (Twitter) Ads account monitor — the Microsoft one's sibling, plus a 409 for an account it cannot monitor. */
-  public getTwitterMonitorData(projectSlug: string, accountId: string, days: number = 30): Observable<ReportBackedMonitorResponse> {
+  public getTwitterMonitorData(projectSlug: string, accountId: string, days: number = 30, accountWide = false): Observable<ReportBackedMonitorResponse> {
     return this.http.get<ReportBackedMonitorResponse>('/api/campaigns/twitter/monitor', {
-      params: { project: projectSlug, days, accountKey: accountId, ...this.monitorAccountSource('connection') },
+      params: { project: projectSlug, days, accountKey: accountId, ...this.monitorAccountSource('connection'), ...this.accountWideParam(accountWide) },
     });
   }
 
@@ -906,9 +1062,15 @@ export class CampaignService {
    * default before a user knows what they are looking for, and the service already orders by
    * last-modified.
    */
-  public searchHubSpotEmails(projectSlug: string, query: string): Observable<HubSpotEmailSearchResult> {
+  public searchHubSpotEmails(projectSlug: string, query: string, match: readonly string[] = []): Observable<HubSpotEmailSearchResult> {
     let params = new HttpParams().set('project', projectSlug);
-    if (query !== '') {
+    // `match` is the brand-and-event scope: whole-word phrases, ANY of which a template must carry.
+    // Repeated params, never combined with `q` -- the server refuses the pair.
+    if (match.length > 0) {
+      for (const phrase of match) {
+        params = params.append('match', phrase);
+      }
+    } else if (query !== '') {
       params = params.set('q', query);
     }
     return this.http.get<HubSpotEmailSearchResult>('/api/campaigns/hubspot/emails', { params });
@@ -1156,6 +1318,60 @@ export class CampaignService {
   }
 
   /**
+   * The brand's previous sent HubSpot newsletters, newest first, with the lists each targeted. The
+   * newsletter surface clones the newest and offers all of them as content references.
+   */
+  public getAudienceBrandNewsletters(projectSlug: string, brand: string, limit?: number): Observable<AudienceLastSentEmail[]> {
+    // Cached per project, brand and limit for CAMPAIGN_NEWSLETTER_CACHE_TTL_MS: the read walks the
+    // portal (tens of seconds), and the planner and Implement both ask for the same brand within a
+    // minute. Not for the service's (root) lifetime: an issue sent in HubSpot meanwhile must show up
+    // without a browser reload. A failed read is dropped from the cache so the next ask retries.
+    const key = `${projectSlug}|${brand.trim().toLowerCase()}|${limit ?? ''}`;
+    const cached = this.brandNewsletterCache.get(key);
+    if (cached && Date.now() - cached.at < CAMPAIGN_NEWSLETTER_CACHE_TTL_MS) {
+      return cached.read;
+    }
+    let params = new HttpParams().set('project', projectSlug).set('brand', brand);
+    if (limit !== undefined) {
+      params = params.set('limit', String(limit));
+    }
+    const read = this.http.get<AudienceLastSentEmail[]>('/api/campaigns/audience-builder/brand-newsletters', { params }).pipe(
+      catchError((error: unknown) => {
+        this.brandNewsletterCache.delete(key);
+        console.error("Failed to load the brand's previous newsletters:", error);
+        return throwError(() => error);
+      }),
+      shareReplay({ bufferSize: 1, refCount: false })
+    );
+    this.brandNewsletterCache.set(key, { read, at: Date.now() });
+    return read;
+  }
+
+  /** Offers and news on the brand's site for the next newsletter issue. Read-only. */
+  public suggestNewsletterItems(projectSlug: string, request: CampaignNewsletterSuggestionsRequest): Observable<CampaignNewsletterSuggestionsResult> {
+    return this.http.post<CampaignNewsletterSuggestionsResult>('/api/campaigns/newsletter/suggestions', request, { params: { project: projectSlug } });
+  }
+
+  /** The brands that have sent a HubSpot newsletter, most recent first. Cached per project, like the above. */
+  public getAudienceNewsletterBrands(projectSlug: string): Observable<AudienceNewsletterBrand[]> {
+    const cached = this.newsletterBrandsCache.get(projectSlug);
+    if (cached && Date.now() - cached.at < CAMPAIGN_NEWSLETTER_CACHE_TTL_MS) {
+      return cached.read;
+    }
+    const params = new HttpParams().set('project', projectSlug);
+    const read = this.http.get<AudienceNewsletterBrand[]>('/api/campaigns/audience-builder/newsletter-brands', { params }).pipe(
+      catchError((error: unknown) => {
+        this.newsletterBrandsCache.delete(projectSlug);
+        console.error('Failed to load the newsletter brands:', error);
+        return throwError(() => error);
+      }),
+      shareReplay({ bufferSize: 1, refCount: false })
+    );
+    this.newsletterBrandsCache.set(projectSlug, { read, at: Date.now() });
+    return read;
+  }
+
+  /**
    * Past marketing emails for this event, with their recipient lists resolved.
    *
    * The fastest correct answer to "who did we send this to last time" — and the reason a list a
@@ -1188,6 +1404,14 @@ export class CampaignService {
    */
   public previewAudienceCount(projectSlug: string, request: AudiencePreviewCountRequest): Observable<AudiencePreviewCount> {
     return this.http.post<AudiencePreviewCount>('/api/campaigns/audience-builder/preview-count', request, { params: { project: projectSlug } });
+  }
+
+  /**
+   * Plain-English descriptions of who each list contains, rendered by campaign-service from the
+   * lists' HubSpot rules. Read-only; one description per id, in request order.
+   */
+  public describeAudienceLists(projectSlug: string, request: AudienceDescribeListsRequest): Observable<AudienceListDescription[]> {
+    return this.http.post<AudienceListDescription[]>('/api/campaigns/audience-builder/lists/describe', request, { params: { project: projectSlug } });
   }
 
   /**
@@ -1394,6 +1618,11 @@ export class CampaignService {
     );
   }
 
+  /** `accountWide=true` on a monitor read (#6209), or nothing. Only the Monitor tab ever asks for it. */
+  private accountWideParam(accountWide: boolean): Record<string, string> {
+    return accountWide ? { [MONITOR_ACCOUNT_WIDE_PARAM]: 'true' } : {};
+  }
+
   /**
    * The marker a Monitor-tab read carries: `connection` when its account (or the panel itself) came
    * from the connection path, i.e. a pod with the monitor cutover ON, and `legacy` when it came from
@@ -1461,7 +1690,7 @@ export class CampaignService {
           });
         }),
         catchError((error: unknown) => {
-          const outcome = this.queuedCreativeAssetFailure(error);
+          const outcome = this.queuedCreativeAssetFailure(error, file.type);
           if (outcome.status === 'refused') {
             console.warn('Creative library upload refused:', queued.name, error);
             this.creativeAssetQueueFiles.delete(itemId);
@@ -1481,18 +1710,21 @@ export class CampaignService {
     });
   }
 
-  /** Why a file can never be stored as it is, checked before it is sent; null when it may be sent. */
-  private refuseQueuedCreativeAsset(file: File, folder: boolean): { refusal: CreativeAssetQueueRefusal; message: string } | null {
+  /**
+   * Why a file can never be stored as it is, checked before it is sent; null when it may be sent. With `documents` (the
+   * LinkedIn document editor's upload, campaign-service#665), only a PDF within `CREATIVE_ASSET_DOCUMENT_MAX_BYTES` may be.
+   */
+  private refuseQueuedCreativeAsset(file: File, folder: boolean, documents: boolean): { refusal: CreativeAssetQueueRefusal; message: string } | null {
     // `webkitRelativePath` is `folder/name.png` at the top level of a picked folder. Defaulted because
     // an engine without folder picks (and jsdom) leaves it undefined rather than empty.
     if (folder && (file.webkitRelativePath ?? '').split('/').length > 2) {
       return { refusal: 'subfolder', message: CREATIVE_ASSET_SUBFOLDER_MESSAGE };
     }
-    if (!isCreativeAssetMimeType(file.type)) {
-      return { refusal: 'type', message: CREATIVE_ASSET_WRONG_TYPE_MESSAGE };
+    if (documents ? file.type !== CREATIVE_ASSET_DOCUMENT_MIME_TYPE : !isCreativeAssetMimeType(file.type)) {
+      return { refusal: 'type', message: documents ? CREATIVE_ASSET_DOCUMENT_WRONG_TYPE_MESSAGE : CREATIVE_ASSET_WRONG_TYPE_MESSAGE };
     }
-    if (file.size > CREATIVE_ASSET_MAX_BYTES) {
-      return { refusal: 'size', message: CREATIVE_ASSET_TOO_LARGE_MESSAGE };
+    if (file.size > (documents ? CREATIVE_ASSET_DOCUMENT_MAX_BYTES : CREATIVE_ASSET_MAX_BYTES)) {
+      return { refusal: 'size', message: documents ? CREATIVE_ASSET_DOCUMENT_TOO_LARGE_MESSAGE : CREATIVE_ASSET_TOO_LARGE_MESSAGE };
     }
     if (file.size === 0) {
       return { refusal: 'other', message: CREATIVE_ASSET_EMPTY_MESSAGE };
@@ -1505,16 +1737,19 @@ export class CampaignService {
    * (413) or otherwise invalid (400). Anything else, including an expired session or a network drop
    * that outlasted the re-sends, is `failed` and keeps its file for Retry.
    */
-  private queuedCreativeAssetFailure(error: unknown): Pick<CreativeAssetQueueItem, 'status' | 'refusal' | 'message'> {
+  private queuedCreativeAssetFailure(error: unknown, type: string): Pick<CreativeAssetQueueItem, 'status' | 'refusal' | 'message'> {
     const status = error instanceof HttpErrorResponse && !isTransientHttpError(error) ? error.status : 0;
     if (status === 409) {
       return { status: 'refused', refusal: 'quota', message: CREATIVE_ASSET_QUOTA_MESSAGE };
     }
     if (status === 415) {
-      return { status: 'refused', refusal: 'type', message: CREATIVE_ASSET_WRONG_TYPE_MESSAGE };
+      // Each kind names its own: a PDF refused is not an image refused (campaign-service#665). A PDF's 415 also carries the
+      // BFF's own reason, which tells a broken PDF apart from document ads being turned off since the page loaded.
+      const wrongType = creativeAssetWrongTypeMessage(type);
+      return { status: 'refused', refusal: 'type', message: type === CREATIVE_ASSET_DOCUMENT_MIME_TYPE ? serverAuthoredMessage(error, wrongType) : wrongType };
     }
     if (status === 413) {
-      return { status: 'refused', refusal: 'size', message: CREATIVE_ASSET_TOO_LARGE_MESSAGE };
+      return { status: 'refused', refusal: 'size', message: creativeAssetTooLargeMessage(type) };
     }
     if (status === 400) {
       return { status: 'refused', refusal: 'other', message: extractErrorMessage(error, CREATIVE_ASSET_REFUSED_FALLBACK_MESSAGE) };

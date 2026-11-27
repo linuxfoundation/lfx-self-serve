@@ -3,7 +3,8 @@
 
 <!-- Exact [Npx] design values: rem undershoots at the 14px root. 72px tall, 56px on phones. -->
 <header
-  class="mx-auto flex h-[72px] max-w-[1016px] items-center gap-[16px] border-b border-gray-200 px-[16px] max-sm:h-[56px] max-sm:gap-[10px] sm:px-[32px] min-[1081px]:px-0"
+  class="mx-auto flex h-[72px] items-center gap-[16px] border-b border-gray-200 px-[16px] max-sm:h-[56px] max-sm:gap-[10px] sm:px-[32px]"
+  [class]="width() === 1280 ? 'max-w-[1280px] min-[1345px]:px-0' : 'max-w-[1016px] min-[1081px]:px-0'"
   data-testid="meeting-page-top-bar">
   <a
     routerLink="/"
@@ -15,43 +16,46 @@
     <img src="/images/logo_lf_icon.png" alt="" class="size-[22px] max-sm:size-[18px]" />
   </a>
 
-  <!-- Inert until the page title scrolls under the bar, so the title is neither seen nor focused twice. -->
+  <!-- Inert until revealed on scroll, so the title is neither seen nor focused twice. -->
   <div
     class="flex min-w-0 flex-auto items-center gap-[16px] transition duration-200 motion-reduce:transition-none max-sm:gap-[8px]"
     [class]="scrolled() ? 'translate-y-0 opacity-100' : 'pointer-events-none translate-y-[6px] opacity-0'"
     [attr.aria-hidden]="scrolled() ? null : 'true'"
     [attr.inert]="scrolled() ? null : ''"
     data-testid="meeting-page-top-bar-meeting">
-    @if (row(); as row) {
-      <span class="h-[28px] w-px flex-none bg-gray-200 max-sm:hidden" aria-hidden="true"></span>
-      <!-- A passcode guest's copy has no date. -->
-      <span
-        class="flex size-[40px] flex-none flex-col overflow-hidden rounded-[8px] border border-gray-200 bg-white max-sm:size-[32px] max-sm:rounded-[6px]"
-        [class.hidden]="!row.startTime"
-        aria-hidden="true">
+    <!-- A page projects its own compact title; the meeting page uses this default. -->
+    <ng-content>
+      @if (row(); as row) {
+        <span class="h-[28px] w-px flex-none bg-gray-200 max-sm:hidden" aria-hidden="true"></span>
+        <!-- A passcode guest's copy has no date. -->
         <span
-          class="flex h-[13px] flex-none items-center justify-center text-[8px] font-semibold leading-none tracking-[0.08em] max-sm:h-[10px] max-sm:text-[7px]"
-          [class]="past() ? 'bg-gray-400 text-white' : 'bg-blue-500 text-white'"
-          >{{ row.startTime | date: 'MMM' | uppercase }}</span
-        >
-        <span class="flex flex-auto items-center justify-center text-[17px] leading-none text-gray-900 max-sm:text-[13px]">{{
-          row.startTime | date: 'd'
-        }}</span>
-      </span>
-      <!-- Focusable once shown, so keyboard users can open the tooltip with the full title and project. -->
-      <span
-        class="flex min-w-0 flex-col gap-[2px] rounded-[4px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
-        tabindex="0"
-        [lfxUiTooltip]="row.title"
-        [lfxUiTooltipTitle]="projectName()"
-        lfxUiTooltipSide="bottom"
-        data-testid="meeting-page-top-bar-title">
-        <span class="truncate text-[15px] font-semibold leading-[20px] text-gray-900 max-sm:text-[13px] max-sm:leading-[18px]">{{ row.title }}</span>
-        @if (projectName(); as project) {
-          <span class="truncate text-[12px] leading-[16px] text-gray-500 max-sm:text-[11px]">{{ project }}</span>
-        }
-      </span>
-    }
+          class="flex size-[40px] flex-none flex-col overflow-hidden rounded-[8px] border border-gray-200 bg-white max-sm:size-[32px] max-sm:rounded-[6px]"
+          [class.hidden]="!row.startTime"
+          aria-hidden="true">
+          <span
+            class="flex h-[13px] flex-none items-center justify-center text-[8px] font-semibold leading-none tracking-[0.08em] max-sm:h-[10px] max-sm:text-[7px]"
+            [class]="past() ? 'bg-gray-400 text-white' : 'bg-blue-500 text-white'"
+            >{{ row.startTime | date: 'MMM' | uppercase }}</span
+          >
+          <span class="flex flex-auto items-center justify-center text-[17px] leading-none text-gray-900 max-sm:text-[13px]">{{
+            row.startTime | date: 'd'
+          }}</span>
+        </span>
+        <!-- Focusable once shown, so keyboard users can open the tooltip with the full title and project. -->
+        <span
+          class="flex min-w-0 flex-col gap-[2px] rounded-[4px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600"
+          tabindex="0"
+          [lfxUiTooltip]="row.title"
+          [lfxUiTooltipTitle]="projectName()"
+          lfxUiTooltipSide="bottom"
+          data-testid="meeting-page-top-bar-title">
+          <span class="truncate text-[15px] font-semibold leading-[20px] text-gray-900 max-sm:text-[13px] max-sm:leading-[18px]">{{ row.title }}</span>
+          @if (projectName(); as project) {
+            <span class="truncate text-[12px] leading-[16px] text-gray-500 max-sm:text-[11px]">{{ project }}</span>
+          }
+        </span>
+      }
+    </ng-content>
   </div>
 
   @if (!userService.authenticated()) {

@@ -341,23 +341,23 @@ export const VALKEY_CACHE = {
     // the dev build (ANALYTICS_DEV ORG_PEOPLE_TRAINING, All time, no filters, the five largest organizations; the largest has
     // the most person-course pairs: 33,867) as the JSON of the stored value (`JSON.stringify` size from SQL `TO_JSON` rows,
     // each + 1 comma byte), same filtered-pair rules as the BFF; every filter combination is a subset of these.
-    // `training-stats:v6`: one object of 13 scalar fields, 366 bytes at most (a fixed shape; no per-org growth).
-    'org-lens-sf:v1:training-stats:v6': 1_048_576,
-    // `training-filter-options:v1`: five {label, value} lists, per range; All time is the largest: 42.6 KB for the largest
+    // `training-stats:v7`: one object of 13 scalar fields, 366 bytes at most (a fixed shape; no per-org growth).
+    'org-lens-sf:v1:training-stats:v7': 1_048_576,
+    // `training-filter-options:v2`: five {label, value} lists, per range; All time is the largest: 42.6 KB for the largest
     // course dictionary (319 course names 37.4 KB, 57 projects 3.2 KB, 23 foundations 1.5 KB, 3 levels, 5 formats).
-    'org-lens-sf:v1:training-filter-options:v1': 1_048_576,
-    // `training-filter-known:v1`: the distinct raw values (trimmed, capped at MAX_ORG_TRAINING_FILTER_VALUE_LENGTH) of the five filters over
+    'org-lens-sf:v1:training-filter-options:v2': 1_048_576,
+    // `training-filter-known:v2`: the distinct raw values (trimmed, capped at MAX_ORG_TRAINING_FILTER_VALUE_LENGTH) of the five filters over
     // all of an organization's people-list training rows, kept only to tell a value the organization carries from one it never does. Same
-    // class as `training-filter-options:v1` All time (42.6 KB for the largest course dictionary): it holds the same course names, ids and
+    // class as `training-filter-options:v2` All time (42.6 KB for the largest course dictionary): it holds the same course names, ids and
     // levels and no labels, plus the raw variants of a name, so it is derived from that measurement, not separately measured.
-    'org-lens-sf:v1:training-filter-known:v1': 1_048_576,
-    // `training-groups:v1`: the whole group set of one (groupBy, tab), with search, sort and paging done in memory. Largest
+    'org-lens-sf:v1:training-filter-known:v2': 1_048_576,
+    // `training-groups:v2`: the whole group set of one (groupBy, tab), with search, sort and paging done in memory. Largest
     // value 68.7 KB (course grouping, Training tab, 272 groups, All time; 12.1 KB for 47 groups on the Certification tab);
     // foundation 3.8 KB (22 groups), project 10.4 KB (55), level 0.7 KB, format 0.6 KB.
-    'org-lens-sf:v1:training-groups:v1': 1_048_576,
-    // `training-group-employees:v1`: one drawer cell, capped at MAX_ORG_TRAINING_GROUP_EMPLOYEES (500) {contactId, name, jobTitle}
+    'org-lens-sf:v1:training-groups:v2': 1_048_576,
+    // `training-group-employees:v2`: one drawer cell, capped at MAX_ORG_TRAINING_GROUP_EMPLOYEES (500) {contactId, name, jobTitle}
     // rows. Largest value 43.1 KB (about 500 rows at ~85 bytes; the widest group averaged 141 bytes per row, 70.5 KB for 500).
-    'org-lens-sf:v1:training-group-employees:v1': 1_048_576,
+    'org-lens-sf:v1:training-group-employees:v2': 1_048_576,
   } as Readonly<Record<string, number>>,
 
   /**

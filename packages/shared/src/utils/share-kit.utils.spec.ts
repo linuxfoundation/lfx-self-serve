@@ -1,0 +1,86 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { describe, expect, it } from 'vitest';
+
+import {
+  buildShareKitTrackedUrl,
+  composeShareKitPost,
+  countShareKitPostLength,
+  formatShareKitDateRange,
+  formatShareKitDay,
+  mixShareKitColors,
+  shareKitContrastRatio,
+  shareKitMemberBoxColors,
+} from './share-kit.utils';
+
+describe('buildShareKitTrackedUrl', () => {
+  it('adds the share kit tracking parameters and keeps existing ones', () => {
+    const url = buildShareKitTrackedUrl('https://events.example.org/register/?ref=home', { medium: 'x', campaign: 'example-summit-2027', content: 'invite' });
+    const params = new URL(url).searchParams;
+    expect(params.get('ref')).toBe('home');
+    expect(params.get('utm_source')).toBe('lfx-share-kit');
+    expect(params.get('utm_medium')).toBe('x');
+    expect(params.get('utm_campaign')).toBe('example-summit-2027');
+    expect(params.get('utm_content')).toBe('invite');
+  });
+});
+
+describe('countShareKitPostLength', () => {
+  const link = 'https://events.example.org/register/?utm_source=lfx-share-kit&utm_medium=x&utm_campaign=example&utm_content=invite';
+
+  it('counts the full link on LinkedIn', () => {
+    expect(countShareKitPostLength('Hello', link, 'linkedin')).toBe(5 + 2 + link.length);
+  });
+
+  it('counts links as 23 characters on X and 40 on Bluesky', () => {
+    expect(countShareKitPostLength('Hello', link, 'x')).toBe(5 + 2 + 23);
+    expect(countShareKitPostLength('Hello', link, 'bluesky')).toBe(5 + 2 + 40);
+  });
+
+  it('uses the X weighted count, where CJK characters count twice', () => {
+    expect(countShareKitPostLength('漢'.repeat(130), link, 'x')).toBe(260 + 2 + 23);
+  });
+
+  it('matches the composed post text', () => {
+    expect(composeShareKitPost(' Hello ', 'https://e.example.org/')).toBe('Hello\n\nhttps://e.example.org/');
+  });
+});
+
+describe('formatShareKitDateRange', () => {
+  it.each([
+    ['2027-04-28', '2027-04-28', 'April 28, 2027'],
+    ['2027-04-28', '2027-04-29', 'April 28–29, 2027'],
+    ['2027-04-28', '2027-04-30', 'April 28–30, 2027'],
+    ['2027-04-30', '2027-05-02', 'April 30 – May 2, 2027'],
+    ['2027-12-31', '2028-01-02', 'December 31, 2027 – January 2, 2028'],
+  ])('formats %s to %s as "%s"', (start, end, expected) => {
+    expect(formatShareKitDateRange(start, end)).toBe(expected);
+  });
+
+  it('formats a single day with or without the year', () => {
+    expect(formatShareKitDay('2027-02-28')).toBe('February 28');
+    expect(formatShareKitDay('2027-01-18', true)).toBe('January 18, 2027');
+  });
+});
+
+describe('mixShareKitColors', () => {
+  it('mixes each sRGB channel by the overlay share', () => {
+    expect(mixShareKitColors('#000000', '#FFFFFF', 0.5)).toBe('#808080');
+    expect(mixShareKitColors('#3731C9', '#FFFFFF', 0)).toBe('#3731C9');
+    expect(mixShareKitColors('#3731C9', '#FFFFFF', 1)).toBe('#FFFFFF');
+  });
+
+  it('gives the AGNTCon member box and its hover state', () => {
+    expect(shareKitMemberBoxColors('#3731C9', '#FFFFFF')).toEqual({ box: '#4B46CE', hover: '#615CD4' });
+  });
+});
+
+describe('shareKitContrastRatio', () => {
+  it('matches the WCAG ratios for known pairs, in either order', () => {
+    expect(shareKitContrastRatio('#FFFFFF', '#000000')).toBeCloseTo(21, 5);
+    expect(shareKitContrastRatio('#3731C9', '#FFFFFF')).toBeCloseTo(8.59, 2);
+    expect(shareKitContrastRatio('#FFFFFF', '#3731C9')).toBeCloseTo(8.59, 2);
+    expect(shareKitContrastRatio('#777777', '#777777')).toBe(1);
+  });
+});

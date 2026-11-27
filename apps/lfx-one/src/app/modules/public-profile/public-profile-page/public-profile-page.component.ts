@@ -1,38 +1,58 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPlatformBrowser, isPlatformServer } from '@angular/common';
-import { Component, computed, inject, makeStateKey, PLATFORM_ID, REQUEST_CONTEXT, Signal, TransferState } from '@angular/core';
+import { isPlatformBrowser, isPlatformServer, NgClass, NgTemplateOutlet } from '@angular/common';
+import { afterNextRender, Component, computed, inject, makeStateKey, PLATFORM_ID, REQUEST_CONTEXT, Signal, signal, TransferState } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Meta, Title } from '@angular/platform-browser';
 import { ActivatedRoute } from '@angular/router';
+import { PUBLIC_PROFILE_SECTION_COPY } from '@lfx-one/shared/constants';
 import { PublicProfilePageState, ServerRequestContext } from '@lfx-one/shared/interfaces';
 import { formatAffiliation, formatLfxDocumentTitle } from '@lfx-one/shared/utils';
 import { TranscendService } from '@services/transcend.service';
+import { UserService } from '@services/user.service';
+import { ProfileSectionComponent } from '@shared/components/profile-section/profile-section.component';
+import { UiSkeletonComponent } from '@shared/uikit/skeleton/skeleton.component';
+import { injectProfileRedesignEnabled } from '@shared/utils/profile-redesign.util';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, distinctUntilChanged, filter, map, of, startWith, switchMap, tap } from 'rxjs';
 
 import { PublicProfileBadgesComponent } from '../components/public-profile-badges/public-profile-badges.component';
 import { PublicProfileCertificationsComponent } from '../components/public-profile-certifications/public-profile-certifications.component';
 import { PublicProfileContributionsComponent } from '../components/public-profile-contributions/public-profile-contributions.component';
+import { PublicProfileHeroRedesignComponent } from '../components/public-profile-hero-redesign/public-profile-hero-redesign.component';
 import { PublicProfileHeroComponent } from '../components/public-profile-hero/public-profile-hero.component';
+import { PublicProfileInvolvementComponent } from '../components/public-profile-involvement/public-profile-involvement.component';
+import { PublicProfileRecognitionsComponent } from '../components/public-profile-recognitions/public-profile-recognitions.component';
+import { PublicProfileTopbarRedesignComponent } from '../components/public-profile-topbar-redesign/public-profile-topbar-redesign.component';
 import { PublicProfileTopbarComponent } from '../components/public-profile-topbar/public-profile-topbar.component';
 import { PublicProfileTrainingsComponent } from '../components/public-profile-trainings/public-profile-trainings.component';
 import { PublicProfileNotFoundComponent } from '../public-profile-not-found/public-profile-not-found.component';
+import { PublicProfileThemeService } from '../services/public-profile-theme.service';
 import { PublicProfileService } from '../services/public-profile.service';
 
 @Component({
   selector: 'lfx-public-profile-page',
   imports: [
+    NgClass,
+    NgTemplateOutlet,
     SkeletonModule,
+    ProfileSectionComponent,
+    UiSkeletonComponent,
     PublicProfileTopbarComponent,
+    PublicProfileTopbarRedesignComponent,
     PublicProfileHeroComponent,
+    PublicProfileHeroRedesignComponent,
     PublicProfileContributionsComponent,
     PublicProfileBadgesComponent,
     PublicProfileCertificationsComponent,
     PublicProfileTrainingsComponent,
     PublicProfileNotFoundComponent,
+    PublicProfileRecognitionsComponent,
+    PublicProfileInvolvementComponent,
   ],
+  // The visitor's light or dark theme under the redesign (#6091).
+  providers: [PublicProfileThemeService],
   templateUrl: './public-profile-page.component.html',
 })
 export class PublicProfilePageComponent {
@@ -44,10 +64,17 @@ export class PublicProfilePageComponent {
   private readonly transferState = inject(TransferState);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly reqContext = inject(REQUEST_CONTEXT, { optional: true }) as ServerRequestContext | null;
+  private readonly userService = inject(UserService);
+  protected readonly theme = inject(PublicProfileThemeService);
 
   // Persists the SSR-resolved page state so the client's first paint matches the server DOM on every
   // branch — failed responses aren't in HttpTransferCache, so not-found/error would else mismatch.
   private readonly stateKey = makeStateKey<PublicProfilePageState>('publicProfileState');
+
+  protected readonly sectionCopy = PUBLIC_PROFILE_SECTION_COPY;
+
+  // Set once the browser has rendered, so the redesign flag is read only where it can be.
+  private readonly hydrated = signal(false);
 
   // Single source of truth for the async page state; loading/error/notFound/profile derive from it.
   protected readonly state: Signal<PublicProfilePageState> = this.initProfile();
@@ -57,25 +84,40 @@ export class PublicProfilePageComponent {
   protected readonly notFound = computed(() => this.state().notFound);
   protected readonly isPrivate = computed(() => this.state().isPrivate);
   protected readonly profile = computed(() => this.state().profile);
+  /** The username this page is for, as the route names it. */
+  private readonly routeUsername = toSignal(this.activatedRoute.paramMap.pipe(map((params) => params.get('username') ?? '')), { initialValue: '' });
+  protected readonly profilePath = computed(() => `/u/${encodeURIComponent(this.routeUsername())}`);
+  // Signed-out visitors keep today's page until the flag is on for everyone (#6094), so the bar's visitor actions wait for that.
+  protected readonly signedIn = computed(() => this.userService.authenticated());
+  /** The viewer is signed in as this profile's owner, matched by LFID; no silent login is attempted for anyone else (#6090). */
+  protected readonly owner = computed(() => {
+    const viewer = this.userService.viewerUsername()?.toLowerCase();
+    return this.signedIn() && !!viewer && viewer === this.routeUsername().toLowerCase();
+  });
+  /** The profile redesign (#6088): the server's answer for this render, so SSR and hydration agree; off for signed-out visitors. */
+  protected readonly redesign: Signal<boolean> = injectProfileRedesignEnabled(this.hydrated);
 
   // Section slices — each section is hidden when its slice is empty.
   protected readonly basic = computed(() => this.profile()?.basic ?? null);
   protected readonly about = computed(() => this.profile()?.About?.trim() || '');
   protected readonly technicalContribution = computed(() => this.profile()?.technical_contribution ?? null);
+  protected readonly projects = computed(() => this.technicalContribution()?.projects ?? []);
   protected readonly badges = computed(() => this.profile()?.badges ?? []);
   protected readonly certifications = computed(() => this.profile()?.certification_activities ?? []);
   protected readonly trainings = computed(() => this.profile()?.training_activities ?? []);
 
-  protected readonly hasContributions = computed(() => (this.technicalContribution()?.projects?.length ?? 0) > 0);
+  protected readonly hasContributions = computed(() => this.projects().length > 0);
   // `Image` is omitempty upstream and the template only renders badges that have one — gate on at
   // least one renderable badge so a `Url`-only badge can't leave the heading above an empty grid.
-  protected readonly hasBadges = computed(() => this.badges().some((badge) => !!badge.Image));
+  protected readonly hasBadges = computed(() => this.badges().some((badge) => !!badge.Image?.trim()));
   protected readonly hasCertifications = computed(() => this.certifications().length > 0);
   protected readonly hasTrainings = computed(() => this.trainings().length > 0);
   // False inside an iframe, where Transcend's consent manager cannot open; the button is hidden.
   protected readonly cookieSettingsAvailable = this.transcendService.preferencesAvailable;
 
   public constructor() {
+    afterNextRender(() => this.hydrated.set(true));
+
     // SEO sync — re-apply head tags when `profile()` resolves; `toObservable` + `takeUntilDestroyed`
     // instead of `effect()` per `docs/reviews/frontend-checklist.md` §5 (effect reserved for logging).
     toObservable(this.profile)

@@ -1,26 +1,32 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { DialogRef } from '@angular/cdk/dialog';
 import { Component, computed, DestroyRef, inject, type Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { MessageComponent } from '@components/message/message.component';
-import { MEETING_COMPOSER_TOAST_POSITION } from '@lfx-one/shared/constants';
+import { MEETING_COMPOSER_TOAST_POSITION, MEETINGS_REDESIGN_FLAG } from '@lfx-one/shared/constants';
 import type {
   EntityWithProject,
   Meeting,
+  MeetingComposerDeleteDialogData,
   MeetingComposerEditScope,
   MeetingComposerSection,
+  MeetingComposerSectionId,
   MeetingComposerToastData,
+  UiToastConfig,
   UiToastRef,
 } from '@lfx-one/shared/interfaces';
-import { formatMeetingOccurrenceLabel } from '@lfx-one/shared/utils';
+import { combineDateTime, formatMeetingOccurrenceLabel, formatMeetingToastWhen, resolveMeetingBaseCount } from '@lfx-one/shared/utils';
+import { FeatureFlagService } from '@services/feature-flag.service';
 import { IntercomService } from '@services/intercom.service';
 import { LensService } from '@services/lens.service';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
+import { UiModalService } from '@shared/uikit/modal/modal.service';
 import { UiToastService } from '@shared/uikit/toast/toast.service';
 import { syncEntityProjectContext, syncEntityProjectContextFallback } from '@shared/utils/entity-project-context.util';
 import { MessageService } from 'primeng/api';
@@ -32,6 +38,8 @@ import { MeetingComposerPreviewComponent } from './meeting-composer-preview.comp
 import { MeetingComposerRailComponent } from './meeting-composer-rail.component';
 import { MeetingComposerService } from './meeting-composer.service';
 import { QuickCreateDialogComponent } from './quick-create-dialog.component';
+import { MeetingComposerDeleteDialogComponent } from './redesign/meeting-composer-delete-dialog.component';
+import { MeetingComposerModalComponent } from './redesign/meeting-composer-modal.component';
 import { ComposerAgendaResourcesComponent } from './sections/composer-agenda-resources.component';
 import { ComposerDateScheduleComponent } from './sections/composer-date-schedule.component';
 import { ComposerDetailsAccessComponent } from './sections/composer-details-access.component';
@@ -60,6 +68,7 @@ import { ComposerPlatformFeaturesComponent } from './sections/composer-platform-
     ComposerGuestsComponent,
     ComposerAgendaResourcesComponent,
     QuickCreateDialogComponent,
+    MeetingComposerModalComponent,
   ],
   templateUrl: './meeting-composer-host.component.html',
   providers: [MeetingComposerFormService],
@@ -74,9 +83,16 @@ export class MeetingComposerHostComponent {
   private readonly intercomService = inject(IntercomService);
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly featureFlagService = inject(FeatureFlagService);
+  private readonly modal = inject(UiModalService);
+
+  private deleteDialog: DialogRef<boolean, MeetingComposerDeleteDialogComponent> | null = null;
 
   protected readonly composer = inject(MeetingComposerService);
   protected readonly formService = inject(MeetingComposerFormService);
+
+  /** Opens every composer in the redesigned modal instead of the drawer or the quick create dialog. */
+  protected readonly redesign: Signal<boolean> = this.featureFlagService.getBooleanFlag(MEETINGS_REDESIGN_FLAG, false);
 
   /** Narrower for a single-occurrence edit, which drops the series-only sections. */
   protected readonly sections: Signal<readonly MeetingComposerSection[]> = this.formService.visibleSections;
@@ -191,7 +207,8 @@ export class MeetingComposerHostComponent {
         filter((context) => !!context),
         takeUntilDestroyed()
       )
-      .subscribe((context) => this.formService.initialize(context));
+      // Recording and AI summary start on in the redesigned modal; the drawer keeps today's defaults.
+      .subscribe((context) => this.formService.initialize(context, { featureDefaultsOn: this.redesign() }));
 
     // Losing write access while the composer is open would make submit fail upstream; close it instead
     // of evicting the user from the page underneath. `canWriteMeetings`, not `canWrite`: the latter is
@@ -261,7 +278,11 @@ export class MeetingComposerHostComponent {
         filter(([wasOpen, isOpen]) => wasOpen && !isOpen),
         takeUntilDestroyed()
       )
-      .subscribe(() => this.lensService.clearContextLens());
+      .subscribe(() => {
+        this.lensService.clearContextLens();
+        // Goes with the composer; a delete already running keeps it open until it settles.
+        this.deleteDialog?.close();
+      });
 
     // Intercom's launcher bubble floats over the drawer's footer and covers its actions, so it is hidden
     // while the composer is open and restored when it closes or this host goes away.
@@ -349,14 +370,14 @@ export class MeetingComposerHostComponent {
    * every series setting the occurrence form never loaded, so an in-place switch would save defaults
    * over them. Anything typed into the occurrence form is discarded, which the banner's copy says.
    */
-  protected onEditSeriesInstead(): void {
+  protected onEditSeriesInstead(section?: MeetingComposerSectionId): void {
     const context = this.composer.context();
 
     if (this.formService.submitting() || !context?.meetingUid) {
       return;
     }
 
-    this.composer.open({ mode: 'edit', meetingUid: context.meetingUid, projectUid: context.projectUid });
+    this.composer.open({ mode: 'edit', meetingUid: context.meetingUid, projectUid: context.projectUid, ...(section ? { section } : {}) });
   }
 
   /** Jumps to the section that owns the title field. */
@@ -371,6 +392,7 @@ export class MeetingComposerHostComponent {
 
     const wasEditMode = this.formService.isEditMode();
     const wasOccurrenceEdit = this.formService.isOccurrenceEdit();
+    const savedEdit = this.redesign() && wasEditMode ? this.redesignEditToast() : null;
 
     // `submit()` completes without emitting when the save outlived its open, so reaching here always
     // means the current open is the one that was saved. `take(1)` because the stream is single-shot and
@@ -379,7 +401,9 @@ export class MeetingComposerHostComponent {
       .submit()
       .pipe(take(1))
       .subscribe((meeting) => {
-        if (wasOccurrenceEdit) {
+        if (savedEdit) {
+          this.toast.show(savedEdit);
+        } else if (wasOccurrenceEdit) {
           this.messageService.add({
             severity: 'success',
             summary: 'Occurrence updated',
@@ -394,6 +418,35 @@ export class MeetingComposerHostComponent {
         this.composer.notifySaved();
         this.composer.close();
       });
+  }
+
+  /** The occurrence is gone, so there is nothing left to edit; the cancel dialog has already confirmed it. */
+  protected onOccurrenceCancelled(): void {
+    this.composer.notifySaved();
+    this.composer.close();
+  }
+
+  /** Opened here, not in the modal, so a delete that settles after the composer closes still reports. */
+  protected onDeleteRequested(): void {
+    const meeting = this.formService.meeting();
+    if (!meeting) {
+      return;
+    }
+
+    // The saved count, as the meetings list's delete reads it; the draft roster includes unsaved guests.
+    const data: MeetingComposerDeleteDialogData = { meeting, guestCount: meeting.rsvp_summary?.invited ?? resolveMeetingBaseCount(meeting) ?? null };
+    const ref = this.modal.open<boolean, MeetingComposerDeleteDialogData, MeetingComposerDeleteDialogComponent>(
+      MeetingComposerDeleteDialogComponent,
+      { data, role: 'alertdialog', describedBy: true, autoFocus: '[data-autofocus] button' },
+      { closePredicate: (_result, _config, dialog) => !(dialog instanceof MeetingComposerDeleteDialogComponent && dialog.busy()) }
+    );
+    this.deleteDialog = ref;
+    ref.closed.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((done) => {
+      this.deleteDialog = null;
+      if (done) {
+        this.onDeleted(data);
+      }
+    });
   }
 
   /**
@@ -483,6 +536,23 @@ export class MeetingComposerHostComponent {
     return this.formService.isEditMode() && this.formService.meeting() === null;
   }
 
+  /** The redesigned composer's edit toast, read from the form before the save resets it. */
+  private redesignEditToast(): UiToastConfig {
+    const value = this.formService.form().getRawValue();
+    const title = `“${value.title ?? ''}”`;
+
+    if (!this.isOccurrenceEdit() && this.formService.recurrencePayload()) {
+      return { variant: 'dark', message: 'Series updated', description: `${title} · changes apply to every upcoming occurrence` };
+    }
+
+    const when = formatMeetingToastWhen(combineDateTime(value.startDate, value.startTime, value.timezone), value.timezone);
+    return {
+      variant: 'dark',
+      message: this.isOccurrenceEdit() ? 'Occurrence updated' : 'Meeting updated',
+      description: when ? `${title} · ${when}` : title,
+    };
+  }
+
   /**
    * Raises the post-create toast (GH-1461).
    * @description Creating no longer navigates to the saved meeting, so this toast is the only route back
@@ -509,6 +579,21 @@ export class MeetingComposerHostComponent {
     };
 
     this.createdToastPath = this.router.url.split(/[?#]/)[0];
+
+    if (this.redesign()) {
+      const when = formatMeetingToastWhen(meeting.start_time, meeting.timezone);
+      this.createdToast = this.toast.show({
+        variant: 'dark',
+        message: 'Meeting created',
+        description: when ? `“${data.meetingTitle}” · ${when}` : `“${data.meetingTitle}”`,
+        actions: [
+          { label: 'View meeting', run: () => void this.router.navigateByUrl(data.meetingUrl, { state: data.meetingLinkState }) },
+          { label: 'Edit', run: () => this.onEditCreatedMeeting(data) },
+        ],
+      });
+      return;
+    }
+
     this.createdToast = this.toast.show({
       variant: 'success',
       position: MEETING_COMPOSER_TOAST_POSITION,
@@ -519,5 +604,19 @@ export class MeetingComposerHostComponent {
         { label: 'View meeting', run: () => void this.router.navigateByUrl(data.meetingUrl, { state: data.meetingLinkState }) },
       ],
     });
+  }
+
+  private onDeleted({ meeting, guestCount }: MeetingComposerDeleteDialogData): void {
+    const description = [`“${meeting.title}”`];
+    if (guestCount !== null) {
+      description.push(`${guestCount} ${guestCount === 1 ? 'guest' : 'guests'} notified`);
+    }
+
+    this.toast.show({ variant: 'dark', message: 'Meeting deleted', description: description.join(' · ') });
+    this.composer.notifySaved();
+    // A late result must not close a composer opened since for another meeting.
+    if (!this.composer.isOpen() || this.composer.context()?.meetingUid === meeting.id) {
+      this.composer.close();
+    }
   }
 }

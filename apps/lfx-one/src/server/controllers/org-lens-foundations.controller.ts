@@ -3,6 +3,7 @@
 
 import { NextFunction, Request, Response } from 'express';
 
+import { redactForEmployeeView } from '../helpers/org-lens-employee-view.helper';
 import { assertOrgUid } from '../helpers/org-uid.helper';
 import { logger } from '../services/logger.service';
 import { OrgLensFoundationsService } from '../services/org-lens-foundations.service';
@@ -37,7 +38,8 @@ export class OrgLensFoundationsController {
       });
 
       res.setHeader('Cache-Control', 'no-store');
-      res.json(response);
+      // All employee view (epic #5845, overview): the rows are counts and company-level badges; redacted defensively.
+      res.json(redactForEmployeeView(req, orgUid, response, { page: 'overview' }));
     } catch (error) {
       next(error);
     }

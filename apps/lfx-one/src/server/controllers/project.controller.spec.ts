@@ -33,6 +33,7 @@ const { computeIsFoundationMock, generateM2MTokenMock, isUuidMock, meetingSvc, p
     getProjectDocumentMetadata: vi.fn(),
     getProjectDocumentStream: vi.fn(),
     deleteProjectDocument: vi.fn(),
+    updateProjectDocument: vi.fn(),
     uploadProjectDocument: vi.fn(),
   },
 }));
@@ -71,6 +72,8 @@ vi.mock('@lfx-one/shared/constants', async () => {
   return {
     ALLOWED_FILE_TYPES: [],
     DOCUMENT_DELETE_TYPES: documentConstants.DOCUMENT_DELETE_TYPES,
+    DOCUMENT_UPDATE_TYPES: documentConstants.DOCUMENT_UPDATE_TYPES,
+    PROJECT_DOCUMENT_NAME_MAX_LENGTH: documentConstants.PROJECT_DOCUMENT_NAME_MAX_LENGTH,
     LENS_REDIRECT_RESOURCES: actual.LENS_REDIRECT_RESOURCES,
     EDITABLE_STAFF_ROLES: staffConstants.EDITABLE_STAFF_ROLES,
     EMAIL_REGEX: regexConstants.EMAIL_REGEX,
@@ -592,7 +595,10 @@ describe('ProjectController.getProjectMeetings', () => {
         'duration',
         'id',
         'meeting_and_occurrence_id',
+        'meeting_type',
         'occurrences',
+        'recurrence',
+        'restricted',
         'scheduled_start_time',
         'start_time',
         'timezone',
@@ -600,7 +606,116 @@ describe('ProjectController.getProjectMeetings', () => {
       ].sort()
     );
     expect(response.total).toBe(1);
-    expect(response.project).toEqual({ uid: PROJECT_UID, name: 'CNCF' });
+    expect(response.project).toEqual({ uid: PROJECT_UID, name: 'CNCF', logo_url: null });
+  });
+
+  it('projects the type, restricted flag, recurrence and description the calendar renders', async () => {
+    const recurrence = { type: 2, repeat_interval: 1, weekly_days: '3' } as Meeting['recurrence'];
+    meetingSvc.getMeetings.mockImplementation((_req: any, _query: any, resourceType: string) =>
+      Promise.resolve({
+        data: resourceType === 'v1_meeting' ? [buildMeeting({ meeting_type: 'Technical', recurrence, description: 'Roadmap review' })] : [],
+        page_token: undefined,
+      })
+    );
+    const { req, res, next } = buildMeetingsReqRes();
+
+    await controller.getProjectMeetings(req, res, next);
+
+    expect(res.json.mock.calls[0][0].meetings[0]).toMatchObject({ meeting_type: 'Technical', restricted: false, recurrence, description: 'Roadmap review' });
+  });
+
+  it('restricted meeting has no description', async () => {
+    meetingSvc.getMeetings.mockImplementation((_req: any, _query: any, resourceType: string) =>
+      Promise.resolve({
+        data: [buildMeeting({ id: `${resourceType}-1`, restricted: true, description: 'Invite-only agenda' })],
+        page_token: undefined,
+      })
+    );
+    const { req, res, next } = buildMeetingsReqRes();
+
+    await controller.getProjectMeetings(req, res, next);
+
+    const { meetings } = res.json.mock.calls[0][0];
+    expect(meetings).toHaveLength(2);
+    for (const meeting of meetings) {
+      expect(meeting.restricted).toBe(true);
+      expect(meeting).not.toHaveProperty('description');
+    }
+    expect(JSON.stringify(res.json.mock.calls[0][0])).not.toContain('Invite-only agenda');
+  });
+
+  it('keeps the series agenda off past-occurrence rows', async () => {
+    meetingSvc.getMeetings.mockImplementation((_req: any, _query: any, resourceType: string) =>
+      Promise.resolve({ data: resourceType === 'v1_past_meeting' ? [buildMeeting({ description: 'Roadmap review' })] : [], page_token: undefined })
+    );
+    const { req, res, next } = buildMeetingsReqRes();
+
+    await controller.getProjectMeetings(req, res, next);
+
+    expect(res.json.mock.calls[0][0].meetings[0]).not.toHaveProperty('description');
+  });
+
+  it('projects recurrence field by field, dropping unknown upstream keys', async () => {
+    const recurrence = { type: 2, repeat_interval: 1, weekly_days: '3', internal_note: 'x' } as unknown as Meeting['recurrence'];
+    meetingSvc.getMeetings.mockImplementation((_req: any, _query: any, resourceType: string) =>
+      Promise.resolve({ data: resourceType === 'v1_meeting' ? [buildMeeting({ recurrence })] : [], page_token: undefined })
+    );
+    const { req, res, next } = buildMeetingsReqRes();
+
+    await controller.getProjectMeetings(req, res, next);
+
+    expect(res.json.mock.calls[0][0].meetings[0].recurrence).toMatchObject({ type: 2, repeat_interval: 1, weekly_days: '3' });
+    expect(res.json.mock.calls[0][0].meetings[0].recurrence).not.toHaveProperty('internal_note');
+  });
+
+  it('omits an empty description and defaults a missing type and recurrence to null', async () => {
+    meetingSvc.getMeetings.mockImplementation((_req: any, _query: any, resourceType: string) =>
+      Promise.resolve({ data: resourceType === 'v1_meeting' ? [buildMeeting({ meeting_type: undefined, recurrence: undefined })] : [], page_token: undefined })
+    );
+    const { req, res, next } = buildMeetingsReqRes();
+
+    await controller.getProjectMeetings(req, res, next);
+
+    const [meeting] = res.json.mock.calls[0][0].meetings;
+    expect(meeting).not.toHaveProperty('description');
+    expect(meeting.meeting_type).toBeNull();
+    expect(meeting.recurrence).toBeNull();
+  });
+
+  it('keeps cancelled occurrences identifiable by status and by the cancelled list', async () => {
+    meetingSvc.getMeetings.mockImplementation((_req: any, _query: any, resourceType: string) =>
+      Promise.resolve({
+        data:
+          resourceType === 'v1_meeting'
+            ? [
+                buildMeeting({
+                  cancelled_occurrences: ['1630647000'],
+                  occurrences: [
+                    { occurrence_id: '1630560600', start_time: '2026-09-01T15:00:00Z', duration: 60, status: 'cancel' },
+                    { occurrence_id: '1630647000', start_time: '2026-09-02T15:00:00Z', duration: 60, status: 'available' },
+                  ],
+                }),
+              ]
+            : [],
+        page_token: undefined,
+      })
+    );
+    const { req, res, next } = buildMeetingsReqRes();
+
+    await controller.getProjectMeetings(req, res, next);
+
+    const [meeting] = res.json.mock.calls[0][0].meetings;
+    expect(meeting.occurrences[0].status).toBe('cancel');
+    expect(meeting.cancelled_occurrences).toEqual(['1630647000']);
+  });
+
+  it('includes the project logo in the envelope', async () => {
+    projectSvc.getPubliclyDiscoverableProject.mockResolvedValue(buildProject({ logo_url: 'https://example.com/cncf.svg' }));
+    const { req, res, next } = buildMeetingsReqRes();
+
+    await controller.getProjectMeetings(req, res, next);
+
+    expect(res.json.mock.calls[0][0].project).toEqual({ uid: PROJECT_UID, name: 'CNCF', logo_url: 'https://example.com/cncf.svg' });
   });
 
   it('never serializes credentials or organizer PII to anonymous callers', async () => {
@@ -819,7 +934,7 @@ describe('ProjectController.getProjectMeetings', () => {
     expect(meetingSvc.getMeetings).not.toHaveBeenCalled();
     expect(committeeSvc.getCommittees).not.toHaveBeenCalled();
     expect(next).not.toHaveBeenCalled();
-    expect(res.json).toHaveBeenCalledWith({ meetings: [], total: 0, project: { uid: PROJECT_UID, name: '' } });
+    expect(res.json).toHaveBeenCalledWith({ meetings: [], total: 0, project: { uid: PROJECT_UID, name: '', logo_url: null } });
     expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'public, max-age=300');
   });
 
@@ -846,7 +961,7 @@ describe('ProjectController.getProjectMeetings', () => {
 
     await controller.getProjectMeetings(req, res, next);
 
-    expect(res.json).toHaveBeenCalledWith({ meetings: [], total: 0, project: { uid: PROJECT_UID, name: '' } });
+    expect(res.json).toHaveBeenCalledWith({ meetings: [], total: 0, project: { uid: PROJECT_UID, name: '', logo_url: null } });
   });
 
   it('passes next() the same not-found error for a non-discoverable slug as for an unknown slug', async () => {
@@ -1511,5 +1626,94 @@ describe('ProjectController.getPublicProjectSummary', () => {
 
     expect(next).toHaveBeenCalledWith(expect.any(ServiceValidationError));
     expect(generateM2MTokenMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('ProjectController.updateProjectDocument', () => {
+  let controller: ProjectController;
+
+  function buildUpdateDocumentReqRes(overrides: { uid?: string; documentId?: string; type?: string | undefined; body?: unknown } = {}) {
+    const uid = overrides.uid ?? PROJECT_UID;
+    const documentId = overrides.documentId ?? PROJECT_UID;
+    const req = {
+      params: { uid, documentId },
+      query: 'type' in overrides ? { type: overrides.type } : { type: 'link' },
+      body: 'body' in overrides ? overrides.body : { name: 'Renamed' },
+      path: `/projects/${uid}/documents/${documentId}`,
+    } as any;
+    const res = { json: vi.fn(), status: vi.fn(() => res), send: vi.fn() } as any;
+    const next = vi.fn();
+    return { req, res, next };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new ProjectController();
+    isUuidMock.mockImplementation((value: string) => value === PROJECT_UID);
+  });
+
+  it('passes a rename through to the project service and returns the updated document', async () => {
+    const { req, res, next } = buildUpdateDocumentReqRes();
+    const updated = { uid: PROJECT_UID, type: 'link', name: 'Renamed' };
+    projectSvc.updateProjectDocument.mockResolvedValue(updated);
+
+    await controller.updateProjectDocument(req, res, next);
+
+    expect(projectSvc.updateProjectDocument).toHaveBeenCalledWith(req, PROJECT_UID, PROJECT_UID, 'link', { name: 'Renamed' });
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith(updated);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('passes a move to the root (a null folder) through as null, not as a missing field', async () => {
+    const { req, res, next } = buildUpdateDocumentReqRes({ body: { parent_uid: null } });
+    projectSvc.updateProjectDocument.mockResolvedValue({});
+
+    await controller.updateProjectDocument(req, res, next);
+
+    expect(projectSvc.updateProjectDocument).toHaveBeenCalledWith(req, PROJECT_UID, PROJECT_UID, 'link', { parent_uid: null });
+  });
+
+  it.each(['file', 'link', 'folder'])('accepts type=%s', async (type) => {
+    const { req, res, next } = buildUpdateDocumentReqRes({ type, body: { name: 'Renamed' } });
+    projectSvc.updateProjectDocument.mockResolvedValue({});
+
+    await controller.updateProjectDocument(req, res, next);
+
+    expect(projectSvc.updateProjectDocument).toHaveBeenCalledWith(req, PROJECT_UID, PROJECT_UID, type, { name: 'Renamed' });
+  });
+
+  it.each([
+    ['a non-UUID uid', { uid: '../committees/some-committee' }],
+    ['a non-UUID documentId', { documentId: '../../secrets' }],
+    ['no type', { type: undefined }],
+    ['an unknown type', { type: 'meeting' }],
+    ['no body', { body: undefined }],
+    ['an empty body', { body: {} }],
+    ['a blank name', { body: { name: '   ' } }],
+    ['a name over the project limit', { body: { name: 'x'.repeat(256) } }],
+    ['a folder id that is not a UUID', { body: { parent_uid: 'nope' } }],
+    ['a move of a folder', { type: 'folder', body: { parent_uid: PROJECT_UID } }],
+    ['a field that cannot be edited', { body: { name: 'Ok', url: 'https://example.com' } }],
+  ])('rejects %s without calling the project service', async (_label, overrides) => {
+    const { req, res, next } = buildUpdateDocumentReqRes(overrides);
+
+    await controller.updateProjectDocument(req, res, next);
+
+    expect(projectSvc.updateProjectDocument).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(res.json).not.toHaveBeenCalled();
+  });
+
+  it('passes an upstream failure to the error handler', async () => {
+    const { req, res, next } = buildUpdateDocumentReqRes();
+    const failure = new Error('upstream down');
+    projectSvc.updateProjectDocument.mockRejectedValue(failure);
+
+    await controller.updateProjectDocument(req, res, next);
+
+    expect(next).toHaveBeenCalledWith(failure);
+    expect(res.json).not.toHaveBeenCalled();
   });
 });

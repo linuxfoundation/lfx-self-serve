@@ -13,6 +13,7 @@ import { TraineesService } from '@modules/dashboards/org/org-people/services/tra
 import { AccountContextService } from '@shared/services/account-context.service';
 import { OrgLensEmptyStateService } from '@shared/services/org-lens-empty-state.service';
 import { OrgLensTrainingService } from '@shared/services/org-lens-training.service';
+import { OrgLensViewModeService } from '@shared/services/org-lens-view-mode.service';
 import { OrgRoleGrantsService } from '@shared/services/org-role-grants.service';
 import { PersonDetailDrawerService } from '@shared/services/person-detail-drawer.service';
 import { OrgOverviewInvolvementComponent } from '@modules/dashboards/org/components/org-overview-involvement/org-overview-involvement.component';
@@ -155,8 +156,9 @@ async function renderTrainingPage(
       provideRouter([]),
       MessageService,
       { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: params }, queryParamMap: of(params) } },
-      { provide: AccountContextService, useValue: { selectedAccount: signal(ACME) } },
+      { provide: AccountContextService, useValue: { selectedAccount: signal(ACME), isRollUp: signal(false) } },
       { provide: OrgRoleGrantsService, useValue: { correlationId: signal(null) } },
+      { provide: OrgLensViewModeService, useValue: { isEmployeeView: signal(false) } },
       {
         provide: OrgLensEmptyStateService,
         useValue: {

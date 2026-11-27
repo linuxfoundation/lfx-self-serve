@@ -223,7 +223,7 @@ Every main lens page (Me, Foundation, Project, Org) opens with `<lfx-page-header
 - **Slots.** Use `[pageHeaderTitleSuffix]` for an inline tag beside the title, and `[pageHeaderActions]` for buttons or filters to the right of the title; they wrap below it when the row runs out of room. `eyebrow` adds an uppercase label above the title (Marketing Kit).
 - **Test ids.** `titleTestId` and `descriptionTestId` keep page-specific test ids. They default to `page-header-title` and `page-header-description`.
 
-Pages opened from a list or an action (detail, create and manage pages) and placeholder pages keep their own headings; a sidebar page that is itself a form (mentorship registration) still uses the header. Health Metrics is the exception: its gate builds its own sticky header, because its design sets the title in Roboto Slab light at 24px over a 12px subtitle, pins the tab bar inside the header and compacts the header on scroll. The meetings redesign (`meetings-redesign` behind `MEETINGS_REDESIGN_FLAG`, on the Me, project and foundation lists) and the Me lens groups redesign (`groups-redesign` behind `GROUPS_REDESIGN_FLAG`) are the others: each hand-builds a sticky header with the same type spec, and its fade and tabs bar stick to the measured header height. Account & Settings (`account-layout` behind `PROFILE_REDESIGN_FLAG`) does the same, with its grouped left nav pinned below the measured header.
+Pages opened from a list or an action (detail, create and manage pages) and placeholder pages keep their own headings; a sidebar page that is itself a form (mentorship registration) still uses the header. Health Metrics is the exception: its gate builds its own sticky header, because its design sets the title in Roboto Slab light at 24px over a 12px subtitle, pins the tab bar inside the header and compacts the header on scroll. The meetings redesign (`meetings-redesign` behind `MEETINGS_REDESIGN_FLAG`, on the Me, project and foundation lists) and the Me lens groups redesign (`groups-redesign` behind `GROUPS_REDESIGN_FLAG`) are the others: each hand-builds a sticky header with the same type spec, and its fade and tabs bar stick to the measured header height. Account & Settings (`account-layout` behind `PROFILE_REDESIGN_FLAG`) does the same, with its grouped left nav pinned below the measured header. The Profile page (`profile-page`, behind the same flag) has no page header at all: its hero names the person in the page's `h1`.
 
 ### Tab shells: signal state vs. child routes
 
@@ -516,7 +516,8 @@ AppComponent
 
     Standalone routes (outside MainLayoutComponent):
     ├── /meetings/not-found      → MeetingPageNotFoundComponent behind meetingPageRedesignGuard, else MeetingNotFoundComponent
-    └── /meetings/:id            → MeetingPageComponent behind meetingPageRedesignGuard, else MeetingJoinComponent (public meeting join)
+    ├── /meetings/:id            → MeetingPageComponent behind meetingPageRedesignGuard, else MeetingJoinComponent (public meeting join)
+    └── /projects/:projectSlug/calendar → PublicCalendarPageComponent behind publicCalendarRedesignGuard, else PublicProjectCalendarComponent
 ```
 
 ## 🎯 Usage Guidelines

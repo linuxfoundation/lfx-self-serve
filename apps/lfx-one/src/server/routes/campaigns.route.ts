@@ -1,7 +1,15 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CREATIVE_ASSET_MAX_BYTES, CREATIVE_ASSET_MIME_TYPES, CREATIVE_ASSET_TOO_LARGE_MESSAGE } from '@lfx-one/shared/constants';
+import {
+  CREATIVE_ASSET_DOCUMENT_MAX_BYTES,
+  CREATIVE_ASSET_DOCUMENT_MIME_TYPE,
+  CREATIVE_ASSET_MAX_BYTES,
+  CREATIVE_ASSET_MIME_TYPES,
+  CREATIVE_ASSET_VIDEO_MAX_BYTES,
+  CREATIVE_ASSET_VIDEO_MIME_TYPE,
+  creativeAssetTooLargeMessage,
+} from '@lfx-one/shared/constants';
 import express, { NextFunction, Request, Response, Router } from 'express';
 
 import { AudienceBuilderController } from '../controllers/audience-builder.controller';
@@ -16,8 +24,14 @@ import {
   requireGoogleMonitorAccess,
   requireGoogleUserListsAccess,
   requireMetaCustomAudiencesAccess,
+  requireLinkedInAudiencesAccess,
+  requireLinkedInConversionsAccess,
+  requireLinkedInLeadFormsAccess,
   requireMetaLeadFormsAccess,
+  requireRedditCustomAudiencesAccess,
+  requireRedditPixelsAccess,
 } from '../middleware/require-marketing-access.middleware';
+import { canSetLinkedInDocument, canSetLinkedInVideoAds, canSetRedditVideo } from '../services/campaign-service.service';
 
 /**
  * Converts the raw body parser's size-limit error (`entity.too.large`) into a 413 before it
@@ -26,8 +40,10 @@ import {
  */
 function handleCreativeAssetParseError(err: unknown, req: Request, _res: Response, next: NextFunction): void {
   if (err && typeof err === 'object' && (err as { type?: string }).type === 'entity.too.large') {
+    // Each type has its own parser and limit (see the route), so the message names the one that was exceeded.
+    const declared = [CREATIVE_ASSET_VIDEO_MIME_TYPE, CREATIVE_ASSET_DOCUMENT_MIME_TYPE].find((type) => req.is(type) === type);
     next(
-      new MicroserviceError(CREATIVE_ASSET_TOO_LARGE_MESSAGE, 413, 'PAYLOAD_TOO_LARGE', {
+      new MicroserviceError(creativeAssetTooLargeMessage(declared), 413, 'PAYLOAD_TOO_LARGE', {
         operation: 'campaign_upload_creative_asset',
         service: 'campaign_controller',
         path: req.path,
@@ -102,11 +118,39 @@ router.get('/google/audiences', requireGoogleAudiencesAccess, (req, res, next) =
 // reason as the Google lists above.
 router.get('/meta/custom-audiences', requireMetaCustomAudiencesAccess, (req, res, next) => campaignController.getMetaCustomAudiences(req, res, next));
 
+// The custom audiences on the Reddit ad account a create uses, for the Implement tab's Reddit audience picker (#6108
+// row 1). The ad account is shared, so the list names every foundation's audiences: answered only to
+// `global_marketing_ops` on the project, as campaign-service answers (lfx-v2-campaign-service#549). 404 while Reddit
+// custom audiences are off. Ahead of `router.use(requireCampaignManager)` for the same reason as the lists above.
+router.get('/reddit/custom-audiences', requireRedditCustomAudiencesAccess, (req, res, next) => campaignController.getRedditCustomAudiences(req, res, next));
+
+// The conversion pixels on the Reddit ad account a create uses, for the `conversionPixelId` picker (#6108 row 5). The ad
+// account is shared, so the list names every foundation's pixels: answered only to `global_marketing_ops` on the project,
+// as campaign-service answers (lfx-v2-campaign-service#549). 404 while the pixel list is off. Ahead of
+// `router.use(requireCampaignManager)` for the same reason as the lists above.
+router.get('/reddit/pixels', requireRedditPixelsAccess, (req, res, next) => campaignController.getRedditPixels(req, res, next));
+
 // The Instant Forms of the Facebook Page a Meta create uses, for the Implement tab's lead form picker (#5940).
 // A project without its own connection uses the shared LF Page, which holds every foundation's forms: answered
 // only to `global_marketing_ops` on the project, as campaign-service answers. 404 while Meta lead forms are off.
 // Ahead of `router.use(requireCampaignManager)` for the same reason as the lists above.
 router.get('/meta/lead-forms', requireMetaLeadFormsAccess, (req, res, next) => campaignController.getMetaLeadForms(req, res, next));
+
+// The ad segments on the LinkedIn ad account a create uses, for the Implement tab's targeting editor (#5764 rows 8–11).
+// The ad account is shared, so the list names every foundation's audiences: answered only to `global_marketing_ops` on
+// the project, as campaign-service answers. 404 while custom LinkedIn targeting is off. Ahead of
+// `router.use(requireCampaignManager)` for the same reason as the lists above.
+router.get('/linkedin/audiences', requireLinkedInAudiencesAccess, (req, res, next) => campaignController.getLinkedInAudiences(req, res, next));
+
+// The conversion rules on the LinkedIn ad account a create uses, for the Implement tab's conversion picker (#5764 row 4).
+// The ad account is shared, so answered only to `global_marketing_ops` on the project, as campaign-service answers. 404
+// while LinkedIn conversions are off. Ahead of `router.use(requireCampaignManager)` for the same reason as the lists above.
+router.get('/linkedin/conversions', requireLinkedInConversionsAccess, (req, res, next) => campaignController.getLinkedInConversions(req, res, next));
+
+// The Lead Gen Forms on the LinkedIn ad account a create uses, for the Implement tab's form picker (campaign-service#664).
+// A form belongs to the shared ad account, so answered only to `global_marketing_ops` on the project, as campaign-service
+// answers. 404 while LinkedIn lead gen is off. Ahead of `router.use(requireCampaignManager)` for the same reason as above.
+router.get('/linkedin/lead-forms', requireLinkedInLeadFormsAccess, (req, res, next) => campaignController.getLinkedInLeadForms(req, res, next));
 
 // Marketing-ops gated (LFXV2-2235): every Campaigns endpoint, reads and writes, previously had
 // no authorization middleware at all. `requireCampaignManager` falls back to ED-only while its
@@ -118,6 +162,7 @@ router.get('/meta/lead-forms', requireMetaLeadFormsAccess, (req, res, next) => c
 router.use(requireCampaignManager);
 
 router.post('/brief/generate', (req, res, next) => campaignController.generateBrief(req, res, next));
+router.post('/newsletter/suggestions', (req, res, next) => campaignController.suggestNewsletterItems(req, res, next));
 router.post('/brief/refine', (req, res, next) => campaignController.refineBrief(req, res, next));
 router.post('/brief/persist', (req, res, next) => campaignController.persistBrief(req, res, next));
 router.get('/brief', (req, res, next) => campaignController.loadBrief(req, res, next));
@@ -135,13 +180,30 @@ router.post('/brief/:briefId/approve', (req, res, next) => campaignController.ap
 // campaign-service arm, which reads only the project's own campaigns (#4837).
 router.get('/brief/metrics', (req, res, next) => campaignController.getBriefMetrics(req, res, next));
 router.post('/create', (req, res, next) => campaignController.createCampaign(req, res, next));
-// An image for the brief, stored by campaign-service and named by asset id in a platform's
-// creative config — `redditConfig.imageAssetId` (decision D3), and the Google creative fields. The
-// body is the raw PNG/JPEG bytes, buffered here (at most CREATIVE_ASSET_MAX_BYTES) so the upstream
-// JSON body can be sent with a declared Content-Length.
+// An image, video or PDF for the brief, stored by campaign-service and named by asset id in a platform's
+// creative config — `redditConfig.imageAssetId` (decision D3), the Google creative fields, a LinkedIn video
+// ad's `videoAssetId` (#5764 row 18), a Reddit video post's `videoAssetId` and `thumbnailAssetId` (#6108
+// row 8), and a LinkedIn document ad's PDF `documentAssetId`
+// (campaign-service#665). The body is the raw bytes, buffered here so the upstream JSON body can be sent
+// with a declared Content-Length. One parser per kind, each with its own limit: a PNG/JPEG at most
+// CREATIVE_ASSET_MAX_BYTES, an MP4 at most CREATIVE_ASSET_VIDEO_MAX_BYTES, a PDF at most
+// CREATIVE_ASSET_DOCUMENT_MAX_BYTES. Each parser skips a body of the others' types, and only this route
+// gets the larger limits.
 router.post(
   '/brief/creative-assets',
   express.raw({ type: [...CREATIVE_ASSET_MIME_TYPES], limit: CREATIVE_ASSET_MAX_BYTES }),
+  // Read only while a video can be used, by a LinkedIn video ad or a Reddit video post (`canSetLinkedInVideoAds`,
+  // `canSetRedditVideo`); otherwise the body is never buffered and the controller answers the 415.
+  express.raw({
+    type: (req) => (canSetLinkedInVideoAds() || canSetRedditVideo()) && (req as Request).is(CREATIVE_ASSET_VIDEO_MIME_TYPE) === CREATIVE_ASSET_VIDEO_MIME_TYPE,
+    limit: CREATIVE_ASSET_VIDEO_MAX_BYTES,
+  }),
+  // Read only while a document ad can be used (`canSetLinkedInDocument`); otherwise the body is never buffered and the
+  // controller answers the 415.
+  express.raw({
+    type: (req) => canSetLinkedInDocument() && (req as Request).is(CREATIVE_ASSET_DOCUMENT_MIME_TYPE) === CREATIVE_ASSET_DOCUMENT_MIME_TYPE,
+    limit: CREATIVE_ASSET_DOCUMENT_MAX_BYTES,
+  }),
   handleCreativeAssetParseError,
   (req: Request, res: Response, next: NextFunction) => campaignController.uploadCreativeAsset(req, res, next)
 );
@@ -196,6 +258,12 @@ router.get('/google/geo-targets', (req, res, next) => campaignController.searchG
 // targeting (#5904 row 4; campaign-service #612). Each kind answers only while its own flag is on (404 otherwise). Meta
 // taxonomy, so not root-only: `requireCampaignManager` above is the gate, as campaign-service's.
 router.get('/meta/targeting-search', (req, res, next) => campaignController.searchMetaTargetingOptions(req, res, next));
+// LinkedIn locations for the Implement tab's location search (#5545; campaign-service #643). Unflagged upstream and
+// public location data, so not root-only: `requireCampaignManager` above is the gate, as campaign-service's.
+router.get('/linkedin/geo-targets', (req, res, next) => campaignController.searchLinkedInGeoTargets(req, res, next));
+// LinkedIn targeting values (skills, titles, employers and the other searchable facets) for the Implement tab's targeting
+// editor (#5764 rows 8–11). 404 while custom LinkedIn targeting is off. LinkedIn taxonomy: `requireCampaignManager` is the gate.
+router.get('/linkedin/targeting-entities', (req, res, next) => campaignController.searchLinkedInTargetingEntities(req, res, next));
 // campaign-service only (#2519), behind LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR — 404 while it is off.
 // Microsoft and X take the platform account id as `?accountKey=`; HubSpot is project-scoped and takes none.
 router.get('/microsoft/monitor', (req, res, next) => campaignController.getMicrosoftMonitor(req, res, next));
@@ -274,8 +342,11 @@ router.post('/audience-builder/discover', (req, res, next) => audienceBuilderCon
 router.get('/audience-builder/lists/search', (req, res, next) => audienceBuilderController.searchLists(req, res, next));
 router.get('/audience-builder/suppression-lists', (req, res, next) => audienceBuilderController.getSuppressionLists(req, res, next));
 router.get('/audience-builder/last-sent', (req, res, next) => audienceBuilderController.getLastSent(req, res, next));
+router.get('/audience-builder/brand-newsletters', (req, res, next) => audienceBuilderController.getBrandNewsletters(req, res, next));
+router.get('/audience-builder/newsletter-brands', (req, res, next) => audienceBuilderController.getNewsletterBrands(req, res, next));
 router.get('/audience-builder/existing-master-lists', (req, res, next) => audienceBuilderController.getExistingMasterLists(req, res, next));
 router.post('/audience-builder/preview-count', (req, res, next) => audienceBuilderController.previewCount(req, res, next));
+router.post('/audience-builder/lists/describe', (req, res, next) => audienceBuilderController.describeLists(req, res, next));
 router.post('/audience-builder/compose-master', (req, res, next) => audienceBuilderController.composeMaster(req, res, next));
 // `attach-existing` creates nothing in HubSpot: it records lists that already exist (an earlier
 // send's selection, or a master built before) as the brief's send audience.

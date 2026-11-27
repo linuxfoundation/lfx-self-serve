@@ -22,11 +22,17 @@ import { ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
+import { SelectComponent } from '@components/select/select.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
+import { UiCheckboxComponent } from '@shared/uikit/checkbox/checkbox.component';
 import {
   CAMPAIGN_EVENT_URL_MAX_LENGTH,
   CAMPAIGN_EVENT_URL_QUERY_PARAM,
   CAMPAIGN_GOALS,
+  CAMPAIGN_NEWSLETTER_REFERENCE_LIMIT,
+  CAMPAIGN_NEWSLETTER_SOURCE_STORAGE_PREFIX,
+  CAMPAIGN_NEWSLETTER_SUGGESTION_KIND_LABELS,
+  CAMPAIGN_NEWSLETTER_SUGGESTION_MAX_URLS,
   CAMPAIGN_PLATFORMS,
   CAMPAIGN_SURVEY_SOURCE_TEXT_MAX_CHARS,
   CAMPAIGN_SURVEY_SOURCE_TEXT_RAW_MAX_CHARS,
@@ -38,7 +44,9 @@ import {
   campaignSurveySourceTextTooLong,
   canonicalHttpUrl,
   coerceCampaignEventDetails,
+  deriveNewsletterSlug,
   deriveSurveySlug,
+  extractHttpLinks,
   normaliseForMatch,
 } from '@lfx-one/shared/utils';
 import { CampaignService } from '@services/campaign.service';
@@ -62,6 +70,9 @@ import {
 } from 'rxjs';
 
 import type {
+  AudienceLastSentEmail,
+  AudienceNewsletterBrand,
+  CampaignNewsletterSuggestion,
   CampaignBriefEditRequest,
   CampaignBriefLoadResult,
   CampaignBriefLookupHit,
@@ -129,7 +140,7 @@ type PlanningStep = 'input' | 'generating' | 'review';
 
 @Component({
   selector: 'lfx-planning-tab',
-  imports: [ReactiveFormsModule, ButtonComponent, InputTextComponent, TextareaComponent, NgClass],
+  imports: [ReactiveFormsModule, ButtonComponent, InputTextComponent, SelectComponent, TextareaComponent, UiCheckboxComponent, NgClass],
   templateUrl: './planning-tab.component.html',
   styleUrl: './planning-tab.component.scss',
 })
@@ -274,6 +285,30 @@ export class PlanningTabComponent implements OnInit {
   /** Survey & Report: planned from a pasted source document rather than a scraped event page. */
   protected readonly isSurvey = computed(() => this.deliveryType() === 'survey');
 
+  /** Newsletter: one issue of a brand's newsletter, planned from notes and the brand's previous issues. */
+  protected readonly isNewsletter = computed(() => this.deliveryType() === 'newsletter');
+
+  /**
+   * An event email (not a survey, not a newsletter). Its Campaign Details card is hidden: Goal,
+   * Target Audience and Value Prop are read only by the PAID prompt builders, every one of which is
+   * gated off for email, so on this surface they were three inputs that changed nothing.
+   */
+  protected readonly isEventEmail = computed(() => this.deliveryType() === 'email');
+
+  /**
+   * Where the planner hands off to. An email-like surface goes to its Audience tab first -- except
+   * a newsletter, which has none and reuses its previous issue's lists on Implement.
+   */
+  private readonly handoffTarget = computed<'audience' | 'implement'>(() => (this.isEmailLike() && !this.isNewsletter() ? 'audience' : 'implement'));
+  protected readonly proceedLabel = computed(() => (this.handoffTarget() === 'audience' ? 'Choose Audience' : 'Proceed to Implement'));
+  protected readonly proceedAriaLabel = computed(() =>
+    this.handoffTarget() === 'audience' ? 'Choose the send audience for this brief' : 'Proceed to implement with this brief'
+  );
+  protected readonly saveProceedLabel = computed(() => (this.handoffTarget() === 'audience' ? 'Save & Choose Audience' : 'Save & Proceed to Implement'));
+  protected readonly saveProceedAriaLabel = computed(() =>
+    this.handoffTarget() === 'audience' ? 'Save edits and choose the send audience' : 'Save edits and proceed to implement'
+  );
+
   /**
    * The URL card's wording. On survey the field is not a page to scrape but the link the call to
    * action opens, so the event copy would describe work this surface does not do.
@@ -336,18 +371,118 @@ export class PlanningTabComponent implements OnInit {
     // surface, and requiring it unconditionally would make the paid and email forms invalid for a
     // field they never show. `canGenerate` applies the requirement on the one surface that has it.
     sourceText: [''],
+    // The NEWSLETTER surface's identity: the brand as its HubSpot newsletters are named, and the
+    // issue. Not required by validators for the reason `sourceText` is not; `canGenerate` applies it.
+    newsletterBrand: [''],
+    newsletterIssue: [''],
     campaignGoal: ['conversions'],
     targetAudience: [''],
     valueProp: [''],
     totalBudget: [''],
     driveFolderUrl: [''],
   });
+  /** The pages the suggestions panel reads, as typed. Its own form: it is not part of the brief. */
+  protected readonly suggestionsForm = this.fb.nonNullable.group({ sources: [''] });
 
   // === WritableSignals ===
   protected readonly step = signal<PlanningStep>('input');
+
+  /** The brand's previous sent newsletters, newest first: the template and the content references. */
+  protected readonly newsletterReferences = signal<AudienceLastSentEmail[]>([]);
+  protected readonly newsletterReferencesState = signal<'idle' | 'loading' | 'loaded' | 'failed'>('idle');
+  /** The newsletter brand and issue as typed, and the brief slug they name. */
+  protected readonly newsletterBrandValue = toSignal(this.briefForm.controls.newsletterBrand.valueChanges, {
+    initialValue: this.briefForm.controls.newsletterBrand.value,
+  });
+  private readonly newsletterIssueValue = toSignal(this.briefForm.controls.newsletterIssue.valueChanges, {
+    initialValue: this.briefForm.controls.newsletterIssue.value,
+  });
+  protected readonly newsletterSlug = computed(() => deriveNewsletterSlug(this.newsletterBrandValue() ?? '', this.newsletterIssueValue() ?? ''));
+  /**
+   * The brand dropdown: brands that have SENT a newsletter from this portal, most recent first.
+   * Read once per project (the first read walks the portal, tens of seconds; the server caches it).
+   */
+  protected readonly newsletterBrands = signal<AudienceNewsletterBrand[]>([]);
+  protected readonly newsletterBrandsState = signal<'idle' | 'loading' | 'loaded' | 'failed'>('idle');
+  protected readonly newsletterBrandOptions = computed(() =>
+    this.newsletterBrands().map((row) => ({
+      label: row.latestSentAt ? `${row.brand} (last sent ${row.latestSentAt.slice(0, 10)})` : row.brand,
+      value: row.brand,
+    }))
+  );
+  protected readonly suggestionsState = signal<'idle' | 'loading' | 'loaded' | 'failed'>('idle');
+  protected readonly suggestions = signal<CampaignNewsletterSuggestion[]>([]);
+  protected readonly suggestionsFailedUrls = signal<string[]>([]);
+  /** The pages that could not be read, as one line for the partial-result notice. */
+  protected readonly suggestionsFailedUrlsText = computed(() => this.suggestionsFailedUrls().join(', '));
+  protected readonly suggestionsError = signal('');
+  /** Suggestions already added to the notes, so each is added once. */
+  protected readonly addedSuggestionUrls = signal<ReadonlySet<string>>(new Set<string>());
+  /** The suggestions as the list renders them: each with whether it is already in the notes. */
+  protected readonly suggestionRows = computed(() => {
+    const added = this.addedSuggestionUrls();
+    return this.suggestions().map((item) => ({ item, added: added.has(item.url), addLabel: added.has(item.url) ? 'Added' : 'Add to notes' }));
+  });
+  protected readonly suggestionKindLabels = CAMPAIGN_NEWSLETTER_SUGGESTION_KIND_LABELS;
+  protected readonly suggestionMaxUrls = CAMPAIGN_NEWSLETTER_SUGGESTION_MAX_URLS;
+  /** Previous issues the operator unticked; every other loaded issue is a reference. */
+  protected readonly excludedReferenceIds = signal<ReadonlySet<string>>(new Set<string>());
+  /**
+   * The brand the loaded references were read for. The lookup waits for the brand to settle, so
+   * for a moment after an edit the loaded issues are another brand's: they must not be sent, nor
+   * pick the clone template, until the new brand's read replaces them.
+   */
+  protected readonly newsletterReferencesBrand = signal('');
+  /** Whether the brand field has moved away from the brand the loaded references belong to. */
+  protected readonly newsletterReferencesStale = computed(
+    () => this.isNewsletter() && (this.newsletterBrandValue() ?? '').trim() !== this.newsletterReferencesBrand()
+  );
+  /** The references sent with the brief, newest first; the first is the issue's clone template. None while stale. */
+  protected readonly selectedReferenceIds = computed(() =>
+    this.newsletterReferencesStale()
+      ? []
+      : this.newsletterReferences()
+          .filter((email) => !this.excludedReferenceIds().has(email.emailId))
+          .slice(0, CAMPAIGN_NEWSLETTER_REFERENCE_LIMIT)
+          .map((email) => email.emailId)
+  );
+  /** The previous-issue picker's rows: each issue with its send day, its tick and the template mark. */
+  protected readonly newsletterReferenceRows = computed(() => {
+    const excluded = this.excludedReferenceIds();
+    const templateId = this.selectedReferenceIds()[0] ?? '';
+    return this.newsletterReferences().map((email) => ({
+      email,
+      sentDay: email.sentAt ? email.sentAt.slice(0, 10) : '',
+      included: !excluded.has(email.emailId),
+      isTemplate: templateId === email.emailId,
+    }));
+  });
   protected readonly selectedPlatforms = signal<Set<CampaignPlatform>>(new Set(['google-ads']));
   protected readonly statusMessages = signal<string[]>([]);
   protected readonly eventDetails = signal<CampaignEventDetails | null>(null);
+  /**
+   * The previous issue the newsletter brief is cloned from, for the brief review: its name when
+   * the brand's issues are loaded, its HubSpot id otherwise (a restored brief), and a plain
+   * statement when the brief names none, since Implement cannot stage without one.
+   */
+  protected readonly newsletterTemplateLabel = computed(() => {
+    const templateId = this.eventDetails()?.referenceEmailIds?.[0] ?? '';
+    if (templateId === '') {
+      return 'No previous issue is ticked, so there is no draft to clone. Tick one above and generate the brief again.';
+    }
+    const name = this.newsletterReferences().find((email) => email.emailId === templateId)?.emailName ?? '';
+    return name !== '' ? name : `HubSpot email ${templateId}`;
+  });
+  /** The notes box was filled from the brief already saved for this issue, and not edited since. */
+  protected readonly notesFromSavedBrief = signal(false);
+  /** How many links the notes carry: the only links the issue can have. */
+  protected readonly newsletterNoteLinksLabel = computed(() => {
+    const count = extractHttpLinks(this.eventDetails()?.sourceText).length;
+    if (count === 0) {
+      return 'No link in the notes, so the issue will have none. Add each item’s link to its line to have it linked.';
+    }
+    return `${count} link${count === 1 ? '' : 's'} in the notes. The issue links to these and to nothing else.`;
+  });
 
   /**
    * Email-brief editing (LFXV2-2770).
@@ -798,6 +933,13 @@ export class PlanningTabComponent implements OnInit {
   private savedBriefReadAt = 0;
 
   /**
+   * The previous issues a SAVED newsletter brief was styled on, held until the brand's issues are
+   * loaded so the same ones can be ticked (`applySavedNewsletterReferences`). Null when no saved
+   * newsletter brief is on offer.
+   */
+  private savedNewsletterReferenceIds: readonly string[] | null = null;
+
+  /**
    * The brief `editingExistingBrief` opened, kept whole so Proceed can carry what this planner does
    * not model: the Reddit and Meta copy blocks, the program and the identity fields. Proceed builds
    * its brief from this planner's signals, and a brief built only from those would silently drop
@@ -883,6 +1025,16 @@ export class PlanningTabComponent implements OnInit {
     if (this.isSurvey()) {
       return (this.sourceTextValue() ?? '').trim() !== '' && !this.sourceTextTooLong();
     }
+    // A newsletter is named by its brand and issue and written from the notes alone.
+    if (this.isNewsletter()) {
+      return (
+        this.newsletterSlug() !== '' &&
+        (this.sourceTextValue() ?? '').trim() !== '' &&
+        !this.sourceTextTooLong() &&
+        this.newsletterReferencesState() !== 'loading' &&
+        !this.newsletterReferencesStale()
+      );
+    }
     return this.isEmailLike() || this.selectedPlatforms().size > 0;
   });
   protected readonly isGenerating = computed(() => this.step() === 'generating');
@@ -896,6 +1048,8 @@ export class PlanningTabComponent implements OnInit {
 
   // === Private State ===
   private briefSubscription: Subscription | null = null;
+  /** The suggestions read in flight, cancelled when a newer one starts or the brand or foundation changes. */
+  private suggestionsRequest: Subscription | null = null;
 
   /**
    * The active foundation slug, coalesced to `''` when there is no context.
@@ -981,6 +1135,101 @@ export class PlanningTabComponent implements OnInit {
       this.refreshBriefLookup(this.briefForm.controls.url.value.trim());
     });
     this.urlInput$.pipe(debounceTime(500), takeUntilDestroyed(this.destroyRef)).subscribe((eventName) => this.lookupHubSpot(eventName));
+
+    // The brand dropdown's rows, loaded when the newsletter surface is shown for a project.
+    combineLatest([this.deliveryType$, this.activeFoundationSlug$])
+      .pipe(
+        filter(([delivery, project]) => delivery === 'newsletter' && project !== '' && isPlatformBrowser(this.platformId)),
+        map(([, project]) => project),
+        distinctUntilChanged(),
+        switchMap((project) => {
+          this.newsletterBrandsState.set('loading');
+          return this.campaignService.getAudienceNewsletterBrands(project).pipe(
+            map((brands) => {
+              this.newsletterBrandsState.set('loaded');
+              return brands;
+            }),
+            catchError(() => {
+              this.newsletterBrandsState.set('failed');
+              return of<AudienceNewsletterBrand[]>([]);
+            })
+          );
+        }),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((brands) => this.newsletterBrands.set(brands));
+
+    // The newsletter surface has no link: the url control is disabled there, so the form's validity
+    // does not wait on a field the surface never shows, and enabled again on every other surface.
+    this.deliveryType$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((delivery) => {
+      const url = this.briefForm.controls.url;
+      if (delivery === 'newsletter') {
+        url.disable();
+      } else if (url.disabled) {
+        url.enable();
+      }
+    });
+    // Brand and issue are the newsletter brief's identity, so each edit re-runs the saved-brief lookup.
+    merge(this.briefForm.controls.newsletterBrand.valueChanges, this.briefForm.controls.newsletterIssue.valueChanges)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => {
+        if (this.isNewsletter()) {
+          this.refreshBriefLookup('');
+        }
+      });
+    // The brand's previous issues, re-read when the brand settles. A failed read leaves the issue
+    // plannable from the notes alone; it never blocks Generate.
+    //
+    // Keyed on the foundation and the surface as well as the brand. Issue ids belong to one
+    // foundation's HubSpot portal, so a foundation switch with the brand still typed must drop the
+    // previous foundation's issues and read again: left in place, their ids went into the next
+    // brief as `referenceEmailIds` and Implement tried to clone an email from the other portal.
+    combineLatest([
+      this.briefForm.controls.newsletterBrand.valueChanges.pipe(
+        debounceTime(500),
+        map((brand) => (brand ?? '').trim()),
+        distinctUntilChanged()
+      ),
+      this.activeFoundationSlug$,
+      this.deliveryType$.pipe(map((delivery) => delivery === 'newsletter')),
+    ])
+      .pipe(
+        distinctUntilChanged((a, b) => a[0] === b[0] && a[1] === b[1] && a[2] === b[2]),
+        switchMap(([brand, project, isNewsletter]) => {
+          this.excludedReferenceIds.set(new Set<string>());
+          // Cleared before the read, not when it answers: until then the ticked ids are the
+          // previous key's, and Generate would send them.
+          this.newsletterReferences.set([]);
+          this.newsletterReferencesBrand.set(brand);
+          // The previous brand's suggestions, and any read of them still in flight, go too.
+          this.suggestionsRequest?.unsubscribe();
+          this.suggestionsRequest = null;
+          this.suggestions.set([]);
+          this.suggestionsState.set('idle');
+          if (!isNewsletter || brand === '' || project === '' || !isPlatformBrowser(this.platformId)) {
+            this.newsletterReferencesState.set('idle');
+            return of<AudienceLastSentEmail[]>([]);
+          }
+          this.newsletterReferencesState.set('loading');
+          return this.campaignService.getAudienceBrandNewsletters(project, brand, CAMPAIGN_NEWSLETTER_REFERENCE_LIMIT).pipe(
+            map((emails) => {
+              this.newsletterReferencesState.set('loaded');
+              return emails;
+            }),
+            catchError(() => {
+              this.newsletterReferencesState.set('failed');
+              return of<AudienceLastSentEmail[]>([]);
+            })
+          );
+        }),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((emails) => {
+        this.newsletterReferences.set(emails);
+        this.prefillSuggestionSources(emails);
+        // A saved brief for this issue may have arrived first: tick the issues it was styled on.
+        this.applySavedNewsletterReferences();
+      });
 
     // An observable of the input rather than an effect: opening the editor writes a dozen signals,
     // and it must happen once per request, not whenever something it reads changes.
@@ -1292,6 +1541,79 @@ export class PlanningTabComponent implements OnInit {
 
   protected asArray(value: unknown): unknown[] | null {
     return Array.isArray(value) ? value.filter((v) => v != null) : null;
+  }
+
+  /** Read the pages for offers and news the issue could carry. Read-only; nothing is added until the operator clicks. */
+  protected onFindSuggestions(): void {
+    const brand = (this.newsletterBrandValue() ?? '').trim();
+    const project = this.activeFoundationSlug();
+    const urls = this.suggestionsForm.controls.sources.value
+      .split(/[\s,]+/)
+      .map((url) => url.trim())
+      .filter((url) => /^https?:\/\//i.test(url))
+      .slice(0, CAMPAIGN_NEWSLETTER_SUGGESTION_MAX_URLS);
+    if (brand === '' || project === '') {
+      return;
+    }
+    if (urls.length === 0) {
+      this.suggestionsState.set('failed');
+      this.suggestionsError.set('Enter at least one page link, starting with https://.');
+      return;
+    }
+    this.rememberSuggestionSources(brand, urls.join(', '));
+    this.suggestionsState.set('loading');
+    this.suggestionsError.set('');
+    // One read at a time, and only its own brand's: an answer that lands after the operator moved
+    // to another brand or foundation would put unrelated offers in front of the new notes.
+    this.suggestionsRequest?.unsubscribe();
+    const isCurrent = (): boolean => (this.newsletterBrandValue() ?? '').trim() === brand && this.activeFoundationSlug() === project;
+    this.suggestionsRequest = this.campaignService
+      .suggestNewsletterItems(project, { urls, brand })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (result) => {
+          if (!isCurrent()) {
+            return;
+          }
+          this.suggestions.set(result.items);
+          this.suggestionsFailedUrls.set(result.failedUrls);
+          this.suggestionsState.set('loaded');
+        },
+        error: (error: unknown) => {
+          console.error('Failed to read newsletter suggestions:', error);
+          if (!isCurrent()) {
+            return;
+          }
+          this.suggestions.set([]);
+          this.suggestionsState.set('failed');
+          this.suggestionsError.set('The pages could not be read. Check the links and try again.');
+        },
+      });
+  }
+
+  /** Append one suggestion to the notes as a single line, with its link, for the operator to edit. */
+  protected onAddSuggestion(item: CampaignNewsletterSuggestion): void {
+    if (this.addedSuggestionUrls().has(item.url)) {
+      return;
+    }
+    const until = item.deadline ? ` (until ${item.deadline})` : '';
+    const detail = item.detail ? ` — ${item.detail}` : '';
+    const line = `${item.title}${detail}${until}: ${item.url}`;
+    const current = (this.briefForm.controls.sourceText.value ?? '').replace(/\s+$/, '');
+    this.briefForm.controls.sourceText.setValue(current === '' ? line : `${current}\n${line}`);
+    this.briefForm.controls.sourceText.markAsDirty();
+    this.addedSuggestionUrls.set(new Set([...this.addedSuggestionUrls(), item.url]));
+  }
+
+  /** Tick or untick one previous issue as a content reference. */
+  protected onToggleNewsletterReference(emailId: string): void {
+    const next = new Set(this.excludedReferenceIds());
+    if (next.has(emailId)) {
+      next.delete(emailId);
+    } else {
+      next.add(emailId);
+    }
+    this.excludedReferenceIds.set(next);
   }
 
   protected onUrlInput(): void {
@@ -1671,6 +1993,15 @@ export class PlanningTabComponent implements OnInit {
       // Survey only. Sent trimmed and omitted elsewhere, so the paid and email requests stay
       // byte-identical to what they were before this surface existed.
       ...(this.isSurvey() ? { sourceText: (this.briefForm.controls.sourceText.value ?? '').trim() } : {}),
+      // Newsletter only: the issue's identity, its notes, and the previous issues it is styled on.
+      ...(this.isNewsletter()
+        ? {
+            sourceText: (this.briefForm.controls.sourceText.value ?? '').trim(),
+            newsletterBrand: this.briefForm.controls.newsletterBrand.value.trim(),
+            newsletterIssue: this.briefForm.controls.newsletterIssue.value.trim(),
+            referenceEmailIds: this.selectedReferenceIds(),
+          }
+        : {}),
       // Still omitted for email — `[]` would claim the user deselected every channel rather than
       // that ad channels do not apply here. With `deliveryType` above, the server no longer has
       // to infer anything from its absence.
@@ -2102,6 +2433,46 @@ export class PlanningTabComponent implements OnInit {
       });
   }
 
+  /**
+   * Pre-fill the pages to check: what this viewer last checked for the brand, else the site the
+   * brand's newest issue links to. Never over what the operator has typed.
+   */
+  private prefillSuggestionSources(emails: AudienceLastSentEmail[]): void {
+    const control = this.suggestionsForm.controls.sources;
+    this.suggestions.set([]);
+    this.suggestionsState.set('idle');
+    this.addedSuggestionUrls.set(new Set<string>());
+    if (control.dirty) {
+      return;
+    }
+    const brand = (this.newsletterBrandValue() ?? '').trim();
+    const remembered = this.readSuggestionSources(brand);
+    control.setValue(remembered || (emails[0]?.sourceUrl ?? ''));
+  }
+
+  /** Per-viewer convenience only: storage may be blocked, and the panel works without it. */
+  private readSuggestionSources(brand: string): string {
+    if (!isPlatformBrowser(this.platformId) || brand === '') {
+      return '';
+    }
+    try {
+      return window.localStorage.getItem(CAMPAIGN_NEWSLETTER_SOURCE_STORAGE_PREFIX + brand.toLowerCase()) ?? '';
+    } catch {
+      return '';
+    }
+  }
+
+  private rememberSuggestionSources(brand: string, value: string): void {
+    if (!isPlatformBrowser(this.platformId)) {
+      return;
+    }
+    try {
+      window.localStorage.setItem(CAMPAIGN_NEWSLETTER_SOURCE_STORAGE_PREFIX + brand.toLowerCase(), value);
+    } catch {
+      // Storage blocked or full: the pages are simply not remembered.
+    }
+  }
+
   private handleRefineSSEEvent(event: SSEEvent<CampaignSSEEventType>, feedback: string): void {
     switch (event.type) {
       case 'status':
@@ -2277,7 +2648,11 @@ export class PlanningTabComponent implements OnInit {
   private leaveExistingBrief(): void {
     this.editBase = null;
     this.editingExistingBrief.set(false);
-    this.briefForm.controls.url.enable();
+    // Not on the newsletter surface: it has no link field, and an enabled (required, empty) url
+    // control left Generate disabled after a failed generation or New Brief.
+    if (!this.isNewsletter()) {
+      this.briefForm.controls.url.enable();
+    }
   }
 
   /**
@@ -2373,6 +2748,59 @@ export class PlanningTabComponent implements OnInit {
     this.savedBriefReadAt = readAt;
 
     this.savedBriefWarning.set(this.warningFor(result));
+    this.prefillFromSavedNewsletter(result.status === 'loaded' ? result.brief : null);
+  }
+
+  /**
+   * Fill the newsletter planner from the brief already saved for this brand and issue.
+   *
+   * The notes are the operator's own text for the issue, and coming back to a saved issue showed
+   * an empty notes box beside the offer to restore it, which reads as the notes having been lost
+   * and left no way to change one line and generate again short of retyping all of them. Only an
+   * untouched, empty box is filled: notes someone has started typing are theirs.
+   *
+   * The issues the saved brief was styled on are ticked as it had them. They are held until the
+   * brand's issues are loaded, because that read is the slow one and usually lands second.
+   */
+  private prefillFromSavedNewsletter(saved: CampaignBriefOutput | null): void {
+    this.savedNewsletterReferenceIds = null;
+    const wasFromSavedBrief = this.notesFromSavedBrief();
+    this.notesFromSavedBrief.set(false);
+    if (!this.isNewsletter() || saved === null) {
+      return;
+    }
+    const details = saved.eventDetails;
+    const notes = this.briefForm.controls.sourceText;
+    const savedNotes = (details?.sourceText ?? '').trim();
+    const current = (notes.value ?? '').trim();
+    if (savedNotes !== '' && notes.pristine && current === '') {
+      notes.setValue(savedNotes);
+      this.notesFromSavedBrief.set(true);
+    } else if (wasFromSavedBrief && savedNotes !== '' && notes.pristine && current === savedNotes) {
+      // The same saved issue read again: the box still holds that fill, untouched, so it is still
+      // the saved brief's. Dropping the flag here kept the notes on a later issue change (only a
+      // flagged fill is taken back) and hid where they came from.
+      this.notesFromSavedBrief.set(true);
+    }
+    const referenceIds = details?.referenceEmailIds ?? [];
+    if (referenceIds.length > 0) {
+      this.savedNewsletterReferenceIds = referenceIds;
+      this.applySavedNewsletterReferences();
+    }
+  }
+
+  /**
+   * Tick the previous issues the saved brief was styled on, once both are known. When none of them
+   * is among the brand's loaded issues (they have all aged out of the list), every loaded issue
+   * stays ticked rather than none.
+   */
+  private applySavedNewsletterReferences(): void {
+    const saved = this.savedNewsletterReferenceIds;
+    const loaded = this.newsletterReferences();
+    if (saved === null || !loaded.some((email) => saved.includes(email.emailId))) {
+      return;
+    }
+    this.excludedReferenceIds.set(new Set(loaded.filter((email) => !saved.includes(email.emailId)).map((email) => email.emailId)));
   }
 
   /**
@@ -2436,9 +2864,27 @@ export class PlanningTabComponent implements OnInit {
         this.savedBriefApproved = false;
         this.savedBriefReadAt = 0;
         this.savedBriefWarning.set(null);
+        this.clearSavedNewsletterPrefill();
       }
       this.slugInput$.next(slug);
     }
+  }
+
+  /**
+   * Take back what was filled from a saved newsletter brief once the planner is about another
+   * issue. Notes that are still exactly the prefill would otherwise ride along to an issue they
+   * were never written for; notes the operator has edited are theirs and stay.
+   */
+  private clearSavedNewsletterPrefill(): void {
+    if (this.savedNewsletterReferenceIds !== null) {
+      this.excludedReferenceIds.set(new Set<string>());
+    }
+    this.savedNewsletterReferenceIds = null;
+    const notes = this.briefForm.controls.sourceText;
+    if (this.notesFromSavedBrief() && notes.pristine) {
+      notes.setValue('');
+    }
+    this.notesFromSavedBrief.set(false);
   }
 
   /**
@@ -2458,7 +2904,8 @@ export class PlanningTabComponent implements OnInit {
         map((result): CampaignBriefLookupHit => ({ result, matchedSlug: candidate })),
         catchError(() => of({ result: null, matchedSlug: candidate }))
       );
-    const candidates = this.isSurvey() ? [] : briefSlugYearCandidates(slug, new Date().getFullYear());
+    // Nor a newsletter: its slug already names the issue.
+    const candidates = this.isSurvey() || this.isNewsletter() ? [] : briefSlugYearCandidates(slug, new Date().getFullYear());
     return candidates.reduce(
       (found$, candidate) => found$.pipe(switchMap((found) => (found.result !== null && found.result.status === 'none' ? lookup(candidate) : of(found)))),
       lookup(slug)
@@ -2483,7 +2930,14 @@ export class PlanningTabComponent implements OnInit {
   private lookUpGeneratedSlug(): void {
     const generatedSlug = this.eventDetails()?.slug ?? '';
     const urlSlug = this.currentSlug;
-    if (this.isSurvey() || generatedSlug.trim() === '' || generatedSlug === urlSlug || this.offerIsFor(generatedSlug) || this.editingExistingBrief()) {
+    if (
+      this.isSurvey() ||
+      this.isNewsletter() ||
+      generatedSlug.trim() === '' ||
+      generatedSlug === urlSlug ||
+      this.offerIsFor(generatedSlug) ||
+      this.editingExistingBrief()
+    ) {
       return;
     }
     const project = this.activeFoundationSlug();
@@ -2536,6 +2990,10 @@ export class PlanningTabComponent implements OnInit {
    * function, so the guard cannot compare a different derivation than the lookup made.
    */
   private slugForLookup(url: string): string {
+    // A newsletter issue is keyed on brand and issue, the derivation the BFF writes it under.
+    if (this.isNewsletter()) {
+      return this.newsletterSlug();
+    }
     if (!this.isSurvey()) {
       return this.extractSlug(url);
     }

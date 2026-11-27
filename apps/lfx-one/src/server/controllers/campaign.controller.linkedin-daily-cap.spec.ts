@@ -82,9 +82,9 @@ const CONFIG: LinkedInRuntimeConfig = {
   ],
 };
 
-function buildReq(linkedInConfigBody: Record<string, unknown>): Request {
+function buildReq(linkedInConfigBody: Record<string, unknown>, extra: Record<string, unknown> = {}): Request {
   return {
-    body: { platforms: ['linkedin-ads'], linkedInConfig: { budgetUsd: 100, ...linkedInConfigBody } },
+    body: { platforms: ['linkedin-ads'], linkedInConfig: { budgetUsd: 100, ...linkedInConfigBody }, ...extra },
     query: { project: 'tlf', brief_id: 'b-1' },
     path: '/api/campaigns/create',
   } as unknown as Request;
@@ -98,10 +98,10 @@ function sentLinkedInConfig(): Record<string, unknown> {
   return (createCampaigns.mock.calls[0][4] as Record<string, unknown>)['linkedInConfig'] as Record<string, unknown>;
 }
 
-async function create(linkedInConfigBody: Record<string, unknown>): Promise<{ res: Response; next: NextFunction }> {
+async function create(linkedInConfigBody: Record<string, unknown>, extra: Record<string, unknown> = {}): Promise<{ res: Response; next: NextFunction }> {
   const res = buildRes();
   const next = vi.fn() as unknown as NextFunction;
-  await new CampaignController().createCampaign(buildReq(linkedInConfigBody), res, next);
+  await new CampaignController().createCampaign(buildReq(linkedInConfigBody, extra), res, next);
   return { res, next };
 }
 
@@ -207,10 +207,276 @@ describe('CampaignController LinkedIn config keys (#5764)', () => {
   });
 
   it('refuses a key it does not check before anything is created', async () => {
-    const { next } = await create({ lifetimeBudget: false, targetingProfile: 'cloud-native', objective: 'conversions' });
+    const { next } = await create({ lifetimeBudget: false, targetingProfile: 'cloud-native', jobFunctions: ['urn:li:function:8'] });
 
     expect(createCampaigns).not.toHaveBeenCalled();
     expect(legacyCreate).not.toHaveBeenCalled();
     expect(refusal(next).field).toBe('linkedInConfig');
+  });
+
+  it('forwards Germany and the United Kingdom with the corrected URNs when a saved brief carries the old ones', async () => {
+    const { next } = await create({
+      lifetimeBudget: false,
+      targetingProfile: 'cloud-native',
+      geoTargets: [
+        { label: 'Germany', urn: 'urn:li:geo:101165590' },
+        { label: 'United Kingdom', urn: 'urn:li:geo:106693272' },
+      ],
+    });
+
+    expect(next).not.toHaveBeenCalled();
+    expect(sentLinkedInConfig()['geoTargets']).toEqual([
+      { label: 'Germany', urn: 'urn:li:geo:101282230' },
+      { label: 'United Kingdom', urn: 'urn:li:geo:101165590' },
+    ]);
+  });
+
+  it('does not throw on a linkedInConfig that is not an object', async () => {
+    const res = buildRes();
+    const next = vi.fn() as unknown as NextFunction;
+    const req = {
+      body: { platforms: ['linkedin-ads'], linkedInConfig: true },
+      query: { project: 'tlf', brief_id: 'b-1' },
+      path: '/api/campaigns/create',
+    } as unknown as Request;
+
+    await new CampaignController().createCampaign(req, res, next);
+    // An error with no status is what the error handler answers as a 500 (a TypeError from `in` on a primitive).
+    const error = vi.mocked(next).mock.calls[0]?.[0] as unknown;
+    if (error !== undefined) {
+      expect(error).not.toBeInstanceOf(TypeError);
+      expect((error as { statusCode?: number }).statusCode).toBeLessThan(500);
+    }
+  });
+
+  it('hands the legacy creator the corrected Germany while the cutover is dark', async () => {
+    isServerFeatureEnabled.mockImplementation((flag) => !(CUTOVER_FLAGS as unknown[]).includes(flag));
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    const { next } = await create({ lifetimeBudget: false, targetingProfile: 'cloud-native', geoTargets: [{ label: 'Germany', urn: 'urn:li:geo:101165590' }] });
+
+    expect(next).not.toHaveBeenCalled();
+    expect(legacyCreate).toHaveBeenCalledTimes(1);
+    expect((legacyCreate.mock.calls[0][1] as { linkedInConfig: { geoTargets: unknown } }).linkedInConfig.geoTargets).toEqual([
+      { label: 'Germany', urn: 'urn:li:geo:101282230' },
+    ]);
+  });
+
+  // A variant's ad name, description and call to action (#5764 rows 16–17); the rules are table rows in
+  // `campaign-linkedin-variant-fields.utils.spec.ts`.
+  const variant = { introText: 'Join us', headline: 'Summit' };
+
+  it('forwards a variant ad name, description and call to action as checked and compacted', async () => {
+    const { next } = await create({
+      lifetimeBudget: false,
+      targetingProfile: 'cloud-native',
+      variants: [{ ...variant, name: '  Ad\tA ', description: 'Two days of talks', callToAction: ' register ' }],
+    });
+
+    expect(next).not.toHaveBeenCalled();
+    expect(sentLinkedInConfig()['variants']).toEqual([{ ...variant, name: 'Ad A', description: 'Two days of talks', callToAction: 'REGISTER' }]);
+  });
+
+  it('refuses a call to action while its flag is off, before anything is created', async () => {
+    isServerFeatureEnabled.mockImplementation((flag) => flag !== ServerFeatureFlag.CampaignServiceLinkedInCallToAction);
+
+    const { next } = await create({ lifetimeBudget: false, targetingProfile: 'cloud-native', variants: [{ ...variant, callToAction: 'REGISTER' }] });
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(legacyCreate).not.toHaveBeenCalled();
+    expect(refusal(next).field).toBe('linkedInConfig.variants[0].callToAction');
+  });
+
+  // LinkedIn Text Ads (#5764 row 19); the rules are table rows in `campaign-linkedin-text-ads.utils.spec.ts`.
+  const textAds = [{ headline: 'KubeCon NA', description: 'Join cloud native engineers.' }];
+  const manual = { strategy: 'manual', bidAmount: 5 };
+
+  it('forwards a Text Ads create as it came', async () => {
+    const { next } = await create({ lifetimeBudget: false, targetingProfile: 'cloud-native', variants: [], format: 'text', textAds, bidding: manual });
+
+    expect(next).not.toHaveBeenCalled();
+    expect(sentLinkedInConfig()).toMatchObject({ format: 'text', textAds, variants: [] });
+  });
+
+  it('refuses a Text Ads create while its flag is off, before anything is created', async () => {
+    isServerFeatureEnabled.mockImplementation((flag) => flag !== ServerFeatureFlag.CampaignServiceLinkedInTextAds);
+
+    const { next } = await create({ lifetimeBudget: false, targetingProfile: 'cloud-native', variants: [], format: 'text', textAds, bidding: manual });
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(legacyCreate).not.toHaveBeenCalled();
+    expect(refusal(next).field).toBe('linkedInConfig.format');
+  });
+
+  it('refuses a text ad image while LinkedIn creative assets are off, before anything is created', async () => {
+    isServerFeatureEnabled.mockImplementation((flag) => flag !== ServerFeatureFlag.CampaignServiceLinkedInAssets);
+
+    const { next } = await create({
+      lifetimeBudget: false,
+      targetingProfile: 'cloud-native',
+      variants: [],
+      format: 'text',
+      textAds: [{ ...textAds[0], imageAssetId: 'a1' }],
+      bidding: manual,
+    });
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(legacyCreate).not.toHaveBeenCalled();
+    expect(refusal(next).field).toBe('linkedInConfig.textAds[0].imageAssetId');
+  });
+
+  // LinkedIn video ads (#5764 row 18); the rules are table rows in `campaign-linkedin-video.utils.spec.ts`.
+  const videoAd = { introText: 'Join us', headline: 'KubeCon NA', videoAssetId: '3f2b8c1e-5d4a-4e6f-9a7b-1c2d3e4f5a6b' };
+
+  it('forwards a video ad as it came', async () => {
+    const { next } = await create({ lifetimeBudget: false, targetingProfile: 'cloud-native', variants: [videoAd] });
+
+    expect(next).not.toHaveBeenCalled();
+    expect(sentLinkedInConfig()['variants']).toEqual([videoAd]);
+  });
+
+  it('refuses a video ad while its flag is off, before anything is created', async () => {
+    isServerFeatureEnabled.mockImplementation((flag) => flag !== ServerFeatureFlag.CampaignServiceLinkedInVideo);
+
+    const { next } = await create({ lifetimeBudget: false, targetingProfile: 'cloud-native', variants: [videoAd] });
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(legacyCreate).not.toHaveBeenCalled();
+    expect(refusal(next).field).toBe('linkedInConfig.variants[0].videoAssetId');
+  });
+
+  // LinkedIn carousel ads (campaign-service#665); the rules are table rows in `campaign-linkedin-carousel.utils.spec.ts`.
+  const carousel = {
+    lifetimeBudget: false,
+    targetingProfile: 'cloud-native',
+    variants: [],
+    format: 'carousel',
+    carouselIntroText: 'Meet the keynote speakers',
+    carouselCards: [
+      { imageAssetId: '3f2b8c1e-5d4a-4e6f-9a7b-1c2d3e4f5a6b', headline: 'Keynote' },
+      { imageAssetId: '9a7b1c2d-3e4f-4a6b-8c1e-5d4a3f2b4e6f', headline: 'Panel', destinationUrl: 'https://events.example.org/schedule' },
+    ],
+  };
+
+  it('forwards a carousel as it came', async () => {
+    const { next } = await create(carousel);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(sentLinkedInConfig()).toMatchObject({ format: 'carousel', carouselIntroText: carousel.carouselIntroText, carouselCards: carousel.carouselCards });
+  });
+
+  it('refuses a carousel while its flag is off, before anything is created', async () => {
+    isServerFeatureEnabled.mockImplementation((flag) => flag !== ServerFeatureFlag.CampaignServiceLinkedInCarousel);
+
+    const { next } = await create(carousel);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(legacyCreate).not.toHaveBeenCalled();
+    expect(refusal(next).field).toBe('linkedInConfig.format');
+  });
+
+  // LinkedIn document ads (campaign-service#665); the rules are table rows in `campaign-linkedin-document.utils.spec.ts`.
+  const documentAd = {
+    lifetimeBudget: false,
+    targetingProfile: 'cloud-native',
+    variants: [],
+    format: 'document',
+    documentAssetId: '3f2b8c1e-5d4a-4e6f-9a7b-1c2d3e4f5a6b',
+    documentTitle: 'Sponsor prospectus',
+    documentIntroText: 'Sponsor the conference',
+  };
+
+  it('forwards a document as it came, with no registration URL on the brief', async () => {
+    // A stored brief with no registration URL: a document post has no landing page, so campaign-service needs none.
+    loadBriefById.mockResolvedValue({ status: 'loaded', briefId: 'b-1', brief: { eventDetails: { registrationUrl: '' } }, etag: 'e', approved: true });
+
+    const { next } = await create(documentAd);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(sentLinkedInConfig()).toMatchObject({
+      format: 'document',
+      documentAssetId: documentAd.documentAssetId,
+      documentTitle: documentAd.documentTitle,
+      documentIntroText: documentAd.documentIntroText,
+    });
+  });
+
+  it('still asks a single image create for the registration URL', async () => {
+    loadBriefById.mockResolvedValue({ status: 'loaded', briefId: 'b-1', brief: { eventDetails: { registrationUrl: '' } }, etag: 'e', approved: true });
+
+    const { next } = await create({ lifetimeBudget: false, targetingProfile: 'cloud-native', variants: [{ introText: 'a', headline: 'b' }] });
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusal(next).field).toBe('registrationUrl');
+  });
+
+  it('still asks the other platforms of a document create for the registration URL', async () => {
+    loadBriefById.mockResolvedValue({ status: 'loaded', briefId: 'b-1', brief: { eventDetails: { registrationUrl: '' } }, etag: 'e', approved: true });
+
+    const { next } = await create(documentAd, {
+      platforms: ['linkedin-ads', 'meta-ads'],
+      metaConfig: { budgetUsd: 100, variants: [{ primaryText: 'a', headline: 'b', imageUrl: 'https://example.com/a.png' }] },
+    });
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusal(next).field).toBe('registrationUrl');
+  });
+
+  it('refuses a document while its flag is off, before anything is created', async () => {
+    isServerFeatureEnabled.mockImplementation((flag) => flag !== ServerFeatureFlag.CampaignServiceLinkedInDocument);
+
+    const { next } = await create(documentAd);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(legacyCreate).not.toHaveBeenCalled();
+    expect(refusal(next).field).toBe('linkedInConfig.format');
+  });
+
+  // Boosting an existing LinkedIn post (campaign-service#673); the rules are table rows in `campaign-linkedin-boost.utils.spec.ts`.
+  const boost = { lifetimeBudget: false, targetingProfile: 'cloud-native', variants: [], format: 'boost', boostPost: 'urn:li:share:7518402035831111680' };
+
+  it('forwards a boost as it came', async () => {
+    const { next } = await create(boost);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(sentLinkedInConfig()).toMatchObject({ format: 'boost', boostPost: boost.boostPost });
+  });
+
+  it('refuses a boost while its flag is off, before anything is created', async () => {
+    isServerFeatureEnabled.mockImplementation((flag) => flag !== ServerFeatureFlag.CampaignServiceLinkedInBoost);
+
+    const { next } = await create(boost);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(legacyCreate).not.toHaveBeenCalled();
+    expect(refusal(next).field).toBe('linkedInConfig.format');
+  });
+
+  // LinkedIn Audience Expansion and Audience Network (campaign-service#667); the rules are table rows in
+  // `campaign-linkedin-delivery-options.utils.spec.ts`.
+  const delivery = {
+    lifetimeBudget: false,
+    targetingProfile: 'cloud-native',
+    variants: [variant],
+    audienceExpansionEnabled: true,
+    offsiteDeliveryEnabled: true,
+  };
+
+  it('forwards the delivery options as they came', async () => {
+    const { next } = await create(delivery);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(sentLinkedInConfig()).toMatchObject({ audienceExpansionEnabled: true, offsiteDeliveryEnabled: true });
+  });
+
+  it('refuses the delivery options while their flag is off, before anything is created', async () => {
+    isServerFeatureEnabled.mockImplementation((flag) => flag !== ServerFeatureFlag.CampaignServiceLinkedInDeliveryOptions);
+
+    const { next } = await create(delivery);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(legacyCreate).not.toHaveBeenCalled();
+    expect(refusal(next).field).toBe('linkedInConfig.audienceExpansionEnabled');
   });
 });

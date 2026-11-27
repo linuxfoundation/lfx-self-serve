@@ -2,15 +2,19 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { inject, PLATFORM_ID, REQUEST, REQUEST_CONTEXT, TransferState } from '@angular/core';
+import { inject, makeStateKey, PLATFORM_ID, REQUEST, REQUEST_CONTEXT, TransferState } from '@angular/core';
 import { CanActivateFn, CanMatchFn, Router } from '@angular/router';
 import { PROFILE_REDESIGN_FLAG } from '@lfx-one/shared/constants';
-import { ServerRequestContext } from '@lfx-one/shared/interfaces';
+import { AuthContext, ServerRequestContext } from '@lfx-one/shared/interfaces';
 import { accountPathForProfileTab, profileTargetForAccountRoute } from '@lfx-one/shared/utils';
 
 import { FeatureFlagService } from '../services/feature-flag.service';
+import { UserService } from '../services/user.service';
 import { PROFILE_REDESIGN_KEY } from '../utils/profile-redesign.util';
 import { mirrorOverridesToCookie, readCookieOverride } from './meeting-page-redesign.guard';
+
+/** The auth the server hands the browser, as `authenticatedMatchGuard` reads it before AppComponent runs. */
+const AUTH_STATE_KEY = makeStateKey<AuthContext>('auth');
 
 /**
  * The redesign flag for a guard, read in its injection context. The server decides from the flags it evaluated for the
@@ -65,4 +69,26 @@ export const profileRedesignRedirectGuard: CanActivateFn = async (route) => {
   if (!accountPath) return true;
   if (!(await readProfileRedesignFlag('profileRedesignRedirectGuard'))) return true;
   return router.createUrlTree([accountPath], { queryParams: route.queryParams });
+};
+
+/** Matches a route only with the redesign flag on, so the route after it (the Profile & Account hub) serves everyone else (#6082). */
+export const profileRedesignOnlyGuard: CanMatchFn = () => readProfileRedesignFlag('profileRedesignOnlyGuard');
+
+/**
+ * Settles the redesign flag for a page that renders either way, the public profile (#6088), and lets it load. The answer is
+ * kept in TransferState, so SSR and hydration render the same version and an in-app navigation renders the right one at once.
+ */
+export const profileRedesignReadGuard: CanActivateFn = async () => {
+  const transferState = inject(TransferState);
+  const featureFlagService = inject(FeatureFlagService);
+  const browser = isPlatformBrowser(inject(PLATFORM_ID));
+  // A signed-out visitor never has the flag, so the browser doesn't wait on the flag service for one. The first navigation
+  // runs before AppComponent fills UserService, so the server's auth hand-off counts too.
+  const signedIn = inject(UserService).authenticated() || transferState.get(AUTH_STATE_KEY, null)?.authenticated === true;
+  if (browser && !signedIn) return true;
+  const enabled = await readProfileRedesignFlag('profileRedesignReadGuard');
+  // Kept for the page, so after an in-app navigation it renders the right version from its first frame. A timed-out read
+  // is a fallback, not an answer, so it stays unsaved and the next navigation asks again.
+  if (!browser || enabled || featureFlagService.providerReady()) transferState.set(PROFILE_REDESIGN_KEY, enabled);
+  return true;
 };

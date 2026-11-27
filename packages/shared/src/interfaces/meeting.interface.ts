@@ -960,6 +960,35 @@ export interface ComposerGuestRow {
   removable: boolean;
 }
 
+/** A guest row in the redesigned composer: the shared row plus the `You` badge and the line after the email. */
+export interface ComposerRedesignGuestRow extends ComposerGuestRow {
+  /** Whether the guest is the signed-in user. */
+  isSelf: boolean;
+  /** `{email} · {meta}`: how the guest got here (group, series) or who they are, with empty parts dropped. */
+  subline: string;
+  /** Whether the row offers to resend the guest's invite: an edit, with the guest saved upstream. */
+  canResend: boolean;
+  /** Whether a resend for this guest is in flight. */
+  resending: boolean;
+}
+
+/** A group in the redesigned composer's picker or its selected list. */
+export interface ComposerGroupRow {
+  uid: string;
+  name: string;
+  /** `{category} · {n} members`, with unknown parts dropped. */
+  meta: string;
+  /** Whether the voting-status filter applies to this group. */
+  voting: boolean;
+}
+
+/** A voting status in the composer's per-group menu, with whether the meeting's filter includes it. */
+export interface ComposerVotingStatusOption {
+  label: string;
+  value: string;
+  checked: boolean;
+}
+
 /**
  * Guest removals since the last add or dismiss, kept so they can be undone together
  * @description Removal has no confirm step, so this is the way back from misclicks. Undo puts back the
@@ -2248,7 +2277,15 @@ export interface PublicCalendarMeeting {
   duration: number;
   /** IANA timezone (e.g. "America/New_York") */
   timezone: string;
-  /** Occurrence timestamps and status only — no titles, descriptions, or registrant counts */
+  /** Meeting type (e.g. "Board", "Technical"); drives chip colour and the type label */
+  meeting_type: string | null;
+  /** Invite-only: listed on the calendar, but only invited guests can join */
+  restricted: boolean;
+  /** Series recurrence pattern; null for a one-time meeting and on past-occurrence rows, which carry none upstream */
+  recurrence: MeetingRecurrence | null;
+  /** Agenda; only on live-series rows of non-restricted meetings, matching `GET /public/api/meetings/:id` */
+  description?: string;
+  /** Occurrence timestamps and status only — no titles, descriptions, or registrant counts; see `isMeetingOccurrenceCancelled` for cancelled ones */
   occurrences?: MeetingOccurrenceSummary[];
   /** Cancelled occurrence IDs from the live series (10-digit Unix-second keys) */
   cancelled_occurrences?: string[];
@@ -2283,8 +2320,8 @@ export interface PublicProjectMeetingsResponse {
   meetings: PublicCalendarMeeting[];
   /** Number of entries in `meetings` */
   total: number;
-  /** Slim project envelope; `name` is empty for an unknown or non-discoverable UID. Transient UID lookup failures return an error, not this envelope. */
-  project: { uid: string; name: string };
+  /** Slim project envelope; `name` is empty and `logo_url` null for an unknown or non-discoverable UID. Transient UID lookup failures return an error, not this envelope. */
+  project: { uid: string; name: string; logo_url: string | null };
 }
 
 /** Confidence-driven tab in the attendance reconciliation drawer */
@@ -2319,6 +2356,16 @@ export type MeetingComposerSectionId = (typeof MEETING_COMPOSER_SECTIONS)[number
  * section or renaming one of its fields fails the build here instead of drifting silently.
  */
 export type MeetingComposerSection = (typeof MEETING_COMPOSER_SECTIONS)[number];
+
+/** One row of the redesigned composer's start-time list. */
+export interface MeetingTimeSlot {
+  /** 12-hour label, e.g. `9:30 AM`. */
+  label: string;
+  /** Value written to `startTime`; a stored time keeps its own spelling. */
+  value: string;
+  /** Minutes after midnight, for ordering and matching. */
+  minuteOfDay: number;
+}
 
 /**
  * A rail row's derived display state for one composer section.
@@ -2370,6 +2417,12 @@ export interface MeetingComposerPreviewRow {
   color?: string;
 }
 
+/** Options for `MeetingComposerFormService.initialize()` that differ between composer surfaces. */
+export interface MeetingComposerInitOptions {
+  /** Create only: recording and AI summary start on. Meant for the redesigned modal; the drawer leaves it off. */
+  featureDefaultsOn?: boolean;
+}
+
 /**
  * What the meeting composer was opened with.
  * @description Set by whichever entry point calls `MeetingComposerService.open()` — a dashboard
@@ -2409,6 +2462,29 @@ export interface MeetingComposerEditScope {
   kind: RecurringMeetingEditScope;
   /** Set for `occurrence` only. */
   label?: string;
+}
+
+/** What the redesigned composer's scope note says an edit changes. */
+export interface MeetingComposerScopeNote {
+  /** `single` is a one-time meeting; the other two are the scopes of a recurring one. */
+  kind: 'single' | RecurringMeetingEditScope;
+  /** Title of the meeting as loaded. */
+  title: string;
+  /** Saved start of the meeting or occurrence; absent for a series. */
+  label?: string;
+}
+
+/** What the redesigned composer's delete dialog shows about the meeting it deletes. */
+export interface MeetingComposerDeleteDialogData {
+  meeting: Meeting;
+  /** Registered guests the delete notifies, as saved; `null` when the meeting carries no count. */
+  guestCount: number | null;
+}
+
+/** Project the redesigned composer names above its title. */
+export interface MeetingComposerProjectLabel {
+  name: string;
+  logoUrl: string;
 }
 
 /** Options for the show-attendees lock (`isShowMeetingAttendeesLocked` and its helpers). */

@@ -9,7 +9,9 @@ import {
   EmailVerificationStatus,
   IdentityProvider,
   IdentityProviderOption,
+  PasswordStrength,
   ProfileTab,
+  UiBadgeTone,
 } from '../interfaces';
 
 /**
@@ -21,6 +23,14 @@ import {
  * layout, the profile-edit dialog, and the settings feature.
  */
 export const PENDING_PROFILE_SAVE_KEY = 'lfx_profile_pending_save';
+/** Session key for a primary email chosen on Personal information when its save left for Flow C; the page restores it on return. */
+export const PENDING_PRIMARY_EMAIL_KEY = 'lfx_profile_pending_primary_email';
+/** Session key for a Linux.com forwarding address chosen on Account & Settings when its save left for Flow C (#6075). */
+export const PENDING_LINUX_FORWARD_KEY = 'lfx_profile_pending_linux_forward';
+/** How long a kept forwarding address stays usable, the same as a pending profile save. */
+export const PENDING_LINUX_FORWARD_TTL_MS = 10 * 60 * 1000;
+/** How long a kept primary email choice stays usable, the same as a pending profile save. */
+export const PENDING_PRIMARY_EMAIL_TTL_MS = 10 * 60 * 1000;
 
 /** Opaque one-shot handle for an already-linked callback's private support context; never an email. */
 export const EMAIL_LINKED_SUPPORT_CONTEXT_PARAM = 'email_support_context';
@@ -292,6 +302,9 @@ export const EMAIL_VERIFICATION_SENT_MESSAGE = `Check your email for a 6-digit v
 /** Resends allowed on the code step before Resend is replaced by a Contact support action. */
 export const EMAIL_RESEND_SUPPORT_THRESHOLD = 1;
 
+/** Digits in an email verification code. */
+export const EMAIL_VERIFICATION_CODE_LENGTH = 6;
+
 /** Heading for the initial code-step guidance, neutral about delivery and linked-account status. */
 export const EMAIL_CODE_NOT_RECEIVED_TITLE = 'No code yet?';
 
@@ -351,11 +364,264 @@ export const ACCOUNT_SETTINGS_SECTIONS = {
 export const PROFILE_GRID_LIMIT = 9;
 export const PROFILE_GROUP_GRID_LIMIT = 6;
 
+/** Copy of the Profile page hero, behind the profile redesign flag (#6082). */
+export const PROFILE_PAGE_COPY = {
+  addTitle: 'Add job title and company',
+  noBio: 'No bio yet. A few lines about what you work on and care about help others know who you are.',
+  addBio: 'Add bio',
+  uploadPhoto: 'Upload photo',
+  uploadNewPhoto: 'Upload new photo',
+  githubLabel: 'GitHub: ',
+  githubTooltip: 'GitHub · ',
+  memberSince: 'Member since: ',
+  loadFailed: 'We couldn’t load your profile.',
+  retry: 'Try again',
+} as const;
+
+/** Copy of the Profile page's openprofile card and links (#6083). */
+export const PROFILE_ASIDE_COPY = {
+  privateTitle: 'Show the world what you build',
+  privateText: 'Turn on your public profile to showcase your contributions, badges and leadership roles with one link you can share anywhere.',
+  makePublic: 'Make my profile public',
+  publicTitle: 'Your profile is public',
+  publicText: 'Anyone with the link can see your contributions, badges and roles. Choose what is shown in Profile settings.',
+  viewPublic: 'View my public profile',
+  settings: 'Open Profile settings',
+  editProfile: 'Edit profile',
+  manageIdentities: 'Manage identities',
+  manageAffiliations: 'Manage affiliations',
+  publicStatus: 'Public',
+  privateStatus: 'Private',
+  railLabel: 'Open Profile',
+} as const;
+
+/** Where the Profile page's openprofile rail shows: above 1024px (#6083). */
+export const PROFILE_ASIDE_MEDIA_QUERY = '(min-width: 1025px)';
+
+/** Copy of the Profile page's Recognitions section (#6084). */
+export const PROFILE_RECOGNITIONS_COPY = {
+  heading: 'Recognitions',
+  description: 'Awards you’ve earned for contributions and participation across Linux Foundation programs and events.',
+  missingLabel: 'Missing a badge?',
+  missingTip: 'Badges come from Credly. Add the email you use on Credly to your profile in Manage identities and they’ll show up here within 24 hours.',
+  earn: 'Earn badges',
+  speaking: 'Speaking',
+  issued: 'Issued',
+  emptyTitle: 'No badges yet',
+  emptyText: 'Badges are issued through Credly when you pass a certification, speak at an event or complete a program.',
+  loadFailed: 'We couldn’t load your badges.',
+  retry: 'Try again',
+} as const;
+
+/** Copy of the Profile page's Foundations & projects involvement section (#6085). */
+export const PROFILE_INVOLVEMENT_COPY = {
+  heading: 'Foundations & projects involvement',
+  description: 'Every foundation and project you take part in, and your role in each. Hover a card for details.',
+  missingLabel: 'Missing a project?',
+  missingTip:
+    'Projects show up when we match your commits, reviews or roles to an email or account on your profile. Add the email you use for commits in Manage identities.',
+  manage: 'Manage affiliations',
+  emptyTitle: 'No foundations or projects yet',
+  emptyText: 'Foundations and projects show up here once we can match your activity to an email or account on your profile.',
+  loadFailed: 'We couldn’t load your projects.',
+  retry: 'Try again',
+} as const;
+
+/** Copy of the Profile page's Group participation section (#6086). */
+export const PROFILE_GROUPS_COPY = {
+  heading: 'Group participation',
+  description: 'Seats you hold on governing boards, technical steering committees and working groups, trusted positions in the open source community.',
+  missingLabel: 'Missing a group?',
+  missingTip: 'Groups show up when an admin adds you with an email on your profile. Add that email in Manage identities, or ask the group admin to add you.',
+  find: 'Find groups',
+  emptyTitle: 'No board or committee seats yet',
+  emptyText: 'Seats on governing boards, technical committees and working groups show up here.',
+  loadFailed: 'We couldn’t load your groups.',
+  retry: 'Try again',
+} as const;
+
+/** Groups, where the Profile page sends someone to find a group (#6086). */
+export const PROFILE_GROUPS_PATH = '/groups';
+
+/** Router state for a group opened from the Profile page: its back link returns to Profile, in the Me lens (#6086). */
+export const PROFILE_GROUP_LINK_STATE = { backLabel: 'Profile', backPath: '/profile', fromMeLens: true } as const;
+
+/** The Profile page's note when every section is empty (#6082). */
+export const PROFILE_NO_ACTIVITY_COPY = {
+  title: 'We haven’t found any activity for you yet',
+  text: 'We match commits, meetings, votes, badges and talks to the emails and accounts on your profile. Add the ones you use in open source and we’ll pull in your work.',
+  addEmail: 'Add an email',
+  connectGithub: 'Connect GitHub',
+} as const;
+
+/** Copy of the redesigned public profile hero (#6089). */
+export const PUBLIC_PROFILE_HERO_COPY = {
+  githubLabel: 'GitHub: ',
+  githubTooltip: 'GitHub · ',
+  linkedInLabel: 'LinkedIn: ',
+  linkedInTooltip: 'LinkedIn · ',
+  noPhoto: 'No profile photo',
+} as const;
+
+/** Section headers of the redesigned public profile, worded for visitors in the third person (#6088). */
+export const PUBLIC_PROFILE_SECTION_COPY = {
+  recognitions: 'Recognitions',
+  recognitionsDescription: 'Awards this person has earned for contributions and participation across Linux Foundation programs and events.',
+  involvement: 'Foundations & projects involvement',
+  involvementDescription: 'Every foundation and project this person takes part in, and their role in each.',
+  recognitionsDescriptionOwner: 'Awards you’ve earned for contributions and participation across Linux Foundation programs and events.',
+  involvementDescriptionOwner: 'Every foundation and project you take part in, and your role in each.',
+} as const;
+
+/** Copy of the redesigned public profile's top bar (#6090). */
+export const PUBLIC_PROFILE_TOPBAR_COPY = {
+  poweredBy: 'Powered by',
+  darkTheme: 'Switch to dark theme',
+  lightTheme: 'Switch to light theme',
+  signIn: 'Sign in',
+  createAccount: 'Create LFX account',
+  manageProfile: 'Manage my profile',
+  lfHome: 'The Linux Foundation',
+} as const;
+
+/** Scroll (px) past which the redesigned public profile's top bar shows the person (#6090). */
+export const PUBLIC_PROFILE_TOPBAR_REVEAL_OFFSET = 240;
+
+/** Training & Certifications, where the Profile page sends someone to earn badges (#6084). */
+export const PROFILE_TRAINING_PATH = '/me/training';
+
 /** Base path of the Account & Settings area that replaces the Profile & Account hub's tabs (#6067). */
 export const ACCOUNT_BASE_PATH = '/account';
 /** Account & Settings pages that start Flow C from their own address, so the server accepts them as a return path. */
 export const ACCOUNT_IDENTITIES_PATH = '/account/identities';
 export const ACCOUNT_LINUX_EMAIL_PATH = '/account/linux-email';
+export const ACCOUNT_PERSONAL_INFORMATION_PATH = '/account/personal-information';
+/** Account & Settings › Work history & Affiliations, which the Profile page links to (#6083). */
+export const ACCOUNT_WORK_HISTORY_PATH = '/account/work-history';
+
+/** Copy for the Account & Settings Personal information page (#6072). */
+export const PERSONAL_INFORMATION_COPY = {
+  infoSubtitle:
+    'A complete profile helps community members identify and connect with you, enables event organizers to plan in-person meetups, and ensures you receive contributor recognition.',
+  photoHint: 'PNG, JPEG, or WEBP. Max 2MB.',
+  companyHelp: 'Companies in this list come from your work history. Add one there to choose a new company. A company you saved before may still appear.',
+  emailSubtitle: 'The address we send notifications, meeting invites and account messages to. You can choose any verified email on your account.',
+  phoneHint: 'Optional. Only used for urgent event notifications and swag delivery.',
+  tshirtSubtitle: 'We use it to send you swag, like the t-shirts given to speakers, maintainers and event attendees.',
+  saved: 'Personal information updated',
+} as const;
+
+/** Copy for the Account & Settings Identities page and its dialogs (#6074). */
+export const ACCOUNT_IDENTITIES_COPY = {
+  subtitle: 'Manage the accounts used to identify you and attribute contributions.',
+  unverifiedNote: 'You have unverified identities connected to your profile. Please verify them to validate your project affiliations and work history.',
+  emptyText:
+    'No connected accounts were found for your profile. Link GitHub, LinkedIn, Google or an email address so your contributions are attributed to you.',
+  primaryEmailRemoveReason: 'This email is your primary email and receives meeting invitations. Choose a different one in Email settings before removing it.',
+  addSubtitle:
+    'Identities are used to attribute contributions and participation across projects. Adding verified identities helps ensure accurate project affiliations.',
+  emailProviderDescription: 'Add and verify an email address you use for open source work',
+} as const;
+
+/** Copy of Account & Settings › Developer settings (#6081). */
+export const ACCOUNT_DEVELOPER_SETTINGS_COPY = {
+  guidelinesTitle: 'Security Guidelines',
+  guidelines: [
+    'This token is short-lived and automatically regenerated by the system.',
+    'Never share it publicly. Keep this token secure.',
+    'Never commit this token to version control.',
+  ],
+  /** The guidelines once LFX Insights API tokens are on, which covers both kinds of token. */
+  guidelinesInsights: [
+    'The Personal Access Token is short-lived and automatically regenerated by the system.',
+    'Never share a token publicly. Keep it secure.',
+    'Never commit a token to version control.',
+    'Give each integration its own LFX Insights API token, so you can revoke one without affecting the others.',
+  ],
+  apiTokenTitle: 'API Token',
+  apiTokenSubtitle: 'Your API tokens provide programmatic access to LFX services.',
+  apiTokenSubtitleSingle: 'Your API token provides programmatic access to LFX services.',
+  patLabel: 'Personal Access Token',
+  showToken: 'Show token',
+  hideToken: 'Hide token',
+  copyToken: 'Copy token',
+  copied: 'Copied',
+  insightsTitle: 'LFX Insights API Tokens',
+  emptyTitle: 'No LFX Insights API tokens yet',
+  emptyText: 'Create a token to pull project health and contribution data into your own dashboards, reports and tools.',
+  createTitle: 'New LFX Insights API token',
+  namePlaceholder: 'e.g. Quarterly report',
+  nameHint: 'Name it after the script or tool that will use it.',
+  createdWarning: 'Copy this token now. You won’t be able to see it again.',
+  revokeTitle: 'Revoke token?',
+  revokeTextBefore: 'Anything using',
+  // Not "immediately" as designed: the Worker caches an exchanged token for up to 10 minutes (insights-tokens.md).
+  revokeTextAfter: 'will lose access to the LFX Insights API within 10 minutes. This action can’t be undone.',
+  revokeConfirm: 'Revoke token',
+} as const;
+
+/** Copy of Account & Settings › Password (#6080). */
+export const ACCOUNT_PASSWORD_COPY = {
+  changeTitle: 'Change Password',
+  changeSubtitle: 'Keep your account secure by using a strong password and enabling two-factor authentication.',
+  recoveryTitle: 'Account Recovery',
+  recoverySubtitle: 'Can’t remember your password? We’ll email a link to your primary address so you can set a new one.',
+  resetSentSummary: 'Password reset link sent to {email}',
+  resetSentDetail: 'Check your inbox and follow the link to set a new password.',
+  resetSentFallbackEmail: 'your primary email',
+  twoFactorTitle: 'Two-Factor Authentication',
+  twoFactorSubtitle:
+    'Add a second step when you sign in, like a code from an authenticator app, to keep your account secure even if your password is compromised.',
+  twoFactorUnavailable: 'Two-factor authentication settings are currently unavailable.',
+  requirementsTitle: 'Requirements (must meet at least 3 of 4 criteria):',
+  mismatch: 'Passwords do not match',
+} as const;
+
+/** The strength badge's tone for each strength on Account & Settings › Password (#6080). */
+export const ACCOUNT_PASSWORD_STRENGTH_TONES: Record<PasswordStrength['label'], UiBadgeTone> = {
+  weak: 'danger',
+  fair: 'warning',
+  good: 'warning',
+  strong: 'success',
+};
+
+/** Copy of Account & Settings › Email settings (#6079). The add and code steps keep the hub's copy. */
+export const ACCOUNT_EMAIL_SETTINGS_COPY = {
+  heading: 'Email Addresses',
+  subtitle: 'Manage your email addresses. All email addresses are verified before they can be used.',
+  primaryHint: 'Used for account communications',
+  deletePrimaryReason: 'You can’t delete your primary email.',
+  deleteInviteReason: 'This email is set for meeting invitations.',
+  deleteTitle: 'Delete email address?',
+  deleteText: 'will be removed from your account. Activity linked to it may no longer be attributed to you. This action can’t be undone.',
+  deleteConfirm: 'Delete email address',
+} as const;
+
+/** Copy for the Account & Settings Linux.com email page (#6075). `{domain}` is the alias domain the server reports. */
+export const ACCOUNT_LINUX_EMAIL_COPY = {
+  subtitle: 'A personal @{domain} address that forwards to an inbox you choose. It’s a one-time add-on for Individual Supporters.',
+  claimNote: 'Your add-on is active. Pick your alias and where its email should go. You can’t change the alias later.',
+  aliasHint: 'Your alias can’t be changed after it’s claimed.',
+  forwardHint: 'Email sent to your alias is forwarded here.',
+  emptyTitle: 'Get your own Linux.com email',
+  emptyText:
+    'Show your support for Linux and open source with a personal @{domain} address that forwards to any inbox. It’s a one-time purchase for Individual Supporters.',
+  noVerifiedEmail: 'You don’t have a verified email address to forward to yet. Add and verify an email address first, then return here to set up forwarding.',
+} as const;
+
+/** Length limits of the Personal information fields; the server rejects longer values. */
+export const PERSONAL_INFORMATION_FIELD_LIMITS = {
+  given_name: 50,
+  family_name: 50,
+  organization: 200,
+  job_title: 100,
+  country: 50,
+  state_province: 50,
+  city: 50,
+  postal_code: 20,
+  address: 200,
+  phone_number: 20,
+} as const;
 
 export const ACCOUNT_SETTINGS_TITLE = 'Account & Settings';
 export const ACCOUNT_DISCARD_CHANGES_TITLE = 'Discard unsaved changes?';

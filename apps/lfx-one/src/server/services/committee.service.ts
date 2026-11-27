@@ -5,6 +5,7 @@ import {
   ACCESS_CHECK_BATCH_SIZE,
   CHAT_WEBHOOK_URL_MAX_LENGTH,
   COMMITTEE_DOCUMENT_DELETE_TYPES,
+  DOCUMENT_UPDATE_TYPES,
   DOCUMENT_UPSTREAM_PATH_SEGMENTS,
   MEMBER_IMPORT_BULK_TIMEOUT_MS,
   PENDING_APPLICATION_DISCOVERY_TIMEOUT_MS,
@@ -12,7 +13,7 @@ import {
   SLACK_INCOMING_WEBHOOK_URL_PATTERN,
   UUID_REGEX,
 } from '@lfx-one/shared/constants';
-import { CommitteeMemberRole } from '@lfx-one/shared/enums';
+import { CommitteeMemberRole, CommitteeMemberStatus } from '@lfx-one/shared/enums';
 import {
   AcceptCommitteeInviteRequest,
   ApiRequestOptions,
@@ -47,13 +48,16 @@ import {
   ProjectSettings,
   QueryServiceCountResponse,
   QueryServiceResponse,
+  UpdateDocumentRequest,
   UploadCommitteeDocumentRequest,
+  UpstreamDocumentRecord,
 } from '@lfx-one/shared/interfaces';
-import { invitationRequiresOrganization } from '@lfx-one/shared/utils';
+import { canGroupGrantSocialListening, invitationRequiresOrganization } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 import FormData from 'form-data';
 
 import { AuthorizationError, ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { buildDocumentUpdateBody } from '../helpers/document-update.helper';
 import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources, FetchAllQueryResourcesOptions } from '../helpers/query-service.helper';
@@ -101,6 +105,8 @@ interface CommitteeDocumentUpstreamResponse {
   file_size: number;
   content_type: string;
   description?: string;
+  /** The folder the file sits in; absent at the root. */
+  folder_uid?: string;
   committee_uid?: string;
   created_at?: string;
   updated_at?: string;
@@ -586,6 +592,7 @@ export class CommitteeService {
       is_audit_enabled,
       show_meeting_attendees,
       member_visibility,
+      members_can_view_social_listening: membersCanViewSocialListening,
       ...committeeData
     } = data as CommitteeCreateData & { chat_webhook_url?: unknown };
     /* eslint-enable @typescript-eslint/no-unused-vars */
@@ -613,9 +620,21 @@ export class CommitteeService {
     }
 
     // Step 2: Update settings if provided
-    if (business_email_required !== undefined || is_audit_enabled !== undefined || show_meeting_attendees !== undefined || member_visibility !== undefined) {
+    if (
+      business_email_required !== undefined ||
+      is_audit_enabled !== undefined ||
+      show_meeting_attendees !== undefined ||
+      member_visibility !== undefined ||
+      membersCanViewSocialListening !== undefined
+    ) {
       try {
-        await this.updateCommitteeSettings(req, newCommittee.uid, { business_email_required, is_audit_enabled, show_meeting_attendees, member_visibility });
+        await this.updateCommitteeSettings(req, newCommittee.uid, {
+          business_email_required,
+          is_audit_enabled,
+          show_meeting_attendees,
+          member_visibility,
+          members_can_view_social_listening: membersCanViewSocialListening,
+        });
       } catch {
         logger.warning(req, 'create_committee_settings', 'Failed to update committee settings, but committee was created successfully', {
           committee_uid: newCommittee.uid,
@@ -629,6 +648,7 @@ export class CommitteeService {
       ...(is_audit_enabled !== undefined && { is_audit_enabled }),
       ...(show_meeting_attendees !== undefined && { show_meeting_attendees }),
       ...(member_visibility !== undefined && { member_visibility }),
+      ...(membersCanViewSocialListening !== undefined && { members_can_view_social_listening: membersCanViewSocialListening }),
     };
   }
 
@@ -654,6 +674,7 @@ export class CommitteeService {
       is_audit_enabled,
       show_meeting_attendees,
       member_visibility,
+      members_can_view_social_listening: membersCanViewSocialListening,
       writers,
       auditors,
       chat_webhook_url: rawChatWebhookUrlTyped,
@@ -740,6 +761,7 @@ export class CommitteeService {
       is_audit_enabled !== undefined ||
       show_meeting_attendees !== undefined ||
       member_visibility !== undefined ||
+      membersCanViewSocialListening !== undefined ||
       writers !== undefined ||
       auditors !== undefined ||
       chatWebhookUrlToSave !== undefined;
@@ -847,6 +869,7 @@ export class CommitteeService {
         is_audit_enabled,
         show_meeting_attendees,
         member_visibility,
+        members_can_view_social_listening: membersCanViewSocialListening,
         writers,
         auditors,
         chat_webhook_url: chatWebhookUrlToSave,
@@ -880,6 +903,7 @@ export class CommitteeService {
       ...(is_audit_enabled !== undefined && { is_audit_enabled }),
       ...(show_meeting_attendees !== undefined && { show_meeting_attendees }),
       ...(member_visibility !== undefined && { member_visibility }),
+      ...(membersCanViewSocialListening !== undefined && { members_can_view_social_listening: membersCanViewSocialListening }),
       ...(writers !== undefined && { writers }),
       ...(auditors !== undefined && { auditors }),
       // Workaround: upstream committee-service PUT does not include mailing_list in the response body
@@ -1462,6 +1486,78 @@ export class CommitteeService {
     return userMemberships;
   }
 
+  /**
+   * Whether the current user is a member of a group of `foundationUid` that has the
+   * `members_can_view_social_listening` group setting on (lfx-self-serve-ops#387).
+   *
+   * Membership is read with the user's own token; groups of child projects carry a different
+   * `project_uid` and never match. Settings are read with M2M because upstream gates
+   * `/committees/{uid}/settings` on committee#writer, which members usually are not — only the
+   * one boolean is used. Any failure denies.
+   */
+  public async canGroupMemberViewSocialListening(req: Request, foundationUid: string): Promise<boolean> {
+    const username = await getUsernameFromAuth(req);
+    if (!username) {
+      return false;
+    }
+
+    const memberships = await fetchAllQueryResources<CommitteeMember>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeMember>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          type: 'committee_member',
+          tags_all: [`username:${username}`, `project_uid:${foundationUid}`],
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      { failOnPartial: true }
+    );
+
+    // Only active seats count; upstream defaults status to Active, so a missing or Inactive status denies.
+    const groupUids = [
+      ...new Set(
+        memberships
+          // The membership's denormalized category only skips groups that are clearly not Boards; the group record decides below.
+          .filter((m) => m.status === CommitteeMemberStatus.ACTIVE && (!m.committee_category || canGroupGrantSocialListening(m.committee_category)))
+          .map((m) => m.committee_uid)
+          .filter((uid): uid is string => Boolean(uid))
+      ),
+    ];
+    if (groupUids.length === 0) {
+      return false;
+    }
+
+    const m2mToken = await generateM2MToken(req);
+    // allSettled: one failed read must not hide another group that has the setting on.
+    const requestOptions = { bearerToken: m2mToken };
+    const results = await settleInBatches(groupUids, 10, async (uid) => {
+      const settings = await this.getCommitteeSettings(req, uid, { throwOnError: true, requestOptions });
+      if (settings?.members_can_view_social_listening !== true) {
+        return false;
+      }
+      // Board only for now, and only the foundation's own groups: confirm both on the group record, not the
+      // membership's indexed copy, which can be stale or tagged with an ancestor (a child project's Board).
+      const group = await this.microserviceProxy.proxyRequest<Committee>(
+        req,
+        'LFX_V2_SERVICE',
+        `/committees/${uid}`,
+        'GET',
+        undefined,
+        undefined,
+        undefined,
+        requestOptions
+      );
+      return group?.project_uid === foundationUid && canGroupGrantSocialListening(group.category);
+    });
+    if (results.some((r) => r.status === 'fulfilled' && r.value === true)) {
+      return true;
+    }
+    const failure = results.find((r): r is PromiseRejectedResult => r.status === 'rejected');
+    if (failure) {
+      throw failure.reason;
+    }
+    return false;
+  }
+
   // ── My Committees ─────────────────────────────────────────────────────────
 
   /**
@@ -1986,44 +2082,13 @@ export class CommitteeService {
     ]);
 
     // Normalize folders → CommitteeDocument
-    const folderDocs: CommitteeDocument[] = (folders || []).map((f) => ({
-      uid: f.uid,
-      type: 'folder' as const,
-      name: f.name,
-      created_at: f.created_at,
-      updated_at: f.updated_at,
-      uploaded_by: resolveAuditUserDisplayName(f.created_by, f.created_by_username),
-      committee_uid: f.committee_uid,
-    }));
+    const folderDocs: CommitteeDocument[] = (folders || []).map((f) => this.toFolderDocument(f));
 
     // Normalize links → CommitteeDocument
-    const linkDocs: CommitteeDocument[] = (links || []).map((l) => ({
-      uid: l.uid,
-      type: 'link' as const,
-      name: l.name,
-      url: l.url,
-      description: l.description,
-      created_at: l.created_at,
-      updated_at: l.updated_at,
-      uploaded_by: resolveAuditUserDisplayName(l.created_by, l.created_by_username),
-      parent_uid: l.folder_uid,
-      committee_uid: l.committee_uid,
-    }));
+    const linkDocs: CommitteeDocument[] = (links || []).map((l) => this.toLinkDocument(l));
 
     // Normalize uploaded files → CommitteeDocument
-    const fileDocs: CommitteeDocument[] = (files || []).map((f) => ({
-      uid: f.uid,
-      type: 'file' as const,
-      name: f.name,
-      description: f.description,
-      file_size: f.file_size,
-      mime_type: f.content_type,
-      created_at: f.created_at,
-      updated_at: f.updated_at,
-      uploaded_by: resolveAuditUserDisplayName(f.created_by, f.uploaded_by_username),
-      parent_uid: f.folder_uid,
-      committee_uid: f.committee_uid,
-    }));
+    const fileDocs: CommitteeDocument[] = (files || []).map((f) => this.toFileDocument(f));
 
     return [...folderDocs, ...linkDocs, ...fileDocs];
   }
@@ -2054,15 +2119,7 @@ export class CommitteeService {
         folder_uid: folder.uid,
       });
 
-      return {
-        uid: folder.uid,
-        type: 'folder',
-        name: folder.name,
-        created_at: folder.created_at,
-        updated_at: folder.updated_at,
-        uploaded_by: resolveAuditUserDisplayName(folder.created_by, folder.created_by_username),
-        committee_uid: folder.committee_uid,
-      };
+      return this.toFolderDocument(folder);
     }
 
     // Link
@@ -2085,18 +2142,7 @@ export class CommitteeService {
       link_uid: link.uid,
     });
 
-    return {
-      uid: link.uid,
-      type: 'link',
-      name: link.name,
-      url: link.url,
-      description: link.description,
-      created_at: link.created_at,
-      updated_at: link.updated_at,
-      uploaded_by: resolveAuditUserDisplayName(link.created_by, link.created_by_username),
-      parent_uid: link.folder_uid,
-      committee_uid: link.committee_uid,
-    };
+    return this.toLinkDocument(link);
   }
 
   /**
@@ -2274,6 +2320,65 @@ export class CommitteeService {
       document_uid: documentId,
       document_type: documentType,
     });
+  }
+
+  /**
+   * Renames and/or moves a committee folder, link or uploaded file. The upstream update replaces every editable field, so
+   * the record is read first, with its ETag, and what is not changing is carried over; the ETag makes the write fail with a
+   * conflict if the record changed in between. `X-Sync` makes the write wait for the indexer, which is what uploaded files
+   * are listed from, so a refresh straight after shows the change. A name another record holds, or a folder that is not
+   * the committee's, is refused upstream and passed on as it is.
+   * @param documentType 'folder', 'link' or 'file' — determines which upstream endpoint to call
+   */
+  public async updateCommitteeDocument(
+    req: Request,
+    committeeId: string,
+    documentId: string,
+    documentType: ProjectDocumentType,
+    changes: UpdateDocumentRequest
+  ): Promise<CommitteeDocument> {
+    // Defense-in-depth: the controller validates this too, but an unknown type must never fall through to another resource's path.
+    if (!DOCUMENT_UPDATE_TYPES.includes(documentType)) {
+      throw ServiceValidationError.forField('type', `Unsupported document type: ${documentType}. Must be one of: ${DOCUMENT_UPDATE_TYPES.join(', ')}.`, {
+        operation: 'update_committee_document',
+        service: 'committee_service',
+      });
+    }
+
+    const resourcePath = `/committees/${committeeId}/${DOCUMENT_UPSTREAM_PATH_SEGMENTS[documentType]}/${documentId}`;
+
+    // Step 1: Fetch the record with its ETag
+    const { data: current, etag } = await this.etagService.fetchWithETag<UpstreamDocumentRecord>(
+      req,
+      'LFX_V2_SERVICE',
+      resourcePath,
+      'update_committee_document'
+    );
+
+    // Step 2: Replace it with the change applied, guarded by the ETag
+    const updated = await this.etagService.updateWithETag<CommitteeFolder | CommitteeLink | CommitteeDocumentUpstreamResponse>(
+      req,
+      'LFX_V2_SERVICE',
+      resourcePath,
+      etag,
+      buildDocumentUpdateBody(documentType, current, changes),
+      'update_committee_document',
+      { 'X-Sync': 'true' }
+    );
+
+    logger.debug(req, 'update_committee_document', `Committee ${documentType} updated successfully`, {
+      committee_uid: committeeId,
+      document_uid: documentId,
+      document_type: documentType,
+    });
+
+    if (documentType === 'folder') {
+      return this.toFolderDocument(updated as CommitteeFolder);
+    }
+    if (documentType === 'link') {
+      return this.toLinkDocument(updated as CommitteeLink);
+    }
+    return this.toFileDocument(updated as CommitteeDocumentUpstreamResponse);
   }
 
   /**
@@ -2791,6 +2896,7 @@ export class CommitteeService {
       ...(settings.is_audit_enabled !== undefined && { is_audit_enabled: settings.is_audit_enabled }),
       ...(settings.show_meeting_attendees !== undefined && { show_meeting_attendees: settings.show_meeting_attendees }),
       ...(settings.member_visibility !== undefined && { member_visibility: settings.member_visibility }),
+      ...(settings.members_can_view_social_listening !== undefined && { members_can_view_social_listening: settings.members_can_view_social_listening }),
       ...(settings.chat_webhook_url !== undefined && { chat_webhook_url: settings.chat_webhook_url }),
       ...(settings.writers !== undefined && { writers: settings.writers }),
       ...(settings.auditors !== undefined && { auditors: settings.auditors }),
@@ -2924,5 +3030,51 @@ export class CommitteeService {
       return [];
     }
     return pending.filter((invite) => invite.committee_uid === trimmedResourceUid);
+  }
+
+  /** Maps an upstream folder to the shape the Documents tab lists. */
+  private toFolderDocument(folder: CommitteeFolder): CommitteeDocument {
+    return {
+      uid: folder.uid,
+      type: 'folder',
+      name: folder.name,
+      created_at: folder.created_at,
+      updated_at: folder.updated_at,
+      uploaded_by: resolveAuditUserDisplayName(folder.created_by, folder.created_by_username),
+      committee_uid: folder.committee_uid,
+    };
+  }
+
+  /** Maps an upstream link to the shape the Documents tab lists. */
+  private toLinkDocument(link: CommitteeLink): CommitteeDocument {
+    return {
+      uid: link.uid,
+      type: 'link',
+      name: link.name,
+      url: link.url,
+      description: link.description,
+      created_at: link.created_at,
+      updated_at: link.updated_at,
+      uploaded_by: resolveAuditUserDisplayName(link.created_by, link.created_by_username),
+      parent_uid: link.folder_uid,
+      committee_uid: link.committee_uid,
+    };
+  }
+
+  /** Maps an upstream uploaded file, from the upstream or the indexer, to the shape the Documents tab lists. */
+  private toFileDocument(file: CommitteeDocumentQueryResult): CommitteeDocument {
+    return {
+      uid: file.uid,
+      type: 'file',
+      name: file.name,
+      description: file.description,
+      file_size: file.file_size,
+      mime_type: file.content_type,
+      created_at: file.created_at,
+      updated_at: file.updated_at,
+      uploaded_by: resolveAuditUserDisplayName(file.created_by, file.uploaded_by_username),
+      parent_uid: file.folder_uid,
+      committee_uid: file.committee_uid,
+    };
   }
 }

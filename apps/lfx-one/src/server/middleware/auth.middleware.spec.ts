@@ -399,6 +399,32 @@ describe('authMiddleware route classification', () => {
     expect(res.oidc.login).toHaveBeenCalledTimes(1);
   });
 
+  it('allows an anonymous GET to a public event share kit (/events/:eventSlug/share-kit)', async () => {
+    const req = buildReq({ path: '/events/example-summit-2027/share-kit' });
+    const res = buildRes();
+    const next = vi.fn() as unknown as NextFunction;
+
+    await middleware(req, res, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(next).toHaveBeenCalledWith();
+    expect(res.oidc.login).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['a nested path', '/events/example-summit-2027/share-kit/extra'],
+    ['an encoded slash in the slug', '/events/example%2Fsummit/share-kit'],
+    ['the in-shell events dashboard', '/events'],
+  ])('does not treat %s as a public share kit (%s)', async (_label, path) => {
+    const req = buildReq({ path });
+    const res = buildRes();
+    const next = vi.fn() as unknown as NextFunction;
+
+    await middleware(req, res, next);
+
+    expect(res.oidc.login).toHaveBeenCalledTimes(1);
+  });
+
   it('allows an anonymous GET to the invite error page (/invite/error)', async () => {
     const req = buildReq({ path: '/invite/error' });
     const res = buildRes();

@@ -1,0 +1,47 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<fieldset class="flex flex-col gap-2 rounded-md border border-gray-200 bg-gray-50 p-3" data-testid="linkedin-lead-form-picker">
+  <legend class="float-left text-xs font-medium text-gray-700">Lead gen form</legend>
+  <p class="text-xs text-gray-500">Each ad's button opens this form on LinkedIn. Forms are built in LinkedIn Campaign Manager.</p>
+  <lfx-ui-select
+    size="small"
+    ariaLabel="Lead gen form"
+    placeholder="Pick a lead gen form"
+    [value]="draft().leadGenForm ?? null"
+    (valueChange)="onFormChange($event)"
+    data-testid="linkedin-lead-form-picker-form">
+    @for (option of formOptions(); track option.value) {
+      <lfx-ui-option [value]="option.value" [label]="option.label" />
+    }
+  </lfx-ui-select>
+  @if (available() && message(); as text) {
+    <div class="flex flex-wrap items-center gap-2" aria-live="polite">
+      <p class="text-xs text-gray-500" data-testid="linkedin-lead-form-picker-message">{{ text }}</p>
+      @if (formsState().status === 'unavailable' || (formsState().status === 'loaded' && formsState().forms.length === 0)) {
+        <lfx-button
+          label="Try again"
+          icon="fa-light fa-rotate-right"
+          size="small"
+          severity="secondary"
+          [text]="true"
+          (onClick)="retry()"
+          data-testid="linkedin-lead-form-picker-retry" />
+      }
+    </div>
+  }
+  @if (ownerRefusal(); as refusal) {
+    <p role="alert" class="text-xs text-red-600" data-testid="linkedin-lead-form-picker-owner-error">{{ refusal }}</p>
+  }
+  <lfx-ui-select
+    label="Button"
+    size="small"
+    [value]="callToAction()"
+    (valueChange)="onCallToActionChange($event)"
+    hint="The button on each ad. Register by default."
+    data-testid="linkedin-lead-form-picker-cta">
+    @for (option of callToActionOptions; track option.value) {
+      <lfx-ui-option [value]="option.value" [label]="option.label" />
+    }
+  </lfx-ui-select>
+</fieldset>

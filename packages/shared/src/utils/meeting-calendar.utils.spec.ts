@@ -16,12 +16,15 @@ import {
 import {
   meetingToCalendarEvents,
   publicMeetingToCalendarEvents,
+  publicMeetingToCalendarGridEntries,
+  toPublicCalendarItems,
+  resolvePublicCalendarModalState,
   resolveMeetingCalendarClickRoute,
   resolvePublicCalendarLegend,
 } from './meeting-calendar.utils';
 
 import { MeetingVisibility } from '../enums';
-import type { Meeting, PublicCalendarMeeting } from '../interfaces';
+import type { Meeting, MeetingOccurrenceSummary, PublicCalendarMeeting, PublicCalendarModalFacts } from '../interfaces';
 import type { PublicCalendarCommittee, PublicCalendarCommitteeContext } from '../interfaces/calendar.interface';
 
 describe('meetingToCalendarEvents', () => {
@@ -99,6 +102,9 @@ describe('publicMeetingToCalendarEvents', () => {
       start_time: new Date(Date.now() + 60 * 60_000).toISOString(),
       duration: 60,
       timezone: 'America/New_York',
+      meeting_type: null,
+      restricted: false,
+      recurrence: null,
       ...over,
     };
   }
@@ -246,5 +252,141 @@ describe('resolvePublicCalendarLegend', () => {
     expect(resolvePublicCalendarLegend(emittable.map((backgroundColor) => ({ backgroundColor })))).toHaveLength(emittable.length);
     // Pairwise-distinct colours, otherwise the filter above cannot tell two entries apart.
     expect(new Set(PUBLIC_CALENDAR_LEGEND.map((entry) => entry.color)).size).toBe(PUBLIC_CALENDAR_LEGEND.length);
+  });
+});
+
+describe('publicMeetingToCalendarGridEntries', () => {
+  const now = new Date('2026-10-10T12:00:00Z');
+  const meeting: PublicCalendarMeeting = {
+    id: 'meeting-1',
+    title: 'Technical Steering Committee',
+    start_time: '2026-10-01T15:00:00Z',
+    duration: 60,
+    timezone: 'America/New_York',
+    meeting_type: 'Technical',
+    restricted: false,
+    recurrence: null,
+  };
+
+  it('lists occurrences by type and past state, leaving cancelled ones out', () => {
+    const noDuration: MeetingOccurrenceSummary = { occurrence_id: '1792000000', start_time: '2026-10-15T15:00:00Z', duration: 0 };
+    // @ts-expect-error indexed occurrences omit duration when it matches the series
+    delete noDuration.duration;
+    const entries = publicMeetingToCalendarGridEntries(
+      {
+        ...meeting,
+        cancelled_occurrences: ['1791000000'],
+        occurrences: [
+          { occurrence_id: '1790000000', start_time: '2026-10-01T15:00:00Z', duration: 30 },
+          { occurrence_id: '1791000000', start_time: '2026-10-08T15:00:00Z', duration: 30 },
+          noDuration,
+        ],
+      },
+      now
+    );
+
+    expect(entries).toEqual([
+      {
+        key: 'meeting-1-1790000000',
+        title: 'Technical Steering Committee',
+        type: 'Technical',
+        startTime: '2026-10-01T15:00:00Z',
+        durationMinutes: 30,
+        past: true,
+      },
+      {
+        key: 'meeting-1-1792000000',
+        title: 'Technical Steering Committee',
+        type: 'Technical',
+        startTime: '2026-10-15T15:00:00Z',
+        durationMinutes: 60,
+        past: false,
+      },
+    ]);
+  });
+
+  it('keys a past-meeting row by its composite id at its scheduled start', () => {
+    const [entry] = publicMeetingToCalendarGridEntries(
+      { ...meeting, scheduled_start_time: '2026-10-02T15:00:00Z', meeting_and_occurrence_id: '99152950841-1630560600000' },
+      now
+    );
+
+    expect(entry).toMatchObject({ key: '99152950841-1630560600000', startTime: '2026-10-02T15:00:00Z', past: true });
+  });
+});
+
+describe('resolvePublicCalendarModalState', () => {
+  const facts = (over: Partial<PublicCalendarModalFacts> = {}): PublicCalendarModalFacts => ({
+    signedIn: false,
+    past: false,
+    live: false,
+    restricted: false,
+    invited: false,
+    recording: false,
+    summary: false,
+    access: true,
+    ...over,
+  });
+
+  it.each([
+    ['past, signed out, both published', facts({ past: true, recording: true, summary: true }), 'Ended', null, ['sign-in-summary', 'sign-in-watch']],
+    [
+      'past, signed in, both published',
+      facts({ past: true, signedIn: true, recording: true, summary: true }),
+      'Ended',
+      null,
+      ['view-summary', 'watch-recording'],
+    ],
+    ['past, nothing published', facts({ past: true }), 'Ended', 'No recording or summary was published for this meeting.', []],
+    [
+      'past, signed in without access',
+      facts({ past: true, signedIn: true, access: false, recording: true }),
+      'Ended',
+      "Only the meeting's invited guests can see its recording and summary.",
+      [],
+    ],
+    ['restricted, signed out', facts({ restricted: true }), 'Invite only', "Only invited guests can join. Sign in to check if you're invited.", ['sign-in']],
+    ['restricted, invited', facts({ restricted: true, signedIn: true, invited: true }), "You're invited", null, []],
+    ['restricted, invited, live', facts({ restricted: true, signedIn: true, invited: true, live: true }), "You're invited", null, ['join']],
+    [
+      'restricted, not invited',
+      facts({ restricted: true, signedIn: true }),
+      'Invite only',
+      'Only invited guests can join this meeting. Contact the organizers if you think you should be invited.',
+      [],
+    ],
+    ['public, live', facts({ live: true }), null, null, ['join']],
+    ['public, signed out', facts(), null, null, ['sign-in-register']],
+    ['public, registered', facts({ signedIn: true, invited: true }), 'Registered', "You'll get the join link by email before the meeting starts.", []],
+    ['public, not registered', facts({ signedIn: true }), null, null, ['register']],
+  ])('%s', (_case, input, badge, note, actions) => {
+    const state = resolvePublicCalendarModalState(input);
+
+    expect([state.badge?.label ?? null, state.note?.text ?? null, state.actions]).toEqual([badge, note, actions]);
+  });
+});
+
+describe('toPublicCalendarItems', () => {
+  it('keeps a date that is both live and archived once, as the archived row', () => {
+    const base: PublicCalendarMeeting = {
+      id: 'series-1',
+      title: 'Sync',
+      start_time: '2026-10-01T15:00:00Z',
+      duration: 60,
+      timezone: 'UTC',
+      meeting_type: null,
+      restricted: false,
+      recurrence: null,
+    };
+    const items = toPublicCalendarItems(
+      [
+        { ...base, occurrences: [{ occurrence_id: '1790000000', start_time: '2026-10-01T15:00:00Z', duration: 60 }] },
+        { ...base, scheduled_start_time: '2026-10-01T15:00:00Z', meeting_and_occurrence_id: 'series-1-1790000000000' },
+        { ...base, id: 'series-2', start_time: '2026-09-30T15:00:00Z' },
+      ],
+      new Date('2026-10-10T12:00:00Z')
+    );
+
+    expect(items.map((item) => item.entry.key)).toEqual(['series-2', 'series-1-1790000000000']);
   });
 });

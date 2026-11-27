@@ -90,6 +90,16 @@ describe('metaEffectiveGeoTargets', () => {
   ])('chips %j with country %j send %j', (chips, countryCode, expected) => {
     expect(metaEffectiveGeoTargets(chips, countryCode)).toEqual(expected);
   });
+
+  it.each([
+    // Sent region or city picks replace the country-code fallback (#5904)...
+    [[], 'US', []],
+    [['IR'], 'US', []],
+    // ...but explicit chips are still sent beside them.
+    [['DE'], 'US', ['DE']],
+  ])('chips %j with country %j and sent locations send %j', (chips, countryCode, expected) => {
+    expect(metaEffectiveGeoTargets(chips, countryCode, true)).toEqual(expected);
+  });
 });
 
 describe('metaDsaCountries', () => {
@@ -103,6 +113,10 @@ describe('metaDsaCountries', () => {
     [['US', 'GB', 'CH'], []],
   ])('%j require the DSA disclosures for %j', (geos, expected) => {
     expect(metaDsaCountries(geos)).toEqual(expected);
+  });
+
+  it('counts the countries of sent locations, once each', () => {
+    expect(metaDsaCountries(['US', 'DE'], ['DE', 'FR', 'US'])).toEqual(['DE', 'FR']);
   });
 });
 
@@ -335,6 +349,11 @@ describe('metaBasicsRefusal', () => {
     [1, ['US'], null],
   ])('budget %s with geos %j: %j', (budget, geos, expected) => {
     expect(metaBasicsRefusal(budget, geos)).toBe(expected);
+  });
+
+  it('passes with no country when region or city picks are sent, but still checks the budget', () => {
+    expect(metaBasicsRefusal(1, [], true)).toBeNull();
+    expect(metaBasicsRefusal(0, [], true)).toBe('Meta Ads: set a budget of at least $1.');
   });
 });
 

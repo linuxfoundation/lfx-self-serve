@@ -4,13 +4,15 @@
 @if (isLoading()) {
   <lfx-route-loading data-testid="org-donations-loading" />
 } @else {
-  <div class="container mx-auto px-4 sm:px-6 lg:px-8" data-testid="org-donations">
+  <div [class]="embedded ? '' : 'container mx-auto px-4 sm:px-6 lg:px-8'" data-testid="org-donations">
     <div class="flex flex-col gap-6">
-      <lfx-page-header
-        title="Donations"
-        [description]="'Donations on LFX Crowdfunding made on behalf of ' + orgName()"
-        titleTestId="org-donations-title"
-        descriptionTestId="org-donations-description" />
+      @if (!embedded) {
+        <lfx-page-header
+          title="Donations"
+          [description]="'Donations on LFX Crowdfunding made on behalf of ' + orgName()"
+          titleTestId="org-donations-title"
+          descriptionTestId="org-donations-description" />
+      }
 
       @switch (loadError()) {
         @case ('forbidden') {

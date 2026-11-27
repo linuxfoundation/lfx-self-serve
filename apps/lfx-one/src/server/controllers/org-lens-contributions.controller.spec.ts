@@ -5,7 +5,8 @@ import { CONTRIBUTIONS_MAX_FILTER_VALUES, MAX_SNOWFLAKE_PAGINATION_PAGE } from '
 import type { Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getContributions, getOrgScope, logger } = vi.hoisted(() => ({
+const { getContributions, getOrgScope, getOrgLensViewMode, logger } = vi.hoisted(() => ({
+  getOrgLensViewMode: vi.fn(() => 'full'),
   getContributions: vi.fn(),
   getOrgScope: vi.fn(),
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn() },
@@ -26,6 +27,7 @@ vi.mock('../services/org-contributions.service', () => ({
   },
 }));
 vi.mock('../services/logger.service', () => ({ logger }));
+vi.mock('../helpers/org-lens-read-access.helper', () => ({ getOrgLensViewMode }));
 
 import { ServiceValidationError } from '../errors';
 import { OrgLensContributionsController } from './org-lens-contributions.controller';
@@ -40,11 +42,66 @@ function buildRes(): Response {
   return { setHeader: vi.fn(), json: vi.fn() } as unknown as Response;
 }
 
+describe('OrgLensContributionsController all employee view (epic #5845)', () => {
+  const controller = new OrgLensContributionsController();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getOrgLensViewMode.mockReturnValue('employee');
+  });
+
+  it('serves the aggregates, tells the service it is the employee view, and strips any personal field from the payload', async () => {
+    getContributions.mockResolvedValue({
+      kpis: { commits: 3 },
+      repositories: [{ repositoryPath: 'a/b', commits: 3 }],
+      commits: [],
+      employeeOptions: [{ id: 'm1', displayName: 'Ada Lovelace', email: 'ada@example.com' }],
+    });
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.getContributions(buildReq({}), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getContributions.mock.calls[0][2]).toBe(true);
+    expect(res.json).toHaveBeenCalledWith({
+      kpis: { commits: 3 },
+      repositories: [{ repositoryPath: 'a/b', commits: 3 }],
+      commits: [],
+      employeeOptions: [{ id: 'm1' }],
+    });
+  });
+
+  it.each([{ view: 'commits' }, { employees: 'm1' }])('answers 403 EMPLOYEE_VIEW_FORBIDDEN to %o before the service', async (query) => {
+    const next = vi.fn();
+
+    await controller.getContributions(buildReq(query), buildRes(), next);
+
+    expect(getContributions).not.toHaveBeenCalled();
+    expect(next.mock.calls[0][0]).toMatchObject({ statusCode: 403, code: 'EMPLOYEE_VIEW_FORBIDDEN' });
+  });
+
+  it('leaves the full view untouched: the commits feed and employee filter stay available', async () => {
+    getOrgLensViewMode.mockReturnValue('full');
+    const payload = { repositories: [], commits: [{ committerName: 'Ada Lovelace' }], employeeOptions: [{ displayName: 'Ada Lovelace' }] };
+    getContributions.mockResolvedValue(payload);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.getContributions(buildReq({ view: 'commits', employees: 'm1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getContributions.mock.calls[0][2]).toBe(false);
+    expect(res.json).toHaveBeenCalledWith(payload);
+  });
+});
+
 describe('OrgLensContributionsController pagination', () => {
   const controller = new OrgLensContributionsController();
 
   beforeEach(() => {
     vi.clearAllMocks();
+    getOrgLensViewMode.mockReturnValue('full');
     getContributions.mockResolvedValue({ repositories: [], totalRecords: 0 });
   });
 
@@ -69,6 +126,7 @@ describe('OrgLensContributionsController filter lists', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    getOrgLensViewMode.mockReturnValue('full');
     getContributions.mockResolvedValue({ repositories: [], totalRecords: 0 });
   });
 
@@ -135,6 +193,7 @@ describe('OrgLensContributionsController commit filters', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    getOrgLensViewMode.mockReturnValue('full');
     getContributions.mockResolvedValue({ repositories: [], totalRecords: 0 });
   });
 
@@ -180,6 +239,7 @@ describe('OrgLensContributionsController range', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    getOrgLensViewMode.mockReturnValue('full');
     getContributions.mockResolvedValue({ repositories: [], totalRecords: 0 });
   });
 
@@ -216,6 +276,7 @@ describe('OrgLensContributionsController team members', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    getOrgLensViewMode.mockReturnValue('full');
     getContributions.mockResolvedValue({ repositories: [], totalRecords: 0 });
   });
 
@@ -253,6 +314,7 @@ describe('OrgLensContributionsController organization scope (lfx-self-serve-ops#
 
   beforeEach(() => {
     vi.clearAllMocks();
+    getOrgLensViewMode.mockReturnValue('full');
     getContributions.mockResolvedValue({ repositories: [], totalRecords: 0 });
   });
 

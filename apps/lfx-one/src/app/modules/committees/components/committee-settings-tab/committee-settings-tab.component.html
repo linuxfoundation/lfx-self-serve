@@ -21,11 +21,14 @@
   <lfx-committee-settings
     [form]="form"
     [showHeader]="false"
+    [category]="settingsCategory()"
     [showSlackWebhook]="slackWebhookEnabled()"
     [slackWebhookInputVisible]="slackWebhookInputVisible()"
     [slackWebhookConfigured]="slackWebhookConfigured()"
     [slackWebhookRemovalStaged]="slackWebhookRemovalStaged()"
     [impersonating]="impersonating()"
+    [showSsoGroupName]="true"
+    [ssoGroupName]="committee().sso_group_name"
     (startEditingSlackWebhookUrl)="editingSlackWebhookUrl.set(true)"
     (removeSlackWebhookStaged)="slackWebhookRemovalStaged.set(true)"
     (cancelEditingSlackWebhookUrl)="editingSlackWebhookUrl.set(false); slackWebhookRemovalStaged.set(false)">

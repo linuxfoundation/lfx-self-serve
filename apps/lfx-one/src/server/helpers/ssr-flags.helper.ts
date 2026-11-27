@@ -12,9 +12,9 @@ const ANONYMOUS_FLAG_CONTEXT = { key: 'anonymous-meeting-visitor', anonymous: tr
 
 /**
  * Evaluates the flags an SSR render needs before Angular picks a route.
- * @description `/meetings/:id` (and `/meetings/not-found`) and the `/project/meetings` and `/foundation/meetings` lists ask
- * for the meetings redesign; `/profile` and `/account` pages ask for the profile redesign (#6067), for signed-in viewers
- * only, since both need a session. Every other render gets none. A signed-out meetings visitor is evaluated as an
+ * @description `/meetings/:id` (and `/meetings/not-found`), the `/project/meetings` and `/foundation/meetings` lists and the
+ * public `/projects/:slug/calendar` ask for the meetings redesign; `/profile`, `/account` and public `/u/:username` pages ask for the profile redesign (#6067), for
+ * signed-in viewers only, since the flag needs a session. Every other render gets none. A signed-out meetings visitor is evaluated as an
  * anonymous context. `user` must already carry the impersonation override, so the context matches the one
  * `FeatureFlagService` builds in the browser from the same user.
  */
@@ -23,10 +23,12 @@ export async function resolveSsrFlags(req: Request, user: User | null): Promise<
   const segments = new URL(req.originalUrl, 'http://ssr').pathname.split('/').filter(Boolean);
   const meetingPage = segments.length === 2 && segments[0] === 'meetings' && segments[1] !== 'create';
   const lensMeetingsList = segments.length === 2 && (segments[0] === 'project' || segments[0] === 'foundation') && segments[1] === 'meetings';
-  if (segments[0] === 'profile' || segments[0] === 'account') {
+  const publicCalendar = segments.length === 3 && segments[0] === 'projects' && segments[2] === 'calendar';
+  // The public profile (`/u/:username`) takes the redesign only for a signed-in viewer the flag is on for (#6088).
+  if (segments[0] === 'profile' || segments[0] === 'account' || (segments[0] === 'u' && segments.length === 2)) {
     return { profileRedesign: user ? await evaluateForUser(req, user, PROFILE_REDESIGN_FLAG) : false };
   }
-  if (!meetingPage && !lensMeetingsList) {
+  if (!meetingPage && !lensMeetingsList && !publicCalendar) {
     return {};
   }
   if (!user) {

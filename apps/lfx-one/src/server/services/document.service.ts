@@ -19,7 +19,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
-import { fetchAllQueryResources } from '../helpers/query-service.helper';
+import { fetchAllQueryResources, isUnsatisfiableFilterError } from '../helpers/query-service.helper';
 import { getEffectiveEmail } from '../utils/auth-helper';
 import { CommitteeService } from './committee.service';
 import { logger } from './logger.service';
@@ -161,7 +161,10 @@ export class DocumentService {
    * artifacts and meeting attachments, recordings, transcripts and summaries — without fetching rows.
    * Folders are not counted: they are indexed as their own `committee_link_folder` type, separate from
    * `committee_link`. The total is all-or-nothing: if any source fails or reports `has_more`, this
-   * throws so the caller can hide the badge instead of presenting a partial total as exact.
+   * throws so the caller can hide the badge instead of presenting a partial total as exact. The one
+   * exception is the query service's documented "unsatisfiable filter" 400 (the filter names a
+   * dimension no indexed document of that type carries): it is raised only for a zero result, so that
+   * source genuinely counts as 0 (#6184).
    */
   public async getCommitteeDocumentCount(req: Request, committeeUid: string): Promise<number> {
     logger.debug(req, 'get_committee_document_count', 'Counting committee documents', { committee_uid: committeeUid });
@@ -190,6 +193,14 @@ export class DocumentService {
           }
           return count;
         } catch (err) {
+          if (isUnsatisfiableFilterError(err)) {
+            logger.debug(req, 'get_committee_document_count', 'Source filter is unsatisfiable, counting it as zero', {
+              committee_uid: committeeUid,
+              type: params.type,
+              error: err instanceof Error ? err.message : 'Unknown error',
+            });
+            return 0;
+          }
           logger.warning(req, 'get_committee_document_count', 'Failed to count a document source, the total is unavailable', {
             committee_uid: committeeUid,
             type: params.type,
@@ -271,6 +282,10 @@ export class DocumentService {
         ...(pageToken && { page_token: pageToken }),
       })
     ).catch((err) => {
+      if (isUnsatisfiableFilterError(err)) {
+        logger.debug(req, 'get_my_documents', 'groupsio_artifact filter is unsatisfiable, no mailing list documents', { tags });
+        return [];
+      }
       logger.warning(req, 'get_my_documents', 'Failed to fetch groupsio artifacts', {
         tags,
         error: err instanceof Error ? err.message : 'Unknown error',
@@ -436,6 +451,10 @@ export class DocumentService {
           ...(pageToken && { page_token: pageToken }),
         })
       ).catch((err) => {
+        if (isUnsatisfiableFilterError(err)) {
+          logger.debug(req, 'get_my_documents', 'v1_meeting_attachment filter is unsatisfiable, no meeting attachments', { committee_uid: committeeUid });
+          return [];
+        }
         logger.warning(req, 'get_my_documents', 'Failed to fetch meeting attachments by committee parent ref', {
           committee_uid: committeeUid,
           error: err instanceof Error ? err.message : 'Unknown error',
@@ -505,6 +524,10 @@ export class DocumentService {
         ...(pageToken && { page_token: pageToken }),
       })
     ).catch((err) => {
+      if (isUnsatisfiableFilterError(err)) {
+        logger.debug(req, 'get_my_documents', `${type} filter is unsatisfiable, no ${resourceLabel}`, { committee_uid: committeeUid });
+        return [];
+      }
       logger.warning(req, 'get_my_documents', `Failed to fetch ${resourceLabel} by committee parent ref`, {
         committee_uid: committeeUid,
         error: err instanceof Error ? err.message : 'Unknown error',

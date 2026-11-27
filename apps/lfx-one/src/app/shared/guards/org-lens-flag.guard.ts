@@ -12,10 +12,11 @@ import { OrgLensNavigationService } from '../services/org-lens-navigation.servic
 
 /**
  * Dark-launch CanMatch for an Company Lens page behind a browser-only LaunchDarkly flag. Fails closed to the addressed
- * company's overview when the flag is off or LaunchDarkly never becomes ready.
+ * company's overview when the flag is off or LaunchDarkly never becomes ready. `whenClosed: 'no-match'` instead declines
+ * to match, so a sibling route (a redirect to another tab, say) takes the address.
  */
 const orgLensFlagGuard =
-  (flag: string, guard: string): CanMatchFn =>
+  (flag: string, guard: string, whenClosed: 'overview' | 'no-match' = 'overview'): CanMatchFn =>
   async () => {
     const platformId = inject(PLATFORM_ID);
 
@@ -40,12 +41,14 @@ const orgLensFlagGuard =
       return addressed === '/company/overview' ? router.createUrlTree(orgLensNavigation.orgLensLink('overview')) : router.parseUrl(addressed);
     };
 
+    const closed = (): UrlTree | boolean => (whenClosed === 'no-match' ? false : fallback());
+
     // A locally pinned value decides on its own, before the provider is consulted at all — waiting
     // first would let a readiness timeout answer for it, and a pinned `false` must never be
     // overridden. Non-production builds only; see `FEATURE_FLAG_OVERRIDE_STORAGE_KEY`.
     const override = featureFlagService.getFlagOverride(flag);
     if (override !== undefined) {
-      return override ? true : fallback();
+      return override ? true : closed();
     }
 
     if (!featureFlagService.providerReady()) {
@@ -53,11 +56,17 @@ const orgLensFlagGuard =
       // Provider never became ready in time (LD slow / unreachable) → fail CLOSED.
       // waitForReady() reports the timeout to RUM.
       if (!ready) {
-        return fallback();
+        return closed();
       }
     }
 
-    return featureFlagService.getBooleanFlag(flag, false)() ? true : fallback();
+    return featureFlagService.getBooleanFlag(flag, false)() ? true : closed();
   };
 
 export const cfOrgDonationsGuard = orgLensFlagGuard(CF_ORG_DONATIONS_FLAG, 'cfOrgDonationsGuard');
+
+/**
+ * The Donations tab of the combined Crowdfunding page (#5838): with the flag off it declines to match, so the sibling
+ * redirect lands the address on Initiatives instead of sending a writer out of Crowdfunding to Overview.
+ */
+export const cfOrgDonationsTabGuard = orgLensFlagGuard(CF_ORG_DONATIONS_FLAG, 'cfOrgDonationsTabGuard', 'no-match');

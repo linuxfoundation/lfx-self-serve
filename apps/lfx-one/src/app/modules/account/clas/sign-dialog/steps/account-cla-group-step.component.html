@@ -1,0 +1,110 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact [Npx] design values throughout: rem undershoots at the 14px root. -->
+<!-- The results sit in the flow, not in an overlay, so the dialog grows with them instead of cropping them. -->
+<div
+  class="flex flex-col gap-[8px] [&_label.label-13]:font-medium [&_label.label-13]:text-ui-neutral-900"
+  data-autofocus
+  (focusin)="onFocus()"
+  (keydown)="onKeydown($event)">
+  <lfx-ui-input
+    label="Project, CLA group or repository"
+    placeholder="Search or paste a repository link"
+    prefixIcon="fa-light fa-magnifying-glass"
+    autocomplete="off"
+    [formControl]="searchForm.controls.query"
+    [combobox]="combobox()"
+    data-testid="account-sign-cla-search" />
+
+  @if (resultsOpen()) {
+    <div
+      id="account-sign-cla-results"
+      role="listbox"
+      aria-label="Matching CLA groups"
+      class="flex max-h-[256px] flex-col overflow-y-auto rounded-ui-md bg-ui-background-100 shadow-[inset_0_0_0_1px] shadow-ui-neutral-alpha-200"
+      data-testid="account-sign-cla-results">
+      @if (error()) {
+        <div role="alert" class="flex flex-row items-center justify-between gap-[12px] px-[14px] py-[10px] text-[13px] text-ui-neutral-600">
+          <span>Couldn't load CLA groups.</span>
+          <lfx-ui-button variant="tertiary" size="tiny" icon="fa-light fa-arrow-rotate-left" (click)="retry()" data-testid="account-sign-cla-retry"
+            >Retry</lfx-ui-button
+          >
+        </div>
+      } @else if (queryBand() === 'empty') {
+        <p class="m-0 px-[14px] py-[10px] text-[13px] text-ui-neutral-500">Search for a project, CLA group or repository, or paste a repository link.</p>
+      } @else if (queryBand() === 'short') {
+        <p class="m-0 px-[14px] py-[10px] text-[13px] text-ui-neutral-500" data-testid="account-sign-cla-short">Type at least 3 characters.</p>
+      } @else if (options().length === 0 && noMatchQuery() === null) {
+        <!-- Also while the typing settles, so no-match never names a term not yet searched. -->
+        <p class="m-0 flex flex-row items-center gap-[8px] px-[14px] py-[10px] text-[13px] text-ui-neutral-500">
+          <lfx-ui-spinner [size]="14" label="Searching" />
+          Searching…
+        </p>
+      } @else if (options().length === 0) {
+        <p class="m-0 px-[14px] py-[10px] text-[13px] text-ui-neutral-500" data-testid="account-sign-cla-no-match">
+          No CLA groups match “{{ noMatchQuery() }}”.
+        </p>
+      } @else {
+        <!-- The results stay while the next search runs, rather than flashing empty for a slow search. -->
+        @if (loading()) {
+          <p class="m-0 flex flex-row items-center gap-[8px] px-[14px] py-[8px] text-[12px] text-ui-neutral-500" data-testid="account-sign-cla-refreshing">
+            <lfx-ui-spinner [size]="12" label="Searching" />
+            Searching…
+          </p>
+        }
+        @let alreadySignedNotes = alreadySignedByGroupId();
+        @for (option of options(); track option.claGroupId; let index = $index) {
+          @let alreadySigned = alreadySignedNotes.get(option.claGroupId);
+          <div
+            role="option"
+            [id]="'account-sign-cla-option-' + option.claGroupId"
+            [attr.aria-selected]="selected()?.claGroupId === option.claGroupId"
+            [attr.aria-describedby]="alreadySigned ? 'account-sign-cla-already-' + option.claGroupId : null"
+            class="flex cursor-pointer flex-col gap-[4px] px-[14px] py-[10px] shadow-[inset_0_-1px_0] shadow-ui-neutral-alpha-100 last:shadow-none hover:bg-ui-neutral-alpha-50"
+            [class.bg-ui-neutral-alpha-50]="highlightedIndex() === index"
+            [attr.data-testid]="'account-sign-cla-option-' + option.claGroupId"
+            (click)="onSelect(option)">
+            <span class="flex flex-row flex-wrap items-center gap-[8px] text-[14px] leading-[20px] text-ui-neutral-900">
+              <span class="min-w-0 font-medium">
+                {{ option.primaryName }}
+                @if (option.secondaryName) {
+                  <span class="font-normal text-ui-neutral-500"> · {{ option.secondaryName }}</span>
+                }
+              </span>
+              @if (alreadySigned) {
+                <lfx-ui-badge size="sm">{{ alreadySigned.chip }}</lfx-ui-badge>
+              }
+            </span>
+            @if (option.matchTypeLabels.length) {
+              <span class="flex flex-row flex-wrap items-center gap-[6px] text-[12px] leading-[16px] text-ui-neutral-500">
+                Matched by
+                @for (label of option.matchTypeLabels; track label) {
+                  <lfx-ui-badge variant="outline" size="sm">{{ label }}</lfx-ui-badge>
+                }
+              </span>
+            }
+            @if (option.matchedRepositoryName) {
+              <span class="flex flex-row items-center gap-[6px] text-[12px] leading-[16px] text-ui-neutral-500">
+                <i class="fa-light fa-code-branch" aria-hidden="true"></i>{{ option.matchedRepositoryName }}
+              </span>
+            }
+          </div>
+          @if (alreadySigned) {
+            <!-- Outside the option, so its name stays the project and this reads as its description. -->
+            <span class="sr-only" [id]="'account-sign-cla-already-' + option.claGroupId">{{ alreadySigned.tooltip }}</span>
+          }
+        }
+        @if (truncated()) {
+          <p class="m-0 px-[14px] py-[8px] text-[12px] text-ui-neutral-500">More CLA groups matched than we can show. Narrow the search to see the rest.</p>
+        }
+      }
+    </div>
+  }
+</div>
+
+<div
+  class="-mx-[24px] -mb-[24px] flex flex-row justify-end gap-[12px] bg-ui-background-200 px-[24px] py-[16px] shadow-[inset_0_1px_0_0] shadow-ui-neutral-alpha-200">
+  <lfx-ui-button variant="secondary" (click)="onCancel()" data-testid="account-sign-cla-cancel">Cancel</lfx-ui-button>
+  <lfx-ui-button [disabled]="!selected()" (click)="onContinue()" data-testid="account-sign-cla-continue">Continue</lfx-ui-button>
+</div>

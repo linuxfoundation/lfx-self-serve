@@ -294,3 +294,12 @@ export const SOCIAL_LISTENING_PREFERENCE_VALUE_MAX_LENGTH = 64_000;
 
 /** Empty read-state doc — mark-all-as-unread writes it (no DELETE) and corrupt docs parse to it. */
 export const EMPTY_READ_STATE: ReadStateData = { readBeforeTs: null, readIds: [], unreadIds: [] };
+
+/** Group categories whose members can be granted Social Listening by the group setting — Board only for now; widen here to open it to more group types. */
+export const SOCIAL_LISTENING_GROUP_CATEGORIES: readonly string[] = ['Board'];
+
+/** How long the BFF remembers a group member's Social Listening access per foundation — the page fans out ~15 parallel calls, and a group-membership removal or setting change takes effect within this window. */
+export const SOCIAL_LISTENING_GROUP_ACCESS_CACHE_TTL_MS = 60_000;
+
+/** Size bound for that cache: at this many user/foundation keys, expired entries are swept and, if none expired, the oldest is evicted. */
+export const SOCIAL_LISTENING_GROUP_ACCESS_CACHE_SWEEP_THRESHOLD = 1_000;

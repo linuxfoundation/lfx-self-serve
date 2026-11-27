@@ -17,7 +17,13 @@
 
     <div class="flex flex-wrap items-center gap-2">
       <lfx-input-number [form]="recurrenceForm()" control="repeat_interval" placeholder="1" styleClass="w-20" data-testid="recurrence-interval-input" />
-      <lfx-select [form]="form()" control="patternTypeUI" [options]="patternTypeOptions" styleClass="min-w-24" data-testid="recurrence-pattern-type-select" />
+      <lfx-select
+        [appendTo]="appendTo()"
+        [form]="form()"
+        control="patternTypeUI"
+        [options]="patternTypeOptions"
+        styleClass="min-w-24"
+        data-testid="recurrence-pattern-type-select" />
     </div>
   </div>
 
@@ -69,8 +75,15 @@
       @if (monthlyType() === 'dayOfWeek') {
         <div class="flex flex-wrap items-center gap-2">
           <span class="text-sm text-gray-600">On the</span>
-          <lfx-select [form]="recurrenceForm()" control="monthly_week" [options]="weeklyOrdinals" styleClass="min-w-16" data-testid="recurrence-monthly-week" />
           <lfx-select
+            [appendTo]="appendTo()"
+            [form]="recurrenceForm()"
+            control="monthly_week"
+            [options]="weeklyOrdinals"
+            styleClass="min-w-16"
+            data-testid="recurrence-monthly-week" />
+          <lfx-select
+            [appendTo]="appendTo()"
             [form]="recurrenceForm()"
             control="monthly_week_day"
             [options]="daysOfWeek"

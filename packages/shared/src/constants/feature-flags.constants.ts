@@ -104,6 +104,14 @@ export const ORG_LENS_ROLLUP_ENABLED_FLAG = 'org-lens-rollup-enabled';
 export const MARKETING_OPS_FGA_ENABLED_FLAG = 'marketing-ops-fga-enabled';
 
 /**
+ * Dark-launch gate for the Newsletter send surface on the campaigns page (draft an issue from the
+ * brand's previous newsletters, reuse their audience, stage a HubSpot draft). Default false: the
+ * delivery-type picker does not offer Newsletter until this is on. **UI-only**, like the flag above;
+ * the BFF routes it uses are the existing campaign routes and carry their own server-side gates.
+ */
+export const CAMPAIGNS_NEWSLETTER_ENABLED_FLAG = 'campaigns-newsletter-enabled';
+
+/**
  * Dark-launch gate for the LFXV2-3365 Health Metrics Overview replacement page (tiles + findings
  * list). Default false: `foundation/health-metrics` keeps rendering the existing card-based page
  * until this is on. **UI-only**, evaluated through `FeatureFlagService.getBooleanFlag` inside
@@ -245,6 +253,20 @@ export const INSIGHTS_PUBLIC_API_FLAG = 'insights-public-api';
  * `INSIGHTS_PUBLIC_API_FLAG` to see the group.
  */
 export const INSIGHTS_PUBLIC_API_TOKEN_ACCESS_FLAG = 'insights-public-api-token-access';
+
+/**
+ * Launch gate for public event share kits (`/events/:eventSlug/share-kit`, epic #6057). Default false: a
+ * missing flag, an unset `LD_SDK_KEY` or LaunchDarkly not answering in time all keep every kit hidden.
+ *
+ * **Server-evaluated** — `GET /public/api/events/:eventSlug/share-kit` answers 404 while it is off, so the page
+ * shows its not-found view in SSR and in the browser alike (SSR forwards the visitor's cookies to that call).
+ * Signed-in visitors are evaluated by LFID username, so it can be turned on for staff first; every signed-out
+ * visitor is one shared anonymous context, so turning it on for them is all or nothing. Responses for signed-out
+ * visitors are cacheable for five minutes, so a change can take that long to reach them.
+ *
+ * Remove the flag once the feature is stable.
+ */
+export const EVENT_SHARE_KIT_FLAG = 'event-share-kit';
 
 /**
  * How long the server's LaunchDarkly SDK may take to connect on first use, in seconds. The request

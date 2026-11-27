@@ -4,6 +4,7 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { ActivatedRoute } from '@angular/router';
 import { EMPTY_ORG_DONATIONS } from '@lfx-one/shared/constants';
 import { OrgDonation } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
@@ -47,6 +48,7 @@ describe('OrgDonationsComponent (#415)', () => {
       providers: [
         { provide: CrowdfundingService, useValue: service },
         { provide: AccountContextService, useValue: accountContext },
+        { provide: ActivatedRoute, useValue: { snapshot: { data: {} } } },
       ],
     }).compileComponents();
     fixture = TestBed.createComponent(OrgDonationsComponent);

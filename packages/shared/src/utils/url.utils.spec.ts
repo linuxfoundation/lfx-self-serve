@@ -12,6 +12,7 @@ import {
   isMentorshipMentorInvitePath,
   isPrivateHost,
   isProfileHubPath,
+  isProfilePagePath,
   isRelativeInAppPath,
   isValidUrl,
   normalizeToUrl,
@@ -231,9 +232,22 @@ describe('extractUrls', () => {
   });
 });
 
+describe('isProfilePagePath', () => {
+  it('matches bare /profile, ignoring the query and fragment', () => {
+    expect(isProfilePagePath('/profile')).toBe(true);
+    expect(isProfilePagePath('/profile?success=profile_token_obtained#top')).toBe(true);
+  });
+
+  it('leaves out the hub tabs and sibling routes', () => {
+    expect(isProfilePagePath('/profile/identities')).toBe(false);
+    expect(isProfilePagePath('/profiles')).toBe(false);
+  });
+});
+
 describe('isProfileHubPath', () => {
-  it('matches the exact /profile route', () => {
-    expect(isProfileHubPath('/profile')).toBe(true);
+  it('leaves out bare /profile, which the hub always leaves for a tab and the redesign makes the Profile page', () => {
+    expect(isProfileHubPath('/profile')).toBe(false);
+    expect(isProfileHubPath('/profile?x=1')).toBe(false);
   });
 
   it('matches nested /profile/ routes', () => {
@@ -247,12 +261,12 @@ describe('isProfileHubPath', () => {
   });
 
   it('strips the query string before matching', () => {
-    expect(isProfileHubPath('/profile?tab=account')).toBe(true);
+    expect(isProfileHubPath('/profile/settings?tab=account')).toBe(true);
     expect(isProfileHubPath('/profiles?x=1')).toBe(false);
   });
 
   it('strips the fragment before matching', () => {
-    expect(isProfileHubPath('/profile#developer-settings')).toBe(true);
+    expect(isProfileHubPath('/profile/#developer-settings')).toBe(true);
     expect(isProfileHubPath('/profile/settings#developer-settings')).toBe(true);
   });
 

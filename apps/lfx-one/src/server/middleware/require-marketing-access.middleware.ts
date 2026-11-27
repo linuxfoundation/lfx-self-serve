@@ -293,9 +293,49 @@ export async function requireMetaCustomAudiencesAccess(req: Request, res: Respon
 }
 
 /**
+ * Reddit custom-audience read only (#6108 row 1; lfx-v2-campaign-service#549): `deferToControllerMarketingOpsCheck`.
+ * Never use for any other route.
+ */
+export async function requireRedditCustomAudiencesAccess(req: Request, res: Response, next: NextFunction): Promise<void> {
+  await deferToControllerMarketingOpsCheck(req, res, next);
+}
+
+/**
+ * Reddit pixel read only (#6108 row 5; lfx-v2-campaign-service#549): `deferToControllerMarketingOpsCheck`.
+ * Never use for any other route.
+ */
+export async function requireRedditPixelsAccess(req: Request, res: Response, next: NextFunction): Promise<void> {
+  await deferToControllerMarketingOpsCheck(req, res, next);
+}
+
+/**
  * Meta lead form read only (#5940; lfx-v2-campaign-service#550): `deferToControllerMarketingOpsCheck`.
  * Never use for any other route.
  */
 export async function requireMetaLeadFormsAccess(req: Request, res: Response, next: NextFunction): Promise<void> {
+  await deferToControllerMarketingOpsCheck(req, res, next);
+}
+
+/**
+ * LinkedIn audience segment read only (#5764 rows 8–11; lfx-v2-campaign-service#585): `deferToControllerMarketingOpsCheck`.
+ * Never use for any other route.
+ */
+export async function requireLinkedInAudiencesAccess(req: Request, res: Response, next: NextFunction): Promise<void> {
+  await deferToControllerMarketingOpsCheck(req, res, next);
+}
+
+/**
+ * LinkedIn conversion rule read only (#5764 row 4; lfx-v2-campaign-service#552): `deferToControllerMarketingOpsCheck`.
+ * Never use for any other route.
+ */
+export async function requireLinkedInConversionsAccess(req: Request, res: Response, next: NextFunction): Promise<void> {
+  await deferToControllerMarketingOpsCheck(req, res, next);
+}
+
+/**
+ * LinkedIn lead form read only (lfx-v2-campaign-service#664): `deferToControllerMarketingOpsCheck`. Never use for any
+ * other route.
+ */
+export async function requireLinkedInLeadFormsAccess(req: Request, res: Response, next: NextFunction): Promise<void> {
   await deferToControllerMarketingOpsCheck(req, res, next);
 }

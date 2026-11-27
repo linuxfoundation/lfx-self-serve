@@ -521,6 +521,8 @@ test('a finished refusal shows a plain reason, collapsed Details and Run again',
     "Member 360 couldn't run: your account doesn't have edit access to this project's member data."
   );
   await expect(page.getByTestId('mktg-document-view-error')).not.toContainText('SCOPE GUARD');
+  // The heading names the run, never the neutral 'Document' fallback.
+  await expect(page.getByTestId('mktg-document-view-title')).toHaveText("The Member 360 run wasn't finished");
   const details = page.getByTestId('member-360-failure-details');
   await expect(details).not.toHaveAttribute('open', '');
   await expect(page.getByTestId('member-360-failure-message')).not.toBeVisible();
@@ -545,6 +547,7 @@ test('an expired unsupported-input run offers Run again instead of Retry', async
   await stubMember360Progress(page, () => member360Progress('failed', undefined, MEMBER_360_INPUT_TIMEOUT_MESSAGE));
   await openMember360(page, `documents/member-360/${MEMBER_360_DOCUMENT_ID}`);
   await expect(page.getByTestId('member-360-run-again')).toBeVisible();
+  await expect(page.getByTestId('mktg-document-view-title')).toHaveText("The Member 360 run wasn't finished");
   await expect(page.getByTestId('mktg-document-view-progress-retry')).toHaveCount(0);
   await expect(page.getByTestId('mktg-document-view-retry')).toHaveCount(0);
   await expect(page.getByTestId('mktg-document-view-paused-refresh')).toHaveCount(0);

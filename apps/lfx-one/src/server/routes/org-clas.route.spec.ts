@@ -72,6 +72,14 @@ vi.mock('../controllers/org-clas.controller', () => ({
 
 const getAccessAwareOrgs = vi.fn();
 const checkSingleAccessStrict = vi.fn();
+// Epic #5845: the all employee view is the read gate's last qualification, asked only when the roster and the
+// authorizer both refuse. Default "not an employee" leaves every pre-existing case unchanged.
+const resolveEmployeeView = vi.fn();
+vi.mock('../services/org-employee-view.service', () => ({
+  OrgEmployeeViewService: class {
+    public resolve = resolveEmployeeView;
+  },
+}));
 
 // `requireOrgLensAccess` also asks the authorizer for `b2b_org:<uid>#auditor`; default "not an auditor"
 // keeps the ungranted cases answering 403 rather than 503 from an unmocked upstream.
@@ -210,6 +218,7 @@ beforeEach(() => {
   getAccessAwareOrgs.mockResolvedValue({ resolved: new Map([[GRANTED, { roleSource: 'direct-writer' }]]), upstreamFailed: false });
   checkSingleAccessStrict.mockResolvedValue(false);
   getClaManagerCompanySfids.mockResolvedValue(new Set());
+  resolveEmployeeView.mockResolvedValue({ eligible: false, reason: 'no-employer' });
 });
 
 describe('org-clas router — CLA Manager without an Org Lens grant', () => {
@@ -843,5 +852,114 @@ describe('org-clas router — CLA manager designee (#2780)', () => {
       expect(res.status).toBe(403);
       expect(JSON.stringify(await res.json())).toContain('IMPERSONATION_READ_ONLY');
     });
+  });
+});
+
+// Epic #5845 (#5857): EasyCLA is hidden in the all employee view, so every route on this router answers 403 to an employee: the CLA
+// gate tells the read gate not to try the employee view, so the answer is the read gate's own FORBIDDEN, and the employee lookup is
+// never run. Enforced by `requireOrgLensClaAccess` (on every route), not `blockEmployeeView`: see the note in org-clas.route.ts.
+describe('org-clas router — all employee view', () => {
+  const EMPLOYEE_ORG = '0014100000EmpAAAAA';
+  const FLAG = 'LFX_ORG_LENS_EMPLOYEE_VIEW_ENABLED';
+  const SIG = 'signature-uuid-1';
+  const GROUP = '7c1a9000-0000-4000-8000-000000000001';
+  const base = `lens/cla-groups`;
+  const routes: [string, string, string][] = [
+    ['GET', 'list', base],
+    ['GET', 'sign options', `${base}/sign-options`],
+    ['POST', 'sign', `${base}/sign`],
+    ['POST', 'permission checks', `${base}/permissions/checks`],
+    ['POST', 'designee', `${base}/designee`],
+    ['POST', 'designee nominations', `${base}/designee/nominations`],
+    ['GET', 'pdf url', `${base}/${SIG}/pdf-url`],
+    ['GET', 'ccla preview', `${base}/${GROUP}/ccla-preview`],
+    ['GET', 'catalogue', `${base}/${GROUP}/catalogue`],
+    ['GET', 'approval list', `${base}/${SIG}/approval-list`],
+    ['PUT', 'approval list write', `${base}/${SIG}/approval-list`],
+    ['GET', 'acknowledgments', `${base}/${SIG}/acknowledgments`],
+    ['GET', 'activity', `${base}/${SIG}/activity`],
+    ['PUT', 'auto ecla', `${base}/${SIG}/ecla-auto-create`],
+    ['GET', 'managers', `${base}/${SIG}/managers`],
+    ['POST', 'add manager', `${base}/${SIG}/managers`],
+    ['DELETE', 'remove manager', `${base}/${SIG}/managers/aporter`],
+    ['POST', 'invalidate acknowledgment', `${base}/${SIG}/acknowledgments/ack-1/invalidate`],
+  ];
+  const controllers = () => [
+    listClaGroups,
+    getSignOptions,
+    requestCorporateSignature,
+    checkPermission,
+    assignDesignee,
+    nominateDesignee,
+    getPdfUrl,
+    getCclaPreview,
+    getClaGroupCatalogue,
+    getApprovalList,
+    updateApprovalList,
+    getContributorAcknowledgments,
+    getActivityLog,
+    updateEclaAutoCreate,
+    listManagers,
+    addManager,
+    removeManager,
+    invalidateAcknowledgment,
+  ];
+
+  beforeEach(() => {
+    process.env[FLAG] = 'true';
+    getAccessAwareOrgs.mockResolvedValue({ resolved: new Map(), upstreamFailed: false });
+    resolveEmployeeView.mockResolvedValue({ eligible: true, org: { orgUid: EMPLOYEE_ORG, orgName: 'Acme' } });
+  });
+
+  afterAll(() => {
+    delete process.env[FLAG];
+  });
+
+  const call = (method: string, path: string) =>
+    fetch(`${baseUrl}/api/orgs/${EMPLOYEE_ORG}/${path}`, {
+      method,
+      headers: { 'content-type': 'application/json' },
+      body: method === 'GET' ? undefined : '{}',
+    });
+
+  it('covers every route the router declares', () => {
+    expect(routes).toHaveLength(controllers().length);
+  });
+
+  it.each(routes)('answers 403 FORBIDDEN on %s %s without running the employee lookup, and never reaches the controller', async (method, _name, path) => {
+    const res = await call(method, path);
+
+    expect(res.status).toBe(403);
+    expect(JSON.stringify(await res.json())).toContain('FORBIDDEN');
+    expect(resolveEmployeeView).not.toHaveBeenCalled();
+    controllers().forEach((controller) => expect(controller).not.toHaveBeenCalled());
+  });
+
+  it('asks the CLA manager scopes before refusing, and an employee who is also a CLA Manager of the company keeps the CLA-only flow', async () => {
+    getClaManagerCompanySfids.mockResolvedValue(new Set([EMPLOYEE_ORG]));
+
+    const res = await call('GET', base);
+
+    expect(res.status).toBe(200);
+    expect(listClaGroups).toHaveBeenCalled();
+  });
+
+  it('leaves a full-view caller unchanged', async () => {
+    getAccessAwareOrgs.mockResolvedValue({ resolved: new Map([[EMPLOYEE_ORG, { roleSource: 'direct-writer' }]]), upstreamFailed: false });
+
+    const res = await call('GET', base);
+
+    expect(res.status).toBe(200);
+    expect(listClaGroups).toHaveBeenCalled();
+  });
+
+  it('is a no-op while the rollout flag is off (the caller is then refused by the read gate as before)', async () => {
+    delete process.env[FLAG];
+
+    const res = await call('GET', base);
+
+    expect(res.status).toBe(403);
+    expect(JSON.stringify(await res.json())).not.toContain('EMPLOYEE_VIEW_FORBIDDEN');
+    expect(resolveEmployeeView).not.toHaveBeenCalled();
   });
 });

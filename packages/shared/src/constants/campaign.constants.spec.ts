@@ -18,6 +18,9 @@ import {
   CREATIVE_ASSET_MIME_TYPES,
   isCreativeAssetMimeType,
   sniffCreativeAssetMimeType,
+  sniffCreativeAssetUploadMimeType,
+  creativeAssetUploadMaxBytes,
+  isCreativeAssetUploadMimeType,
   BUDGET_WRITABLE_CAMPAIGN_PLATFORMS,
   DAILY_ONLY_BUDGET_CAMPAIGN_PLATFORMS,
   CAMPAIGN_ALERT_THRESHOLDS,
@@ -25,6 +28,8 @@ import {
   MONITOR_PLATFORM_BUTTON_COLORS,
   CAMPAIGN_DELIVERY_TYPES,
   CAMPAIGN_EMAIL_TYPES,
+  CAMPAIGN_NEWSLETTER_STAGES,
+  CAMPAIGN_NEWSLETTER_TYPES,
   CAMPAIGN_SEND_STAGES,
   CAMPAIGN_SURVEY_EMAIL_COUNT_OPTIONS,
   CAMPAIGN_SURVEY_STAGES,
@@ -573,10 +578,10 @@ describe('CAMPAIGN_SURVEY_TYPES', () => {
 });
 
 describe('CAMPAIGN_SEND_STAGES', () => {
-  it('is exactly the email and survey vocabularies together, in that order', () => {
+  it('is exactly the email, survey and newsletter vocabularies together, in that order', () => {
     // The BFF validates a brief lookup's stage against this, so a stage missing here is a 400
     // for a brief campaign-service would have opened.
-    expect([...CAMPAIGN_SEND_STAGES]).toEqual([...CAMPAIGN_EMAIL_STAGES, ...CAMPAIGN_SURVEY_STAGES]);
+    expect([...CAMPAIGN_SEND_STAGES]).toEqual([...CAMPAIGN_EMAIL_STAGES, ...CAMPAIGN_SURVEY_STAGES, ...CAMPAIGN_NEWSLETTER_STAGES]);
   });
 });
 
@@ -600,10 +605,10 @@ describe('CAMPAIGN_SURVEY_EMAIL_COUNT_OPTIONS', () => {
 });
 
 describe('CAMPAIGN_DELIVERY_TYPES', () => {
-  it('offers the three surfaces campaign-service accepts', () => {
+  it('offers the four surfaces campaign-service accepts', () => {
     // The dropdown IS the contract here: the BFF derives its validation set from this list, so a
     // surface missing from it is unreachable and one that upstream does not know is a 400.
-    expect(CAMPAIGN_DELIVERY_TYPES.map((d) => d.id)).toEqual(['paid-marketing', 'email', 'survey']);
+    expect(CAMPAIGN_DELIVERY_TYPES.map((d) => d.id)).toEqual(['paid-marketing', 'email', 'survey', 'newsletter']);
   });
 
   it('gives every surface a label and a breadcrumb label', () => {
@@ -1483,6 +1488,52 @@ describe('creative-asset upload allowlist', () => {
     expect(sniffCreativeAssetMimeType('\x89PNG\r\n\x1a\n')).toBeNull();
     expect(sniffCreativeAssetMimeType(undefined)).toBeNull();
   });
+
+  // LinkedIn video ads (#5764 row 18): an MP4 opens with an ftyp box whose major brand is an MP4 brand.
+  const ftyp = (brand: string) => new Uint8Array([0, 0, 0, 0x10, ...new TextEncoder().encode(`ftyp${brand}`), 0, 0, 0, 0]);
+  it.each([
+    ['an MP4 (isom)', ftyp('isom'), 'video/mp4'],
+    ['an MP4 (mp42)', ftyp('mp42'), 'video/mp4'],
+    ['a PNG', new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]), 'image/png'],
+    ['a QuickTime movie', ftyp('qt  '), null],
+    ['a HEIF image', ftyp('heic'), null],
+    ['a truncated ftyp box', ftyp('isom').subarray(0, 10), null],
+    [
+      'an MP4 whose ftyp box has a 64-bit size',
+      new Uint8Array([0, 0, 0, 1, ...new TextEncoder().encode('ftyp'), 0, 0, 0, 0, 0, 0, 0, 0x18, ...new TextEncoder().encode('isom')]),
+      'video/mp4',
+    ],
+    ['a plain array', [...ftyp('isom')], null],
+  ])('sniffs %s as %s for an upload', (_label, bytes, expected) => {
+    expect(sniffCreativeAssetUploadMimeType(bytes)).toBe(expected);
+  });
+
+  // LinkedIn document ads (campaign-service#665): campaign-service's structural PDF check, mirrored.
+  const ascii = (text: string) => new TextEncoder().encode(text);
+  const pdf = (head = '%PDF-1.7\n', tail = '%%EOF\n', pad = 64) => new Uint8Array([...ascii(head), ...new Uint8Array(pad).fill(0x20), ...ascii(tail)]);
+  it.each([
+    ['a PDF 1.7', pdf(), 'application/pdf'],
+    ['a PDF 2.0 ending in CR LF and NULs', pdf('%PDF-2.0\n', '%%EOF\r\n\0\0'), 'application/pdf'],
+    ['a PDF 3.0', pdf('%PDF-3.0\n'), null],
+    ['a header with no version digit', pdf('%PDF-1.x\n'), null],
+    ['a PDF with no end-of-file marker', pdf('%PDF-1.7\n', 'trailer'), null],
+    ["a PDF cut off after an earlier revision's marker", pdf('%PDF-1.7\n', '%%EOF\n1 0 obj'), null],
+    ['a PDF whose marker sits more than 1024 bytes from the end', new Uint8Array([...pdf(), ...new Uint8Array(1025).fill(0x20)]), null],
+    ['a PDF under 64 bytes', ascii('%PDF-1.7\n%%EOF\n'), null],
+    ['a plain array', [...pdf()], null],
+  ])('sniffs %s as the PDF check reads it', (_label, bytes, expected) => {
+    expect(sniffCreativeAssetUploadMimeType(bytes)).toBe(expected);
+  });
+
+  it('bounds each upload type by its own limit, a video at the upstream 30 MiB ceiling', () => {
+    expect(creativeAssetUploadMaxBytes('image/png')).toBe(CREATIVE_ASSET_MAX_BYTES);
+    expect(creativeAssetUploadMaxBytes('image/jpeg')).toBe(CREATIVE_ASSET_MAX_BYTES);
+    expect(creativeAssetUploadMaxBytes('video/mp4')).toBe(30 * 1024 * 1024);
+    expect(creativeAssetUploadMaxBytes('application/pdf')).toBe(30 * 1024 * 1024);
+    expect(isCreativeAssetMimeType('application/pdf')).toBe(false);
+    expect(isCreativeAssetUploadMimeType('video/mp4')).toBe(true);
+    expect(isCreativeAssetMimeType('video/mp4')).toBe(false);
+  });
 });
 
 describe('budget-writable platforms (#3299)', () => {
@@ -1567,5 +1618,13 @@ describe('GOOGLE_ASSET_PLAN_ANY_OF_SLOT_KEYS', () => {
 
   it('has a rule for Demand Gen and Display, and none for Performance Max', () => {
     expect(Object.keys(GOOGLE_ASSET_PLAN_ANY_OF_SLOT_KEYS).sort()).toEqual(['google-ads/DEMAND_GEN', 'google-ads/DISPLAY']);
+  });
+});
+
+describe('CAMPAIGN_NEWSLETTER_TYPES', () => {
+  it('offers one type, on the single newsletter stage upstream accepts', () => {
+    // campaign-service's pair CHECK admits exactly `(newsletter, 'Newsletter')`.
+    expect([...CAMPAIGN_NEWSLETTER_STAGES]).toEqual(['Newsletter']);
+    expect(CAMPAIGN_NEWSLETTER_TYPES.map((t) => t.stage)).toEqual(['Newsletter']);
   });
 });

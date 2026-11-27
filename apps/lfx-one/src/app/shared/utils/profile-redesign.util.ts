@@ -7,15 +7,15 @@ import { PROFILE_REDESIGN_FLAG } from '@lfx-one/shared/constants';
 import { FeatureFlagService } from '../services/feature-flag.service';
 
 /**
- * The server's answer to the profile redesign flag for this visit, set when a redesign guard runs on the server: `/account` and the
- * Profile & Account tabs that move to it. Other renders leave it unset.
+ * The answer to the profile redesign flag for this visit, set when a redesign guard runs on the server (`/account`, the Profile &
+ * Account tabs that move to it and the public profile) and by the public profile's guard in the browser. Other renders leave it unset.
  */
 export const PROFILE_REDESIGN_KEY = makeStateKey<boolean>('profileRedesign');
 
 /**
- * Whether the profile redesign is on, for chrome outside the guarded routes such as the navbar (#6067). It follows the
- * server's answer when the render made one, so SSR and hydration agree; otherwise the browser's flag once `hydrated` is
- * true, so the first client render still matches a server render that had no answer.
+ * Whether the profile redesign is on, for chrome such as the navbar and for a page that renders either way, the public profile
+ * (#6067). It follows the recorded answer when there is one, so SSR and hydration agree; otherwise the browser's flag once
+ * `hydrated` is true, so the first client render still matches a server render that had no answer.
  */
 export function injectProfileRedesignEnabled(hydrated: Signal<boolean>): Signal<boolean> {
   const decided = inject(TransferState).get(PROFILE_REDESIGN_KEY, null);

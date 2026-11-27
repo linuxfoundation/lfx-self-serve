@@ -2,17 +2,22 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <!-- Exact [Npx] design values throughout: rem undershoots at the 14px root. -->
+<!-- Token colours, so the header follows a surrounding light or dark theme (#6091). -->
 <section [attr.aria-labelledby]="headingId" [attr.data-testid]="testId()">
   <div class="mb-[28px] flex flex-row flex-wrap items-end justify-between gap-x-[16px] gap-y-[10px]">
     <div class="min-w-0 flex-1">
       <h2
-        class="m-0 font-display text-[22px] font-light leading-[28px] tracking-[-0.01em] text-gray-900"
+        class="m-0 font-display text-[22px] font-light leading-[28px] tracking-[-0.01em] text-ui-neutral-900"
         [id]="headingId"
         [attr.data-testid]="testId() + '-title'">
         {{ heading() }}
       </h2>
       @if (description()) {
-        <p class="m-0 mt-[4px] text-[12px] leading-[16px] text-gray-500" [attr.data-testid]="testId() + '-description'">{{ description() }}</p>
+        <p
+          class="m-0 mt-[4px] text-[12px] leading-[16px] text-ui-neutral-500 [[data-theme=dark]_&]:text-ui-neutral-600"
+          [attr.data-testid]="testId() + '-description'">
+          {{ description() }}
+        </p>
       }
     </div>
     <div class="flex flex-none flex-row items-center gap-[12px] empty:hidden"><ng-content select="[profileSectionActions]" /></div>

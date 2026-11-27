@@ -1,0 +1,256 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { Component, signal } from '@angular/core';
+import { TestBed } from '@angular/core/testing';
+import { provideRouter, Router } from '@angular/router';
+import { RouterTestingHarness } from '@angular/router/testing';
+import { CF_ORG_DONATIONS_FLAG } from '@lfx-one/shared/constants';
+import { AccountContextService } from '@services/account-context.service';
+import { FeatureFlagService } from '@services/feature-flag.service';
+import { OrgRoleGrantsService } from '@services/org-role-grants.service';
+import { beforeEach, describe, expect, it } from 'vitest';
+
+import { OrgCrowdfundingComponent } from './org-crowdfunding.component';
+
+const ORG_UID = '001000000000000AAA';
+
+@Component({ selector: 'lfx-stub-initiatives', template: '<p data-testid="stub-initiatives">initiatives</p>' })
+class StubInitiativesComponent {}
+
+@Component({ selector: 'lfx-stub-donations', template: '<p data-testid="stub-donations">donations</p>' })
+class StubDonationsComponent {}
+
+describe('OrgCrowdfundingComponent (#5838)', () => {
+  const writerSet = signal(new Set<string>());
+  const grantsLoaded = signal(true);
+  const flagReady = signal(true);
+  let flagReadyPromise: Promise<boolean>;
+  let resolveFlagReady: (ready: boolean) => void;
+  let otherGate: Promise<boolean>;
+  let releaseOther: (allow: boolean) => void;
+  const donationsEnabled = signal(false);
+  const selectedAccount = signal<{ accountId: string; accountName: string; uid?: string }>({ accountId: '', accountName: 'Synthetic Org', uid: ORG_UID });
+
+  const tabIds = (root: HTMLElement): string[] =>
+    Array.from(root.querySelectorAll('[role="tab"]')).map((el) => (el.getAttribute('data-testid') ?? '').replace('crowdfunding-tab-', ''));
+
+  async function open(url: string): Promise<RouterTestingHarness> {
+    const harness = await RouterTestingHarness.create();
+    await harness.navigateByUrl(url);
+    harness.detectChanges();
+    return harness;
+  }
+
+  beforeEach(() => {
+    writerSet.set(new Set());
+    grantsLoaded.set(true);
+    flagReady.set(true);
+    otherGate = new Promise((resolve) => (releaseOther = resolve));
+    flagReadyPromise = new Promise((resolve) => (resolveFlagReady = resolve));
+    donationsEnabled.set(false);
+    selectedAccount.set({ accountId: '', accountName: 'Synthetic Org', uid: ORG_UID });
+    TestBed.configureTestingModule({
+      providers: [
+        provideRouter([
+          // A destination held pending until `releaseOther`, standing in for an All Companies switch in flight.
+          { path: 'other', component: StubDonationsComponent, canActivate: [() => otherGate] },
+          {
+            path: 'crowdfunding',
+            component: OrgCrowdfundingComponent,
+            children: [
+              { path: 'initiatives', component: StubInitiativesComponent },
+              { path: 'donations', component: StubDonationsComponent },
+            ],
+          },
+        ]),
+        { provide: AccountContextService, useValue: { selectedAccount } },
+        { provide: OrgRoleGrantsService, useValue: { writerSet, loaded: grantsLoaded, error: signal<string | null>(null) } },
+        {
+          provide: FeatureFlagService,
+          useValue: {
+            getBooleanFlag: (key: string) => (key === CF_ORG_DONATIONS_FLAG ? donationsEnabled : signal(false)),
+            getFlagOverride: () => undefined,
+            providerReady: flagReady,
+            waitForReady: () => flagReadyPromise,
+          },
+        },
+      ],
+    });
+  });
+
+  it('names the company in the header and renders the active tab in the panel', async () => {
+    donationsEnabled.set(true);
+    const harness = await open('/crowdfunding/donations');
+    const root: HTMLElement = harness.routeNativeElement as HTMLElement;
+
+    expect(root.querySelector('[data-testid="org-crowdfunding-title"]')?.textContent).toContain('Crowdfunding — Synthetic Org');
+    expect(root.querySelector('[data-testid="stub-donations"]')).not.toBeNull();
+    expect(root.querySelector('[data-testid="crowdfunding-tab-donations"]')?.getAttribute('aria-selected')).toBe('true');
+  });
+
+  it('shows Initiatives only for a direct writer and Donations only with the flag on', async () => {
+    donationsEnabled.set(true);
+    const harness = await open('/crowdfunding/donations');
+    expect(tabIds(harness.routeNativeElement as HTMLElement)).toEqual(['donations']);
+
+    writerSet.set(new Set([ORG_UID]));
+    harness.detectChanges();
+    expect(tabIds(harness.routeNativeElement as HTMLElement)).toEqual(['initiatives', 'donations']);
+  });
+
+  it('hides Donations while the flag is off', async () => {
+    writerSet.set(new Set([ORG_UID]));
+    const harness = await open('/crowdfunding/initiatives');
+    expect(tabIds(harness.routeNativeElement as HTMLElement)).toEqual(['initiatives']);
+  });
+
+  it('switches tabs by navigating, and arrow keys move to the next tab', async () => {
+    writerSet.set(new Set([ORG_UID]));
+    donationsEnabled.set(true);
+    const harness = await open('/crowdfunding/initiatives');
+    const root: HTMLElement = harness.routeNativeElement as HTMLElement;
+
+    root.querySelector<HTMLElement>('[data-testid="crowdfunding-tab-donations"]')?.click();
+    await harness.fixture.whenStable();
+    harness.detectChanges();
+    expect(TestBed.inject(Router).url).toBe('/crowdfunding/donations');
+
+    root.querySelector<HTMLElement>('[role="tablist"]')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+    await harness.fixture.whenStable();
+    expect(TestBed.inject(Router).url).toBe('/crowdfunding/initiatives');
+  });
+
+  it('offers New Initiative only on the Initiatives tab', async () => {
+    writerSet.set(new Set([ORG_UID]));
+    donationsEnabled.set(true);
+    const harness = await open('/crowdfunding/initiatives');
+    expect((harness.routeNativeElement as HTMLElement).querySelector('[data-testid="new-initiative-button"]')).not.toBeNull();
+
+    await harness.navigateByUrl('/crowdfunding/donations');
+    harness.detectChanges();
+    expect((harness.routeNativeElement as HTMLElement).querySelector('[data-testid="new-initiative-button"]')).toBeNull();
+  });
+
+  it('lands the bare address on Initiatives for a direct writer, waiting for the grants to load', async () => {
+    donationsEnabled.set(true);
+    grantsLoaded.set(false);
+    const harness = await open('/crowdfunding');
+    expect(TestBed.inject(Router).url).toBe('/crowdfunding');
+
+    writerSet.set(new Set([ORG_UID]));
+    grantsLoaded.set(true);
+    await harness.fixture.whenStable();
+    expect(TestBed.inject(Router).url).toBe('/crowdfunding/initiatives');
+  });
+
+  it('lands the bare address on Donations for a viewer who is not a writer', async () => {
+    donationsEnabled.set(true);
+    const harness = await open('/crowdfunding');
+    await harness.fixture.whenStable();
+    expect(TestBed.inject(Router).url).toBe('/crowdfunding/donations');
+  });
+
+  it('moves a viewer off a tab they cannot use once the grants load', async () => {
+    donationsEnabled.set(true);
+    const harness = await open('/crowdfunding/initiatives');
+    await harness.fixture.whenStable();
+    expect(TestBed.inject(Router).url).toBe('/crowdfunding/donations');
+  });
+
+  it('keeps Initiatives for a viewer with no tab at all, so its page can explain', async () => {
+    const harness = await open('/crowdfunding/initiatives');
+    await harness.fixture.whenStable();
+    expect(TestBed.inject(Router).url).toBe('/crowdfunding/initiatives');
+    expect((harness.routeNativeElement as HTMLElement).querySelector('[data-testid="new-initiative-button"]')).toBeNull();
+  });
+
+  it('honours ?tab= on the bare address when that tab is available', async () => {
+    writerSet.set(new Set([ORG_UID]));
+    donationsEnabled.set(true);
+    const harness = await open('/crowdfunding?tab=donations');
+    await harness.fixture.whenStable();
+    expect(TestBed.inject(Router).url).toBe('/crowdfunding/donations');
+  });
+
+  it('ignores an unavailable ?tab= and lands on the first tab', async () => {
+    writerSet.set(new Set([ORG_UID]));
+    const harness = await open('/crowdfunding?tab=donations');
+    await harness.fixture.whenStable();
+    expect(TestBed.inject(Router).url).toBe('/crowdfunding/initiatives');
+  });
+
+  it('waits for the feature-flag provider before choosing a non-writer landing tab', async () => {
+    flagReady.set(false);
+    const harness = await open('/crowdfunding');
+    await harness.fixture.whenStable();
+    expect(TestBed.inject(Router).url).toBe('/crowdfunding');
+
+    donationsEnabled.set(true);
+    resolveFlagReady(true);
+    await flagReadyPromise;
+    harness.detectChanges();
+    await harness.fixture.whenStable();
+    expect(TestBed.inject(Router).url).toBe('/crowdfunding/donations');
+  });
+
+  it('keeps an explicit ?tab=initiatives until the default company is selected', async () => {
+    donationsEnabled.set(true);
+    selectedAccount.set({ accountId: '', accountName: '' });
+    const harness = await open('/crowdfunding?tab=initiatives');
+    const router = TestBed.inject(Router);
+
+    expect(tabIds(harness.routeNativeElement as HTMLElement)).toEqual([]);
+    expect(router.url).toContain('tab=initiatives');
+
+    writerSet.set(new Set([ORG_UID]));
+    selectedAccount.set({ accountId: '', accountName: 'Synthetic Org', uid: ORG_UID });
+    await harness.fixture.whenStable();
+    harness.detectChanges();
+
+    expect(router.url).toBe('/crowdfunding/initiatives');
+  });
+
+  it('moves a non-writer off Donations to Initiatives when the flag closes while they are on it', async () => {
+    donationsEnabled.set(true);
+    const harness = await open('/crowdfunding/donations');
+    const router = TestBed.inject(Router);
+    expect(router.url).toBe('/crowdfunding/donations');
+
+    donationsEnabled.set(false);
+    await harness.fixture.whenStable();
+    harness.detectChanges();
+
+    expect(router.url).toBe('/crowdfunding/initiatives');
+  });
+
+  it('shows no tabs, and no New Initiative, while the grants are still loading', async () => {
+    writerSet.set(new Set([ORG_UID]));
+    grantsLoaded.set(false);
+    const harness = await open('/crowdfunding/initiatives');
+    expect(tabIds(harness.routeNativeElement as HTMLElement)).toEqual([]);
+    expect((harness.routeNativeElement as HTMLElement).querySelector('[data-testid="new-initiative-button"]')).toBeNull();
+
+    grantsLoaded.set(true);
+    harness.detectChanges();
+    expect(tabIds(harness.routeNativeElement as HTMLElement)).toEqual(['initiatives']);
+  });
+
+  it('does not navigate against the old route while another navigation is in flight (All Companies switch)', async () => {
+    donationsEnabled.set(true);
+    grantsLoaded.set(false);
+    const harness = await open('/crowdfunding/initiatives');
+    const router = TestBed.inject(Router);
+
+    const pending = router.navigateByUrl('/other');
+    grantsLoaded.set(true);
+    harness.detectChanges();
+    await Promise.resolve();
+    expect(router.getCurrentNavigation()?.finalUrl?.toString() ?? '/other').toBe('/other');
+
+    releaseOther(true);
+    await pending;
+    await harness.fixture.whenStable();
+    expect(router.url).toBe('/other');
+  });
+});

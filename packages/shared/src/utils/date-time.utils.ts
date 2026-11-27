@@ -124,6 +124,14 @@ export function toLocalDateOnlyString(date: Date): string {
 }
 
 /**
+ * Turns a `YYYY-MM-DD` calendar date into UTC midnight in RFC3339 form (e.g. "1990-05-10T00:00:00.000Z"), for
+ * APIs that want a datetime but keep only its UTC day. Returns `null` for anything that isn't a real date-only value.
+ */
+export function dateOnlyToUtcMidnightIso(value: string | null | undefined): string | null {
+  return value ? (parseIsoDateAsUtcMidnight(value)?.toISOString() ?? null) : null;
+}
+
+/**
  * Combines a date and time string into an ISO string in the specified timezone
  * @param date The date object
  * @param time The time string in 12-hour format (e.g., "12:45 AM")
@@ -893,6 +901,23 @@ export function formatShortDate(date: Date): string {
 /** Guards {@link formatMemberSince} against JS's lenient `Date` parser accepting non-ISO input (e.g. `'2023'`, `'1'`) — captures y/m/d for the round-trip check below. */
 const ISO_DATE_PREFIX_PATTERN = /^(\d{4})-(\d{2})-(\d{2})/;
 
+/** The account-creation date behind the "Member since" labels, or null when it fails a check {@link formatMemberSince} lists. */
+function parseMemberSince(iso: string | null | undefined): Date | null {
+  const match = iso ? ISO_DATE_PREFIX_PATTERN.exec(iso) : null;
+  if (!match) {
+    return null;
+  }
+  const date = parseISODateString(iso);
+  if (!date || Number.isNaN(date.getTime()) || date.getUTCFullYear() < 1990) {
+    return null;
+  }
+  const [, year, month, day] = match;
+  if (date.getUTCFullYear() !== Number(year) || date.getUTCMonth() + 1 !== Number(month) || date.getUTCDate() !== Number(day)) {
+    return null;
+  }
+  return date;
+}
+
 /**
  * "Member since" label, e.g. "Mar 2023", for an account-creation ISO timestamp. Returns '' when
  * absent, non-ISO, unparseable, before 1990 (a pre-1990 result means the upstream sent a zero-time
@@ -906,19 +931,25 @@ const ISO_DATE_PREFIX_PATTERN = /^(\d{4})-(\d{2})-(\d{2})/;
  * shifted.
  */
 export function formatMemberSince(iso: string | null | undefined): string {
-  const match = iso ? ISO_DATE_PREFIX_PATTERN.exec(iso) : null;
-  if (!match) {
-    return '';
-  }
-  const date = parseISODateString(iso);
-  if (!date || Number.isNaN(date.getTime()) || date.getUTCFullYear() < 1990) {
-    return '';
-  }
-  const [, year, month, day] = match;
-  if (date.getUTCFullYear() !== Number(year) || date.getUTCMonth() + 1 !== Number(month) || date.getUTCDate() !== Number(day)) {
-    return '';
-  }
-  return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', timeZone: 'UTC' });
+  return parseMemberSince(iso)?.toLocaleDateString('en-US', { year: 'numeric', month: 'short', timeZone: 'UTC' }) ?? '';
+}
+
+/** "Member since" as a full date, e.g. "March 14, 2013", hidden ('') on the same inputs as {@link formatMemberSince}. */
+export function formatMemberSinceDate(iso: string | null | undefined): string {
+  return parseMemberSince(iso)?.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' }) ?? '';
+}
+
+/**
+ * "Mon YYYY" for the year and month a date string starts with, e.g. "Mar 2026" for `'2026-03-01'` or
+ * `'2026-03-01T00:00:00Z'`, read as written so neither a date-only value nor a UTC timestamp moves to another month in
+ * the viewer's time zone. Returns '' for a value that doesn't start with `YYYY-MM`.
+ */
+export function formatYearMonth(value: string | null | undefined): string {
+  const match = value ? /^(\d{4})-(\d{2})/.exec(value) : null;
+  if (!match) return '';
+  const month = Number(match[2]);
+  if (month < 1 || month > 12) return '';
+  return new Date(Date.UTC(Number(match[1]), month - 1, 1)).toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
 }
 
 /**

@@ -12,13 +12,21 @@ import {
   Committee,
   CommitteeMember,
   EntityWithProject,
+  MemberImportRow,
   MemberOperationResult,
   MemberOperationType,
   MemberPendingChanges,
   ProjectContext,
+  StagedCommitteeMemberRequest,
   SucceededMemberOperations,
 } from '@lfx-one/shared/interfaces';
-import { computeIsFoundation, getMissingCommitteeMemberRequirements, getSelectableCommitteeCategories } from '@lfx-one/shared/utils';
+import {
+  canGroupGrantSocialListening,
+  computeIsFoundation,
+  getMissingCommitteeMemberRequirements,
+  getSelectableCommitteeCategories,
+} from '@lfx-one/shared/utils';
+import { CommitteeMemberImportService } from '@services/committee-member-import.service';
 import { CommitteeService } from '@services/committee.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -30,6 +38,8 @@ import {
   catchError,
   concat,
   concatMap,
+  defaultIfEmpty,
+  defer,
   distinctUntilChanged,
   EMPTY,
   filter,
@@ -74,6 +84,7 @@ export class CommitteeManageComponent {
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
   private readonly committeeService = inject(CommitteeService);
+  private readonly importService = inject(CommitteeMemberImportService);
   private readonly messageService = inject(MessageService);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly projectService = inject(ProjectService);
@@ -99,6 +110,10 @@ export class CommitteeManageComponent {
 
   // Member management state
   public memberUpdates = signal<MemberPendingChanges>({ toAdd: [], toUpdate: [], toDelete: [], toInvite: [] });
+  /** Unconfirmed CSV writes stay uncertain across manual saves, scoped to the target group and email. */
+  private readonly uncertainCsvMembers = new Set<string>();
+  /** Confirmed additions still staged must not be relabeled as pre-existing members on retry. */
+  private readonly confirmedCsvMembers = new Set<string>();
   /**
    * uids of members whose delete failed on the most recent flush, owned here (rather than in the
    * members-manager child) so the failure survives the child remounting when the PrimeNG step
@@ -121,7 +136,7 @@ export class CommitteeManageComponent {
   public submitting = signal<boolean>(false);
 
   // Validation signals for template
-  private formValue = toSignal(this.form.valueChanges, { initialValue: this.form.value });
+  protected readonly formValue = toSignal(this.form.valueChanges, { initialValue: this.form.value });
   public readonly canProceed = computed(() => {
     this.formValue();
     return this.isStepValid(this.currentStep());
@@ -322,6 +337,8 @@ export class CommitteeManageComponent {
       .pipe(finalize(() => this.submitting.set(false)))
       .subscribe((results) => {
         this.showMemberOperationToast(results);
+        // A bulk save can outlive the wizard; once the user has left, only report the outcome.
+        if (this.destroyRef.destroyed) return;
 
         // Don't navigate away while any staged item failed — re-entering the wizard would lose
         // it. Prune the items that did succeed so a retry doesn't resubmit them (GH-1608).
@@ -337,6 +354,14 @@ export class CommitteeManageComponent {
 
   public onMemberUpdatesChange(updates: MemberPendingChanges): void {
     this.memberUpdates.set(updates);
+    const committeeUid = this.resolveCommitteeWriteUid();
+    if (!committeeUid) return;
+    const stagedKeys = new Set(updates.toAdd.map((member) => `${committeeUid}:${member.email.trim().toLowerCase()}`));
+    for (const markers of [this.uncertainCsvMembers, this.confirmedCsvMembers]) {
+      for (const key of markers) {
+        if (key.startsWith(`${committeeUid}:`) && !stagedKeys.has(key)) markers.delete(key);
+      }
+    }
   }
 
   public onSubmitAll(): void {
@@ -379,6 +404,7 @@ export class CommitteeManageComponent {
     const committeeData = this.cleanFormData(formValue);
 
     // Prepare committee update
+    const owner = this.importService.viewerSubject();
     const updateCommittee$ = this.committeeService.updateCommittee(committeeUid, committeeData);
 
     // Invite creation snapshots committee_name/organization_required server-side at POST time, so
@@ -386,7 +412,7 @@ export class CommitteeManageComponent {
     // committee metadata into an invite. Sequence rather than run them in parallel.
     updateCommittee$
       .pipe(
-        switchMap((committee) => this.flushMemberUpdates(committeeUid).pipe(map((members) => ({ committee, members })))),
+        switchMap((committee) => this.flushMemberUpdates(committeeUid, owner).pipe(map((members) => ({ committee, members })))),
         finalize(() => this.submitting.set(false))
       )
       .subscribe({
@@ -403,6 +429,8 @@ export class CommitteeManageComponent {
               detail: `${this.committeeLabel} updated successfully`,
             });
           }
+          // A bulk save can outlive the wizard; once the user has left, only report the outcome.
+          if (this.destroyRef.destroyed) return;
 
           // Don't navigate away while any staged item failed — re-entering the wizard would lose
           // it. Prune the items that did succeed so a retry doesn't resubmit them (GH-1608).
@@ -611,6 +639,7 @@ export class CommitteeManageComponent {
       join_mode: committee.join_mode || 'invite_only',
       member_visibility: committee.member_visibility || 'hidden',
       show_meeting_attendees: committee.show_meeting_attendees || false,
+      members_can_view_social_listening: committee.members_can_view_social_listening || false,
     });
   }
 
@@ -641,6 +670,7 @@ export class CommitteeManageComponent {
       join_mode: new FormControl('invite_only'),
       member_visibility: new FormControl('hidden'),
       show_meeting_attendees: new FormControl(false),
+      members_can_view_social_listening: new FormControl(false),
     });
   }
 
@@ -683,6 +713,12 @@ export class CommitteeManageComponent {
         cleaned[key] = value;
       }
     });
+
+    // The toggle is hidden for non-Board groups, so never save a value the user can no longer see.
+    if ('members_can_view_social_listening' in cleaned) {
+      cleaned['members_can_view_social_listening'] =
+        canGroupGrantSocialListening(formData['category'] as string | undefined) && cleaned['members_can_view_social_listening'] === true;
+    }
 
     return cleaned;
   }
@@ -822,58 +858,155 @@ export class CommitteeManageComponent {
     return committee.uid;
   }
 
-  private buildMemberOperations(committeeId: string, memberUpdates: MemberPendingChanges) {
+  private buildMemberOperations(committeeId: string, memberUpdates: MemberPendingChanges, ownsSave: () => boolean) {
     const operations: ReturnType<typeof this.createMemberOperation>[] = [];
 
-    // Add delete operation if there are members to delete
-    if (memberUpdates.toDelete.length > 0) {
-      for (const memberId of memberUpdates.toDelete) {
-        operations.push(this.createMemberOperation('delete', memberId, () => this.committeeService.deleteCommitteeMember(committeeId, memberId)));
-      }
+    // Each factory is deferred and checks the owner before sending the next write.
+    for (const memberId of memberUpdates.toDelete) {
+      operations.push(this.createMemberOperation('delete', memberId, () => this.committeeService.deleteCommitteeMember(committeeId, memberId), ownsSave));
+    }
+    for (const update of memberUpdates.toUpdate) {
+      operations.push(
+        this.createMemberOperation('update', update.uid, () => this.committeeService.updateCommitteeMember(committeeId, update.uid, update.changes), ownsSave)
+      );
     }
 
-    // Add update operation if there are members to update
-    if (memberUpdates.toUpdate.length > 0) {
-      for (const update of memberUpdates.toUpdate) {
-        operations.push(
-          this.createMemberOperation('update', update.uid, () => this.committeeService.updateCommitteeMember(committeeId, update.uid, update.changes))
-        );
-      }
+    // Manual and self additions are created one by one; CSV imports are saved in bulk afterwards (#5529).
+    const csvAdds = memberUpdates.toAdd.filter((member) => member.importSource === 'csv');
+    for (const member of memberUpdates.toAdd.filter((staged) => staged.importSource !== 'csv')) {
+      const { createOptions, pendingInviteUids = [], ...payload } = member;
+      // Client-only staging origins must not reach the native API.
+      delete payload.isSelfAddition;
+      delete payload.importSource;
+      operations.push(
+        this.createMemberOperation(
+          'add',
+          member.email,
+          () => this.committeeService.createCommitteeMember(committeeId, payload, createOptions),
+          ownsSave,
+          (createdMember) => createdMember
+        ).pipe(switchMap((result) => this.revokeStagedInvites(committeeId, pendingInviteUids, result, ownsSave)))
+      );
     }
 
-    // Add create operation if there are members to add
-    if (memberUpdates.toAdd.length > 0) {
-      for (const member of memberUpdates.toAdd) {
-        const { createOptions, pendingInviteUids = [], ...payload } = member;
-        delete payload.isSelfAddition; // Client-only staging origin must not reach the native API.
-        operations.push(
-          this.createMemberOperation(
-            'add',
-            member.email,
-            () => this.committeeService.createCommitteeMember(committeeId, payload, createOptions),
-            (createdMember) => createdMember
-          ).pipe(switchMap((result) => this.revokeImportedInvites(committeeId, pendingInviteUids, result)))
-        );
-      }
+    // One bulk request applies one notification choice, so rows are grouped by their own import's toggle.
+    const csvGroups = new Map<boolean, StagedCommitteeMemberRequest[]>();
+    for (const member of csvAdds) {
+      const skipNotification = member.createOptions?.skipNotification ?? false;
+      csvGroups.set(skipNotification, [...(csvGroups.get(skipNotification) ?? []), member]);
+    }
+    for (const [skipNotification, members] of csvGroups) {
+      operations.push(this.buildCsvImportOperation(committeeId, skipNotification, members, ownsSave));
     }
 
     return operations;
   }
 
+  /**
+   * Saves one notification group of staged CSV rows through the import service's bulk run, with its
+   * pauses, uncertain-outcome resubmission and invite cleanup, then reports one result per row.
+   * A run that never starts or is discarded reports every row as failed, so it stays staged for retry.
+   */
+  private buildCsvImportOperation(
+    committeeId: string,
+    skipNotification: boolean,
+    members: StagedCommitteeMemberRequest[],
+    ownsSave: () => boolean
+  ): Observable<MemberOperationResult> {
+    return defer(() => {
+      if (!ownsSave()) return EMPTY;
+      return this.importService.runStaged({
+        committeeUid: committeeId,
+        committeeName: this.committee()?.name ?? '',
+        skipNotification,
+        members: members.map(({ pendingInviteUids = [], ...payload }) => {
+          // Client-only staging fields must not reach the native API.
+          delete payload.createOptions;
+          delete payload.isSelfAddition;
+          delete payload.importSource;
+          const key = `${committeeId}:${payload.email.trim().toLowerCase()}`;
+          return { payload, pendingInviteUids, ...(this.uncertainCsvMembers.has(key) ? { uncertain: true } : {}) };
+        }),
+      });
+    }).pipe(
+      defaultIfEmpty(null),
+      concatMap((rows) => {
+        if (!rows) return from(members.map((member): MemberOperationResult => ({ type: 'add', identifier: member.email, success: false })));
+
+        // Retain every settled outcome before lookups can buffer rows or lose save ownership.
+        for (const row of rows) {
+          const key = `${committeeId}:${row.normalizedEmail}`;
+          if (row.uncertain || row.unconfirmedAddition) this.uncertainCsvMembers.add(key);
+          if (row.status === 'added') {
+            this.uncertainCsvMembers.delete(key);
+            this.confirmedCsvMembers.add(key);
+          }
+        }
+        return from(rows).pipe(mergeMap((row) => this.toCsvOperationResult(committeeId, row, ownsSave), COMMITTEE_INVITE_CONCURRENCY));
+      })
+    );
+  }
+
+  /**
+   * Only confirmed additions and skipped rows (people already in the group, or duplicates of another row
+   * in the same request) count as saved; any other outcome stays staged. A saved row is promoted out of the
+   * staged list only when its member record is available, otherwise it stays listed and a retry skips it again.
+   */
+  private toCsvOperationResult(committeeId: string, row: MemberImportRow, ownsSave: () => boolean): Observable<MemberOperationResult> {
+    const result: MemberOperationResult = { type: 'add', identifier: row.normalizedEmail, success: false };
+    if (!ownsSave()) return of(result);
+    const key = `${committeeId}:${row.normalizedEmail}`;
+    let saved: MemberOperationResult;
+    if (row.status === 'added') {
+      saved = { ...result, success: true, createdMember: row.member, cleanupWarning: !!row.cleanupWarning };
+    } else if (row.status === 'skipped') {
+      saved = { ...result, success: true };
+      if (row.conflict && !this.confirmedCsvMembers.has(key)) {
+        // Presence after a lost response does not prove which request applied their details.
+        saved = row.unconfirmedAddition ? { ...saved, unconfirmedAddition: true } : { ...saved, alreadyMember: true };
+      }
+    } else {
+      return of(result);
+    }
+    if (saved.createdMember || !row.memberUid) return of(saved);
+
+    // Best effort for both confirmed additions and existing members; keep uncertainty until promotion.
+    return this.committeeService.getCommitteeMember(committeeId, row.memberUid).pipe(
+      map((member) => {
+        if (!ownsSave()) return result;
+        if (!member) return saved;
+        return { ...saved, createdMember: member };
+      }),
+      catchError((error: HttpErrorResponse) => {
+        if (!ownsSave()) return of(result);
+        console.error('Existing member lookup failed', { status: error.status });
+        return of(saved);
+      })
+    );
+  }
+
   /** Cleanup is best-effort: a failed revoke must never put a successfully-created member back in toAdd. */
-  private revokeImportedInvites(committeeId: string, inviteUids: string[], result: MemberOperationResult): Observable<MemberOperationResult> {
+  private revokeStagedInvites(
+    committeeId: string,
+    inviteUids: string[],
+    result: MemberOperationResult,
+    ownsSave: () => boolean
+  ): Observable<MemberOperationResult> {
     if (!result.success || inviteUids.length === 0) {
       return of(result);
     }
     return from(inviteUids).pipe(
       concatMap((uid) =>
-        this.committeeService.revokeCommitteeInvite(committeeId, uid).pipe(
-          map(() => true),
-          catchError((error: HttpErrorResponse) => {
-            console.error('CSV member import invitation cleanup failed', { status: error.status });
-            return of(false);
-          })
-        )
+        defer(() => {
+          if (!ownsSave()) return of(false);
+          return this.committeeService.revokeCommitteeInvite(committeeId, uid).pipe(
+            map(() => true),
+            catchError((error: HttpErrorResponse) => {
+              console.error('Staged member invitation cleanup failed', { status: error.status });
+              return of(false);
+            })
+          );
+        })
       ),
       toArray(),
       map((outcomes) => ({ ...result, cleanupWarning: outcomes.some((success) => !success) }))
@@ -881,15 +1014,17 @@ export class CommitteeManageComponent {
   }
 
   /**
-   * Flush every staged member change. Deletes/updates/adds run sequentially (member mutations may
-   * have ordering requirements), then staged bulk email invites — deferred until wizard completion
-   * (LFXV2-2606) — run with the same bounded concurrency as the immediate-send invite path
-   * (COMMITTEE_INVITE_CONCURRENCY), after the member mutations finish.
+   * Flush every staged member change. Deletes, updates, manual adds and then CSV imports run
+   * sequentially (member mutations may have ordering requirements); CSV imports are saved in bulk,
+   * one notification group at a time (#5529). Staged bulk email invites — deferred until wizard
+   * completion (LFXV2-2606) — then run with the same bounded concurrency as the immediate-send
+   * invite path (COMMITTEE_INVITE_CONCURRENCY), after the member mutations finish.
    */
-  private flushMemberUpdates(committeeId: string): Observable<MemberOperationResult[]> {
+  private flushMemberUpdates(committeeId: string, owner = this.importService.viewerSubject()): Observable<MemberOperationResult[]> {
     const memberUpdates = this.memberUpdates();
+    const ownsSave = (): boolean => !!owner && this.importService.viewerSubject() === owner;
 
-    const memberOperations = this.buildMemberOperations(committeeId, memberUpdates);
+    const memberOperations = this.buildMemberOperations(committeeId, memberUpdates, ownsSave);
     const memberOps$ = memberOperations.length > 0 ? concat(...memberOperations) : EMPTY;
 
     const invites = memberUpdates.toInvite;
@@ -897,7 +1032,8 @@ export class CommitteeManageComponent {
       invites.length > 0
         ? from(invites).pipe(
             mergeMap(
-              (invite) => this.createMemberOperation('invite', invite.invitee_email, () => this.committeeService.createCommitteeInvite(committeeId, invite)),
+              (invite) =>
+                this.createMemberOperation('invite', invite.invitee_email, () => this.committeeService.createCommitteeInvite(committeeId, invite), ownsSave),
               COMMITTEE_INVITE_CONCURRENCY
             )
           )
@@ -910,12 +1046,16 @@ export class CommitteeManageComponent {
     type: MemberOperationType,
     identifier: string,
     operation: () => Observable<T>,
+    ownsSave: () => boolean,
     captureMember?: (result: T) => CommitteeMember
   ): Observable<MemberOperationResult> {
-    return operation().pipe(
-      switchMap((result) => of({ type, identifier, success: true, createdMember: captureMember?.(result) })),
-      catchError(() => of({ type, identifier, success: false }))
-    );
+    return defer(() => {
+      if (!ownsSave()) return of({ type, identifier, success: false });
+      return operation().pipe(
+        switchMap((result) => of({ type, identifier, success: true, createdMember: captureMember?.(result) })),
+        catchError(() => of({ type, identifier, success: false }))
+      );
+    });
   }
 
   /** Groups the identifiers of successfully-flushed operations so the members-manager child can prune them (GH-1608). */
@@ -971,6 +1111,23 @@ export class CommitteeManageComponent {
         severity: 'warn',
         summary: 'Pending Invitation Cleanup',
         detail: `${cleanupWarnings} added member(s) still have pending invitations that could not be revoked. Revoke them from the Pending tab.`,
+        life: 10000,
+      });
+    }
+    const alreadyMembers = results.filter((result) => result.alreadyMember).length;
+    if (alreadyMembers > 0) {
+      this.messageService.add({
+        severity: 'info',
+        summary: 'Already Members',
+        detail: `${alreadyMembers} imported member(s) were already in the ${this.committeeLabel.toLowerCase()}; their CSV details were not applied.`,
+      });
+    }
+    const unconfirmedAdditions = results.filter((result) => result.unconfirmedAddition).length;
+    if (unconfirmedAdditions > 0) {
+      this.messageService.add({
+        severity: 'warn',
+        summary: 'Unconfirmed Additions',
+        detail: `${unconfirmedAdditions} imported member(s) are in the ${this.committeeLabel.toLowerCase()}, but an earlier attempt could not be confirmed, so their CSV details may not have been applied. Review their pending invitations from the Pending tab.`,
         life: 10000,
       });
     }

@@ -18,7 +18,10 @@ import { computePersonInitials } from '@shared/utils/person-avatar.util';
 import { DrawerModule } from 'primeng/drawer';
 import { catchError, finalize, map, of, switchMap } from 'rxjs';
 
-/** The one drill-down drawer of the Training page's group table: certified or in-progress person-course pairs of one row. */
+/**
+ * The one drill-down drawer of the Training page's group table: certified or in-progress person-course pairs of one row.
+ * A roll-up row's drawer lists, and opens people for, that row's company alone.
+ */
 @Component({
   selector: 'lfx-org-training-group-employees-drawer',
   imports: [ReactiveFormsModule, DrawerModule, DecimalPipe, ButtonComponent, InputTextComponent],
@@ -51,6 +54,7 @@ export class OrgTrainingGroupEmployeesDrawerComponent {
 
   private readonly isCompleted = computed<boolean>(() => this.params()?.status === 'completed');
   private readonly isCertificationsTab = computed<boolean>(() => this.params()?.tab === 'certifications');
+  protected readonly companyName = computed<string>(() => this.params()?.company?.name ?? '');
 
   protected readonly statusLabel = computed<string>(() => {
     if (!this.isCompleted()) return 'In progress';
@@ -73,6 +77,7 @@ export class OrgTrainingGroupEmployeesDrawerComponent {
   protected readonly isRosterCapped = computed<boolean>(() => (this.employeesData()?.data.length ?? 0) >= MAX_ORG_TRAINING_GROUP_EMPLOYEES);
 
   protected onPersonClick(employee: OrgTrainingGroupEmployeeVm): void {
+    const company = this.params()?.company;
     this.drawer.open({
       personKey: employee.contactId,
       name: employee.name,
@@ -82,6 +87,8 @@ export class OrgTrainingGroupEmployeesDrawerComponent {
       defaultTab: 'training',
       // The Code tab's Maintainer pills follow the range this drawer lists the person in.
       range: this.query().range,
+      // A person is read per organization: a roll-up row's people are its company's.
+      ...(company ? { organization: company } : {}),
     });
   }
 

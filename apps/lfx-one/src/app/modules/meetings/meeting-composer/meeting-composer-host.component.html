@@ -1,7 +1,21 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-@if (composer.isQuickCreate()) {
+@if (redesign()) {
+  @if (composer.isOpen()) {
+    <lfx-meeting-composer-modal
+      [canProceed]="canProceed()"
+      [canSubmit]="canSubmit()"
+      (closed)="composer.close()"
+      (next)="onNext()"
+      (back)="onBack()"
+      (submitted)="onSubmit()"
+      (editSeries)="onEditSeriesInstead($event)"
+      (goToTitleSection)="onGoToTitleSection()"
+      (occurrenceCancelled)="onOccurrenceCancelled()"
+      (deleteRequested)="onDeleteRequested()" />
+  }
+} @else if (composer.isQuickCreate()) {
   <lfx-quick-create-dialog (create)="onSubmit()" (switchToAdvanced)="onSwitchToAdvanced()" />
 }
 
@@ -16,7 +30,7 @@
      after the snapshot or read as a cancel that did not cancel anything. They come back once the save settles. -->
 <!-- Width: 90% of the window, capped at 1440px, never narrower than 1200px unless the window itself is. -->
 <p-drawer
-  [visible]="composer.isOpen() && !composer.isQuickCreate()"
+  [visible]="!redesign() && composer.isOpen() && !composer.isQuickCreate()"
   (visibleChange)="onVisibleChange($event)"
   position="right"
   [modal]="true"
@@ -73,7 +87,7 @@
        drawer's off-screen inputs would keep whatever was last written *to* the form and show stale text the
        moment "Switch to advanced mode" reveals them. Creating the body on the switch makes every control
        bind fresh, which is what puts the organizer's own answers on screen. -->
-  @if (!composer.isQuickCreate()) {
+  @if (!redesign() && !composer.isQuickCreate()) {
     <!-- The drawer content pane is flush top and bottom (`p-drawer-content:py-0`) and each column carries its
          own vertical padding instead, so the rule between them runs the full height rather than stopping short
          of the header and footer. -->

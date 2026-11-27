@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { RankedOutcome, RankedQuestionView, RankedStanding } from '@lfx-one/shared/interfaces';
+import { IrvRoundsView, RankedOutcome, RankedQuestionView, RankedStanding } from '@lfx-one/shared/interfaces';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { VoteRankedQuestionResultsComponent } from './vote-ranked-question-results.component';
@@ -25,6 +25,7 @@ function question(overrides: Partial<RankedQuestionView> = {}): RankedQuestionVi
     ],
     outcome: null,
     standings: [],
+    irvRounds: null,
     ...overrides,
   };
 }
@@ -36,6 +37,29 @@ function outcome(overrides: Partial<RankedOutcome> = {}): RankedOutcome {
 function standing(choiceId: string, choiceText: string, overrides: Partial<RankedStanding> = {}): RankedStanding {
   return { choiceId, choiceText, rank: 1, label: null, round: null, headToHeadWins: null, headToHeadTotal: null, ...overrides };
 }
+
+/** A one-round instant-runoff count: Candidate One wins outright (#6152). */
+const irvRounds: IrvRoundsView = {
+  rounds: [{ roundNumber: 1, continuingBallots: 4, exhaustedBallots: 0, threshold: 3, isFinal: true }],
+  rows: [
+    { choiceId: 'c1', choiceText: 'Candidate One', cells: [{ roundNumber: 1, votes: 3, percentage: 75, status: 'winner' }] },
+    { choiceId: 'c2', choiceText: 'Candidate Two', cells: [{ roundNumber: 1, votes: 1, percentage: 25, status: 'continuing' }] },
+  ],
+  steps: [
+    {
+      roundNumber: 1,
+      kind: 'winner',
+      choiceTexts: ['Candidate One'],
+      votes: 3,
+      continuingBallots: 4,
+      threshold: 3,
+      transfers: [],
+      exhaustedFromElimination: 0,
+      tieBreak: null,
+      tieBreakLevel: null,
+    },
+  ],
+};
 
 const condorcetStandings: RankedStanding[] = [
   standing('c1', 'Candidate One', { label: 'winner', headToHeadWins: 1, headToHeadTotal: 1 }),
@@ -105,7 +129,7 @@ describe('VoteRankedQuestionResultsComponent', () => {
 
       expect(banner(el)?.getAttribute('role')).toBe('status');
       expect(banner(el)?.querySelector('strong')?.textContent).toBe('Candidate One');
-      expect(bannerText(el)).toBe('Candidate One is the winner, having defeated every other candidate in head-to-head matchups.');
+      expect(bannerText(el)).toBe('Candidate One is the winner. Preferred over every other option in head-to-head comparisons.');
       expect(banner(el)?.querySelector('.fa-trophy')).toBeTruthy();
       expect(text(el.querySelector('[data-testid="vote-results-ranked-standing-c1"]'))).toBe(
         squash('1st Candidate One Won 1 out of 1 possible head-to-head matchup Winner')
@@ -120,14 +144,14 @@ describe('VoteRankedQuestionResultsComponent', () => {
     it.each([
       [
         outcome({ result: 'tie', winnerTexts: ['Candidate One', 'Candidate Two'] }),
-        'Candidate One and Candidate Two are tied. No single winner could be determined.',
+        'There is a tie between Candidate One and Candidate Two. No single winner could be determined.',
       ],
       [outcome({ kind: 'irv', result: 'none', winnerTexts: [] }), 'No winner could be determined.'],
       [outcome({ kind: 'irv', roundCount: 3 }), 'Candidate One is the winner, with a majority of continuing ballots in round 3.'],
       [outcome({ kind: 'irv' }), 'Candidate One is the winner, with a majority of continuing ballots.'],
       [
         outcome({ kind: 'irv', roundCount: 2, condorcetFallback: true }),
-        'No candidate beat every other candidate head-to-head, so the vote went to instant-runoff elimination. Candidate One is the winner after 2 rounds.',
+        'No option beat every other option head-to-head, so instant-runoff elimination decided the result. Candidate One is the winner after 2 rounds.',
       ],
       [outcome({ kind: 'meek_stv', winnerTexts: ['Candidate One'] }), 'Candidate One was elected using Meek STV proportional counting.'],
       [
@@ -180,6 +204,35 @@ describe('VoteRankedQuestionResultsComponent', () => {
       expect(text(el)).toContain(squash('1st Candidate One Won 1 out of 1 possible head-to-head matchup Winner'));
       expect(el.querySelector('[data-testid]')).toBeNull();
     });
+
+    describe('round-by-round count (#6152)', () => {
+      const irvQuestion = (): RankedQuestionView =>
+        question({
+          outcome: outcome({ kind: 'irv', roundCount: 1 }),
+          standings: condorcetStandings.map((row) => ({ ...row, headToHeadWins: null, headToHeadTotal: null })),
+          irvRounds,
+        });
+
+      it('renders the round view after the standings for a final instant-runoff outcome', () => {
+        const el = render(irvQuestion(), 'creator', true);
+
+        const rounds = el.querySelector('[data-testid="vote-irv-rounds"]');
+        expect(rounds).toBeTruthy();
+        expect(el.querySelector('[data-testid="vote-irv-rounds-cell-c1-1"]')?.textContent).toContain('Winner');
+        const headings = [...el.querySelectorAll('h5')].map((heading) => heading.textContent?.trim());
+        expect(headings).toEqual(['Standings', 'Round-by-round count', 'Rank distribution']);
+      });
+
+      it('hides the round view until the outcome is shown', () => {
+        const el = render(irvQuestion(), 'creator', false);
+        expect(el.querySelector('[data-testid="vote-irv-rounds"]')).toBeNull();
+      });
+
+      it('renders no round view for an outcome without rounds, such as Meek STV', () => {
+        const el = render(question({ outcome: outcome({ kind: 'meek_stv' }), standings: condorcetStandings, irvRounds: null }), 'creator', true);
+        expect(el.querySelector('[data-testid="vote-irv-rounds"]')).toBeNull();
+      });
+    });
   });
 
   describe('voter', () => {
@@ -197,6 +250,14 @@ describe('VoteRankedQuestionResultsComponent', () => {
       const el = render(question({ choiceDistributions: [] }), 'voter');
 
       expect(text(el)).toBe(squash('Rank the candidates'));
+    });
+
+    it('renders the round-by-round count without test ids (#6152)', () => {
+      const el = render(question({ outcome: outcome({ kind: 'irv', roundCount: 1 }), irvRounds }), 'voter', true);
+
+      expect(text(el)).toContain(squash('Round-by-round count'));
+      expect(text(el)).toContain(squash('Round 1: Candidate One won with 3 of 4 continuing ballots (majority needed: 3).'));
+      expect(el.querySelector('[data-testid]')).toBeNull();
     });
   });
 

@@ -115,3 +115,30 @@ export interface PublicProfileBadge {
   Image?: string;
   Url?: string;
 }
+
+/** A visitor's theme for the redesigned public profile (#6091). */
+export type PublicProfileTheme = 'light' | 'dark';
+
+/** A project on the redesigned public profile's Foundations & projects involvement (#6093). */
+export interface PublicProfileInvolvementItem {
+  id: string;
+  name: string;
+  logo: string;
+  /** True when the latest year with activity is the current year. */
+  current: boolean;
+  /** "Since 2021" or "2019 – 2022" from the years with activity; '' when none are on record. */
+  years: string;
+  commits: number;
+  prs: number;
+  issues: number;
+}
+
+/** A badge on the redesigned public profile's Recognitions (#6092). */
+export interface PublicProfileBadgeItem {
+  id: string;
+  /** "Credly badge 3 of 12": the data carries no badge name, so the position names it. */
+  label: string;
+  image: string;
+  /** The Credly link, or null when it isn't an http(s) URL. */
+  href: string | null;
+}

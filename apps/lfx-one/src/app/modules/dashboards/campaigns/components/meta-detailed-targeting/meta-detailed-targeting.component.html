@@ -4,12 +4,18 @@
 @if (lists().length > 0) {
   <fieldset class="flex flex-col gap-3" data-testid="meta-detailed-targeting">
     <legend class="text-xs font-medium text-gray-700">Detailed targeting</legend>
-    <p class="text-xs text-gray-500" data-testid="meta-detailed-targeting-hint">
-      People who match any one of these are included. With Advantage+ audience on, Meta treats them as suggestions and may reach beyond them.
-    </p>
+    @if (matchAnyShown()) {
+      <p class="text-xs text-gray-500" data-testid="meta-detailed-targeting-hint">
+        People who match any one of the interests, behaviors or job titles are included. With Advantage+ audience on, Meta treats them as suggestions and may
+        reach beyond them.
+      </p>
+    }
     @for (list of lists(); track list.type) {
       <div class="flex flex-col gap-2" [attr.data-testid]="'meta-detailed-targeting-' + list.key">
-        <span class="text-xs font-medium text-gray-700">{{ list.label }} ({{ list.picks.length }} of {{ maxIds }})</span>
+        <span class="text-xs font-medium text-gray-700">{{ list.countLabel }}</span>
+        @if (list.hint) {
+          <p class="text-xs text-gray-500" [attr.data-testid]="'meta-detailed-targeting-' + list.key + '-hint'">{{ list.hint }}</p>
+        }
         @if (!list.full) {
           <lfx-autocomplete
             [form]="searchForm"
@@ -43,25 +49,26 @@
           </lfx-autocomplete>
         } @else {
           <span class="text-xs text-gray-500" [attr.data-testid]="'meta-detailed-targeting-' + list.key + '-full'">
-            Maximum of {{ maxIds }} reached. Remove one to add another.
+            Maximum of {{ list.max }} reached. Remove one to add another.
           </span>
         }
         @if (list.failure; as failure) {
           <p role="alert" class="text-xs text-red-600" [attr.data-testid]="'meta-detailed-targeting-' + list.key + '-error'">{{ failure }}</p>
         }
-        @if (list.picks.length > 0) {
+        @if (list.chips.length > 0) {
           <div class="flex flex-wrap items-center gap-2">
-            @for (pick of list.picks; track pick.id) {
+            <!-- A region and a city may share a key, so a chip is tracked and named by its list and id. -->
+            @for (chip of list.chips; track chip.list + ':' + chip.id) {
               <span
                 class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700"
-                [attr.data-testid]="'meta-detailed-targeting-' + list.key + '-' + pick.id">
-                {{ pick.name }}
+                [attr.data-testid]="'meta-detailed-targeting-' + chip.list + '-' + chip.id">
+                {{ chip.label }}
                 <button
                   type="button"
-                  (click)="onRemove(list, pick.id)"
+                  (click)="onRemove(chip.list, chip.id)"
                   class="ml-0.5 text-blue-600 hover:text-blue-800"
-                  [attr.aria-label]="'Remove ' + pick.name"
-                  [attr.data-testid]="'meta-detailed-targeting-' + list.key + '-remove-' + pick.id">
+                  [attr.aria-label]="'Remove ' + chip.label"
+                  [attr.data-testid]="'meta-detailed-targeting-' + chip.list + '-remove-' + chip.id">
                   <!-- text-[10px]: matches the Meta audience picker's chip icon. -->
                   <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
                 </button>

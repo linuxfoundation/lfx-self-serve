@@ -539,11 +539,11 @@
                         <tr
                           class="border-b border-gray-100"
                           [class.bg-blue-50]="row.isViewingOrg"
-                          [class.cursor-pointer]="!isActivityMode()"
-                          [class.hover:bg-blue-50]="!isActivityMode()"
+                          [class.cursor-pointer]="ecosystemRowsOpenable()"
+                          [class.hover:bg-blue-50]="ecosystemRowsOpenable()"
                           [attr.data-testid]="row.isViewingOrg ? 'project-detail-leaderboard-ecosystem-viewing-row' : null"
-                          [attr.tabindex]="isActivityMode() ? null : 0"
-                          [attr.aria-label]="isActivityMode() ? null : 'Open ' + row.orgName + ' score breakdown'"
+                          [attr.tabindex]="ecosystemRowsOpenable() ? 0 : null"
+                          [attr.aria-label]="ecosystemRowsOpenable() ? 'Open ' + row.orgName + ' score breakdown' : null"
                           (click)="openLeaderboardDetail('ecosystem', row)"
                           (keydown.enter)="openLeaderboardDetail('ecosystem', row)"
                           (keydown.space)="openLeaderboardDetail('ecosystem', row); $event.preventDefault()">
@@ -633,9 +633,12 @@
 <ng-template #influenceCard let-card>
   <button
     type="button"
-    class="flex w-80 shrink-0 flex-col overflow-hidden rounded-xl border border-gray-200 bg-white text-left transition-shadow hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+    class="flex w-80 shrink-0 flex-col overflow-hidden rounded-xl border border-gray-200 bg-white text-left transition-shadow focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+    [class.hover:shadow-md]="card.openable"
+    [class.cursor-default]="!card.openable"
+    [disabled]="!card.openable"
     [attr.data-testid]="card.testId"
-    [attr.aria-label]="'View details for ' + card.title"
+    [attr.aria-label]="card.openable ? 'View details for ' + card.title : card.title"
     (click)="openCardDetail(card)">
     @if (card.scopeLabel) {
       <div class="border-b border-gray-100 bg-gray-50 px-4 py-1.5 text-xs font-medium text-gray-400">{{ card.scopeLabel }}</div>

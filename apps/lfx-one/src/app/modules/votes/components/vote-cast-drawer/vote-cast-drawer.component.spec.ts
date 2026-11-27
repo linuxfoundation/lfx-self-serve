@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { signal } from '@angular/core';
+import { getDebugNode, signal } from '@angular/core';
 import { UserService } from '@services/user.service';
-import { CdkDragDrop } from '@angular/cdk/drag-drop';
+import { CdkDrag, CdkDragDrop } from '@angular/cdk/drag-drop';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormControl } from '@angular/forms';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
@@ -14,6 +14,7 @@ import {
   VOTE_BALLOT_NOT_FOUND,
   VOTE_BALLOT_REMOVED_STATE,
   VOTE_LAST_VOTER_CONFIRMATION,
+  VOTE_RANKED_CHOICE_DRAG_START_DELAY,
   VOTE_RATE_LIMITED_MESSAGE,
   VOTE_VOTER_REMOVED_ERROR_CODE,
 } from '@lfx-one/shared/constants';
@@ -670,6 +671,9 @@ describe('VoteCastDrawerComponent — locked review of a final ballot (#4331)', 
     expect(el('vote-cast-add-rank-r2')).toBeNull();
     expect(el('vote-cast-unrank-r1')).toBeNull();
     expect(el('vote-cast-rank-r3')?.classList.contains('cdk-drag-disabled')).toBe(true);
+    expect(el('vote-cast-rank-r3')?.classList.contains('cursor-not-allowed')).toBe(true);
+    expect(el('vote-cast-rank-r3')?.classList.contains('cursor-grab')).toBe(false);
+    expect(el('vote-cast-rank-r3')?.classList.contains('select-none')).toBe(false);
     expect((el('vote-cast-rank-up-r1') as HTMLButtonElement).disabled).toBe(true);
     expect((el('vote-cast-rank-down-r3') as HTMLButtonElement).disabled).toBe(true);
 
@@ -1308,6 +1312,43 @@ describe('VoteCastDrawerComponent — change mode and final notice (#4723)', () 
     expect(fixture.componentInstance.form.get('q1')?.value).toEqual(['r1']);
   });
 
+  it('never drags a recorded ranked card from its remove button', async () => {
+    const ranked = {
+      ...CHANGE_VOTE,
+      poll_type: PollType.INSTANT_RUNOFF_VOTE,
+      poll_questions: [
+        {
+          question_id: 'q1',
+          prompt: 'Rank options',
+          type: 'multiple_choice',
+          choices: [{ choice_id: 'r1', choice_text: 'Option A' }],
+        },
+      ],
+    } as Vote;
+    const rankedBallot = {
+      ...BALLOT,
+      poll_answers: [
+        {
+          question_id: 'q1',
+          prompt: 'Rank options',
+          type: 'multiple_choice',
+          user_choice: [],
+          ranked_user_choice: [{ choice_id: 'r1', choice_text: 'Option A', choice_rank: 1 }],
+        },
+      ],
+    } as MyVoteBallot;
+    await open(ranked, { getMyVoteBallot: vi.fn().mockReturnValue(of(rankedBallot)) }, { changeMode: true });
+
+    const cardPress = vi.fn();
+    const card = el('vote-cast-rank-r1') as HTMLElement;
+    card.addEventListener('mousedown', cardPress);
+    card.addEventListener('touchstart', cardPress);
+    const removeButton = el('vote-cast-rank-remove-r1') as HTMLElement;
+    removeButton.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    removeButton.dispatchEvent(new Event('touchstart', { bubbles: true }));
+    expect(cardPress).not.toHaveBeenCalled();
+  });
+
   it('blocks updates until the submitted ballot loads, and shows the load error', async () => {
     await open(CHANGE_VOTE, { getMyVoteBallot: vi.fn().mockReturnValue(throwError(() => new Error('synthetic failure'))) }, { changeMode: true });
 
@@ -1576,6 +1617,73 @@ describe('VoteCastDrawerComponent — mobile layout (#4148)', () => {
       expect(el(id)?.className).toContain('min-w-[44px]');
     }
     expect(el('vote-cast-rank-c1')?.querySelector('span.break-words')).toBeTruthy();
+  });
+
+  it('routes disabled edge-arrow presses through an enabled drag guard', async () => {
+    await setup(vi.fn().mockReturnValue(of(RANKED)));
+    await openWithoutListVote();
+
+    for (const [choiceId, direction] of [
+      ['c1', 'up'],
+      ['c3', 'down'],
+    ]) {
+      const card = el(`vote-cast-rank-${choiceId}`) as HTMLElement;
+      const button = el(`vote-cast-rank-${direction}-${choiceId}`) as HTMLButtonElement;
+      const controls = el(`vote-cast-rank-controls-${choiceId}`) as HTMLElement;
+      expect(button.disabled).toBe(true);
+      expect(button.classList.contains('disabled:pointer-events-none')).toBe(true);
+      expect(button.parentElement).toBe(controls);
+
+      const cardPress = vi.fn();
+      card.addEventListener('mousedown', cardPress);
+      card.addEventListener('touchstart', cardPress);
+      // jsdom cannot hit-test: pin the disabled-control CSS and simulate the guarded targets.
+      for (const target of [controls, button, button.querySelector('i')!]) {
+        target.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+        target.dispatchEvent(new Event('touchstart', { bubbles: true }));
+      }
+      button.click();
+      expect(cardPress).not.toHaveBeenCalled();
+
+      card.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+      expect(cardPress).toHaveBeenCalledOnce();
+    }
+  });
+
+  it('enables whole-card ranked drag, guards arrow presses and locks on abstain', async () => {
+    await setup(vi.fn().mockReturnValue(of({ ...RANKED, allow_abstain: true })));
+
+    await openWithoutListVote();
+
+    const card = el('vote-cast-rank-c2') as HTMLElement;
+    expect(card.querySelector('.cdk-drag-handle')).toBeNull();
+    expect(card.classList.contains('cursor-grab')).toBe(true);
+    expect(card.classList.contains('active:cursor-grabbing')).toBe(true);
+    expect(card.classList.contains('select-none')).toBe(true);
+    expect(card.classList.contains('cursor-move')).toBe(false);
+    expect(getDebugNode(card)!.injector.get(CdkDrag).dragStartDelay).toEqual(VOTE_RANKED_CHOICE_DRAG_START_DELAY);
+
+    const cardPress = vi.fn();
+    card.addEventListener('mousedown', cardPress);
+    card.addEventListener('touchstart', cardPress);
+    for (const dir of ['up', 'down']) {
+      const button = el(`vote-cast-rank-${dir}-c2`) as HTMLElement;
+      for (const target of [button, button.querySelector('i')!]) {
+        target.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+        target.dispatchEvent(new Event('touchstart', { bubbles: true }));
+      }
+    }
+    expect(cardPress).not.toHaveBeenCalled();
+
+    (document.getElementById('vote-cast-abstain') as HTMLInputElement).click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(card.classList.contains('cdk-drag-disabled')).toBe(true);
+    expect(card.classList.contains('cursor-grab')).toBe(false);
+    expect(card.classList.contains('active:cursor-grabbing')).toBe(false);
+    expect(card.classList.contains('select-none')).toBe(false);
+    expect((el('vote-cast-rank-up-c2') as HTMLButtonElement).disabled).toBe(true);
+    expect((el('vote-cast-rank-down-c2') as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('submits the same ranked_choices payload whether reordered by arrow buttons or by drag', async () => {

@@ -88,6 +88,7 @@ import { OrgEditAccessService } from '@shared/services/org-edit-access.service';
 import { OrgLensEmptyStateService } from '@shared/services/org-lens-empty-state.service';
 import { OrgLensNavigationService } from '@shared/services/org-lens-navigation.service';
 import { OrgLensProjectsService } from '@shared/services/org-lens-projects.service';
+import { OrgLensViewModeService } from '@shared/services/org-lens-view-mode.service';
 import { OrgRoleGrantsService } from '@shared/services/org-role-grants.service';
 import { orgScopeQueryParams, readOrgScope, syncOrgScopeWithUrl } from '@shared/utils/org-scope-url.util';
 import { readOrgTeamMembers, syncOrgTeamMembersWithUrl } from '@shared/utils/org-team-members-url.util';
@@ -132,6 +133,7 @@ export class OrgProjectsComponent {
   private readonly projectsService = inject(OrgLensProjectsService);
   private readonly orgRoleGrants = inject(OrgRoleGrantsService);
   private readonly orgEditAccess = inject(OrgEditAccessService);
+  private readonly viewMode = inject(OrgLensViewModeService);
   private readonly messageService = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
   protected readonly emptyState = inject(OrgLensEmptyStateService);
@@ -238,10 +240,15 @@ export class OrgProjectsComponent {
   private readonly addProjectsFormValue = toSignal(this.addProjectsForm.valueChanges, { initialValue: this.addProjectsForm.getRawValue() });
   /** Project Detail links keep the organization scope picked on another page (lfx-self-serve-ops#1219). */
   protected readonly projectDetailQueryParams: Signal<Params> = computed(() => orgScopeQueryParams(this.queryParamMap()));
-  protected readonly contributorsDrawerQueryParams: Signal<Params> = computed(() => ({
-    ...this.projectDetailQueryParams(),
-    [PD_DRAWER_QUERY_PARAM]: PD_CONTRIBUTORS_CARD_KEY,
-  }));
+  // The all employee view opens no card panel on Project detail, so the contributors count there links to the page alone.
+  protected readonly contributorsDrawerQueryParams: Signal<Params> = computed(() =>
+    this.isEmployeeView()
+      ? this.projectDetailQueryParams()
+      : {
+          ...this.projectDetailQueryParams(),
+          [PD_DRAWER_QUERY_PARAM]: PD_CONTRIBUTORS_CARD_KEY,
+        }
+  );
 
   protected readonly companyName = computed(() => this.accountContext.selectedAccount()?.accountName ?? '');
   protected readonly hasCompany = computed(() => !!this.accountContext.selectedAccount()?.uid);
@@ -286,7 +293,9 @@ export class OrgProjectsComponent {
    * company-wide teams (`lf-staff`) and auditors can select an org but could never use these controls.
    * Loading the page stays a pure read for non-roster editors (server `resolveCanEdit`).
    */
-  protected readonly canManageWorkspaces = this.orgEditAccess.canEditSelected;
+  /** All employee view: a read-only summary with no people, so no workspace editing and no Employees filter (the server redacts the people regardless). */
+  protected readonly isEmployeeView = this.viewMode.isEmployeeView;
+  protected readonly canManageWorkspaces = computed(() => this.orgEditAccess.canEditSelected() && !this.isEmployeeView());
   protected readonly canAddProjects = computed(() => this.canManageWorkspaces() && !!this.selectedWorkspace() && !this.loading() && !this.error());
   protected readonly addProjectDisabledReason = computed(() => this.initAddProjectDisabledReason());
   protected readonly selectedAddProjectCount = computed(() => this.addProjectsFormValue().projects?.length ?? 0);
@@ -341,6 +350,14 @@ export class OrgProjectsComponent {
     // A pick changes which projects an Employees filter matches, so it starts again on page 1, as the filters do.
     syncOrgScopeWithUrl(this.scopeForm.controls.orgScope, this.route, this.router, { page: null });
     syncOrgTeamMembersWithUrl(this.scopeForm.controls.teamMembers, this.route, this.router, { page: null });
+    // The all employee view has no Employees filter: clear a selection that arrived by link, in the form and the URL.
+    toObservable(this.isEmployeeView)
+      .pipe(filter(Boolean), takeUntilDestroyed())
+      .subscribe(() => {
+        if (this.filterForm.controls.employees.value.length > 0) {
+          this.filterForm.controls.employees.setValue([]);
+        }
+      });
     // Filter changes (foundation / employees) write through to the URL and reset to page 1.
     this.filterForm.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => {
       if (this.resettingFilters) return;
@@ -1089,7 +1106,9 @@ export class OrgProjectsComponent {
     // event attendance attributed to every project in a foundation, which would match nearly every row.
     // Unknown ids (stale links, or maintainer-only people while roles are unavailable) stay in the
     // predicate and match nothing, so a selection never widens the list or the CSV export.
-    const employees = this.formValue().employees ?? [];
+    // The all employee view has no Employees picker and its rosters are anonymised, so a real member id from a shared link
+    // matches nothing: the filter is ignored there rather than emptying the table and the CSV.
+    const employees = this.isEmployeeView() ? [] : (this.formValue().employees ?? []);
     return all
       .filter((p) => foundation === ORG_PROJECTS_ALL_FOUNDATIONS_FILTER || p.foundation.slug === foundation)
       .filter((p) => employees.length === 0 || [...p.maintainers, ...p.contributors].some((person) => employees.includes(person.id)));

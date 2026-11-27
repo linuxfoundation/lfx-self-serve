@@ -52,10 +52,21 @@ export class OrgRoleGrantsService {
   // M3 — orgs reached only as a CLA Manager. The server fills it only when every grant set above is empty and the caller is not staff.
   private readonly claManagerOrgSetInternal: WritableSignal<Set<string>> = signal<Set<string>>(new Set());
   private readonly claManagerLookupFailedInternal: WritableSignal<boolean> = signal<boolean>(false);
+  // Epic #5845 — the all employee view lookup could not answer, so a missing `employeeView` is unknown, not "not an employee".
+  private readonly employeeViewLookupFailedInternal: WritableSignal<boolean> = signal<boolean>(false);
   // #4225 — the caller's own employer is an LF member, so an empty Org Lens means "never granted
   // access", not "no organization". False whenever the server could not establish it, which keeps the
   // copy the user sees today rather than asserting a reason that may be wrong.
   private readonly affiliatedToMemberInternal: WritableSignal<boolean> = signal<boolean>(false);
+  // Epic #5845 — the company the caller may open in the all employee view. Null whenever the server did not prove it,
+  // which keeps today's empty state. Read it through `OrgLensViewModeService`.
+  private readonly employeeViewOrgUidInternal: WritableSignal<string | null> = signal<string | null>(null);
+  // Companies an address or selector row marked as employee-view; kept here (not in the view-mode service) so the CLA-only
+  // access service can read it without a dependency cycle.
+  // Epic #5845 — a company the caller reads at full width through the authorizer alone, which the grant sets never list.
+  private readonly fullAccessOrgUidInternal: WritableSignal<string | null> = signal<string | null>(null);
+  private readonly addressedFullAccessUidsInternal: WritableSignal<ReadonlySet<string>> = signal<ReadonlySet<string>>(new Set());
+  private readonly addressedEmployeeViewUidsInternal: WritableSignal<ReadonlySet<string>> = signal<ReadonlySet<string>>(new Set());
 
   public readonly writerSet: Signal<Set<string>> = this.writerSetInternal.asReadonly();
   public readonly auditorSet: Signal<Set<string>> = this.auditorSetInternal.asReadonly();
@@ -90,17 +101,82 @@ export class OrgRoleGrantsService {
   public readonly claManagerOrgSet: Signal<Set<string>> = this.claManagerOrgSetInternal.asReadonly();
   /** M3 — the server could not read the caller's `cla-manager` scopes, so an empty `claManagerOrgSet` is unknown. */
   public readonly claManagerLookupFailed: Signal<boolean> = this.claManagerLookupFailedInternal.asReadonly();
+  /** Epic #5845 — the server could not establish whether the caller is in the all employee view (a failed or slow lookup). */
+  public readonly employeeViewLookupFailed: Signal<boolean> = this.employeeViewLookupFailedInternal.asReadonly();
   /**
    * #4225 — the caller works for an organization that IS an LF member, and holds no grant on it.
    * True only on a completed server-side determination; an older server, a failed lookup, or a
    * non-member employer all read false, so the classifier falls back to the state it shows today.
    */
   public readonly affiliatedToMember: Signal<boolean> = this.affiliatedToMemberInternal.asReadonly();
+  /** Epic #5845 — uid of the company the caller reaches only through the all employee view, or null. Read it through `OrgLensViewModeService`. */
+  public readonly employeeViewOrgUid: Signal<string | null> = this.employeeViewOrgUidInternal.asReadonly();
+  /** Epic #5845 — companies the caller reads at full width through the authorizer alone (role-grants company plus any an address or selector row marked). Supersedes CLA-only and employee view. */
+  public readonly fullAccessOrgUids: Signal<ReadonlySet<string>> = computed(() => {
+    const granted = this.fullAccessOrgUidInternal();
+    const addressed = this.addressedFullAccessUidsInternal();
+    return granted ? new Set([granted, ...addressed]) : addressed;
+  });
+  /** Epic #5845 — every company the caller reaches through the all employee view: the role-grants company plus any an address or selector row marked. */
+  public readonly employeeViewOrgUids: Signal<ReadonlySet<string>> = computed(() => {
+    const granted = this.employeeViewOrgUidInternal();
+    const addressed = this.addressedEmployeeViewUidsInternal();
+    return granted ? new Set([granted, ...addressed]) : addressed;
+  });
 
   public constructor() {
     afterNextRender(() => {
       this.refresh().subscribe();
     });
+  }
+
+  /** Records an address's or selector row's full-access answer for `uid`; a later non-full-access answer clears it. */
+  public noteFullAccessAddressed(uid: string, fullAccess: boolean): void {
+    const current = this.addressedFullAccessUidsInternal();
+    if (current.has(uid) === fullAccess) return;
+    const next = new Set(current);
+    if (fullAccess) {
+      next.add(uid);
+    } else {
+      next.delete(uid);
+    }
+    this.addressedFullAccessUidsInternal.set(next);
+  }
+
+  /**
+   * A server answer that `uid` is CLA-only supersedes every earlier reduced-mode note for it, the role-grants-backed ones included
+   * (which the addressed setters never touch): otherwise a user who lost the employee or full-access view would stay classified by the
+   * stale mode, `isClaOnly` would stay false, and the EasyCLA-only redirect would never run.
+   */
+  public clearReducedModes(uid: string): void {
+    if (this.employeeViewOrgUidInternal() === uid) this.employeeViewOrgUidInternal.set(null);
+    if (this.fullAccessOrgUidInternal() === uid) this.fullAccessOrgUidInternal.set(null);
+    this.noteEmployeeViewAddressed(uid, false);
+    this.noteFullAccessAddressed(uid, false);
+  }
+
+  /** Records an address's or selector row's employee-view answer for `uid`; a later non-employee answer clears it. */
+  public noteEmployeeViewAddressed(uid: string, employeeView: boolean): void {
+    // A positive employee-only answer supersedes every earlier full-access note for that company (the role-grants one and the addressed one).
+    if (employeeView) {
+      if (this.fullAccessOrgUidInternal() === uid) this.fullAccessOrgUidInternal.set(null);
+      this.noteFullAccessAddressed(uid, false);
+    }
+    const current = this.addressedEmployeeViewUidsInternal();
+    if (employeeView) {
+      // The role-grants company is superseded the same way; the next role-grants answer restores it if the server still names it.
+      const granted = this.employeeViewOrgUidInternal();
+      if (granted !== null && granted !== uid) this.employeeViewOrgUidInternal.set(null);
+      // A caller has one employer, so a positive answer for a company replaces any earlier addressed employee company: otherwise both stay
+      // addressable and the earlier one renders pages whose APIs now refuse it.
+      if (current.size === 1 && current.has(uid)) return;
+      this.addressedEmployeeViewUidsInternal.set(new Set([uid]));
+      return;
+    }
+    if (!current.has(uid)) return;
+    const next = new Set(current);
+    next.delete(uid);
+    this.addressedEmployeeViewUidsInternal.set(next);
   }
 
   /**
@@ -129,9 +205,26 @@ export class OrgRoleGrantsService {
         this.correlationIdInternal.set(response.staffCheck === 'failed' && response.correlationId ? response.correlationId : null);
         this.claManagerOrgSetInternal.set(new Set(response.claManagerOrgs ?? []));
         this.claManagerLookupFailedInternal.set(response.claManagerLookup === 'failed');
+        this.employeeViewLookupFailedInternal.set(response.employeeViewLookup === 'failed');
         // Absent on an older server, or `lookup: 'failed'` ⇒ false: a rolling deploy and a broken
         // lookup both fall back to the no-organization copy rather than to a confident new reason.
         this.affiliatedToMemberInternal.set(response.affiliation?.lookup === 'ok' && response.affiliation.hasEmployer && response.affiliation.employerIsMember);
+        // Absent on an older server, a flag-off server or an unproven lookup ⇒ null: never inferred from absence.
+        this.employeeViewOrgUidInternal.set(response.employeeView?.orgUid ?? null);
+        this.fullAccessOrgUidInternal.set(response.fullAccessOrgUid ?? null);
+        // A positive employee-only verdict supersedes an earlier addressed full-access note for that company; absence of the optional field never clears it.
+        const employeeOnlyUid = response.employeeView?.orgUid;
+        // The role-grants answer names the one current employee company, so an addressed note for any other company is stale; an absent answer
+        // (an older server, a flag-off server, an unproven lookup) keeps the addressed fallback notes.
+        if (employeeOnlyUid) {
+          const addressed = this.addressedEmployeeViewUidsInternal();
+          if ([...addressed].some((held) => held !== employeeOnlyUid)) {
+            this.addressedEmployeeViewUidsInternal.set(new Set([...addressed].filter((held) => held === employeeOnlyUid)));
+          }
+        }
+        if (employeeOnlyUid && employeeOnlyUid !== response.fullAccessOrgUid) {
+          this.noteFullAccessAddressed(employeeOnlyUid, false);
+        }
         this.loadedInternal.set(true);
         this.loadingInternal.set(false);
         this.loadedAtMsInternal.set(Date.now());
@@ -156,7 +249,10 @@ export class OrgRoleGrantsService {
         this.claManagerOrgSetInternal.set(new Set());
         // `lookupOutcome: 'failed'` already reports this outage.
         this.claManagerLookupFailedInternal.set(false);
+        this.employeeViewLookupFailedInternal.set(false);
         this.affiliatedToMemberInternal.set(false);
+        this.employeeViewOrgUidInternal.set(null);
+        this.fullAccessOrgUidInternal.set(null);
         this.loadedInternal.set(true);
         this.loadingInternal.set(false);
         return of(undefined);

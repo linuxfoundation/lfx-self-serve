@@ -1,10 +1,10 @@
 ---
 title: Training & Certification
-description: How to read the Company lens Training & Certification page — its ten cards, the Certifications and Trainings tabs, the time range, Group by and More filters, what Clear all resets, and the people behind each number.
+description: How to read the Company lens Training & Certification page — its ten cards, the Certifications and Trainings tabs, the time range, Group by and More filters, what Clear all resets, the people behind each number, and what a company family roll-up shows.
 audience: [all]
 product_area: Company
-tags: [company, org, org-lens, training, certification, certifications, trainings, courses, group-by, filters, time-range]
-last_updated: 2026-11-06
+tags: [company, org, org-lens, training, certification, certifications, trainings, courses, group-by, filters, time-range, roll-up, company-family]
+last_updated: 2026-11-25
 intercom_collection: Company
 ---
 
@@ -95,11 +95,33 @@ You filter the page with the bar above the table. The time range and the filters
 2. Select a time range: **Past 30 days**, **Past 90 days**, **Past 365 days**, **Past 2 years** or **All time**. **Past 2 years** is the default.
 3. Select what to group the table by: **Course** (the default), **Foundation**, **Project**, **Level** or **Format**.
 4. Select **More filters** to show **Foundation**, **Project**, **Course**, **Level** and **Format**. Each starts on **All Foundations**, **All Projects**, **All Courses**, **All Levels** or **All Formats**. The link counts how many of them are set, such as **More filters (1)**.
-5. Select **Clear all** to reset the five filters under **More filters**. It keeps the time range, **Group by**, the tab and the search.
+5. Select **Clear all** to reset the five filters under **More filters**, and the **Company** filter when a company family is selected. It keeps the time range, **Group by**, the tab and the search.
 
 The filter menus offer the values found for the company in the selected time range. A value you picked that has no rows in the new range stays applied and is shown as **(no rows in range)**. If the menus cannot load, the page says **Couldn't load the filter options. Your selections still apply.** and offers **Retry**.
 
 When you switch to another company, the five filters under **More filters** and the search are cleared. The time range and **Group by** stay.
+
+## What does the Training & Certification page show for a company family?
+
+For a company family, the Training & Certification page combines the training of every company in that family that you have access to. You pick a family in the company selector, where it is listed as **All**, the family's name and **Companies** (for example, **All Acme Companies**). The page heading then reads **Training & Certifications — All Acme Companies**, and the line under it is **Training enrollments and certifications across your companies.**
+
+For a company family, the cards count across the whole family. **Training-program roster members** adds up the companies' counts, and the other cards count each person and each person-course pair once:
+
+- **People with training activity**, **Certified people** and **People in training** count a person once, even when more than one of the family's companies lists them. **People in training** counts people with a course that has no certificate under any of the companies.
+- **Courses taken**, **Certifications** and **Trainings completed** count each person-course pair once. A pair with a certificate under any of the family's companies counts as certified.
+- **Courses in progress** is **Courses taken** minus the pairs with a certificate, so a course that a person finished under one company is not also counted as in progress.
+- **Learners not on the people list** counts only learners who are on none of the family's companies' people lists.
+- **Training-program roster members** adds up each company's count, so a person on two companies' rosters counts twice. It says **No LF Education training program on record for this company** only when none of the companies it counts has a program.
+
+For a company family, the table lists each company's rows separately, and a **Company** filter narrows the page to one company:
+
+- The table has one row per **Group by** value and company, such as one row for each course and company, with a **Company** column after the grouped column. Each row counts that company's own people and person-course pairs, so a person in two companies appears in both companies' rows. A course a person finished under one company can show as **In progress** in another company's row.
+- The **Total** row counts each person and each person-course pair once across the family, so it can be less than the sum of the rows. Its **Certified** and **Completed** totals still equal the **Certifications** and **Trainings completed** cards. The line under the **Total** row says **A person in more than one company is counted once in the totals.**
+- A **Company** filter, next to the search, narrows the cards and the table to one company of the family. It starts on **All Companies**. It is kept in the page address (`?company=`), and **Clear all** resets it as well as the five filters under **More filters**. A company that is not in the family is removed from the address, and the page shows every company.
+- The menus under **More filters** offer the values found for any company in the family, whichever company the **Company** filter is set to.
+- Selecting a **Certified**, **Completed** or **In progress** number opens that row's company only: the line under the panel heading names the company, and the panel lists that company's current employees. Selecting a person's name opens their details for that company.
+
+If some of the family's companies are left out, a notice under the page heading says so. It reads **Some companies in this family are not included because you do not have access to them.** when you cannot open some of them, and **This family's companies could not all be loaded, so these figures may be incomplete.** when they could not all be loaded.
 
 ## Why is the Training & Certification table empty, or why did it fail to load?
 

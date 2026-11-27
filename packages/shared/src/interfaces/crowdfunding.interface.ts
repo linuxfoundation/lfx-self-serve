@@ -480,3 +480,13 @@ export interface InitiativeMenuItem {
 }
 
 export type AllowedLogoMimeType = 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp';
+
+/** A tab on the Company lens Crowdfunding page (#5838). */
+export type OrgCrowdfundingTab = 'initiatives' | 'donations';
+
+/** A tab-bar entry on the Company lens Crowdfunding page (#5838). */
+export interface OrgCrowdfundingTabItem {
+  id: OrgCrowdfundingTab;
+  label: string;
+  icon: string;
+}

@@ -1,7 +1,15 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ALLOWED_FILE_TYPES, DOCUMENT_DELETE_TYPES, EDITABLE_STAFF_ROLES, EMAIL_REGEX, LENS_REDIRECT_RESOURCES } from '@lfx-one/shared/constants';
+import {
+  ALLOWED_FILE_TYPES,
+  DOCUMENT_DELETE_TYPES,
+  DOCUMENT_UPDATE_TYPES,
+  EDITABLE_STAFF_ROLES,
+  EMAIL_REGEX,
+  LENS_REDIRECT_RESOURCES,
+  PROJECT_DOCUMENT_NAME_MAX_LENGTH,
+} from '@lfx-one/shared/constants';
 import { MeetingVisibility } from '@lfx-one/shared/enums';
 import {
   AddUserToProjectRequest,
@@ -25,6 +33,7 @@ import { ReadableStream as NodeReadableStream } from 'node:stream/web';
 
 import { ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { contentDispositionAttachment } from '../helpers/content-disposition.helper';
+import { parseDocumentUpdateRequest } from '../helpers/document-update.helper';
 import { buildVCalendar, fetchAllMeetingPages, meetingsToVEvents } from '../helpers/ics.helper';
 import { validateProjectPermissionRole } from '../helpers/project-permission.helper';
 import { getStringQueryParam, getValidatedDuplicateIdentifiers, validateUidParameter } from '../helpers/validation.helper';
@@ -1039,6 +1048,84 @@ export class ProjectController {
     }
   }
 
+  /**
+   * PATCH /projects/:uid/documents/:documentId?type=folder|link|file
+   * Body: `{ name?, parent_uid? }`. Renames and/or moves the record; `parent_uid: null` moves it to the root.
+   */
+  public async updateProjectDocument(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid, documentId } = req.params;
+    // Use getStringQueryParam so repeated `?type=folder&type=link` keys can't slip through as an array and bypass the validation below.
+    const documentType = getStringQueryParam(req, 'type');
+    const validUpdateTypes: readonly string[] = DOCUMENT_UPDATE_TYPES;
+    const startTime = logger.startOperation(req, 'update_project_document', {
+      project_id: uid,
+      document_id: documentId,
+      document_type: documentType,
+    });
+
+    try {
+      // uid/documentId are interpolated directly into the upstream request path — reject anything that isn't a UUID before it
+      // reaches the proxy layer, or a crafted id can traverse/retarget the upstream call (linuxfoundation/lfx-self-serve-ops#434).
+      if (!uid || !isUuid(uid)) {
+        next(
+          ServiceValidationError.forField('uid', 'Project ID must be a valid UUID', {
+            operation: 'update_project_document',
+            service: 'project_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      if (!documentId || !isUuid(documentId)) {
+        next(
+          ServiceValidationError.forField('documentId', 'Document ID must be a valid UUID', {
+            operation: 'update_project_document',
+            service: 'project_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      if (!documentType || !validUpdateTypes.includes(documentType)) {
+        const message = !documentType ? 'Document type query parameter is required' : `Document type must be one of: ${validUpdateTypes.join(', ')}`;
+        next(
+          ServiceValidationError.forField('type', message, {
+            operation: 'update_project_document',
+            service: 'project_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      const { request, fieldErrors } = parseDocumentUpdateRequest(req.body, documentType as ProjectDocumentType, PROJECT_DOCUMENT_NAME_MAX_LENGTH);
+      if (Object.keys(fieldErrors).length > 0) {
+        next(
+          ServiceValidationError.fromFieldErrors(fieldErrors, 'Validation failed', {
+            operation: 'update_project_document',
+            service: 'project_controller',
+            path: req.path,
+          })
+        );
+        return;
+      }
+
+      const updated = await this.projectService.updateProjectDocument(req, uid, documentId, documentType as ProjectDocumentType, request);
+
+      logger.success(req, 'update_project_document', startTime, {
+        project_id: uid,
+        document_id: documentId,
+        document_type: documentType,
+      });
+
+      res.status(200).json(updated);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   /** GET /public/api/projects/:id/calendar.ics — PUBLIC meetings (any join restriction); serves both foundation and project lenses. */
   public async getProjectCalendar(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { id } = req.params;
@@ -1147,7 +1234,7 @@ export class ProjectController {
           discoverable: false,
         });
         res.setHeader('Cache-Control', 'public, max-age=300');
-        res.json({ meetings: [], total: 0, project: { uid: projectUid, name: '' } } satisfies PublicProjectMeetingsResponse);
+        res.json({ meetings: [], total: 0, project: { uid: projectUid, name: '', logo_url: null } } satisfies PublicProjectMeetingsResponse);
         return;
       }
 
@@ -1170,7 +1257,11 @@ export class ProjectController {
           rejected_non_public_committee: true,
         });
         res.setHeader('Cache-Control', 'public, max-age=300');
-        res.json({ meetings: [], total: 0, project: { uid: projectUid, name: project.name } } satisfies PublicProjectMeetingsResponse);
+        res.json({
+          meetings: [],
+          total: 0,
+          project: { uid: projectUid, name: project.name, logo_url: project.logo_url || null },
+        } satisfies PublicProjectMeetingsResponse);
         return;
       }
 
@@ -1179,13 +1270,16 @@ export class ProjectController {
       // The projection is an allowlist, not a strip: this is an unauthenticated bulk-export endpoint, so
       // credentials (password/passcode/host_key/zoom_config) and organizer PII (created_by/owner/organizers)
       // must stay out of the payload even as new Meeting fields land upstream (LFXV2-2802).
-      const meetings: PublicCalendarMeeting[] = [...upcoming, ...past]
-        .filter((m) => m.visibility === MeetingVisibility.PUBLIC)
-        .map((m) => this.toPublicCalendarMeeting(m, publicCommitteeUids));
+      const isPublic = (m: Meeting | PastMeeting): boolean => m.visibility === MeetingVisibility.PUBLIC;
+      // Past rows are one per occurrence, so they skip the series agenda rather than repeat it per row.
+      const meetings: PublicCalendarMeeting[] = [
+        ...upcoming.filter(isPublic).map((m) => this.toPublicCalendarMeeting(m, publicCommitteeUids, true)),
+        ...past.filter(isPublic).map((m) => this.toPublicCalendarMeeting(m, publicCommitteeUids, false)),
+      ];
       const response: PublicProjectMeetingsResponse = {
         meetings,
         total: meetings.length,
-        project: { uid: projectUid, name: project.name },
+        project: { uid: projectUid, name: project.name, logo_url: project.logo_url || null },
       };
 
       logger.success(req, 'get_project_meetings', startTime, {
@@ -1370,14 +1464,31 @@ export class ProjectController {
    * by `GET /public/api/projects/:id/meetings`. Field-by-field allowlist, deliberately not a spread with
    * deletes — anything not named here can never reach an anonymous caller.
    */
-  private toPublicCalendarMeeting(meeting: Meeting | PastMeeting, publicCommitteeUids: ReadonlySet<string>): PublicCalendarMeeting {
+  private toPublicCalendarMeeting(meeting: Meeting | PastMeeting, publicCommitteeUids: ReadonlySet<string>, withDescription: boolean): PublicCalendarMeeting {
     const pastRow = meeting as Partial<PastMeeting>;
+    const recurrence = meeting.recurrence;
     return {
       id: meeting.id,
       title: meeting.title,
       start_time: meeting.start_time,
       duration: meeting.duration,
       timezone: meeting.timezone,
+      meeting_type: meeting.meeting_type ?? null,
+      restricted: !!meeting.restricted,
+      recurrence: recurrence
+        ? {
+            type: recurrence.type,
+            repeat_interval: recurrence.repeat_interval,
+            weekly_days: recurrence.weekly_days,
+            monthly_day: recurrence.monthly_day,
+            monthly_week: recurrence.monthly_week,
+            monthly_week_day: recurrence.monthly_week_day,
+            end_date_time: recurrence.end_date_time,
+            end_times: recurrence.end_times,
+          }
+        : null,
+      // Same rule as GET /public/api/meetings/:id: an invite-only agenda is for invited guests only.
+      ...(withDescription && !meeting.restricted && meeting.description ? { description: meeting.description } : {}),
       occurrences: (meeting.occurrences ?? []).map((occurrence) => ({
         occurrence_id: occurrence.occurrence_id,
         start_time: occurrence.start_time,

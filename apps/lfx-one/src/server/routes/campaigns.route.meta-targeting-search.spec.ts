@@ -14,11 +14,13 @@ import { META_TARGETING_SEARCH_BUSY_MESSAGE } from '@lfx-one/shared/constants';
 /**
  * Router-level coverage for the Meta targeting search (#5904 row 4): it sits behind the blanket
  * `requireCampaignManager` (Meta taxonomy, campaign-service's own gate), checks the kind and query before any
- * upstream call, camel-cases the answer, and turns a Meta throttle into a "busy, try again" 503.
+ * upstream call, camel-cases the answer, and turns a Meta throttle into a "busy, try again" 503. The LinkedIn location
+ * search (#5545) shares the harness for its guard test, at the end.
  */
 
-const { svcSearch, isServerFeatureEnabled, checkProjectGlobalMarketingOpsStrict, blanketGuard } = vi.hoisted(() => ({
+const { svcSearch, svcLinkedInSearch, isServerFeatureEnabled, checkProjectGlobalMarketingOpsStrict, blanketGuard } = vi.hoisted(() => ({
   svcSearch: vi.fn(),
+  svcLinkedInSearch: vi.fn(),
   isServerFeatureEnabled: vi.fn<(flag: unknown) => boolean>(() => true),
   checkProjectGlobalMarketingOpsStrict: vi.fn<(req: unknown, slug: string) => Promise<boolean>>(async () => true),
   blanketGuard: vi.fn(),
@@ -30,7 +32,7 @@ vi.mock('../middleware/require-marketing-access.middleware', async () => {
     requireCampaignManager: (req: express.Request, _res: express.Response, next: express.NextFunction) => {
       blanketGuard(req.path);
       // Let the search through: it belongs behind this guard, which only records that it ran.
-      if (req.path === '/meta/targeting-search') {
+      if (req.path === '/meta/targeting-search' || req.path === '/linkedin/geo-targets') {
         next();
         return;
       }
@@ -42,6 +44,11 @@ vi.mock('../middleware/require-marketing-access.middleware', async () => {
     requireGoogleAudiencesAccess: (_req: express.Request, _res: express.Response, next: express.NextFunction) => next(),
     requireMetaCustomAudiencesAccess: (_req: express.Request, _res: express.Response, next: express.NextFunction) => next(),
     requireMetaLeadFormsAccess: (_req: express.Request, _res: express.Response, next: express.NextFunction) => next(),
+    requireLinkedInAudiencesAccess: (_req: express.Request, _res: express.Response, next: express.NextFunction) => next(),
+    requireLinkedInConversionsAccess: (_req: express.Request, _res: express.Response, next: express.NextFunction) => next(),
+    requireLinkedInLeadFormsAccess: (_req: express.Request, _res: express.Response, next: express.NextFunction) => next(),
+    requireRedditCustomAudiencesAccess: (_req: express.Request, _res: express.Response, next: express.NextFunction) => next(),
+    requireRedditPixelsAccess: (_req: express.Request, _res: express.Response, next: express.NextFunction) => next(),
   };
 });
 vi.mock('../services/campaign-service.service', async (importOriginal) => {
@@ -50,6 +57,7 @@ vi.mock('../services/campaign-service.service', async (importOriginal) => {
     ...actual,
     CampaignServiceClient: class {
       public searchMetaTargetingOptions = svcSearch;
+      public searchLinkedInTargetingEntities = svcLinkedInSearch;
     },
   };
 });
@@ -154,6 +162,17 @@ describe('GET /api/campaigns/meta/targeting-search', () => {
     });
   });
 
+  // Languages and locations (campaign-service#671): the kind is forwarded as is, and a location keeps its type.
+  it('forwards a location search and keeps which list each option fills', async () => {
+    svcSearch.mockResolvedValueOnce({ type: 'location', options: [{ id: '3847', name: 'California', location_type: 'region', country_code: 'US' }] });
+
+    expect(await (await search('project=tlf&type=location&query=calif')).json()).toEqual({
+      type: 'location',
+      options: [{ id: '3847', name: 'California', path: [], locationType: 'region', countryCode: 'US' }],
+    });
+    expect(svcSearch).toHaveBeenCalledWith(expect.anything(), 'tlf', 'location', 'calif');
+  });
+
   it.each([
     ['an unknown kind', 'project=tlf&type=industry&query=kubernetes'],
     ['a one-letter query', 'project=tlf&type=interest&query=k'],
@@ -166,6 +185,8 @@ describe('GET /api/campaigns/meta/targeting-search', () => {
   it.each([
     ['interest', 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_INTEREST_TARGETING'],
     ['work_position', 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_BEHAVIOR_TARGETING'],
+    ['locale', 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_LOCALE_TARGETING'],
+    ['location', 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_REGION_TARGETING'],
   ])('answers 404 for %s while its own flag (%s) is off, though the other kind is on', async (type, off) => {
     isServerFeatureEnabled.mockImplementation((flag) => flag !== off);
 
@@ -173,10 +194,14 @@ describe('GET /api/campaigns/meta/targeting-search', () => {
     expect(svcSearch).not.toHaveBeenCalled();
   });
 
-  it('answers 404 unless interest or behavior targeting is on', async () => {
-    isServerFeatureEnabled.mockImplementation(
-      (flag) => flag !== 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_INTEREST_TARGETING' && flag !== 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_BEHAVIOR_TARGETING'
-    );
+  it('answers 404 unless some list the search fills can be sent', async () => {
+    const lists = [
+      'LFX_CUTOVER_CAMPAIGN_SERVICE_META_INTEREST_TARGETING',
+      'LFX_CUTOVER_CAMPAIGN_SERVICE_META_BEHAVIOR_TARGETING',
+      'LFX_CUTOVER_CAMPAIGN_SERVICE_META_LOCALE_TARGETING',
+      'LFX_CUTOVER_CAMPAIGN_SERVICE_META_REGION_TARGETING',
+    ];
+    isServerFeatureEnabled.mockImplementation((flag) => !lists.includes(flag as string));
 
     expect((await search('project=tlf&type=interest&query=kubernetes')).status).toBe(404);
     expect(svcSearch).not.toHaveBeenCalled();
@@ -209,5 +234,18 @@ describe('GET /api/campaigns/meta/targeting-search', () => {
     svcSearch.mockResolvedValueOnce({ type: 'interest' });
 
     expect((await search('project=tlf&type=interest&query=kubernetes')).status).toBe(502);
+  });
+});
+
+// The LinkedIn location search (#5545) shares this router harness: it sits behind the same blanket guard.
+describe('GET /api/campaigns/linkedin/geo-targets', () => {
+  it('runs behind requireCampaignManager', async () => {
+    svcLinkedInSearch.mockResolvedValueOnce({ facet: 'locations', entities: [{ urn: 'urn:li:geo:103035651', name: 'Berlin, Germany' }], entity_count: 1 });
+
+    const res = await fetch(`${baseUrl}/api/campaigns/linkedin/geo-targets?project=tlf&q=Berlin`);
+
+    expect(blanketGuard).toHaveBeenCalledWith('/linkedin/geo-targets');
+    // The answer's shape is the controller spec's (`campaign.controller.linkedin-geo-search.spec.ts`).
+    expect(res.status).toBe(200);
   });
 });

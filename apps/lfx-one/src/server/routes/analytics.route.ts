@@ -6,7 +6,7 @@ import { Router } from 'express';
 import { AnalyticsController } from '../controllers/analytics.controller';
 import { requireDashboardAccess } from '../middleware/require-dashboard-access.middleware';
 import { requireMarketingAuditor, requireMarketingAuditorOrLfStaff, requireNorthStarAccess } from '../middleware/require-marketing-access.middleware';
-import { requireOrgAnalyticsAccess } from '../middleware/require-org-analytics-access.middleware';
+import { requireOrgAnalyticsAccess, requireOrgAnalyticsAccessAllowingEmployeeView } from '../middleware/require-org-analytics-access.middleware';
 
 const router = Router();
 
@@ -155,11 +155,18 @@ router.get('/org-certified-employees-distribution', requireOrgAnalyticsAccess, (
   analyticsController.getOrgCertifiedEmployeesDistribution(req, res, next)
 );
 
-// Organization involvement endpoints (cross-foundation, accountId only — org overview page)
-router.get('/org-foundation-coverage', requireOrgAnalyticsAccess, (req, res, next) => analyticsController.orgFoundationCoverage(req, res, next));
-router.get('/org-involvement-contributors-monthly', requireOrgAnalyticsAccess, (req, res, next) => analyticsController.orgContributorsMonthly(req, res, next));
-router.get('/org-involvement-maintainers-monthly', requireOrgAnalyticsAccess, (req, res, next) => analyticsController.orgMaintainersMonthly(req, res, next));
-router.get('/org-involvement-event-attendance-monthly', requireOrgAnalyticsAccess, (req, res, next) =>
+// Organization involvement endpoints (cross-foundation, accountId only — org overview page). Aggregate counts only, so these
+// four (and only these) admit the all employee view (epic #5845); the handlers still redact.
+router.get('/org-foundation-coverage', requireOrgAnalyticsAccessAllowingEmployeeView, (req, res, next) =>
+  analyticsController.orgFoundationCoverage(req, res, next)
+);
+router.get('/org-involvement-contributors-monthly', requireOrgAnalyticsAccessAllowingEmployeeView, (req, res, next) =>
+  analyticsController.orgContributorsMonthly(req, res, next)
+);
+router.get('/org-involvement-maintainers-monthly', requireOrgAnalyticsAccessAllowingEmployeeView, (req, res, next) =>
+  analyticsController.orgMaintainersMonthly(req, res, next)
+);
+router.get('/org-involvement-event-attendance-monthly', requireOrgAnalyticsAccessAllowingEmployeeView, (req, res, next) =>
   analyticsController.orgEventAttendanceMonthly(req, res, next)
 );
 

@@ -251,6 +251,28 @@ export interface CreateProjectDocumentRequest {
 }
 
 /**
+ * Request body for renaming and/or moving a group or project document, link or folder with
+ * `PATCH .../documents/:documentId?type=file|link|folder`. At least one field is required, and a field left out
+ * is left as it is.
+ */
+export interface UpdateDocumentRequest {
+  /** New display name. */
+  name?: string;
+  /** Folder to move into, or `null` for the root. Not accepted for a folder, which cannot be moved. */
+  parent_uid?: string | null;
+}
+
+/** The editable fields of a group or project document, link or folder as the upstream services return them. */
+export interface UpstreamDocumentRecord {
+  name: string;
+  /** Links only. */
+  url?: string;
+  description?: string;
+  /** The folder the record sits in; absent at the root. */
+  folder_uid?: string;
+}
+
+/**
  * Multipart upload payload for a project file document.
  * The actual `File` is sent separately via FormData / raw body — this interface
  * captures the metadata sent alongside it.
@@ -285,6 +307,8 @@ export interface ProjectDocumentUpstreamResponse {
   file_size: number;
   content_type: string;
   description?: string;
+  /** The folder the file sits in; absent at the root. */
+  folder_uid?: string;
   project_uid?: string;
   created_at?: string;
   updated_at?: string;

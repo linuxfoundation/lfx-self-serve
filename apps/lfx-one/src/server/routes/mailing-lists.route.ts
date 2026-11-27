@@ -13,6 +13,7 @@ const mailingListController = new MailingListController();
 // Groups.io Service routes
 router.get('/services', (req, res, next) => mailingListController.getServices(req, res, next));
 router.get('/services/count', (req, res, next) => mailingListController.getServicesCount(req, res, next));
+router.get('/services/inherited', (req, res, next) => mailingListController.getInheritedServices(req, res, next));
 router.get('/services/:id', (req, res, next) => mailingListController.getServiceById(req, res, next));
 router.post('/services', (req, res, next) => mailingListController.createService(req, res, next));
 router.put('/services/:id', (req, res, next) => mailingListController.updateService(req, res, next));

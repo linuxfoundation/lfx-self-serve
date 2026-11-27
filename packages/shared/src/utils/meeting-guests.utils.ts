@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type {
+  Committee,
   CommitteeMember,
   Meeting,
   MeetingCommittee,
@@ -15,6 +16,7 @@ import type {
   MeetingGuestViewer,
   MeetingHostCandidate,
   MeetingRegistrant,
+  MeetingRegistrantWithState,
   PastMeetingParticipant,
 } from '../interfaces';
 import {
@@ -250,4 +252,28 @@ function toRow(
     you,
     searchText: `${registrantDisplayName(person, '')} ${meta} ${email ?? ''}`.toLowerCase(),
   };
+}
+
+/** The composer row's second line: email, then series scope, the group the guest came through, or LFX membership and company. */
+export function composerGuestSubline(
+  guest: Pick<MeetingRegistrantWithState, 'email' | 'occurrence_id' | 'committee_name' | 'username' | 'org_name'>,
+  occurrenceEdit: boolean
+): string {
+  const company = guest.org_name?.trim() || null;
+  let meta: (string | null)[];
+  if (occurrenceEdit && !guest.occurrence_id) {
+    meta = ['Series guest'];
+  } else if (guest.committee_name) {
+    meta = [`via ${guest.committee_name}`];
+  } else {
+    meta = [guest.username ? 'LFX member' : null, company];
+  }
+  return [guest.email?.trim() || null, ...meta].filter(Boolean).join(' · ');
+}
+
+/** A group's line in the composer: its category and member count, with unknown parts dropped. */
+export function composerGroupMeta(committee: Partial<Pick<Committee, 'category' | 'total_members'>> | undefined): string {
+  const count = committee?.total_members;
+  const members = typeof count === 'number' ? `${count} ${count === 1 ? 'member' : 'members'}` : null;
+  return [committee?.category?.trim() || null, members].filter(Boolean).join(' · ');
 }

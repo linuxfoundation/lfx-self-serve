@@ -45,12 +45,53 @@ async function openInvite(page: Page, url = INVITE_PAGE_URL): Promise<void> {
 const respond = (page: Page, decision: 'accept' | 'decline') => page.getByTestId(`mentorship-mentor-invite-${decision}-button`).getByRole('button').click();
 
 test.describe('Mentor invite link — answering', () => {
-  test('sends nothing until the mentor answers', async ({ page }) => {
+  test('names the invited program and sends nothing until the mentor answers', async ({ page }) => {
     const writes = await stubInviteResponse(page);
     await openInvite(page);
 
-    await expect(page.getByTestId('mentorship-mentor-invite-title')).toHaveText("You've been invited to mentor");
+    await expect(page.getByTestId('mentorship-mentor-invite-title')).toHaveText("You've been invited to be a mentor");
+    await expect(page.getByTestId('mentorship-mentor-invite-program-name')).toHaveText(INVITATION_PROGRAM.name);
+    const viewProgram = page.getByTestId('mentorship-mentor-invite-view-program');
+    await expect(viewProgram).toContainText('View program');
+    await expect(viewProgram).toHaveAttribute('href', new RegExp(`/programs/${INVITATION_PROGRAM.id}$`));
+    await expect(page.getByTestId('mentorship-mentor-invite-description')).toContainText(`invited you to join ${INVITATION_PROGRAM.name} as a mentor`);
     expect(writes).toEqual([]);
+  });
+
+  test('asks someone with no mentor profile to create one, and sends nothing', async ({ page }) => {
+    const writes = await stubInviteResponse(page, [{ status: 204 }], { programId: INVITATION_PROGRAM.id, programName: INVITATION_PROGRAM.name }, false);
+    await openInvite(page);
+
+    const hint = page.getByTestId('mentorship-mentor-invite-profile-hint');
+    await expect(hint).toContainText('You need a mentor profile to answer this invitation.');
+    await expect(hint.getByRole('link', { name: 'Create your mentor profile' })).toHaveAttribute('href', '/mentorship/mentor');
+    await expect(page.getByTestId('mentorship-mentor-invite-accept-button').getByRole('button')).toBeDisabled();
+    await expect(page.getByTestId('mentorship-mentor-invite-decline-button').getByRole('button')).toBeDisabled();
+    expect(writes).toEqual([]);
+  });
+
+  test('says at once that the link can no longer be used when the read refuses it (400)', async ({ page }) => {
+    const writes = await stubInviteResponse(page, [{ status: 204 }], { status: 400 });
+    await openInvite(page);
+
+    await expect(page.getByTestId('mentorship-mentor-invite-invalid-link')).toContainText('It may have expired or already been answered.');
+    await expect(page.getByTestId('mentorship-mentor-invite-confirm')).toHaveCount(0);
+    expect(writes).toEqual([]);
+  });
+
+  test('keeps the generic copy when the program cannot be read, and still answers', async ({ page }) => {
+    const writes = await stubInviteResponse(page, [{ status: 204 }], { status: 503 });
+    await openInvite(page);
+
+    await expect(page.getByTestId('mentorship-mentor-invite-description')).toContainText('The invitation email names the program.');
+    await expect(page.getByTestId('mentorship-mentor-invite-title')).toHaveText("You've been invited to be a mentor");
+    await expect(page.getByTestId('mentorship-mentor-invite-program-name')).toHaveCount(0);
+    await expect(page.getByTestId('mentorship-mentor-invite-view-program')).toHaveCount(0);
+
+    await respond(page, 'accept');
+
+    await expect(page.getByTestId('mentorship-mentor-invite-accepted')).toContainText("You're now a mentor on the program.");
+    expect(writes.map((write) => write.path)).toEqual(['/api/mentorship/mentor/invites/accept']);
   });
 
   test('accepts with the link token and links to My Programs', async ({ page }) => {
@@ -61,6 +102,7 @@ test.describe('Mentor invite link — answering', () => {
 
     const accepted = page.getByTestId('mentorship-mentor-invite-accepted');
     await expect(accepted).toContainText('Invitation accepted');
+    await expect(accepted).toContainText(`You're now a mentor on ${INVITATION_PROGRAM.name}.`);
     await expect(accepted.getByRole('link', { name: 'Go to My Programs' })).toHaveAttribute('href', MENTOR_PROGRAMS_URL);
     expect(writes).toEqual([{ method: 'POST', path: '/api/mentorship/mentor/invites/accept', body: { token: INVITE_TOKEN } }]);
   });
@@ -71,7 +113,7 @@ test.describe('Mentor invite link — answering', () => {
 
     await respond(page, 'decline');
 
-    await expect(page.getByTestId('mentorship-mentor-invite-declined')).toContainText("We've let the program admins know.");
+    await expect(page.getByTestId('mentorship-mentor-invite-declined')).toContainText(`We've let the admins of ${INVITATION_PROGRAM.name} know.`);
     expect(writes).toEqual([{ method: 'POST', path: '/api/mentorship/mentor/invites/decline', body: { token: INVITE_TOKEN } }]);
   });
 

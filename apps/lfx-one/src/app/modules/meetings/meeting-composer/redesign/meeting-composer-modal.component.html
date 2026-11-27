@@ -1,0 +1,237 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact px from the design throughout: the 14px root shrinks the rem scale. No backdrop close: only X, Cancel or Escape. -->
+<div #root class="fixed inset-0 flex items-center justify-center p-[16px] max-[640px]:p-[8px]" data-testid="meeting-composer-modal">
+  <div class="absolute inset-0 bg-ui-overlay" aria-hidden="true"></div>
+
+  <div
+    class="relative flex max-h-full min-h-[min(680px,100%)] w-full max-w-[2000px] flex-col overflow-hidden rounded-ui-lg bg-white shadow-modal max-[972px]:h-full max-[972px]:min-h-0"
+    role="dialog"
+    aria-labelledby="meeting-composer-title"
+    cdkTrapFocus
+    [cdkTrapFocusAutoCapture]="true"
+    (keydown.escape)="onEscape($any($event))"
+    data-testid="meeting-composer-dialog">
+    <lfx-ui-button
+      class="absolute right-[14px] top-[14px] z-30"
+      variant="tertiary"
+      icon="fa-light fa-xmark"
+      ariaLabel="Close"
+      iconOnly
+      [disabled]="formService.submitting()"
+      data-testid="meeting-composer-close"
+      (click)="onClose()" />
+
+    <div class="flex min-h-0 flex-1">
+      <!-- Inert while saving: the payload is taken before the request and guests and resources after it. -->
+      <lfx-meeting-composer-modal-rail
+        [heading]="heading()"
+        [project]="project()"
+        [scope]="scope()"
+        [attr.inert]="formService.submitting() ? '' : null"
+        (editSeries)="onEditSeries()" />
+
+      <div class="flex min-w-0 max-w-[1200px] flex-1 flex-col">
+        <div
+          class="flex flex-col gap-[12px] border-b border-gray-200 px-[24px] py-[16px] max-[640px]:pl-[20px] min-[973px]:hidden"
+          [attr.inert]="formService.submitting() ? '' : null"
+          data-testid="meeting-composer-mobile-header">
+          <span class="flex min-w-0 flex-col pr-[40px]">
+            <h2 class="heading-24 m-0 text-[26px] leading-[32px] text-gray-900">{{ heading() }}</h2>
+            @if (!isEditMode()) {
+              <span class="truncate text-[12px] leading-[16px] text-gray-500" data-testid="meeting-composer-mobile-step">
+                Step {{ activeIndex() + 1 }} of {{ sections().length }} · <b class="font-medium text-gray-700">{{ activeSection()?.label }}</b>
+              </span>
+            }
+          </span>
+          @if (isEditMode() && !formService.meetingLoadFailed()) {
+            <lfx-ui-select
+              ariaLabel="Section"
+              [value]="composer.activeSection()"
+              (valueChange)="onPickSection($event)"
+              data-testid="meeting-composer-mobile-section">
+              @for (section of sections(); track section.id) {
+                <lfx-ui-option [value]="section.id" [label]="section.label" />
+              }
+            </lfx-ui-select>
+          }
+          @if (scope(); as scope) {
+            <lfx-meeting-composer-scope-note [scope]="scope" (editSeries)="onEditSeries()" />
+          }
+        </div>
+
+        <div
+          #scroll
+          class="min-h-0 flex-1 overflow-y-auto px-[40px] pb-[40px] max-[972px]:px-[20px] max-[972px]:pb-[20px]"
+          [attr.inert]="formService.submitting() ? '' : null"
+          data-testid="meeting-composer-body">
+          <div class="mx-auto flex max-w-[760px] flex-col gap-[28px]">
+            @if (formService.loading()) {
+              <p class="pt-[28px] text-sm text-gray-500" data-testid="meeting-composer-loading">Loading meeting…</p>
+            } @else if (formService.meetingLoadFailure(); as loadFailure) {
+              <!-- A 403 fails the same way every time, so only other failures offer Try again. -->
+              <div class="flex flex-col items-start gap-3 pt-[28px]" data-testid="meeting-composer-load-error">
+                @if (loadFailure === 'denied') {
+                  <div class="flex flex-col gap-1">
+                    <span class="text-sm font-semibold text-gray-900">You don't have permission to edit this meeting</span>
+                    <span class="text-sm text-gray-600">The meeting is still there — your access to change it isn't. Ask an organizer to grant it.</span>
+                  </div>
+                } @else {
+                  <div class="flex flex-col gap-1">
+                    <span class="text-sm font-semibold text-gray-900">Something went wrong loading this meeting</span>
+                    <span class="text-sm text-gray-600">We couldn't complete the request. Try again — if it keeps failing, reload the page.</span>
+                  </div>
+                  <lfx-ui-button variant="secondary" size="small" data-testid="meeting-composer-load-retry" (click)="formService.retryLoadMeeting()">
+                    Try again
+                  </lfx-ui-button>
+                }
+              </div>
+            } @else {
+              <div
+                class="sticky top-0 z-[6] -mx-[40px] flex flex-col gap-[4px] bg-white px-[40px] pb-[16px] pt-[28px] after:pointer-events-none after:absolute after:inset-x-0 after:top-full after:h-[20px] after:bg-gradient-to-b after:from-white after:to-transparent after:content-[''] max-[972px]:static max-[972px]:-mx-[20px] max-[972px]:px-[20px] max-[972px]:pb-[12px] max-[972px]:pt-[16px] max-[972px]:after:hidden"
+                data-testid="meeting-composer-section-header">
+                <h3 class="heading-24 m-0 text-[22px] leading-[28px] text-gray-900">{{ activeSection()?.label }}</h3>
+                <p class="m-0 text-[12px] leading-[16px] text-gray-500">{{ sectionDescription() }}</p>
+              </div>
+
+              @switch (composer.activeSection()) {
+                @case ('details-access') {
+                  <lfx-composer-details-access-redesign
+                    [form]="formService.form()"
+                    [showTypeSelect]="!isOccurrenceEdit()"
+                    [showOrganizer]="!isOccurrenceEdit()"
+                    [showAccess]="!isOccurrenceEdit()" />
+                }
+                @case ('date-schedule') {
+                  <lfx-composer-date-schedule-redesign
+                    [form]="formService.form()"
+                    [showEarlyJoin]="!isOccurrenceEdit()"
+                    [showSeriesSchedule]="!isOccurrenceEdit()" />
+                }
+                @case ('platform-features') {
+                  <lfx-composer-platform-features-redesign [form]="formService.form()" (goToTitleSection)="goToTitleSection.emit()" />
+                }
+                @case ('guests') {
+                  <lfx-composer-guests-redesign class="flex flex-1 flex-col" [form]="formService.form()" />
+                }
+                @case ('agenda-resources') {
+                  <lfx-composer-agenda-resources-redesign [form]="formService.form()" [showResources]="!isOccurrenceEdit()" />
+                }
+              }
+
+              @if (occurrenceNote(); as note) {
+                <p
+                  class="m-0 flex items-start gap-[8px] border-t border-gray-200 pt-[16px] text-[12px] leading-[16px] text-gray-500"
+                  data-testid="meeting-composer-series-fields-note">
+                  <i class="fa-light fa-circle-info mt-[2px] shrink-0" aria-hidden="true"></i>
+                  <span>
+                    {{ note }} To change them,
+                    <button
+                      type="button"
+                      class="font-medium text-blue-600 underline underline-offset-2 hover:text-blue-700"
+                      data-testid="meeting-composer-series-fields-edit-series"
+                      (click)="onEditSeries()">
+                      edit the entire series</button
+                    >.
+                  </span>
+                </p>
+              }
+            }
+          </div>
+        </div>
+
+        <!-- Side padding keeps the buttons on the 760px content column. -->
+        <div
+          class="flex flex-wrap items-center justify-between gap-[12px] border-t border-gray-200 bg-white px-[max(40px,calc((100%-760px)/2))] py-[14px] max-[972px]:px-[24px] max-[640px]:px-[20px] max-[640px]:py-[12px]"
+          data-testid="meeting-composer-footer">
+          <span class="flex items-center gap-[8px]">
+            @if (!isEditMode()) {
+              <lfx-ui-button variant="secondary" size="large" [disabled]="formService.submitting()" data-testid="meeting-composer-cancel" (click)="onClose()">
+                Cancel
+              </lfx-ui-button>
+            }
+            @if (scope()?.kind === 'single') {
+              <lfx-ui-button
+                variant="danger-tertiary"
+                size="large"
+                icon="fa-light fa-trash"
+                [disabled]="formService.submitting()"
+                data-testid="meeting-composer-delete"
+                (click)="onDelete()">
+                Delete meeting
+              </lfx-ui-button>
+            }
+            @if (scope()?.kind === 'occurrence') {
+              <lfx-ui-button
+                variant="danger-tertiary"
+                size="large"
+                icon="fa-light fa-trash"
+                [disabled]="formService.submitting()"
+                data-testid="meeting-composer-cancel-occurrence"
+                (click)="onCancelOccurrence()">
+                Cancel occurrence
+              </lfx-ui-button>
+            }
+          </span>
+
+          <div class="ml-auto flex flex-wrap items-center justify-end gap-[8px]">
+            @if (isEditMode()) {
+              <lfx-ui-button variant="secondary" size="large" [disabled]="formService.submitting()" data-testid="meeting-composer-cancel" (click)="onClose()">
+                Cancel
+              </lfx-ui-button>
+              <lfx-ui-button
+                size="large"
+                [loading]="formService.submitting()"
+                [disabled]="!canSubmit()"
+                data-testid="meeting-composer-save"
+                (click)="submitted.emit()">
+                {{ formService.submitting() ? 'Saving…' : 'Save changes' }}
+              </lfx-ui-button>
+            } @else {
+              @if (activeIndex() > 0) {
+                <lfx-ui-button
+                  variant="secondary"
+                  size="large"
+                  icon="fa-light fa-angle-left"
+                  [disabled]="formService.submitting()"
+                  data-testid="meeting-composer-back"
+                  (click)="back.emit()">
+                  Back
+                </lfx-ui-button>
+              }
+              @if (isLastSection()) {
+                <lfx-ui-button
+                  size="large"
+                  [loading]="formService.submitting()"
+                  [disabled]="!canSubmit()"
+                  data-testid="meeting-composer-create"
+                  (click)="submitted.emit()">
+                  {{ formService.submitting() ? 'Creating…' : 'Create meeting' }}
+                </lfx-ui-button>
+              } @else {
+                <lfx-ui-button
+                  size="large"
+                  trailingIcon="fa-light fa-angle-right"
+                  [disabled]="!canProceed()"
+                  data-testid="meeting-composer-next"
+                  (click)="next.emit()">
+                  Next
+                </lfx-ui-button>
+              }
+            }
+          </div>
+        </div>
+      </div>
+
+      @if (!formService.meetingLoadFailed()) {
+        <aside
+          class="ml-auto hidden w-[360px] shrink-0 flex-col overflow-y-auto border-l border-gray-200 bg-white px-[24px] pb-[24px] pt-[64px] min-[1333px]:flex"
+          aria-label="Preview"
+          data-testid="meeting-composer-preview-column">
+          <lfx-meeting-composer-preview />
+        </aside>
+      }
+    </div>
+  </div>
+</div>

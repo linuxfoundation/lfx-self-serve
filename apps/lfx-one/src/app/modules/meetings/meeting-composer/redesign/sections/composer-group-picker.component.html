@@ -1,0 +1,158 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact px throughout: the 14px root shrinks the rem scale. -->
+<div class="flex flex-col gap-[12px]" data-testid="composer-group-picker">
+  <div class="flex flex-col gap-[2px]">
+    <span class="text-[14px] font-medium leading-[20px] text-gray-900">{{ committeeLabel.plural }}</span>
+    <p class="m-0 text-[12px] leading-[16px] text-gray-500">
+      Invite everyone in a {{ committeeLabelSingularLower }} at once. New members are added automatically.
+    </p>
+  </div>
+
+  @if (membersFetchError()) {
+    <lfx-ui-note variant="warning" size="small" announce data-testid="meeting-committee-members-error">
+      <div class="flex flex-col gap-[8px]">
+        <span>We couldn't load every {{ committeeLabelSingularLower }}'s members, so they haven't been added as guests.</span>
+        @if (membersPaginationLimit()) {
+          <span data-testid="meeting-committee-members-limit">
+            The roster exceeded a safe loading limit. Try again if the problem was temporary. If it persists, remove the group selection where editable to
+            continue, or cancel and contact support. Saving with an incomplete roster is blocked.
+          </span>
+        }
+        <lfx-ui-button class="self-start" variant="secondary" size="small" (click)="retryCommitteeMembers()" data-testid="meeting-committee-members-retry">
+          Try again
+        </lfx-ui-button>
+      </div>
+    </lfx-ui-note>
+  }
+
+  @if (contextFailed()) {
+    <lfx-ui-note variant="error" size="small" announce data-testid="meeting-committee-context-error">
+      <div class="flex flex-col gap-[8px]">
+        <span
+          >We couldn't load the {{ committeeLabelSingularLower }} this meeting is being created for, so it can't be attached yet. Try again before saving.</span
+        >
+        <lfx-ui-button class="self-start" variant="secondary" size="small" (click)="retryContext.emit()" data-testid="meeting-committee-context-retry">
+          Try again
+        </lfx-ui-button>
+      </div>
+    </lfx-ui-note>
+  } @else if (committeesLoading() || contextLoading()) {
+    <p class="m-0 text-[13px] text-gray-500" data-testid="composer-group-picker-loading">Loading {{ committeeLabelPluralLower }}…</p>
+  } @else {
+    @if (!committeeContext()) {
+      @if (committeeOptionsFailed()) {
+        <lfx-ui-note variant="warning" size="small" announce data-testid="meeting-committee-options-error">
+          <div class="flex flex-col gap-[8px]">
+            <span>We couldn't load this project's {{ committeeLabelPluralLower }}, so they aren't available to pick yet.</span>
+            <lfx-ui-button class="self-start" variant="secondary" size="small" (click)="retryCommitteeOptions()" data-testid="meeting-committee-options-retry">
+              Try again
+            </lfx-ui-button>
+          </div>
+        </lfx-ui-note>
+      } @else {
+        <lfx-ui-multi-select
+          [label]="'Select ' + committeeLabelSingularLower + '(s)'"
+          [formControl]="committeesControl"
+          data-testid="meeting-committee-multi-select">
+          @for (option of optionRows(); track option.uid) {
+            <lfx-ui-option [value]="option.uid" [label]="option.name">
+              <span class="flex min-w-0 flex-col">
+                <span class="break-words text-[13px] font-medium leading-[18px] text-gray-900">{{ option.name }}</span>
+                @if (option.meta) {
+                  <span class="break-words text-[12px] leading-[16px] text-gray-500">{{ option.meta }}</span>
+                }
+              </span>
+            </lfx-ui-option>
+          }
+        </lfx-ui-multi-select>
+      }
+    }
+
+    @if (selectedRows().length > 0) {
+      <ul
+        class="m-0 flex list-none flex-col divide-y divide-gray-200 rounded-[12px] border border-gray-200 p-0"
+        [attr.aria-label]="'Selected ' + committeeLabelPluralLower"
+        data-testid="meeting-committee-chips">
+        @for (row of selectedRows(); track row.uid) {
+          <li class="flex min-h-[56px] items-center gap-[12px] py-[8px] pl-[16px] pr-[12px]" [attr.data-testid]="'meeting-committee-chip-' + row.uid">
+            <span class="flex h-[28px] w-[28px] flex-none items-center justify-center rounded-[8px] bg-gray-100 text-[12px] text-gray-600" aria-hidden="true">
+              <i class="fa-light fa-users"></i>
+            </span>
+            <span class="flex min-w-0 flex-1 flex-col">
+              <span class="break-words text-[14px] font-medium leading-[20px] text-gray-900">{{ row.name }}</span>
+              @if (row.meta) {
+                <span class="break-words text-[12px] leading-[16px] text-gray-500">{{ row.meta }}</span>
+              }
+            </span>
+            @if (row.voting || isPublicVisibility()) {
+              <ng-template #groupMenu>
+                <div class="flex flex-col gap-[16px]" [attr.data-testid]="'composer-group-menu-' + row.uid">
+                  @if (row.voting) {
+                    <div class="flex flex-col gap-[8px]" role="group" aria-labelledby="composer-group-voting-label">
+                      <div class="flex flex-col gap-[2px]">
+                        <span id="composer-group-voting-label" class="text-[13px] font-medium leading-[18px] text-gray-900"
+                          >Invite members with voting status</span
+                        >
+                        <span class="text-[12px] leading-[16px] text-gray-500">Everyone in the {{ committeeLabelSingularLower }} when none are picked.</span>
+                      </div>
+                      @for (status of votingStatusRows(); track status.value) {
+                        <lfx-ui-checkbox
+                          [label]="status.label"
+                          [checked]="status.checked"
+                          (checkedChange)="onVotingStatusChange(status.value, $event)"
+                          [attr.data-testid]="'composer-group-voting-' + status.value" />
+                      }
+                      @if (votingGroupCount() > 1) {
+                        <span class="text-[12px] leading-[16px] text-gray-500" data-testid="composer-group-voting-shared">
+                          Applies to every voting {{ committeeLabelSingularLower }} on this meeting.
+                        </span>
+                      }
+                    </div>
+                  }
+                  @if (isPublicVisibility()) {
+                    <lfx-ui-select
+                      [label]="'Registration on ' + committeeLabelSingularLower + ' removal'"
+                      [hint]="'Applies to every ' + committeeLabelSingularLower + ' on this meeting.'"
+                      [formControl]="cancelOnRemovalControl()"
+                      data-testid="cancel-on-committee-removal-select">
+                      @for (option of cancelOnCommitteeRemovalOptions; track option.value) {
+                        <lfx-ui-option [value]="option.value" [label]="option.label" />
+                      }
+                    </lfx-ui-select>
+                  }
+                </div>
+              </ng-template>
+              <lfx-ui-button
+                variant="tertiary"
+                size="tiny"
+                icon="fa-light fa-ellipsis"
+                iconOnly
+                [ariaLabel]="row.name + ' settings'"
+                [popover]="groupMenu"
+                [popoverLabel]="row.name + ' settings'"
+                [popoverWidth]="280"
+                popoverAlign="end"
+                [attr.data-testid]="'composer-group-menu-button-' + row.uid" />
+            }
+            @if (committeeContext()) {
+              <span class="flex-none text-[12px] text-gray-400" data-testid="meeting-committee-locked"
+                ><i class="fa-light fa-lock" aria-hidden="true"></i><span class="sr-only">Fixed for this meeting</span></span
+              >
+            } @else {
+              <lfx-ui-button
+                variant="tertiary"
+                size="tiny"
+                icon="fa-light fa-xmark"
+                iconOnly
+                [ariaLabel]="'Remove ' + row.name"
+                (click)="onRemoveCommittee(row.uid, $index, $event)"
+                [attr.data-testid]="'meeting-committee-chip-remove-' + row.uid" />
+            }
+          </li>
+        }
+      </ul>
+    }
+  }
+</div>

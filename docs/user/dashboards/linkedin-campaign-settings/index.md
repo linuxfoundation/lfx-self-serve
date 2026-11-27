@@ -1,6 +1,6 @@
 ---
 title: LinkedIn budget, targeting and ad variants
-description: Set a LinkedIn budget and an optional daily cap beside a lifetime budget, see and narrow what a LinkedIn targeting profile targets, edit each ad variant's intro text and headline, add or remove variants, and give each variant its own image on the Campaigns page's Implement tab.
+description: Set a LinkedIn budget and an optional daily cap beside a lifetime budget, search for the locations a LinkedIn campaign targets, see and narrow what a LinkedIn targeting profile targets, edit each ad variant's intro text, headline, name and description, add or remove variants, and give each variant its own image on the Campaigns page's Implement tab.
 audience: [executive-director]
 product_area: Dashboards
 tags:
@@ -11,17 +11,24 @@ tags:
     sponsored content,
     budget,
     daily cap,
+    target cost,
+    automatic bidding,
+    manual bidding,
+    website visits,
     lifetime budget,
     targeting,
+    locations,
     member groups,
     skills,
     ad variants,
     intro text,
     headline,
+    ad name,
+    description,
     images,
     implement,
   ]
-last_updated: 2026-11-17
+last_updated: 2026-11-26
 intercom_collection: Dashboards
 ---
 
@@ -49,6 +56,40 @@ A campaign with a daily cap runs without its own end date in LinkedIn Campaign M
 
 After the campaign is created, you can change its lifetime budget on the **Optimize** tab and the daily cap stays as it is. Keep **Budget pacing** on **Lifetime** there: switching a capped campaign to **Daily** is refused. A new lifetime budget below the daily cap is also refused; lower the cap first. To change the daily cap itself, use LinkedIn Campaign Manager.
 
+## Target cost
+
+With automatic bidding, you can set an optional **Target cost (USD)** under the LinkedIn bidding choice. It is sent with automatic bidding as the campaign's unit cost, in USD; how LinkedIn applies it is still being confirmed. For example, 17.88. Leave it empty for no target.
+
+The target must be more than 0, no more than 1,000,000 and use at most two decimal places. Otherwise a message appears under it and **Create** stays disabled until you fix or clear it.
+
+The box is only there with automatic bidding, and only where your deployment supports a target cost. Switch to manual bidding and the target is not sent. If you typed a target and the campaign settings are still loading, **Create** waits until they load, so the campaign is never created without the target you entered. If they can't be loaded, clear the target cost to continue.
+
+## Website visits with a manual bid
+
+Where your deployment supports it, you can choose **Website visits** as the **Campaign objective** and **Manual max CPC bid** together. The campaign is created as a website visits campaign with your bid as its maximum cost per click, for example $45; LinkedIn may charge less per click. While website visits is chosen, the manual bidding option says "Creates a website-visits campaign with a manual cost-per-click bid."
+
+Leave the objective on **Set by bidding (default)** and a manual bid still creates a website conversions campaign, as before. Where your deployment doesn't support it, website visits with a manual bid keeps **Create** disabled with "The traffic objective takes automatic bidding only"; choose automatic bidding or the website conversions objective to continue.
+
+## Delivery options
+
+Where your deployment supports them, **Delivery options** has two checkboxes under the LinkedIn bidding choice. Both are off by default, and a campaign created with both off is set up the same way as before.
+
+- **Audience Expansion** lets LinkedIn also reach members similar to your targeting.
+- **LinkedIn Audience Network** also shows the ads on partner apps and sites outside LinkedIn. You can't use it with text ads or with the lead generation objective, so the checkbox is greyed out and not sent while either is chosen.
+
+A campaign that reuses an existing LinkedIn campaign keeps that campaign's own settings. If you turned an option on and the campaign settings are still loading, **Create** waits until they load. If they can't be loaded, turn the options off to continue.
+
+## Locations
+
+The LinkedIn section starts with the locations the brief recommends. To change them:
+
+- To add a location, type at least 2 characters of a country, region or city in the search box under the location list, then pick a result. A location you already added is listed but can't be picked again.
+- To remove a location, select the **x** on its chip.
+
+A campaign needs at least one location. While the list is empty, **Create** stays disabled with "LinkedIn Ads: add at least one location."
+
+The campaign name includes a region taken from the first location. Only the United States, India, Japan, Singapore, South Korea, Australia, Taiwan, Hong Kong, Germany and the United Kingdom have their own region in the name. Any other first location is named "Global".
+
 ## Edit a variant
 
 Each variant has an **Intro text** box (the body of the post) and a **Headline** box (shown below the link card). They start with the brief's copy. A count under each box shows how many characters the text uses:
@@ -61,6 +102,13 @@ Each variant has an **Intro text** box (the body of the post) and a **Headline**
 Spaces at the start and end are not counted. An em dash (—) or en dash (–) is sent as a comma and a space, and counted that way, so the count can differ from what you typed. A dash at the very start or end is dropped.
 
 Both fields are required. If a field is empty, holds only spaces or a single dash, or is over its limit, a message appears under it and **Create** stays disabled with "LinkedIn Ads: fix the ad variant text." Shorten or fill in the text to continue. Longer text is not cut for you.
+
+## Name and describe each ad
+
+Where your deployment supports it, each variant also has two optional fields:
+
+- **Ad name**: how the ad is listed in LinkedIn Campaign Manager and in reporting, up to 255 characters. Left empty, the ad is named after the event and its variant number, for example "KubeCon EU 2026 | variant-2". Each ad in a campaign needs its own name. If two variants have the same name, a message appears under the second one and **Create** stays disabled with "LinkedIn Ads: fix the ad name or description."
+- **Description**: the line shown under the headline in the ad, up to 300 characters, counted the way intro text and headlines are. Left empty, the ad has no description.
 
 ## Add or remove variants
 

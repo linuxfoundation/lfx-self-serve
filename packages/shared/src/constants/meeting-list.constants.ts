@@ -15,6 +15,9 @@ import type {
   MeetingsHomeFilters,
   MeetingsHomePastFilters,
   MeetingVisibilityInfo,
+  PublicCalendarModalAction,
+  PublicCalendarModalActionStyle,
+  PublicCalendarModalDetails,
   UiBadgeTone,
 } from '../interfaces';
 
@@ -234,3 +237,26 @@ export const MEETINGS_HOME_CALENDAR_START_HOUR = 8;
 
 /** Chips a month view cell shows before "+N more". */
 export const MEETINGS_HOME_CALENDAR_MONTH_CHIPS = 3;
+
+/** Label, look and icon of each public calendar modal action. */
+export const PUBLIC_CALENDAR_MODAL_ACTIONS: Record<PublicCalendarModalAction, PublicCalendarModalActionStyle> = {
+  join: { label: 'Join meeting', variant: 'primary', icon: 'fa-light fa-video' },
+  register: { label: 'Register', variant: 'primary', icon: '' },
+  'sign-in': { label: 'Sign in', variant: 'secondary-accent', icon: '' },
+  'sign-in-register': { label: 'Sign in to register', variant: 'secondary-accent', icon: '' },
+  'sign-in-summary': { label: 'Sign in for summary', variant: 'secondary-accent', icon: '' },
+  'sign-in-watch': { label: 'Sign in to watch', variant: 'secondary-accent', icon: '' },
+  'view-summary': { label: 'View summary', variant: 'secondary', icon: 'fa-light fa-sparkles' },
+  'watch-recording': { label: 'Watch recording', variant: 'recording', icon: 'fa-light fa-play' },
+};
+
+/** The public calendar modal's details before or without anything loaded. */
+export const PUBLIC_CALENDAR_MODAL_NO_DETAILS: PublicCalendarModalDetails = {
+  loading: false,
+  invited: false,
+  access: false,
+  recording: false,
+  summary: false,
+  shareUrl: null,
+  description: '',
+};

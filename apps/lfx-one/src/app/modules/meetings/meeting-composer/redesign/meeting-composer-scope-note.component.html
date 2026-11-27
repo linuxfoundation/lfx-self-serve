@@ -1,0 +1,35 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<lfx-ui-note
+  variant="info"
+  size="small"
+  fill
+  class="!flex-col !items-start !gap-[8px] !px-[16px] !py-[14px] [&_[data-testid=ui-note-icon]]:text-[16px]"
+  [attr.data-testid]="'meeting-composer-scope-' + scope().kind">
+  <span class="flex flex-col items-start gap-[2px]">
+    <span class="font-semibold" data-testid="meeting-composer-scope-title">{{ scope().title }}</span>
+    @switch (scope().kind) {
+      @case ('occurrence') {
+        <span class="font-medium">Editing a single occurrence</span>
+        <span>{{ scope().label }}</span>
+        <button
+          type="button"
+          class="mt-[4px] font-medium text-blue-600 underline underline-offset-2 hover:text-blue-700"
+          data-testid="meeting-composer-scope-edit-series"
+          (click)="editSeries.emit()">
+          Edit the entire series
+        </button>
+        <span class="opacity-80">Switching discards changes made here.</span>
+      }
+      @case ('series') {
+        <span class="font-medium">Editing the entire series</span>
+        <span>Changes apply to every upcoming occurrence.</span>
+      }
+      @default {
+        <span class="font-medium">One-time meeting</span>
+        <span>{{ scope().label }}</span>
+      }
+    }
+  </span>
+</lfx-ui-note>

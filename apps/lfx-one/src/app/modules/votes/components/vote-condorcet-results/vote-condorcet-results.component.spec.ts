@@ -4,7 +4,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { VOTE_CONDORCET_BALLOT_PREVIEW_LIMIT } from '@lfx-one/shared/constants';
 import { CondorcetOutcome } from '@lfx-one/shared/enums';
-import { CondorcetQuestionView } from '@lfx-one/shared/interfaces';
+import { CondorcetQuestionView, IrvRoundsView } from '@lfx-one/shared/interfaces';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { VoteCondorcetResultsComponent } from './vote-condorcet-results.component';
@@ -49,9 +49,33 @@ function question(overrides: Partial<CondorcetQuestionView> = {}): CondorcetQues
       { key: 'a\u0000b', count: 3, ranking: ['Candidate A', 'Candidate B'] },
       { key: 'b', count: 2, ranking: ['Candidate B'] },
     ],
+    irvRounds: null,
     ...overrides,
   };
 }
+
+/** A one-round instant-runoff count: Candidate A wins outright (#6152). */
+const irvRounds: IrvRoundsView = {
+  rounds: [{ roundNumber: 1, continuingBallots: 4, exhaustedBallots: 0, threshold: 3, isFinal: true }],
+  rows: [
+    { choiceId: 'a', choiceText: 'Candidate A', cells: [{ roundNumber: 1, votes: 3, percentage: 75, status: 'winner' }] },
+    { choiceId: 'b', choiceText: 'Candidate B', cells: [{ roundNumber: 1, votes: 1, percentage: 25, status: 'continuing' }] },
+  ],
+  steps: [
+    {
+      roundNumber: 1,
+      kind: 'winner',
+      choiceTexts: ['Candidate A'],
+      votes: 3,
+      continuingBallots: 4,
+      threshold: 3,
+      transfers: [],
+      exhaustedFromElimination: 0,
+      tieBreak: null,
+      tieBreakLevel: null,
+    },
+  ],
+};
 
 describe('VoteCondorcetResultsComponent', () => {
   let fixture: ComponentFixture<VoteCondorcetResultsComponent>;
@@ -89,7 +113,7 @@ describe('VoteCondorcetResultsComponent', () => {
       name: 'a tie',
       overrides: { outcome: CondorcetOutcome.TIE, winnerNames: ['Candidate A', 'Candidate B'], usedIrv: true },
       heading: 'Tie — no single winner',
-      message: 'There is a tie between Candidate A and Candidate B. No single winner can be determined.',
+      message: 'There is a tie between Candidate A and Candidate B. No single winner could be determined.',
     },
     {
       name: 'no winner',
@@ -450,5 +474,27 @@ describe('VoteCondorcetResultsComponent', () => {
     fixture.detectChanges();
     el = fixture.nativeElement as HTMLElement;
     expect(text(el.querySelector('h4'))).toBe('Q2. Who should chair the board?');
+  });
+
+  describe('round-by-round count (#6152)', () => {
+    const fallback = (): CondorcetQuestionView => question({ outcome: CondorcetOutcome.IRV_WINNER, usedIrv: true, irvRounds });
+
+    it('renders the round view after the final standings for a closed instant-runoff fallback', () => {
+      const el = render(fallback());
+
+      const rounds = byTestId(el, 'vote-irv-rounds');
+      expect(rounds).toBeTruthy();
+      expect(text(byTestId(el, 'vote-irv-rounds-step-1'))).toBe('Round 1: Candidate A won with 3 of 4 continuing ballots (majority needed: 3).');
+      const standings = byTestId(el, 'vote-condorcet-standings');
+      expect(standings && rounds && standings.compareDocumentPosition(rounds) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+
+    it('hides the round view while the results are not final', () => {
+      expect(byTestId(render(fallback(), false), 'vote-irv-rounds')).toBeNull();
+    });
+
+    it('renders no round view for a Condorcet winner', () => {
+      expect(byTestId(render(question({ irvRounds })), 'vote-irv-rounds')).toBeNull();
+    });
   });
 });

@@ -4,12 +4,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  dateOnlyToUtcMidnightIso,
   daysUntilInTimezone,
   detectBrowserTimezoneOption,
   findSameWallClockZone,
   formatIsoDateLabel,
   formatIsoDateShortLabel,
   formatMemberSince,
+  formatMemberSinceDate,
+  formatYearMonth,
   formatTo12HourInTimezone,
   formatVoteDeadline,
   getLongTimezoneName,
@@ -70,7 +73,32 @@ describe('formatIsoDateLabel', () => {
   });
 });
 
+describe('formatYearMonth', () => {
+  it.each([
+    ['2026-03-01', 'Mar 2026'],
+    ['2026-03-01T00:00:00Z', 'Mar 2026'],
+    ['2026-12-31T23:59:59Z', 'Dec 2026'],
+    ['2026-13-01', ''],
+    ['March 2026', ''],
+    [undefined, ''],
+  ])('formats %s as %j', (value, expected) => {
+    expect(formatYearMonth(value)).toBe(expected);
+  });
+});
+
 // Empty/unparseable input returns '' so callers can hide the field, never show a placeholder.
+describe('formatMemberSinceDate', () => {
+  it('formats the account-creation date as a full date in UTC', () => {
+    expect(formatMemberSinceDate('2013-03-14T23:30:00Z')).toBe('March 14, 2013');
+  });
+
+  it('hides what formatMemberSince hides', () => {
+    expect(formatMemberSinceDate('0001-01-01T00:00:00Z')).toBe('');
+    expect(formatMemberSinceDate('2023-02-31T00:00:00Z')).toBe('');
+    expect(formatMemberSinceDate(undefined)).toBe('');
+  });
+});
+
 describe('formatMemberSince', () => {
   it('formats a valid ISO timestamp as "Mon YYYY" in UTC', () => {
     expect(formatMemberSince('2023-03-15T10:00:00Z')).toBe('Mar 2023');
@@ -369,6 +397,37 @@ describe('tryParseLocalDateString', () => {
     expect(tryParseLocalDateString('')).toBeNull();
     expect(tryParseLocalDateString('not-a-date')).toBeNull();
     expect(tryParseLocalDateString('2026-1-5')).toBeNull();
+  });
+});
+
+// Visa request dates (#6052): the picked calendar day must reach user-service unchanged, which keeps
+// only the UTC day of the RFC3339 value it receives.
+describe('dateOnlyToUtcMidnightIso', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('turns a calendar date into UTC midnight', () => {
+    expect(dateOnlyToUtcMidnightIso('1990-05-10')).toBe('1990-05-10T00:00:00.000Z');
+  });
+
+  it('returns null for empty input or a full timestamp', () => {
+    expect(dateOnlyToUtcMidnightIso(null)).toBeNull();
+    expect(dateOnlyToUtcMidnightIso(undefined)).toBeNull();
+    expect(dateOnlyToUtcMidnightIso('')).toBeNull();
+    expect(dateOnlyToUtcMidnightIso('1990-05-09T23:00:00.000Z')).toBeNull();
+  });
+
+  it('returns null for an impossible calendar date', () => {
+    expect(dateOnlyToUtcMidnightIso('1990-02-31')).toBeNull();
+    expect(dateOnlyToUtcMidnightIso('1990-13-01')).toBeNull();
+  });
+
+  it.each(['Africa/Lagos', 'Asia/Kolkata', 'Pacific/Auckland', 'America/Los_Angeles'])('keeps a date picked in %s on the same UTC day', (timeZone) => {
+    vi.stubEnv('TZ', timeZone);
+    const picked = new Date(1990, 4, 10);
+
+    expect(dateOnlyToUtcMidnightIso(toLocalDateOnlyString(picked))).toBe('1990-05-10T00:00:00.000Z');
   });
 });
 

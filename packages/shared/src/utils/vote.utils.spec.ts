@@ -25,6 +25,7 @@ import type {
   RankedChoiceVoteResult,
   RankedOutcome,
   RankedQuestionView,
+  RankedStanding,
   UserChoice,
   Vote,
   VoteFormValue,
@@ -40,6 +41,7 @@ import {
   buildCreateVoteRequest,
   buildDraftUpdateVoteRequest,
   buildDraftVoteRequest,
+  buildRankedOverviewOutcome,
   buildRankedQuestionViews,
   buildUpdateVoteRequest,
   buildVoteBallotQuestions,
@@ -377,6 +379,7 @@ describe('voting method in the request builders (#2921)', () => {
     ['buildDraftVoteRequest', buildDraftVoteRequest],
   ] as const)('%s sends poll_type', (_name, build) => {
     expect(build(rankedForm(), 'project-uid').poll_type).toBe(PollType.CONDORCET_IRV);
+    expect(build(rankedForm({ poll_type: PollType.INSTANT_RUNOFF_VOTE }), 'project-uid').poll_type).toBe(PollType.INSTANT_RUNOFF_VOTE);
     expect(build(formValue(), 'project-uid').poll_type).toBe(PollType.GENERIC);
   });
 
@@ -385,11 +388,18 @@ describe('voting method in the request builders (#2921)', () => {
     ['buildDraftUpdateVoteRequest', buildDraftUpdateVoteRequest],
   ] as const)('%s never sends poll_type, so the stored method is kept', (_name, build) => {
     expect('poll_type' in build(rankedForm(), 'project-uid')).toBe(false);
+    expect('poll_type' in build(rankedForm({ poll_type: PollType.INSTANT_RUNOFF_VOTE }), 'project-uid')).toBe(false);
     expect('poll_type' in build(formValue(), 'project-uid')).toBe(false);
   });
 
   it.each(voteRequestBuilders)('%s sends every Condorcet IRV question as multiple_choice', (_name, build) => {
     const request = build(rankedForm(), 'project-uid');
+
+    expect(request.poll_questions?.map((question) => question.type)).toEqual(['multiple_choice', 'multiple_choice']);
+  });
+
+  it.each(voteRequestBuilders)('%s sends every Instant Runoff question as multiple_choice (#2936)', (_name, build) => {
+    const request = build(rankedForm({ poll_type: PollType.INSTANT_RUNOFF_VOTE }), 'project-uid');
 
     expect(request.poll_questions?.map((question) => question.type)).toEqual(['multiple_choice', 'multiple_choice']);
   });
@@ -474,6 +484,7 @@ describe('parseVoteMethodParam (#2921)', () => {
   it.each([
     ['generic', PollType.GENERIC],
     ['condorcet_irv', PollType.CONDORCET_IRV],
+    ['instant_runoff_vote', PollType.INSTANT_RUNOFF_VOTE],
     ['meek_stv', PollType.GENERIC],
     ['bogus', PollType.GENERIC],
     [null, PollType.GENERIC],
@@ -1361,12 +1372,14 @@ describe('buildRankedQuestionViews', () => {
     expect(view.choiceDistributions).toEqual([]);
     expect(view.outcome).toBeNull();
     expect(view.standings).toEqual([]);
+    expect(view.irvRounds).toBeNull();
   });
 
   it('builds no outcome for a poll type that is not ranked', () => {
     const [view] = buildRankedQuestionViews(resultsWith([rankedQuestion()]), PollType.GENERIC);
     expect(view.outcome).toBeNull();
     expect(view.standings).toEqual([]);
+    expect(view.irvRounds).toBeNull();
   });
 
   describe('outcome and standings (lfx-self-serve-ops#2005)', () => {
@@ -1445,6 +1458,7 @@ describe('buildRankedQuestionViews', () => {
         ['Candidate F', 6, null, 1, 6],
         ['Candidate G', 7, null, 0, 6],
       ]);
+      expect(view.irvRounds).toBeNull();
     });
 
     it('shares a rank for equal head-to-head wins, in ballot order, and marks tied winners', () => {
@@ -1528,6 +1542,13 @@ describe('buildRankedQuestionViews', () => {
         ['b', 3, 'eliminated', 2, 2, 3],
         ['d', 4, 'eliminated', 1, 0, 3],
       ]);
+      // #6152: the fallback's round-by-round count, rows in standings order
+      expect(view.irvRounds?.rows.map((row) => row.choiceId)).toEqual(['a', 'c', 'b', 'd']);
+      expect(view.irvRounds?.steps.map((step) => [step.kind, step.choiceTexts])).toEqual([
+        ['eliminated', ['Candidate D']],
+        ['eliminated', ['Candidate B']],
+        ['winner', ['Candidate A']],
+      ]);
     });
 
     it('orders an Instant Runoff winner, survivors and eliminations without head-to-head counts', () => {
@@ -1543,6 +1564,18 @@ describe('buildRankedQuestionViews', () => {
         ['c', 2, 'survivor', null, null],
         ['b', 3, 'eliminated', 2, null],
         ['d', 4, 'eliminated', 1, null],
+      ]);
+      // #6152: the round-by-round count, rows in standings order, with the final round's winner marked
+      expect(view.irvRounds?.rounds.map((column) => [column.roundNumber, column.isFinal])).toEqual([
+        [1, false],
+        [2, false],
+        [3, true],
+      ]);
+      expect(view.irvRounds?.rows.map((row) => [row.choiceId, row.cells[2].status])).toEqual([
+        ['a', 'winner'],
+        ['c', 'continuing'],
+        ['b', 'out'],
+        ['d', 'out'],
       ]);
     });
 
@@ -1621,6 +1654,7 @@ describe('buildRankedQuestionViews', () => {
         ['b', 3, 'not_elected', null],
         ['d', 3, 'not_elected', null],
       ]);
+      expect(view.irvRounds).toBeNull();
     });
 
     it('lists a Meek STV seat missing from the rounds last among the elected, without a round', () => {
@@ -1659,6 +1693,118 @@ describe('buildRankedQuestionViews', () => {
   });
 });
 
+describe('buildRankedOverviewOutcome (#6124)', () => {
+  const standing = (choiceId: string, rank: number, label: RankedStanding['label'], overrides: Partial<RankedStanding> = {}): RankedStanding => ({
+    choiceId,
+    choiceText: `Option ${choiceId.toUpperCase()}`,
+    rank,
+    label,
+    round: null,
+    headToHeadWins: null,
+    headToHeadTotal: null,
+    ...overrides,
+  });
+
+  function view(outcome: RankedOutcome | null, standings: RankedStanding[] = []): RankedQuestionView {
+    return { questionId: 'q1', prompt: 'Pick a chair', choiceDistributions: [], outcome, standings, irvRounds: null };
+  }
+
+  const irv = (overrides: Partial<RankedOutcome> = {}): RankedOutcome => ({
+    kind: 'irv',
+    result: 'winner',
+    winnerTexts: ['Option A'],
+    roundCount: 3,
+    condorcetFallback: false,
+    ...overrides,
+  });
+
+  it('returns null without an outcome', () => {
+    expect(buildRankedOverviewOutcome(view(null))).toBeNull();
+  });
+
+  it('names an IRV winner and the round its majority came in', () => {
+    const outcome = buildRankedOverviewOutcome(view(irv(), [standing('a', 1, 'winner'), standing('b', 2, 'survivor')]));
+    expect(outcome).toEqual({
+      questionId: 'q1',
+      prompt: 'Pick a chair',
+      result: 'winner',
+      label: 'Winner',
+      winnerTexts: ['Option A'],
+      explanation: 'Won a majority of continuing ballots in round 3.',
+      standings: [{ choiceId: 'b', choiceText: 'Option B', rank: 2, detail: null }],
+      hiddenCount: 0,
+    });
+  });
+
+  it('omits the round when the payload has no round summary', () => {
+    expect(buildRankedOverviewOutcome(view(irv({ roundCount: 0 })))?.explanation).toBe('Won a majority of continuing ballots.');
+  });
+
+  it('explains a Condorcet winner and a Condorcet IRV fallback', () => {
+    expect(buildRankedOverviewOutcome(view(irv({ kind: 'condorcet', roundCount: 0 })))?.explanation).toBe(
+      'Preferred over every other option in head-to-head comparisons.'
+    );
+    expect(buildRankedOverviewOutcome(view(irv({ condorcetFallback: true })))?.explanation).toBe(
+      'No option beat every other option head-to-head, so instant-runoff elimination decided the result.'
+    );
+  });
+
+  it('labels Meek STV seats as elected and every other option as not elected', () => {
+    const outcome = buildRankedOverviewOutcome(
+      view(irv({ kind: 'meek_stv', winnerTexts: ['Option A', 'Option B'] }), [
+        standing('a', 1, 'elected', { round: 1 }),
+        standing('b', 2, 'elected', { round: 2 }),
+        standing('c', 3, 'not_elected'),
+      ])
+    );
+    expect(outcome).toMatchObject({
+      result: 'winner',
+      label: 'Elected',
+      winnerTexts: ['Option A', 'Option B'],
+      explanation: 'Elected using Meek STV proportional counting.',
+      standings: [{ choiceId: 'c', rank: 3, detail: 'Not elected' }],
+    });
+  });
+
+  it('keeps a tie neutral and lists only the rows after the tied options', () => {
+    const outcome = buildRankedOverviewOutcome(
+      view(irv({ result: 'tie', winnerTexts: ['Option A', 'Option B'] }), [
+        standing('a', 1, 'tied'),
+        standing('b', 1, 'tied'),
+        standing('c', 3, 'eliminated', { round: 1 }),
+      ])
+    );
+    expect(outcome).toMatchObject({ result: 'tie', label: 'Tied', explanation: 'No single winner could be determined.' });
+    expect(outcome?.standings.map((row) => row.choiceId)).toEqual(['c']);
+  });
+
+  it('reports no winner without names or an explanation', () => {
+    const outcome = buildRankedOverviewOutcome(view(irv({ result: 'none', winnerTexts: [] }), [standing('a', 2, 'survivor'), standing('b', 2, 'survivor')]));
+    expect(outcome).toMatchObject({ result: 'none', label: 'No winner', winnerTexts: [], explanation: null });
+    expect(outcome?.standings).toHaveLength(2);
+  });
+
+  it('caps the standings at VOTE_OVERVIEW_STANDINGS_LIMIT and counts the rest', () => {
+    const rows = [standing('a', 1, 'winner'), ...['b', 'c', 'd', 'e', 'f'].map((id, index) => standing(id, index + 2, 'eliminated', { round: 5 - index }))];
+    const outcome = buildRankedOverviewOutcome(view(irv(), rows));
+    expect(outcome?.standings.map((row) => row.choiceId)).toEqual(['b', 'c', 'd']);
+    expect(outcome?.hiddenCount).toBe(2);
+  });
+
+  it('describes eliminations, head-to-head records and rows with nothing to add', () => {
+    const outcome = buildRankedOverviewOutcome(
+      view(irv({ condorcetFallback: true }), [
+        standing('a', 1, 'winner', { headToHeadWins: 2, headToHeadTotal: 3 }),
+        standing('b', 2, 'survivor', { headToHeadWins: 1, headToHeadTotal: 3 }),
+        standing('c', 3, 'eliminated', { round: 2, headToHeadWins: 1, headToHeadTotal: 3 }),
+        standing('d', 4, 'eliminated'),
+      ])
+    );
+    expect(outcome?.standings.map((row) => row.detail)).toEqual(['Won 1 out of 3 possible head-to-head matchups', 'Eliminated in round 2', 'Eliminated']);
+    expect(buildRankedOverviewOutcome(view(irv(), [standing('a', 1, 'winner'), standing('b', 2, 'survivor')]))?.standings[0].detail).toBeNull();
+  });
+});
+
 describe('buildVoteResultsSummary (#4450)', () => {
   const option = (choiceId: string, text: string, voteCount: number, percentage: number, flags: Partial<VoteResultsOption> = {}): VoteResultsOption => ({
     choiceId,
@@ -1681,6 +1827,7 @@ describe('buildVoteResultsSummary (#4450)', () => {
     prompt: `Prompt ${questionId}`,
     outcome,
     standings: [],
+    irvRounds: null,
     choiceDistributions: Object.entries(counts).map(([choiceId, count]) => ({
       choiceId,
       choiceText: choiceId,
@@ -1769,23 +1916,9 @@ describe('buildVoteResultsSummary (#4450)', () => {
       ...overrides,
     });
 
-    it.each([
-      [outcome({}), 'Candidate D won'],
-      [outcome({ kind: 'irv', roundCount: 3 }), 'Candidate D won'],
-      [outcome({ result: 'tie', winnerTexts: ['Candidate A', 'Candidate B'] }), 'Tied: Candidate A and Candidate B'],
-      [outcome({ kind: 'meek_stv', winnerTexts: ['Candidate A', 'Candidate B', 'Candidate C'] }), 'Elected: Candidate A, Candidate B and Candidate C'],
-      [outcome({ result: 'none', winnerTexts: [] }), 'No winner could be determined'],
-    ])('names the final outcome (%#)', (final, text) => {
-      expect(buildVoteResultsSummary([], [ranked('q-1', { a: 5, b: 2 }, final)], false, true, true)[0].text).toBe(text);
-    });
-
-    it('keeps the first-choice leader before the results are final', () => {
+    it('keeps the first-choice leader, leaving the final outcome to the Overview outcome card (#6124)', () => {
       expect(buildVoteResultsSummary([], [ranked('q-1', { a: 5, b: 2 }, outcome({}))], false, true)[0].text).toBe('Most first choices: a (5 voters)');
-      expect(buildVoteResultsSummary([], [ranked('q-1', { a: 5, b: 2 }, outcome({}))], false, true, false)[0].text).toBe('Most first choices: a (5 voters)');
-    });
-
-    it('keeps the first-choice leader when a final question has no outcome', () => {
-      expect(buildVoteResultsSummary([], [ranked('q-1', { a: 5, b: 2 })], false, true, true)[0].text).toBe('Most first choices: a (5 voters)');
+      expect(buildVoteResultsSummary([], [ranked('q-1', { a: 5, b: 2 })], false, true)[0].text).toBe('Most first choices: a (5 voters)');
     });
   });
 

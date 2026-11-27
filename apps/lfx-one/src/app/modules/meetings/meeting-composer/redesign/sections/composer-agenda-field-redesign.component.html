@@ -1,0 +1,78 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-2" [formGroup]="form()" data-testid="composer-agenda-field">
+  <div class="flex min-h-7 items-center justify-between gap-3">
+    <span class="text-sm font-medium text-gray-900">Agenda</span>
+    <div class="flex items-center gap-1">
+      <lfx-ui-button
+        variant="tertiary-accent"
+        size="small"
+        icon="fa-light fa-list"
+        [popover]="templatesPopover"
+        popoverLabel="Agenda templates"
+        [popoverWidth]="380"
+        popoverAlign="end"
+        data-testid="composer-agenda-templates-toggle">
+        Templates
+      </lfx-ui-button>
+      <lfx-ui-button
+        variant="tertiary-accent"
+        size="small"
+        icon="fa-light fa-wand-magic-sparkles"
+        [popover]="aiPopover"
+        popoverLabel="AI agenda generator"
+        [popoverWidth]="380"
+        popoverAlign="end"
+        data-testid="composer-agenda-ai-toggle">
+        Help me write
+      </lfx-ui-button>
+    </div>
+  </div>
+
+  <ng-template #templatesPopover let-close="close">
+    <lfx-agenda-template-selector [meetingType]="templateType()" (templateSelected)="applyTemplate($event, close)" />
+  </ng-template>
+
+  <ng-template #aiPopover let-close="close">
+    <div class="flex flex-col gap-3" data-testid="composer-agenda-ai-panel">
+      <div class="flex items-start gap-2.5">
+        <span class="grid h-7 w-7 flex-none place-items-center rounded-lg bg-violet-100 text-xs text-violet-600" aria-hidden="true">
+          <i class="fa-light fa-lightbulb"></i>
+        </span>
+        <div class="flex flex-col gap-0.5">
+          <span class="text-sm font-semibold text-gray-900">AI agenda generator</span>
+          <span class="text-xs text-gray-500">Tell me the goal and I'll draft a structured agenda.</span>
+        </div>
+      </div>
+      <lfx-ui-textarea
+        [value]="aiPrompt()"
+        (valueChange)="aiPrompt.set($event)"
+        ariaLabel="Meeting goal"
+        placeholder="e.g. Review Q3 roadmap progress and agree on the release date"
+        [maxlength]="promptMaxLength"
+        data-testid="composer-agenda-ai-prompt" />
+      <div class="flex justify-end">
+        <lfx-ui-button
+          size="small"
+          [disabled]="!canGenerate()"
+          [loading]="isGeneratingAgenda()"
+          (click)="generate(close)"
+          data-testid="composer-agenda-ai-generate">
+          {{ isGeneratingAgenda() ? 'Generating…' : 'Generate agenda' }}
+        </lfx-ui-button>
+      </div>
+    </div>
+  </ng-template>
+
+  <!-- Design: the agenda box opens at 168px. -->
+  <lfx-ui-textarea
+    class="[&_textarea]:min-h-[168px]"
+    formControlName="description"
+    ariaLabel="Agenda"
+    placeholder="Outline topics, owners and time for each item…"
+    [maxlength]="agendaMaxLength"
+    [error]="agendaTooLong() ? 'The agenda is over the ' + agendaMaxLength + '-character limit. Shorten it before saving.' : ''"
+    data-testid="composer-agenda-textarea" />
+  <p class="text-right text-xs" [ngClass]="agendaCounterClass()" data-testid="composer-agenda-counter">{{ agendaLength() }}/{{ agendaMaxLength }}</p>
+</div>

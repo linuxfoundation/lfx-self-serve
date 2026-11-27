@@ -36,7 +36,7 @@ export class VoteCreateMenuComponent {
     {
       label: 'Vote type',
       items: VOTE_METHOD_OPTIONS.map((option): MenuItem & VoteCreateMenuRow => ({
-        // "Plurality vote" reads as a thing to create; "Condorcet IRV" already names one.
+        // "Plurality vote" reads as a thing to create; "Instant Runoff" and "Condorcet IRV" already name one.
         label: option.value === PollType.GENERIC ? `${option.label} vote` : option.label,
         icon: option.icon,
         description: option.description,

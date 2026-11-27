@@ -7,6 +7,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   CAMPAIGN_BUDGET_X_CONFLICT_MESSAGE,
+  CAMPAIGN_EVENT_URL_MAX_LENGTH,
+  CAMPAIGN_NEWSLETTER_SUGGESTION_BRAND_MAX_LENGTH,
+  CAMPAIGN_NEWSLETTER_SUGGESTION_MAX_URLS,
   CAMPAIGN_RESUME_REFUSED_ADOPTED_CODE,
   CAMPAIGN_RESUME_REFUSED_CODE,
   GOOGLE_ADS_LANGUAGE_MAP,
@@ -38,6 +41,8 @@ import {
   MAX_SPONSORS,
   META_LEAD_FORMS_ACCESS_UNAVAILABLE_CODE,
   META_LEAD_FORMS_RESTRICTED_CODE,
+  REDDIT_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE_CODE,
+  REDDIT_CUSTOM_AUDIENCES_RESTRICTED_CODE,
 } from '@lfx-one/shared/constants';
 import type { CampaignBriefOutput } from '@lfx-one/shared/interfaces';
 
@@ -50,6 +55,7 @@ const {
   approveStoredBrief,
   loadBrief,
   loadBriefById,
+  newsletterNoteLinks,
   createCampaigns,
   generateEmailCopy,
   legacyCreate,
@@ -82,12 +88,17 @@ const {
   isServerFeatureEnabled,
   logger,
   svcGetLinkedInCreateAccount,
+  legacySuggestNewsletterItems,
+  isShuttingDown,
 } = vi.hoisted(() => ({
   svcGetLinkedInCreateAccount: vi.fn(),
+  legacySuggestNewsletterItems: vi.fn(),
+  isShuttingDown: vi.fn(() => false),
   saveBrief: vi.fn(),
   approveStoredBrief: vi.fn(),
   loadBrief: vi.fn(),
   loadBriefById: vi.fn(),
+  newsletterNoteLinks: vi.fn(),
   createCampaigns: vi.fn(),
   generateEmailCopy: vi.fn(),
   legacyCreate: vi.fn(),
@@ -133,6 +144,7 @@ vi.mock('../services/campaign-service.service', async (importOriginal) => {
       public approveStoredBrief = approveStoredBrief;
       public loadBrief = loadBrief;
       public loadBriefById = loadBriefById;
+      public newsletterNoteLinks = newsletterNoteLinks;
       public createCampaigns = createCampaigns;
       public generateEmailCopy = generateEmailCopy;
       public getJobStatus = svcGetJobStatus;
@@ -170,6 +182,7 @@ vi.mock('../services/campaign-proxy.service', () => ({
     public executeKeywordActions = legacyKeywordActions;
     public lookupHubSpotUtm = legacyLookupUtm;
     public createHubSpotUtm = legacyCreateUtm;
+    public suggestNewsletterItems = legacySuggestNewsletterItems;
   },
 }));
 vi.mock('../services/campaign-metrics.service', () => ({
@@ -182,7 +195,7 @@ vi.mock('../services/campaign-metrics.service', () => ({
   MetaMetricsService: class {},
 }));
 vi.mock('../services/logger.service', () => ({ logger }));
-vi.mock('../utils/shutdown', () => ({ addShutdownHook: vi.fn(), isShuttingDown: () => false }));
+vi.mock('../utils/shutdown', () => ({ addShutdownHook: vi.fn(), isShuttingDown }));
 // The real helper pulls the `@lfx-one/shared/utils` barrel, which loads `@angular/forms` and throws
 // outside Angular (GH-2381). The shared-account monitor gate is covered in campaign.controller.monitor.spec.ts.
 vi.mock('../utils/persona-helper', () => ({
@@ -2597,12 +2610,16 @@ describe('CampaignController.createCampaign cutover', () => {
     });
 
     // Devices and operating systems (#5904 row 6): their own flags, campaign-service's rules, Meta's spelling.
-    it('forwards devices and operating systems, normalized, while audience targeting is off', async () => {
+    it('forwards devices, operating systems, regions and cities, normalized, while audience targeting is off', async () => {
       flagsOff(ServerFeatureFlag.CampaignServiceMetaAudienceTargeting);
 
-      expect((await sendWith({ devicePlatforms: ['Mobile'], userOs: ['ios_ver_8.0_and_above'] }))?.['targeting']).toEqual({
+      expect(
+        (await sendWith({ devicePlatforms: ['Mobile'], userOs: ['ios_ver_8.0_and_above'], regions: [' 3847', '3847'], cities: ['2420379'] }))?.['targeting']
+      ).toEqual({
         devicePlatforms: ['mobile'],
         userOs: ['iOS_ver_8.0_and_above'],
+        regions: ['3847'],
+        cities: ['2420379'],
       });
     });
 
@@ -2615,6 +2632,7 @@ describe('CampaignController.createCampaign cutover', () => {
         'metaConfig.targeting.devicePlatforms',
       ],
       ['OS targeting off', [ServerFeatureFlag.CampaignServiceMetaOsTargeting], { userOs: ['iOS'] }, {}, 'metaConfig.targeting.userOs'],
+      ['region targeting off', [ServerFeatureFlag.CampaignServiceMetaRegionTargeting], { cities: ['2420379'] }, {}, 'metaConfig.targeting.cities'],
       // The rules read the rest of metaConfig: an OS version on the awareness objective is refused.
       ['an OS version on awareness', [], { userOs: ['iOS_ver_8.0_and_above'] }, { objective: 'awareness' }, 'metaConfig.targeting.userOs'],
     ])('refuses %s with a 400 naming the field', async (_case, off, targeting, extra, field) => {
@@ -2762,6 +2780,45 @@ describe('CampaignController.createCampaign cutover', () => {
     ])('refuses %s with a 400 naming the field, creating nothing', async (_label, extra, field) => {
       expect(await sendWith(extra)).toBeNull();
       expect(refusedField()).toBe(field);
+    });
+  });
+
+  /**
+   * Meta carousel ads (#6331): wiring only. Every rule is a row of `campaign-meta-carousel.utils.spec.ts`.
+   */
+  describe('meta carousel', () => {
+    const CARDS = [
+      { primaryText: 'p', headline: 'h1', imageUrl: 'https://cdn.example/1.png' },
+      { primaryText: '', headline: 'h2', imageAssetId: '11111111-1111-4111-8111-111111111111' },
+    ];
+    async function sendWith(extra: Record<string, unknown>): Promise<Record<string, unknown> | null> {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+      const metaConfig = {
+        budgetUsd: 250,
+        lifetimeBudget: false,
+        startDate: '2026-01-01',
+        endDate: '2026-02-01',
+        geoTargets: ['US'],
+        variants: CARDS,
+        ...extra,
+      };
+      await controller.createCampaign(buildReq({ platforms: ['meta-ads'], metaConfig }, { project: 'tlf', brief_id: 'b-1' }), res, next);
+      return createCampaigns.mock.calls.length > 0 ? (envelopeFor(createCampaigns)['metaConfig'] as Record<string, unknown>) : null;
+    }
+
+    it('refuses a carousel with a 400 while the flag is off, creating nothing', async () => {
+      isServerFeatureEnabled.mockImplementation((flag: unknown) => flag !== ServerFeatureFlag.CampaignServiceMetaCarousel);
+
+      expect(await sendWith({ format: 'carousel' })).toBeNull();
+      const error = vi.mocked(next).mock.calls[0]?.[0] as unknown as ServiceValidationError;
+      expect(error).toBeInstanceOf(ServiceValidationError);
+      expect(error.toResponse()['errors'][0].field).toBe('metaConfig.format');
+    });
+
+    it('forwards the normalized format and the cards while the flag is on', async () => {
+      isServerFeatureEnabled.mockImplementation(() => true);
+
+      expect(await sendWith({ format: ' Carousel ' })).toMatchObject({ format: 'carousel', variants: CARDS });
     });
   });
 
@@ -3251,6 +3308,87 @@ describe('CampaignController.createCampaign cutover', () => {
     const cfg = envelopeFor(createCampaigns)['hubspotConfig'] as Record<string, unknown>;
     expect(cfg['bodyHtml']).not.toContain('training.linuxfoundation.org');
     expect(cfg['bodyHtml']).toContain('Invented');
+  });
+
+  /**
+   * A NEWSLETTER issue links to the addresses in its notes, on whatever sites its items live on.
+   * Judged by the host rule every one of them lost its href here, after the preview had shown
+   * them, so the staged issue had no links. The stored brief's notes are the authority.
+   */
+  describe('a newsletter issue', () => {
+    const NEWSLETTER_BRIEF_ID = '3f2c1d7e-8a4b-4c6d-9e1f-0a2b3c4d5e6f';
+    const stage = async (hubspotConfig: Record<string, unknown>): Promise<Record<string, unknown>> => {
+      await controller.createCampaign(buildReq({ platforms: ['hubspot'], hubspotConfig }, { project: 'tlf', brief_id: NEWSLETTER_BRIEF_ID }), res, next);
+      return envelopeFor(createCampaigns)['hubspotConfig'] as Record<string, unknown>;
+    };
+
+    it("keeps the links its notes carry and drops every other link's href", async () => {
+      newsletterNoteLinks.mockResolvedValue(['https://acme.example/blog/guide/', 'https://reports.example/2026']);
+
+      const cfg = await stage({
+        sourceEmailId: 'e-1',
+        bodyHtml:
+          '<p><a href="https://acme.example/blog/guide/">The guide</a> <a href="https://reports.example/2026">The report</a> ' +
+          '<a href="https://acme.example/blog/invented">Invented</a> <a href="https://training.linuxfoundation.org/x">LF</a> ' +
+          '<a href="https://acme.example/blog/guide">Slashless</a></p>',
+      });
+
+      expect(newsletterNoteLinks).toHaveBeenCalledWith(expect.anything(), 'tlf', NEWSLETTER_BRIEF_ID);
+      expect(cfg['bodyHtml']).toContain('href="https://acme.example/blog/guide/"');
+      // The notes give the guide WITH its trailing slash; the slashless address is not one they carry.
+      expect(cfg['bodyHtml']).toContain('<a>Slashless</a>');
+      expect(cfg['bodyHtml']).toContain('href="https://reports.example/2026"');
+      expect(cfg['bodyHtml']).toContain('<a>Invented</a>');
+      // No host is vouched for on a newsletter, an LF-owned one included.
+      expect(cfg['bodyHtml']).toContain('<a>LF</a>');
+    });
+
+    it('stages a button only when it points at an address in the notes', async () => {
+      newsletterNoteLinks.mockResolvedValue(['https://acme.example/november/']);
+
+      const vouched = await stage({ sourceEmailId: 'e-1', bodyHtml: '<p>b</p>', buttonText: 'Read More', buttonUrl: 'https://acme.example/november/' });
+      expect(vouched['buttonUrl']).toBe('https://acme.example/november/');
+
+      // The address must match exactly: the notes give it with its trailing slash.
+      createCampaigns.mockClear();
+      const slashless = await stage({ sourceEmailId: 'e-1', bodyHtml: '<p>b</p>', buttonText: 'Read More', buttonUrl: 'https://acme.example/november' });
+      expect(slashless['buttonUrl']).toBeUndefined();
+
+      createCampaigns.mockClear();
+      const invented = await stage({ sourceEmailId: 'e-1', bodyHtml: '<p>b</p>', buttonText: 'Read More', buttonUrl: 'https://acme.example/elsewhere' });
+      expect(invented['buttonUrl']).toBeUndefined();
+      expect(invented['buttonText']).toBeUndefined();
+    });
+
+    it('stages no link and no button when the brief cannot be read, even on the button host', async () => {
+      // newsletterNoteLinks answers [] for a brief it could not read: the brief may be a newsletter,
+      // so its body must not fall back to the host rule, which would vouch for the button's host.
+      newsletterNoteLinks.mockResolvedValue([]);
+
+      const cfg = await stage({
+        sourceEmailId: 'e-1',
+        bodyHtml: '<p><a href="https://acme.example/invented">Invented</a></p>',
+        buttonText: 'Read More',
+        buttonUrl: 'https://acme.example/november',
+      });
+
+      expect(cfg['bodyHtml']).toBe('<p><a>Invented</a></p>');
+      expect(cfg['buttonUrl']).toBeUndefined();
+    });
+
+    it('falls back to the host rule when the brief is not a newsletter', async () => {
+      newsletterNoteLinks.mockResolvedValue(null);
+
+      const cfg = await stage({ sourceEmailId: 'e-1', bodyHtml: '<p><a href="https://acme.example/blog/guide">The guide</a></p>' });
+
+      expect(cfg['bodyHtml']).toBe('<p><a>The guide</a></p>');
+    });
+
+    it('does not read the brief for a create that stages no email body', async () => {
+      await stage({ sourceEmailId: 'e-1' });
+
+      expect(newsletterNoteLinks).not.toHaveBeenCalled();
+    });
   });
 
   it('keeps the safe inline styles of a staged body and drops the unsafe declarations', async () => {
@@ -10261,7 +10399,7 @@ describe('CampaignController.searchHubSpotEmails', () => {
 
     await controller.searchHubSpotEmails(emailReq({ project: 'tlf', q: '  kubecon  ' }), res, next);
 
-    expect(searchHubSpotEmails).toHaveBeenCalledWith(expect.anything(), 'tlf', 'kubecon');
+    expect(searchHubSpotEmails).toHaveBeenCalledWith(expect.anything(), 'tlf', 'kubecon', []);
     expect(res.json).toHaveBeenCalledWith(result);
     expect(next).not.toHaveBeenCalled();
   });
@@ -10271,8 +10409,39 @@ describe('CampaignController.searchHubSpotEmails', () => {
     // not a validation failure.
     await controller.searchHubSpotEmails(emailReq({ project: 'tlf' }), res, next);
 
-    expect(searchHubSpotEmails).toHaveBeenCalledWith(expect.anything(), 'tlf', '');
+    expect(searchHubSpotEmails).toHaveBeenCalledWith(expect.anything(), 'tlf', '', []);
     expect(next).not.toHaveBeenCalled();
+  });
+
+  // The picker's brand-and-event scope. Express hands over a single param as a string and a
+  // repeated one as an array, and both must reach the service as the same phrase list.
+  it.each([
+    ['a single match param', { project: 'tlf', match: 'KubeCon' }, ['KubeCon']],
+    ['a repeated match param', { project: 'tlf', match: ['KubeCon', ' CloudNativeCon '] }, ['KubeCon', 'CloudNativeCon']],
+    ['blank phrases among real ones', { project: 'tlf', match: ['', 'KubeCon', '   '] }, ['KubeCon']],
+  ])('forwards %s as the scope', async (_label, query, phrases) => {
+    await controller.searchHubSpotEmails(emailReq(query), res, next);
+
+    expect(searchHubSpotEmails).toHaveBeenCalledWith(expect.anything(), 'tlf', '', phrases);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('caps the scope at the phrase count and length upstream accepts', async () => {
+    const many = Array.from({ length: 12 }, (_, i) => `brand ${i}`);
+    await controller.searchHubSpotEmails(emailReq({ project: 'tlf', match: [...many, 'x'.repeat(300)] }), res, next);
+
+    const phrases = vi.mocked(searchHubSpotEmails).mock.calls[0][3] as string[];
+    expect(phrases).toHaveLength(8);
+    expect(phrases[0]).toBe('brand 0');
+  });
+
+  it('refuses a scope combined with a query, which upstream would refuse anyway', async () => {
+    await controller.searchHubSpotEmails(emailReq({ project: 'tlf', q: 'registration', match: 'KubeCon' }), res, next);
+
+    expect(searchHubSpotEmails).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(error.statusCode).toBe(400);
   });
 
   it('forwards a service failure to the error middleware instead of answering 200', async () => {
@@ -10335,7 +10504,7 @@ describe('CampaignController.refineBrief email refusal', () => {
     const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
     expect(error).toBeInstanceOf(ServiceValidationError);
     expect(error.toResponse()['errors']).toEqual([
-      { field: 'deliveryType', message: 'deliveryType must be one of: paid-marketing, email, survey', code: 'FIELD_VALIDATION_ERROR' },
+      { field: 'deliveryType', message: 'deliveryType must be one of: paid-marketing, email, survey, newsletter', code: 'FIELD_VALIDATION_ERROR' },
     ]);
   });
 
@@ -11460,6 +11629,8 @@ describe('CampaignController.listBriefCampaigns', () => {
         metaCustomAudiencesEnabled: conversions,
         // Meta lead forms (#5940) on the same relation.
         metaLeadFormsEnabled: conversions,
+        // Reddit custom audiences (#6108 row 1) on the same relation.
+        redditCustomAudiencesEnabled: conversions,
       })
     );
   });
@@ -11481,6 +11652,7 @@ describe('CampaignController.listBriefCampaigns', () => {
         googlePerformanceMaxAudienceSignalEnabled: null,
         metaCustomAudiencesEnabled: null,
         metaLeadFormsEnabled: null,
+        redditCustomAudiencesEnabled: null,
       })
     );
   });
@@ -11497,6 +11669,7 @@ describe('CampaignController.listBriefCampaigns', () => {
         googleConversionActionsEnabled: false,
         metaCustomAudiencesEnabled: false,
         metaLeadFormsEnabled: false,
+        redditCustomAudiencesEnabled: false,
       })
     );
     expect(personaDetectionService.checkProjectGlobalMarketingOpsStrict).not.toHaveBeenCalled();
@@ -12896,6 +13069,466 @@ describe('CampaignController.createCampaign Reddit conversion pixel', () => {
 });
 
 /**
+ * `redditConfig.conversionEvent` (#6108 row 2): refused, never dropped, while this deployment cannot send it, and
+ * forwarded as typed once it can. The rules themselves are table rows in `campaign-reddit-conversion-event.utils.spec.ts`.
+ */
+describe('CampaignController.createCampaign Reddit conversion event', () => {
+  let controller: CampaignController;
+  let res: Response;
+  let next: NextFunction;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new CampaignController();
+    res = buildRes();
+    next = vi.fn();
+  });
+
+  it('refuses a conversion event while the flag is off, creating nothing', async () => {
+    isServerFeatureEnabled.mockImplementation((flag) => flag !== ServerFeatureFlag.CampaignServiceRedditConversionEvent);
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+
+    await controller.createCampaign(
+      buildReq(
+        { platforms: ['reddit-ads'], redditConfig: { budgetUsd: 50, objective: 'conversions', conversionEvent: 'LEAD' } },
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error.toResponse()['errors']).toEqual([
+      {
+        field: 'redditConfig.conversionEvent',
+        message: 'Reddit conversion events are not enabled on this deployment. Reload the page and create again.',
+        code: 'FIELD_VALIDATION_ERROR',
+      },
+    ]);
+  });
+
+  it('forwards the conversion event untouched once the flag is on', async () => {
+    isServerFeatureEnabled.mockImplementation(() => true);
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+
+    await controller.createCampaign(
+      buildReq(
+        { platforms: ['reddit-ads'], redditConfig: { budgetUsd: 50, objective: 'conversions', conversionEvent: 'LEAD' } },
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    const envelope = createCampaigns.mock.calls[0][4] as Record<string, Record<string, unknown>>;
+    expect(envelope['redditConfig']['conversionEvent']).toBe('LEAD');
+    expect(next).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * `redditConfig.excludedSubreddits` / `excludedGeoTargets` (#6108 row 3): refused, never dropped, while this deployment
+ * cannot send them, and forwarded as typed once it can. The rules are table rows in
+ * `campaign-reddit-targeting-exclusions.utils.spec.ts`.
+ */
+describe('CampaignController.createCampaign Reddit targeting exclusions', () => {
+  let controller: CampaignController;
+  let res: Response;
+  let next: NextFunction;
+  const redditConfig = { budgetUsd: 50, geoTargets: ['US'], excludedSubreddits: ['r/politics'], excludedGeoTargets: ['CA'] };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new CampaignController();
+    res = buildRes();
+    next = vi.fn();
+  });
+
+  it('refuses the exclusions while the flag is off, creating nothing', async () => {
+    isServerFeatureEnabled.mockImplementation((flag) => flag !== ServerFeatureFlag.CampaignServiceRedditTargetingExclusions);
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+
+    await controller.createCampaign(buildReq({ platforms: ['reddit-ads'], redditConfig }, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error.toResponse()['errors']).toEqual([
+      {
+        field: 'redditConfig.excludedSubreddits',
+        message: 'Reddit targeting exclusions are not enabled on this deployment. Remove them and create again.',
+        code: 'FIELD_VALIDATION_ERROR',
+      },
+    ]);
+  });
+
+  it('forwards the exclusions untouched once the flag is on', async () => {
+    isServerFeatureEnabled.mockImplementation(() => true);
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+
+    await controller.createCampaign(buildReq({ platforms: ['reddit-ads'], redditConfig }, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    const envelope = createCampaigns.mock.calls[0][4] as Record<string, Record<string, unknown>>;
+    expect(envelope['redditConfig']).toMatchObject({ excludedSubreddits: ['r/politics'], excludedGeoTargets: ['CA'] });
+    expect(next).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * `redditConfig.subCountryGeoTargets` (#6108 row 7): refused, never dropped, while this deployment cannot send it, and
+ * forwarded as typed once it can. The rules are table rows in `campaign-reddit-subcountry-geo.utils.spec.ts`.
+ */
+describe('CampaignController.createCampaign Reddit regions, cities and DMAs', () => {
+  let controller: CampaignController;
+  let res: Response;
+  let next: NextFunction;
+  const redditConfig = { budgetUsd: 50, geoTargets: ['CA'], subCountryGeoTargets: ['US-CA', '662'] };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new CampaignController();
+    res = buildRes();
+    next = vi.fn();
+  });
+
+  it('refuses the locations while the flag is off, creating nothing', async () => {
+    isServerFeatureEnabled.mockImplementation((flag) => flag !== ServerFeatureFlag.CampaignServiceRedditSubCountryGeo);
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+
+    await controller.createCampaign(buildReq({ platforms: ['reddit-ads'], redditConfig }, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error.toResponse()['errors']).toEqual([
+      {
+        field: 'redditConfig.subCountryGeoTargets',
+        message: 'Reddit regions, cities and DMAs are not enabled on this deployment. Remove them and create again.',
+        code: 'FIELD_VALIDATION_ERROR',
+      },
+    ]);
+  });
+
+  // campaign-service runs the exclusions' value rules, then these locations', then the placements'.
+  it.each([
+    [{ ...redditConfig, excludedGeoTargets: ['XX'], subCountryGeoTargets: ['nope'] }, 'redditConfig.excludedGeoTargets'],
+    [{ ...redditConfig, subCountryGeoTargets: ['nope'], placements: ['NOPE'] }, 'redditConfig.subCountryGeoTargets'],
+  ])('applies the value rules in campaign-service order (%o names %s)', async (config, field) => {
+    isServerFeatureEnabled.mockImplementation(() => true);
+
+    await controller.createCampaign(buildReq({ platforms: ['reddit-ads'], redditConfig: config }, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect((error.toResponse()['errors'] as { field: string }[])[0].field).toBe(field);
+  });
+
+  // campaign-service pre-checks only the selected platforms, so a redditConfig beside another platform is not judged.
+  it('leaves the locations unjudged when Reddit is not selected', async () => {
+    isServerFeatureEnabled.mockImplementation((flag) => flag !== ServerFeatureFlag.CampaignServiceRedditSubCountryGeo);
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+
+    await controller.createCampaign(buildReq({ platforms: ['meta-ads'], redditConfig }, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    const errors = vi.mocked(next).mock.calls.map(([error]) => (error as unknown as ServiceValidationError | undefined)?.toResponse?.()['errors']);
+    expect(JSON.stringify(errors)).not.toContain('redditConfig.subCountryGeoTargets');
+  });
+
+  it('forwards the locations untouched once the flag is on', async () => {
+    isServerFeatureEnabled.mockImplementation(() => true);
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+
+    await controller.createCampaign(buildReq({ platforms: ['reddit-ads'], redditConfig }, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    const envelope = createCampaigns.mock.calls[0][4] as Record<string, Record<string, unknown>>;
+    expect(envelope['redditConfig']).toMatchObject({ geoTargets: ['CA'], subCountryGeoTargets: ['US-CA', '662'] });
+    expect(next).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * `redditConfig.placements` / `platforms` / `expandTargeting` and `budgetType` (#6108 row 5): refused, never dropped,
+ * while this deployment cannot send them, and forwarded as typed once it can. The rules are table rows in
+ * `campaign-reddit-delivery.utils.spec.ts`.
+ */
+describe('CampaignController.createCampaign Reddit placements and budget type', () => {
+  let controller: CampaignController;
+  let res: Response;
+  let next: NextFunction;
+  const redditConfig = { budgetUsd: 50, placements: ['FEED'], platforms: ['DESKTOP'], expandTargeting: false, budgetType: 'daily' };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new CampaignController();
+    res = buildRes();
+    next = vi.fn();
+  });
+
+  it.each([
+    [ServerFeatureFlag.CampaignServiceRedditPlacements, 'redditConfig.placements', 'Reddit placements are not enabled'],
+    [ServerFeatureFlag.CampaignServiceRedditDailyBudget, 'redditConfig.budgetType', 'Reddit daily budgets are not enabled'],
+  ])('refuses the choices while %s is off, creating nothing', async (off, field, message) => {
+    isServerFeatureEnabled.mockImplementation((flag) => flag !== off);
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+
+    await controller.createCampaign(buildReq({ platforms: ['reddit-ads'], redditConfig }, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error.toResponse()['errors']).toEqual([{ field, message: expect.stringContaining(message), code: 'FIELD_VALIDATION_ERROR' }]);
+  });
+
+  it('forwards the choices untouched once both flags are on', async () => {
+    isServerFeatureEnabled.mockImplementation(() => true);
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+
+    await controller.createCampaign(buildReq({ platforms: ['reddit-ads'], redditConfig }, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    const envelope = createCampaigns.mock.calls[0][4] as Record<string, Record<string, unknown>>;
+    expect(envelope['redditConfig']).toMatchObject({ placements: ['FEED'], platforms: ['DESKTOP'], expandTargeting: false, budgetType: 'daily' });
+    expect(next).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * `redditConfig.videoAssetId` / `thumbnailAssetId`, a Reddit video post (#6108 row 8): refused, never dropped, unless
+ * both the Reddit assets flag and the video flag are on, and only when Reddit is selected. The rules are table rows in
+ * `campaign-reddit-video.utils.spec.ts`.
+ */
+describe('CampaignController.createCampaign Reddit video post', () => {
+  let controller: CampaignController;
+  let res: Response;
+  let next: NextFunction;
+  const redditConfig = { budgetUsd: 50, videoAssetId: '3f2504e0-4f89-11d3-9a0c-0305e82c3301', thumbnailAssetId: '6ba7b810-9dad-11d1-80b4-00c04fd430c8' };
+  const create = (platforms: string[], config: Record<string, unknown> = redditConfig) =>
+    controller.createCampaign(buildReq({ platforms, redditConfig: config }, { project: 'tlf', brief_id: 'b-1' }), res, next);
+  const refusedField = (): string => (vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError).toResponse()['errors'][0].field;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new CampaignController();
+    res = buildRes();
+    next = vi.fn();
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+  });
+
+  it.each([ServerFeatureFlag.CampaignServiceRedditVideo, ServerFeatureFlag.CampaignServiceRedditAssets])(
+    'refuses a video while %s is off, creating nothing',
+    async (off) => {
+      isServerFeatureEnabled.mockImplementation((flag) => flag !== off);
+
+      await create(['reddit-ads']);
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(refusedField()).toBe('redditConfig.videoAssetId');
+    }
+  );
+
+  it('forwards the video and thumbnail untouched once both flags are on', async () => {
+    isServerFeatureEnabled.mockImplementation(() => true);
+
+    await create(['reddit-ads']);
+
+    const envelope = createCampaigns.mock.calls[0][4] as Record<string, Record<string, unknown>>;
+    expect(envelope['redditConfig']).toMatchObject({ videoAssetId: redditConfig.videoAssetId, thumbnailAssetId: redditConfig.thumbnailAssetId });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('refuses a video with two variants while one ad per variant is on', async () => {
+    isServerFeatureEnabled.mockImplementation(() => true);
+
+    await create(['reddit-ads'], { ...redditConfig, variants: [{ headline: 'a' }, { headline: 'b' }] });
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusedField()).toBe('redditConfig.variants');
+  });
+
+  it('leaves an unused redditConfig alone when Reddit is not selected, flag off', async () => {
+    isServerFeatureEnabled.mockImplementation((flag) => flag !== ServerFeatureFlag.CampaignServiceRedditVideo);
+
+    await create(['meta-ads']);
+
+    expect(createCampaigns).toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * `redditConfig.variants` under one ad per variant (#6108 row 6): never refused while the flag is off, since creates
+ * already carry the brief's variants, and held to campaign-service's rules once it is on. The rules are table rows in
+ * `campaign-reddit-ad-variants.utils.spec.ts`.
+ */
+describe('CampaignController.createCampaign Reddit one ad per variant', () => {
+  let controller: CampaignController;
+  let res: Response;
+  let next: NextFunction;
+  const variants = ['a', 'b', 'c', 'd', 'e', 'f'].map((headline) => ({ headline, body: 'preview' }));
+  const redditConfig = { budgetUsd: 50, imageUrl: 'https://img.example/a.png', variants };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new CampaignController();
+    res = buildRes();
+    next = vi.fn();
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+  });
+
+  it('forwards six variants untouched while the flag is off', async () => {
+    isServerFeatureEnabled.mockImplementation((flag) => flag !== ServerFeatureFlag.CampaignServiceRedditAdPerVariant);
+
+    await controller.createCampaign(buildReq({ platforms: ['reddit-ads'], redditConfig }, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    const envelope = createCampaigns.mock.calls[0][4] as Record<string, Record<string, unknown>>;
+    expect(envelope['redditConfig']['variants']).toEqual(variants);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('leaves an unused redditConfig alone when Reddit is not selected, flag on', async () => {
+    isServerFeatureEnabled.mockImplementation(() => true);
+
+    await controller.createCampaign(buildReq({ platforms: ['meta-ads'], redditConfig }, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('refuses six variants once the flag is on, creating nothing', async () => {
+    isServerFeatureEnabled.mockImplementation(() => true);
+
+    await controller.createCampaign(buildReq({ platforms: ['reddit-ads'], redditConfig }, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error.toResponse()['errors']).toEqual([
+      { field: 'redditConfig.variants', message: expect.stringContaining('at most 5'), code: 'FIELD_VALIDATION_ERROR' },
+    ]);
+  });
+});
+
+/**
+ * `redditConfig.gender` / `languages` / `schedule` (#6108 row 9): refused, never dropped, while this deployment cannot
+ * send them, checked after the placements and before the budget type (campaign-service's per-feature order), and
+ * forwarded as typed once it can. The rules are table rows in `campaign-reddit-demographics.utils.spec.ts`.
+ */
+describe('CampaignController.createCampaign Reddit gender, languages and dayparting', () => {
+  const redditConfig = {
+    budgetUsd: 50,
+    placements: ['FEED'],
+    gender: 'FEMALE',
+    languages: ['EN'],
+    schedule: [{ startDay: 1, startHour: 9, endDay: 5, endHour: 17 }],
+    budgetType: 'daily',
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it.each([
+    // Placements (row 5) are checked first, then the demographics, then the budget type.
+    [ServerFeatureFlag.CampaignServiceRedditPlacements, 'redditConfig.placements'],
+    [ServerFeatureFlag.CampaignServiceRedditGenderLanguageDayparting, 'redditConfig.gender'],
+    [ServerFeatureFlag.CampaignServiceRedditDailyBudget, 'redditConfig.budgetType'],
+    [undefined, undefined],
+  ])('with %s off, refuses %s and creates nothing (forwards untouched when every flag is on)', async (off, field) => {
+    isServerFeatureEnabled.mockImplementation((flag) => flag !== off);
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+    const next = vi.fn();
+
+    await new CampaignController().createCampaign(buildReq({ platforms: ['reddit-ads'], redditConfig }, { project: 'tlf', brief_id: 'b-1' }), buildRes(), next);
+
+    if (field === undefined) {
+      const envelope = createCampaigns.mock.calls[0][4] as Record<string, Record<string, unknown>>;
+      expect(envelope['redditConfig']).toMatchObject({ gender: 'FEMALE', languages: ['EN'], schedule: redditConfig.schedule });
+      expect(next).not.toHaveBeenCalled();
+      return;
+    }
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error.toResponse()['errors']).toEqual([{ field, message: expect.any(String), code: 'FIELD_VALIDATION_ERROR' }]);
+  });
+
+  it('leaves an unused redditConfig.gender alone when Reddit is not selected, flag off', async () => {
+    isServerFeatureEnabled.mockImplementation((flag) => flag !== ServerFeatureFlag.CampaignServiceRedditGenderLanguageDayparting);
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+    const next = vi.fn();
+
+    await new CampaignController().createCampaign(
+      buildReq({ platforms: ['meta-ads'], redditConfig: { budgetUsd: 50, gender: 'FEMALE' } }, { project: 'tlf', brief_id: 'b-1' }),
+      buildRes(),
+      next
+    );
+
+    expect(createCampaigns).toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * `redditConfig.customAudienceIds` / `excludedCustomAudienceIds` (#6108 row 1): refused, never dropped, while this
+ * deployment cannot send them; named only by a caller holding `global_marketing_ops` on the project; forwarded as typed
+ * otherwise. Wiring only: the rules themselves are table rows in `campaign-reddit-custom-audiences.utils.spec.ts`.
+ */
+describe('CampaignController.createCampaign Reddit custom audiences', () => {
+  let controller: CampaignController;
+  let res: Response;
+  let next: NextFunction;
+  const redditConfig = { budgetUsd: 50, customAudienceIds: ['67547345732543'], excludedCustomAudienceIds: ['t2_registrants'] };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new CampaignController();
+    res = buildRes();
+    next = vi.fn();
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+  });
+
+  it('refuses the lists while the flag is off, creating nothing and checking no access', async () => {
+    isServerFeatureEnabled.mockImplementation((flag) => flag !== ServerFeatureFlag.CampaignServiceRedditCustomAudiences);
+
+    await controller.createCampaign(buildReq({ platforms: ['reddit-ads'], redditConfig }, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(personaDetectionService.checkProjectGlobalMarketingOpsStrict).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error.toResponse()['errors']).toEqual([
+      {
+        field: 'redditConfig.customAudienceIds',
+        message: 'Reddit custom audiences are not enabled on this deployment. Reload the page, then create again without them.',
+        code: 'FIELD_VALIDATION_ERROR',
+      },
+    ]);
+  });
+
+  it.each<[string, boolean | Error, string]>([
+    ['refused (403)', false, REDDIT_CUSTOM_AUDIENCES_RESTRICTED_CODE],
+    ['unverifiable (503)', new Error('fga-sync unreachable'), REDDIT_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE_CODE],
+  ])('answers the coded error when global_marketing_ops is %s, creating nothing', async (_case, access, code) => {
+    isServerFeatureEnabled.mockImplementation(() => true);
+    const check = vi.mocked(personaDetectionService.checkProjectGlobalMarketingOpsStrict);
+    if (access instanceof Error) check.mockRejectedValueOnce(access);
+    else check.mockResolvedValueOnce(access);
+
+    await controller.createCampaign(buildReq({ platforms: ['reddit-ads'], redditConfig }, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(check).toHaveBeenCalledWith(expect.anything(), 'tlf');
+    expect(vi.mocked(next).mock.calls[0][0]).toMatchObject({ code });
+  });
+
+  it('forwards both lists untouched for a caller holding global_marketing_ops once the flag is on', async () => {
+    isServerFeatureEnabled.mockImplementation(() => true);
+    vi.mocked(personaDetectionService.checkProjectGlobalMarketingOpsStrict).mockResolvedValueOnce(true);
+
+    await controller.createCampaign(buildReq({ platforms: ['reddit-ads'], redditConfig }, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    const envelope = createCampaigns.mock.calls[0][4] as Record<string, Record<string, unknown>>;
+    expect(envelope['redditConfig']['customAudienceIds']).toEqual(['67547345732543']);
+    expect(envelope['redditConfig']['excludedCustomAudienceIds']).toEqual(['t2_registrants']);
+  });
+});
+
+/**
  * `metaConfig.variants[].imageAssetId` is honoured only by campaign-service, so it is refused — not
  * dropped — unless the create cutover AND the Meta-assets flag are on, on the Reddit field's terms.
  * A pasted `imageUrl` is not gated here: the form withholds it while `metaCreativeEnabled` is off.
@@ -13846,6 +14479,37 @@ describe('CampaignController survey surface', () => {
     expect(fieldOf(error)).toBe('stage');
   });
 
+  it.each([
+    ['no brand', { newsletterIssue: 'November 2026', sourceText: 'News' }, 'newsletterBrand'],
+    ['no issue', { newsletterBrand: 'OpenSSF', sourceText: 'News' }, 'newsletterIssue'],
+    ['no notes', { newsletterBrand: 'OpenSSF', newsletterIssue: 'November 2026' }, 'sourceText'],
+    [
+      'too many references',
+      { newsletterBrand: 'OpenSSF', newsletterIssue: 'Nov', sourceText: 'News', referenceEmailIds: ['1', '2', '3', '4'] },
+      'referenceEmailIds',
+    ],
+    [
+      'a reference that is not an email id',
+      { newsletterBrand: 'OpenSSF', newsletterIssue: 'Nov', sourceText: 'News', referenceEmailIds: ['../x'] },
+      'referenceEmailIds',
+    ],
+  ])('refuses a newsletter brief with %s before generating', async (_label, fields, field) => {
+    const req = { body: { deliveryType: 'newsletter', ...fields }, query: {}, path: '/api/campaigns/brief/generate' } as unknown as Request;
+
+    await controller.generateBrief(req, res, next);
+
+    const error = vi.mocked(next).mock.calls[0][0];
+    expect(error).toBeInstanceOf(ServiceValidationError);
+    expect(fieldOf(error)).toBe(field);
+  });
+
+  it('refuses the newsletter stage on the email surface, as campaign-service does', async () => {
+    await controller.loadBrief(buildLoadReq({ event_slug: 'openssf-newsletter-nov', project: 'tlf', delivery_type: 'email', stage: 'Newsletter' }), res, next);
+
+    expect(loadBrief).not.toHaveBeenCalled();
+    expect(fieldOf(vi.mocked(next).mock.calls[0][0])).toBe('stage');
+  });
+
   it("refuses a survey source over campaign-service's 3,000-character limit before generating", async () => {
     const req = {
       body: { deliveryType: 'survey', url: 'https://surveys.example.com/r/cloud-2026', sourceText: 'x'.repeat(3001) },
@@ -13972,5 +14636,98 @@ describe('CampaignController survey surface', () => {
       expect(res.json).not.toHaveBeenCalled();
       expect(next).toHaveBeenCalledWith(failure);
     });
+  });
+});
+
+/**
+ * POST /newsletter/suggestions starts up to CAMPAIGN_NEWSLETTER_SUGGESTION_MAX_URLS page fetches and
+ * as many model calls, so every refusal must happen before any of them, and a draining server must
+ * not start them at all.
+ */
+describe('CampaignController.suggestNewsletterItems', () => {
+  let controller: CampaignController;
+  let res: Response;
+  let next: NextFunction;
+  const call = (body: unknown): Promise<void> => controller.suggestNewsletterItems(buildReq(body), res, next);
+  const fieldOf = (): string | undefined => {
+    const error = (next as unknown as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as ServiceValidationError | undefined;
+    return (error?.toResponse()['errors'] as { field: string }[] | undefined)?.[0]?.field;
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    isShuttingDown.mockReturnValue(false);
+    controller = new CampaignController();
+    res = { ...buildRes(), on: vi.fn() } as unknown as Response;
+    next = vi.fn();
+    legacySuggestNewsletterItems.mockResolvedValue({ items: [{ title: 'Offer' }], failedUrls: [] });
+  });
+
+  it.each([
+    ['no urls', { brand: 'Acme' }, 'urls'],
+    ['an empty url list', { urls: [], brand: 'Acme' }, 'urls'],
+    ['only blank urls', { urls: ['  '], brand: 'Acme' }, 'urls'],
+    [
+      'too many urls',
+      { urls: Array.from({ length: CAMPAIGN_NEWSLETTER_SUGGESTION_MAX_URLS + 1 }, (_, i) => `https://acme.example/${i}`), brand: 'Acme' },
+      'urls',
+    ],
+    ['an over-long url', { urls: [`https://acme.example/${'x'.repeat(CAMPAIGN_EVENT_URL_MAX_LENGTH)}`], brand: 'Acme' }, 'urls'],
+    ['no brand', { urls: ['https://acme.example/'] }, 'brand'],
+    ['a blank brand', { urls: ['https://acme.example/'], brand: '   ' }, 'brand'],
+    ['an over-long brand', { urls: ['https://acme.example/'], brand: 'b'.repeat(CAMPAIGN_NEWSLETTER_SUGGESTION_BRAND_MAX_LENGTH + 1) }, 'brand'],
+  ])('refuses %s as a field error before any fetch', async (_label, body, field) => {
+    await call(body);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect((next as unknown as ReturnType<typeof vi.fn>).mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(fieldOf()).toBe(field);
+    expect(legacySuggestNewsletterItems).not.toHaveBeenCalled();
+  });
+
+  it('answers 503 and starts nothing while the server is shutting down', async () => {
+    isShuttingDown.mockReturnValue(true);
+
+    await call({ urls: ['https://acme.example/'], brand: 'Acme' });
+
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(legacySuggestNewsletterItems).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('passes trimmed urls, the brand and notBefore through, with an abort signal tied to the response', async () => {
+    await call({ urls: [' https://acme.example/news ', 42], brand: ' Acme ', notBefore: '2026-11-01' });
+
+    expect(legacySuggestNewsletterItems).toHaveBeenCalledWith(
+      expect.anything(),
+      { urls: ['https://acme.example/news'], brand: 'Acme', notBefore: '2026-11-01' },
+      expect.any(AbortSignal)
+    );
+    expect(res.on).toHaveBeenCalledWith('close', expect.any(Function));
+    expect(res.json).toHaveBeenCalledWith({ items: [{ title: 'Offer' }], failedUrls: [] });
+  });
+
+  it('aborts the outbound work when the client goes away', async () => {
+    let signal: AbortSignal | undefined;
+    legacySuggestNewsletterItems.mockImplementation(async (_req: unknown, _input: unknown, s: AbortSignal) => {
+      signal = s;
+      return { items: [], failedUrls: [] };
+    });
+
+    await call({ urls: ['https://acme.example/'], brand: 'Acme' });
+    const onClose = (res.on as unknown as ReturnType<typeof vi.fn>).mock.calls.find((c) => c[0] === 'close')?.[1] as () => void;
+    onClose();
+
+    expect(signal?.aborted).toBe(true);
+  });
+
+  it('hands an upstream failure to the error middleware', async () => {
+    const failure = new MicroserviceError('upstream timed out', 503, 'UNAVAILABLE');
+    legacySuggestNewsletterItems.mockRejectedValue(failure);
+
+    await call({ urls: ['https://acme.example/'], brand: 'Acme' });
+
+    expect(next).toHaveBeenCalledWith(failure);
+    expect(res.json).not.toHaveBeenCalled();
   });
 });

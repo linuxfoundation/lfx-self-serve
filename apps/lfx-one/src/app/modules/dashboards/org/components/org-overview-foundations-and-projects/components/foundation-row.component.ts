@@ -25,6 +25,8 @@ export class FoundationRowComponent {
   public readonly row = input.required<OrgLensFoundationRow>();
   public readonly expanded = input<boolean>(false);
   public readonly index = input<number>(0);
+  /** False in the all employee view: the Memberships page is hidden, so the row is not a link and does not navigate. The expansion control stays. */
+  public readonly navigable = input<boolean>(true);
 
   public readonly toggle = output<void>();
   public readonly rowClick = output<{ foundationName: string; isMember: boolean }>();
@@ -38,8 +40,9 @@ export class FoundationRowComponent {
   protected readonly ribbonClasses = computed(() => tierRibbonClasses(this.row().membershipTierClass, this.row().rowKind));
   protected readonly testIdSlug = computed<string>(() => this.row().foundationSlug || this.row().foundationId);
 
-  protected readonly trRole = computed<string | null>(() => (this.row().rowKind === 'outside_lf' ? null : 'button'));
-  protected readonly trTabIndex = computed<number | null>(() => (this.row().rowKind === 'outside_lf' ? null : 0));
+  private readonly rowOpens = computed<boolean>(() => this.navigable() && this.row().rowKind !== 'outside_lf');
+  protected readonly trRole = computed<string | null>(() => (this.rowOpens() ? 'button' : null));
+  protected readonly trTabIndex = computed<number | null>(() => (this.rowOpens() ? 0 : null));
 
   /** Always-true today; kept as a signal so the gate can tighten without touching the template. */
   protected readonly showProjectsInvolved = computed<boolean>(() => true);
@@ -61,7 +64,7 @@ export class FoundationRowComponent {
       return;
     }
     const r = this.row();
-    if (r.rowKind === 'outside_lf') {
+    if (!this.rowOpens()) {
       return;
     }
     this.rowClick.emit({ foundationName: r.foundationName, isMember: r.rowKind === 'member' });
@@ -74,7 +77,7 @@ export class FoundationRowComponent {
     const target = event.target as HTMLElement | null;
     if (target && target.closest('button, a')) return;
     const r = this.row();
-    if (r.rowKind === 'outside_lf') return;
+    if (!this.rowOpens()) return;
     event.preventDefault();
     this.rowClick.emit({ foundationName: r.foundationName, isMember: r.rowKind === 'member' });
     void this.router.navigate(this.orgLens.orgLensLink('memberships'));
@@ -114,7 +117,7 @@ export class FoundationRowComponent {
 
   private initTrClasses(): string {
     const base = 'border-b border-gray-200 hover:bg-gray-50 transition-colors';
-    return this.row().rowKind === 'outside_lf' ? `${base} cursor-default` : `${base} cursor-pointer`;
+    return this.rowOpens() ? `${base} cursor-pointer` : `${base} cursor-default`;
   }
 
   private initOrgRoleClass(): string {

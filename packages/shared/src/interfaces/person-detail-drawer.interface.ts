@@ -3,6 +3,7 @@
 
 import type { OrgCommitFilters } from './org-commit-filters.interface';
 import type { OrgLensTimeRange } from './org-lens-time-range.interface';
+import type { OrgLensRowOrganization } from './org-memberships.interface';
 import type { OrgKeyContactAssignment } from './org-people-key-contacts.interface';
 import type { OrgAllEmployeeCommitteeMembership, OrgPeopleDirectoryView, OrgScopeFilter, OrgTeamMembersFilter } from './org-people.interface';
 
@@ -52,6 +53,11 @@ export interface PersonDrawerContext {
   teamMembers?: OrgTeamMembersFilter;
   /** The opener's Organization scope pick, sent with `codeFilters` (lfx-self-serve-ops#1219): the Code tab counts the same organizations' code. */
   orgScope?: OrgScopeFilter;
+  /**
+   * The organization the person is read under when it is not the selected one: a roll-up row's company, since a person
+   * is read per organization. Followed only while the selection the drawer was opened under stays selected.
+   */
+  organization?: OrgLensRowOrganization;
 }
 
 /** One rendered address line in the drawer header. */

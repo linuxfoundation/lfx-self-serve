@@ -14,6 +14,7 @@ import {
 import type { Account, OrgContributionsResponse, OrgLensEmptyStateName, OrgLensOrgScope } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
+import { OrgLensViewModeService } from '@services/org-lens-view-mode.service';
 import { OrgLensOrgScopeService } from '@services/org-lens-org-scope.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
@@ -51,9 +52,13 @@ async function render(
     queryParams = {} as Record<string, string>,
     response = EMPTY_ORG_CONTRIBUTIONS_RESPONSE as OrgContributionsResponse,
     orgScopeInfo = null as OrgLensOrgScope | null,
+    employeeView = false,
+    grantsLoaded = true,
   } = {}
 ) {
   const pageState = signal<OrgLensEmptyStateName | null>(state);
+  const loaded = signal(grantsLoaded);
+  const employeeViewState = signal(employeeView);
   const getContributions = vi.fn(() => of(response));
   const selectedAccount = signal<Account>({ accountId: 'acc-1', accountName: 'Acme Motors, Inc.', membershipTier: '', uid: 'org-uid-1', slug: 'acme' });
   const queryParamMap = new BehaviorSubject(convertToParamMap(queryParams));
@@ -65,7 +70,7 @@ async function render(
       MessageService,
       { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: queryParamMap.value }, queryParamMap } },
       { provide: AccountContextService, useValue: { selectedAccount } },
-      { provide: OrgRoleGrantsService, useValue: { correlationId: signal(null) } },
+      { provide: OrgRoleGrantsService, useValue: { correlationId: signal(null), loaded } },
       {
         provide: OrgLensEmptyStateService,
         useValue: {
@@ -80,6 +85,7 @@ async function render(
       { provide: ContributionsService, useValue: { getContributions } },
       { provide: OrgLensOrgScopeService, useValue: { current: signal<OrgLensOrgScope | null>(orgScopeInfo), retryFailedRead: () => undefined } },
       { provide: PersonDetailDrawerService, useValue: personDrawerStub() },
+      { provide: OrgLensViewModeService, useValue: { isEmployeeView: employeeViewState } },
     ],
   }).compileComponents();
 
@@ -91,7 +97,7 @@ async function render(
   fixture.detectChanges();
   await fixture.whenStable();
   fixture.detectChanges();
-  return { fixture, navigate, getContributions, queryParamMap, selectedAccount };
+  return { fixture, navigate, getContributions, queryParamMap, selectedAccount, loaded, employeeViewState };
 }
 
 /** Advances virtual time past the filter form's 250ms debounce, then renders and settles. */
@@ -105,6 +111,50 @@ afterEach(() => {
   TestBed.resetTestingModule();
   vi.clearAllTimers();
   vi.useRealTimers();
+});
+
+describe('OrgContributionsComponent all employee view (epic #5845)', () => {
+  it('renders aggregates only: no Commits tab, no Employees filter, no person drawer, and asks the repositories view without employees', async () => {
+    const { fixture, getContributions } = await render(null, { employeeView: true, queryParams: { view: 'commits', employees: 'm1' } });
+    const el = fixture.nativeElement as HTMLElement;
+
+    expect(el.querySelector('[data-testid="org-contributions-kpis"]')).not.toBeNull();
+    expect(el.querySelector('[data-testid="org-contributions-repositories-table"]')).not.toBeNull();
+    expect(el.querySelector('[data-testid="org-contributions-tabs"]')).toBeNull();
+    expect(el.querySelector('[data-testid="org-contributions-commits-table"]')).toBeNull();
+    expect(el.querySelector('lfx-person-detail-drawer')).toBeNull();
+    expect(el.textContent).not.toContain('All Employees');
+    for (const call of getContributions.mock.calls as unknown as [string, { view: string; employees: string[] }][]) {
+      expect(call[1]).toMatchObject({ view: 'repositories', employees: [] });
+    }
+  });
+
+  it('sends no request until the role-grants answer lands, so a commits link never reaches the server as a full view', async () => {
+    const { fixture, getContributions, loaded, employeeViewState } = await render(null, {
+      grantsLoaded: false,
+      queryParams: { view: 'commits', employees: 'm1' },
+    });
+
+    expect(getContributions).not.toHaveBeenCalled();
+
+    employeeViewState.set(true);
+    loaded.set(true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(getContributions).toHaveBeenCalledTimes(1);
+    expect((getContributions.mock.calls as unknown as [string, { view: string; employees: string[] }][])[0][1]).toMatchObject({
+      view: 'repositories',
+      employees: [],
+    });
+  });
+
+  it('keeps the Commits tab and Employees filter in the full view', async () => {
+    const el = (await render(null)).fixture.nativeElement as HTMLElement;
+
+    expect(el.querySelector('[data-testid="org-contributions-tabs"]')).not.toBeNull();
+    expect(el.querySelector('lfx-person-detail-drawer')).not.toBeNull();
+  });
 });
 
 describe('OrgContributionsComponent', () => {

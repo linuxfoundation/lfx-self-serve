@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { inject, makeStateKey, PLATFORM_ID, REQUEST, REQUEST_CONTEXT, TransferState } from '@angular/core';
+import { inject, makeStateKey, PLATFORM_ID, REQUEST, REQUEST_CONTEXT, StateKey, TransferState } from '@angular/core';
 import { CanMatchFn, Route, Router } from '@angular/router';
 import { environment } from '@environments/environment';
 import { FEATURE_FLAG_OVERRIDE_STORAGE_KEY, MEETING_PAGE_LEGACY_STATE, MEETINGS_REDESIGN_FLAG } from '@lfx-one/shared/constants';
@@ -27,36 +27,52 @@ export const MEETING_PAGE_ANONYMOUS_FLAG_KEY = makeStateKey<boolean>('meetingPag
  * never swaps pages; later client navigations ask `FeatureFlagService`. A non-production QA override reaches the
  * server through a cookie mirrored from local storage.
  */
-export const meetingPageRedesignGuard: CanMatchFn = async (route, segments) => {
+export const meetingPageRedesignGuard: CanMatchFn = (route, segments) => {
   const id = segments[1]?.path ?? '';
-  const transferState = inject(TransferState);
   const eligible = isEligible(inject(Router), route, id);
-  const signedIn = authenticatedMatchGuard(route, segments) as boolean;
+  // A server-side redirect to not-found keeps the decision for the URL the browser will hydrate.
+  return matchMeetingsRedesign(MEETING_PAGE_REDESIGN_KEY, id, eligible, authenticatedMatchGuard(route, segments) as boolean, id === 'not-found');
+};
+
+/**
+ * Whether a public page pairing a redesigned and a legacy route takes the redesign, read in a CanMatch guard's injection context.
+ * @description The server decides and records `{ id, enabled }` under `key`; the browser's first match for the same `id`
+ * reuses it. A signed-out visitor keeps the server's anonymous flag answer for the rest of the visit.
+ * @param keepServerDecision Leaves an earlier server decision under `key` in place, for a server-side redirect.
+ */
+export async function matchMeetingsRedesign(
+  key: StateKey<MeetingPageRedesignDecision>,
+  id: string,
+  eligible: boolean,
+  signedIn: boolean,
+  keepServerDecision = false
+): Promise<boolean> {
+  const transferState = inject(TransferState);
 
   if (!isPlatformBrowser(inject(PLATFORM_ID))) {
     const context = inject(REQUEST_CONTEXT, { optional: true }) as ServerRequestContext | null;
     const flag = readCookieOverride(inject(REQUEST, { optional: true })) ?? context?.flags?.meetingsRedesign ?? false;
     const enabled = eligible && flag;
     if (!signedIn) transferState.set(MEETING_PAGE_ANONYMOUS_FLAG_KEY, flag);
-    // A server-side redirect to not-found keeps the decision for the URL the browser will hydrate.
-    if (id !== 'not-found' || !transferState.hasKey(MEETING_PAGE_REDESIGN_KEY)) {
-      transferState.set(MEETING_PAGE_REDESIGN_KEY, { id, enabled });
+    if (!keepServerDecision || !transferState.hasKey(key)) {
+      transferState.set(key, { id, enabled });
     }
     return enabled;
   }
 
+  const featureFlagService = inject(FeatureFlagService);
   mirrorOverridesToCookie();
-  const decided = transferState.get(MEETING_PAGE_REDESIGN_KEY, null);
+  const decided = transferState.get(key, null);
   if (decided) {
-    transferState.remove(MEETING_PAGE_REDESIGN_KEY);
+    transferState.remove(key);
     if (decided.id === id) {
       return decided.enabled;
     }
   }
   // LaunchDarkly never gets ready for a signed-out visitor in the browser, so without the server's answer they keep the legacy page.
   if (!signedIn) return eligible && transferState.get(MEETING_PAGE_ANONYMOUS_FLAG_KEY, false);
-  return eligible && (await resolveFlag(inject(FeatureFlagService)));
-};
+  return eligible && (await resolveFlag(featureFlagService));
+}
 
 function isEligible(router: Router, route: Route, id: string): boolean {
   const navigation = router.getCurrentNavigation();

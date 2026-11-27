@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpErrorResponse } from '@angular/common/http';
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import type { CreativeAssetLibrary, CreativeAssetQueueItem } from '@lfx-one/shared/interfaces';
@@ -11,7 +12,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CreativeLibraryUploadComponent } from './creative-library-upload.component';
 
 const BRIEF_ID = 'b-1';
-const LIBRARY: CreativeAssetLibrary = { assets: [], count: 98, countLimit: 100, bytesUsed: 100 * 1024 * 1024, bytesLimit: 512 * 1024 * 1024 };
+const LIBRARY: CreativeAssetLibrary = {
+  assets: [],
+  videos: [],
+  documents: [],
+  count: 98,
+  countLimit: 100,
+  bytesUsed: 100 * 1024 * 1024,
+  bytesLimit: 512 * 1024 * 1024,
+};
 
 const item = (id: string, status: CreativeAssetQueueItem['status'], message = '', briefId = BRIEF_ID): CreativeAssetQueueItem => ({
   id,
@@ -29,10 +38,12 @@ describe('CreativeLibraryUploadComponent', () => {
   let fixture: ComponentFixture<CreativeLibraryUploadComponent>;
   let queue: ReturnType<typeof signal<CreativeAssetQueueItem[]>>;
   let service: Record<string, ReturnType<typeof vi.fn> | unknown>;
+  let deleting: ReturnType<typeof signal<{ briefId: string; id: string } | null>>;
 
   const build = async (listCreativeAssets: ReturnType<typeof vi.fn> = vi.fn(() => of(LIBRARY))): Promise<void> => {
     TestBed.resetTestingModule();
     queue = signal<CreativeAssetQueueItem[]>([]);
+    deleting = signal<{ briefId: string; id: string } | null>(null);
     service = {
       creativeAssetUploadQueue: queue.asReadonly(),
       listCreativeAssets,
@@ -40,6 +51,8 @@ describe('CreativeLibraryUploadComponent', () => {
       retryCreativeAssetUpload: vi.fn(),
       cancelCreativeAssetUploads: vi.fn(),
       clearCreativeAssetUploadQueue: vi.fn(),
+      deleteCreativeAsset: vi.fn(() => of(undefined)),
+      creativeVideoDeleting: deleting.asReadonly(),
     };
     await TestBed.configureTestingModule({
       imports: [CreativeLibraryUploadComponent],
@@ -70,7 +83,7 @@ describe('CreativeLibraryUploadComponent', () => {
 
   it('shows the quota headroom before anything is picked', () => {
     expect(service['listCreativeAssets']).toHaveBeenCalledWith('tlf', BRIEF_ID);
-    expect(text('creative-library-upload-quota')).toBe('98 of 100 images · 100 MB of 512 MB used');
+    expect(text('creative-library-upload-quota')).toBe('98 of 100 files · 100 MB of 512 MB used');
   });
 
   it('says so, rather than guessing, when the quota cannot be read', async () => {
@@ -108,6 +121,27 @@ describe('CreativeLibraryUploadComponent', () => {
     setQueue([item('d', 'failed')]);
     (q('creative-library-upload-retry-d')?.querySelector('button') as HTMLButtonElement).click();
     expect(service['retryCreativeAssetUpload']).toHaveBeenCalledWith('d');
+  });
+
+  // A delete running holds every upload start: identical bytes would answer with the asset being deleted. The rule is
+  // rows in `campaign-creative-asset-queue.utils.spec.ts`.
+  it('holds Retry, the pickers and their change while a stored asset is being deleted', () => {
+    setQueue([item('d', 'failed')]);
+    deleting.set({ briefId: BRIEF_ID, id: 'd-1' });
+    fixture.detectChanges();
+
+    expect(q('creative-library-upload-retry-d')).toBeNull();
+    expect((q('creative-library-upload-files') as HTMLInputElement).disabled).toBe(true);
+    expect((q('creative-library-upload-folder') as HTMLInputElement).disabled).toBe(true);
+    expect(q('creative-library-upload-held')).not.toBeNull();
+    // A click or a change that lands after the delete started reaches the handlers directly, and they refuse it.
+    const component = fixture.componentInstance as unknown as Record<string, (...args: unknown[]) => void>;
+    component['retry'](item('d', 'failed'));
+    const input = document.createElement('input');
+    Object.defineProperty(input, 'files', { value: [new File([new Uint8Array(4)], 'a.png', { type: 'image/png' })] });
+    component['onFilesPicked']({ target: input }, false);
+    expect(service['retryCreativeAssetUpload']).not.toHaveBeenCalled();
+    expect(service['enqueueCreativeAssetUploads']).not.toHaveBeenCalled();
   });
 
   it('announces a run once as it starts, not each file it sends', () => {
@@ -187,12 +221,12 @@ describe('CreativeLibraryUploadComponent', () => {
     setQueue([item('a', 'uploading'), item('b', 'waiting'), item('c', 'waiting')]);
     setQueue([item('a', 'uploaded'), item('b', 'uploading'), item('c', 'waiting'), item('d', 'waiting')]);
 
-    expect(text('creative-library-upload-quota')).toBe('98 of 100 images · 100 MB of 512 MB used');
+    expect(text('creative-library-upload-quota')).toBe('98 of 100 files · 100 MB of 512 MB used');
     expect(q('creative-library-upload-headroom')).not.toBeNull();
 
     reads.next({ ...LIBRARY, count: 99 });
     fixture.detectChanges();
-    expect(text('creative-library-upload-quota')).toBe('99 of 100 images · 100 MB of 512 MB used');
+    expect(text('creative-library-upload-quota')).toBe('99 of 100 files · 100 MB of 512 MB used');
   });
 
   it('keeps a running queue listed and cancellable while the capability is unknown, offering no pick or Retry', () => {
@@ -233,5 +267,132 @@ describe('CreativeLibraryUploadComponent', () => {
     fixture.detectChanges();
     expect(q('creative-library-upload-unavailable')).not.toBeNull();
     expect(q('creative-library-upload-files')).toBeNull();
+  });
+
+  // Stored LinkedIn videos (#5764 row 18): listed apart from the images, deleted only by the operator. The Delete rules are
+  // rows in `campaign-linkedin-video-form.utils.spec.ts`; these keep the wiring.
+  describe('stored videos', () => {
+    const VIDEO = { id: 'v-1', byteSize: 20 * 1024 * 1024, checksum: 'ab'.repeat(32) };
+    const withVideo = (): ReturnType<typeof vi.fn> => vi.fn(() => of({ ...LIBRARY, videos: [VIDEO] }));
+    const deleteButton = (): HTMLButtonElement => q('creative-library-video-delete-v-1')?.querySelector('button') as HTMLButtonElement;
+
+    it('lists a stored video and deletes it on Delete, then reads the library again', async () => {
+      await build(withVideo());
+      expect(text('creative-library-video-v-1')).toContain('Video 1');
+
+      deleteButton().click();
+      fixture.detectChanges();
+
+      expect(service['deleteCreativeAsset']).toHaveBeenCalledWith('tlf', BRIEF_ID, 'v-1');
+      expect(service['listCreativeAssets']).toHaveBeenCalledTimes(2);
+    });
+
+    it('takes a deleted video off the list at once and tells the host', async () => {
+      await build(withVideo());
+      const deleted: string[] = [];
+      fixture.componentInstance.videoDeleted.subscribe((id) => deleted.push(id));
+
+      deleteButton().click();
+      fixture.detectChanges();
+
+      expect(deleted).toEqual(['v-1']);
+      expect(q('creative-library-video-v-1')).toBeNull();
+    });
+
+    it('treats a video already deleted elsewhere (404) as gone, with no error', async () => {
+      await build(withVideo());
+      (service['deleteCreativeAsset'] as ReturnType<typeof vi.fn>).mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 404 })));
+
+      deleteButton().click();
+      fixture.detectChanges();
+
+      expect(q('creative-library-video-delete-error')).toBeNull();
+      expect(q('creative-library-video-v-1')).toBeNull();
+    });
+
+    it('tells the host a video already deleted elsewhere is gone, so an ad naming it is cleared', async () => {
+      await build(withVideo());
+      (service['deleteCreativeAsset'] as ReturnType<typeof vi.fn>).mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 404 })));
+      const deleted: string[] = [];
+      fixture.componentInstance.videoDeleted.subscribe((id) => deleted.push(id));
+
+      deleteButton().click();
+
+      expect(deleted).toEqual(['v-1']);
+    });
+
+    it('offers no Delete for a video an ad on the tab uses', async () => {
+      await build(withVideo());
+      fixture.componentRef.setInput('videoIdsInUse', ['v-1']);
+      fixture.detectChanges();
+
+      expect(deleteButton().disabled).toBe(true);
+      expect(text('creative-library-video-v-1')).toContain('Used by an ad on this tab');
+      const released: string[] = [];
+      fixture.componentInstance.videoRelease.subscribe((id) => released.push(id));
+      (q('creative-library-video-release-v-1')?.querySelector('button') as HTMLButtonElement).click();
+      expect(released).toEqual(['v-1']);
+    });
+
+    it("shows campaign-service's reason when it keeps a video a campaign may need", async () => {
+      await build(withVideo());
+      (service['deleteCreativeAsset'] as ReturnType<typeof vi.fn>).mockReturnValueOnce(
+        throwError(() => new HttpErrorResponse({ status: 409, error: { error: 'A live campaign on this brief still uses this asset.' } }))
+      );
+
+      deleteButton().click();
+      fixture.detectChanges();
+
+      expect(text('creative-library-video-delete-error')).toContain('A live campaign on this brief still uses this asset.');
+      expect(service['listCreativeAssets']).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // Stored PDFs (campaign-service#665): `deleteVideo`'s sibling. The Delete rules are rows in
+  // `campaign-linkedin-document-form.utils.spec.ts`; these keep the wiring.
+  describe('stored PDFs', () => {
+    const PDF = { id: 'd-1', byteSize: 2 * 1024 * 1024, checksum: 'cd'.repeat(32) };
+    const withPdf = (): ReturnType<typeof vi.fn> => vi.fn(() => of({ ...LIBRARY, documents: [PDF] }));
+    const deleteButton = (): HTMLButtonElement => q('creative-library-document-delete-d-1')?.querySelector('button') as HTMLButtonElement;
+
+    it('lists a stored PDF, deletes it on Delete, takes it off the list and tells the host', async () => {
+      await build(withPdf());
+      expect(text('creative-library-document-d-1')).toContain('PDF 1 (cdcdcdcd)');
+      const deleted: string[] = [];
+      fixture.componentInstance.documentDeleted.subscribe((id) => deleted.push(id));
+
+      deleteButton().click();
+      fixture.detectChanges();
+
+      expect(service['deleteCreativeAsset']).toHaveBeenCalledWith('tlf', BRIEF_ID, 'd-1');
+      expect(deleted).toEqual(['d-1']);
+      expect(q('creative-library-document-d-1')).toBeNull();
+      expect(service['listCreativeAssets']).toHaveBeenCalledTimes(2);
+    });
+
+    it('offers no Delete for the PDF the document ad uses, only Remove from ad', async () => {
+      await build(withPdf());
+      fixture.componentRef.setInput('documentIdsInUse', ['d-1']);
+      fixture.detectChanges();
+
+      expect(deleteButton().disabled).toBe(true);
+      const released: string[] = [];
+      fixture.componentInstance.documentRelease.subscribe((id) => released.push(id));
+      (q('creative-library-document-release-d-1')?.querySelector('button') as HTMLButtonElement).click();
+      expect(released).toEqual(['d-1']);
+    });
+
+    it("shows campaign-service's reason under the PDFs, not the videos", async () => {
+      await build(withPdf());
+      (service['deleteCreativeAsset'] as ReturnType<typeof vi.fn>).mockReturnValueOnce(
+        throwError(() => new HttpErrorResponse({ status: 409, error: { error: 'A live campaign on this brief still uses this asset.' } }))
+      );
+
+      deleteButton().click();
+      fixture.detectChanges();
+
+      expect(text('creative-library-document-delete-error')).toContain('A live campaign on this brief still uses this asset.');
+      expect(q('creative-library-video-delete-error')).toBeNull();
+    });
   });
 });

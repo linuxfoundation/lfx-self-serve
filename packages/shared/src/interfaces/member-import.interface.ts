@@ -107,6 +107,14 @@ export interface MemberImportRow {
   retryable?: boolean;
   /** True when a prior attempt may have committed; membership existence alone does not establish creation by this import. */
   uncertain?: boolean;
+  /** True when an `already_member` result followed an unconfirmed attempt, so this import may have created the member and applied their details (#5529). */
+  unconfirmedAddition?: boolean;
+  /** The created member record, when the bulk result for an `added` row includes it. */
+  member?: CommitteeMember;
+  /** UID of the existing member, when a row was skipped because the person is already in the group. */
+  memberUid?: string;
+  /** Pending invitation UIDs to revoke after this row is added; wizard rows only (#5529). Members-tab rows use the run's `pendingInviteUidByEmail`. */
+  pendingInviteUids?: string[];
 }
 
 /** Steps of the import dialog: choose a file, review it, write rows, then show the outcome. */
@@ -139,6 +147,15 @@ export interface MemberImportDialogData {
   attach?: boolean;
 }
 
+/** Staged CSV rows the create or edit wizard saves through the bulk member endpoint, all with one notification choice (#5529). */
+export interface MemberImportStagedRunInput {
+  committeeUid: string;
+  committeeName: string;
+  skipNotification: boolean;
+  /** Native create-member bodies in staged order, with invite cleanup and uncertainty retained across wizard saves. */
+  members: { payload: CreateCommitteeMemberRequest; pendingInviteUids: string[]; uncertain?: boolean }[];
+}
+
 /** Whether a confirmed import run is still writing (`importing`) or has finished its latest attempt (`settled`). */
 export type MemberImportRunStatus = 'importing' | 'settled';
 
@@ -159,15 +176,21 @@ export interface MemberImportRunInput {
   baselineMemberCount: number;
 }
 
-/** Identity of one run: its group, its unique ID, and the user subject that started it. */
+/** Where a run started: a confirmed Members-tab import, or staged CSV rows saved by the create or edit wizard (#5529). */
+export type MemberImportRunOrigin = 'members-tab' | 'wizard';
+
+/** Identity of one run: its group, its unique ID, the user subject that started it, and the key it is stored under. */
 export interface MemberImportRunRef {
   committeeUid: string;
   runId: string;
   ownerSubject: string;
+  /** The group UID for a Members-tab run; `wizard:<runId>` for a wizard run, so it never occupies the group's slot. */
+  storeKey: string;
 }
 
 /** Immutable in-memory snapshot of a confirmed import run, owned by the committee member import service. */
 export interface MemberImportRun extends MemberImportRunRef, MemberImportRunInput {
+  origin: MemberImportRunOrigin;
   status: MemberImportRunStatus;
   /** Submissions made so far: 1 for the initial import, plus one per Retry. */
   attempt: number;

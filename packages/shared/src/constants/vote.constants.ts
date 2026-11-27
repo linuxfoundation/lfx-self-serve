@@ -55,6 +55,23 @@ export const VOTE_CONDORCET_RANK_COLORS = [
   lfxColors.gray[600],
 ];
 
+/** Runner-up standings rows the vote detail Overview outcome shows before pointing to the Results tab (#6124). */
+export const VOTE_OVERVIEW_STANDINGS_LIMIT = 3;
+
+/**
+ * How a ranked result was decided, worded once for the Results tab, the Overview and the presenter view (#6124), which
+ * must describe the same outcome in the same words.
+ */
+export const VOTE_RANKED_OUTCOME_EXPLANATIONS = {
+  condorcetWinner: 'Preferred over every other option in head-to-head comparisons.',
+  condorcetIrvFallback: 'No option beat every other option head-to-head, so instant-runoff elimination decided the result.',
+  meekStv: 'using Meek STV proportional counting.',
+  irvMajority: 'a majority of continuing ballots.',
+  irvMajorityRound: 'a majority of continuing ballots in round {round}.',
+  tie: 'No single winner could be determined.',
+  noWinner: 'No winner could be determined.',
+} as const;
+
 /**
  * Response header carrying the BFF-stamped create-completion time (epoch ms) on POST /api/votes (GH-2826);
  * the client echoes it verbatim as `create_completed_at` — the enable route's FGA tuple-propagation grace hint.
@@ -77,6 +94,9 @@ export const VOTE_BALLOT_READ_RETRY_COUNT = 3;
 
 /** Delay between own-ballot 404 retries; authorization and other failures are never retried. */
 export const VOTE_BALLOT_READ_RETRY_DELAY_MS = 1000;
+
+/** Ranked-choice ballot drag start delay: touch needs a short hold so swipes still scroll; mouse starts immediately. */
+export const VOTE_RANKED_CHOICE_DRAG_START_DELAY = { touch: 200, mouse: 0 } as const;
 
 /**
  * TTL for the recently-opened-vote carrier (GH-2730): how long after a successful enable the votes
@@ -228,13 +248,20 @@ export const VOTE_METHOD_LABELS: Record<PollType, string> = {
   [PollType.MEEK_STV]: 'Meek STV',
 };
 
-/** Voting methods offered when creating a vote (#2921) — read by the Create Vote dropdown and the form's Voting Method select. */
+/** Voting methods offered when creating a vote (#2921, #2936) — read by the Create Vote dropdown and the form's Voting Method select. */
 export const VOTE_METHOD_OPTIONS: VoteMethodOption[] = [
   {
     label: 'Plurality',
     value: PollType.GENERIC,
     icon: 'fa-light fa-check-to-slot',
     description: 'Voters pick from the options; the option with the most votes wins.',
+  },
+  {
+    label: 'Instant Runoff',
+    value: PollType.INSTANT_RUNOFF_VOTE,
+    icon: 'fa-light fa-arrow-down-wide-short',
+    description:
+      "Voters rank the options. The option with the fewest first choices is eliminated and its ballots move to each voter's next choice, until one option has a majority.",
   },
   {
     label: 'Condorcet IRV',

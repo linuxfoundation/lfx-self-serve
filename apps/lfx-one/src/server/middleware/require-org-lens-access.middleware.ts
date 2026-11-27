@@ -1,12 +1,19 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ORG_LENS_ROLL_UP_READ_METHODS } from '@lfx-one/shared/constants';
+import {
+  ORG_LENS_EMPLOYEE_VIEW,
+  ORG_LENS_EMPLOYEE_VIEW_ALLOWED_PATHS,
+  ORG_LENS_EMPLOYEE_VIEW_FORBIDDEN_CODE,
+  ORG_LENS_EMPLOYEE_VIEW_FORBIDDEN_MESSAGE,
+  ORG_LENS_EMPLOYEE_VIEW_READ_ONLY_MESSAGE,
+  ORG_LENS_ROLL_UP_READ_METHODS,
+} from '@lfx-one/shared/constants';
 import { isOrgRollUpSegment } from '@lfx-one/shared/utils/org-lens-url.utils';
 import { NextFunction, Request, Response } from 'express';
 
-import { ServiceValidationError } from '../errors';
-import { assertOrgLensRead } from '../helpers/org-lens-read-access.helper';
+import { MicroserviceError, ServiceValidationError } from '../errors';
+import { getOrgLensViewMode, assertOrgLensRead } from '../helpers/org-lens-read-access.helper';
 import { resolveOrgLensRollUp } from '../helpers/org-lens-roll-up.helper';
 import { assertOrgUid } from '../helpers/org-uid.helper';
 
@@ -39,6 +46,24 @@ export async function requireOrgLensAccess(req: Request, res: Response, next: Ne
     }
     assertOrgUid(orgUid, 'require_org_lens_access');
     await assertOrgLensRead(req, orgUid, 'require_org_lens_access');
+    if (getOrgLensViewMode(req, orgUid) === ORG_LENS_EMPLOYEE_VIEW) {
+      // The all employee view (epic #5845) is default-deny: only paths approved for it are reachable.
+      if (!ORG_LENS_EMPLOYEE_VIEW_ALLOWED_PATHS.some((pattern) => pattern.test(req.path))) {
+        throw new MicroserviceError(ORG_LENS_EMPLOYEE_VIEW_FORBIDDEN_MESSAGE, 403, ORG_LENS_EMPLOYEE_VIEW_FORBIDDEN_CODE, {
+          operation: 'require_org_lens_access',
+          service: 'LFX_V2_SERVICE',
+          path: req.path,
+        });
+      }
+    }
+    // The all employee view is read-only, whatever a handler does with the method.
+    if (getOrgLensViewMode(req, orgUid) === ORG_LENS_EMPLOYEE_VIEW && !ORG_LENS_ROLL_UP_READ_METHODS.includes(req.method)) {
+      throw new MicroserviceError(ORG_LENS_EMPLOYEE_VIEW_READ_ONLY_MESSAGE, 403, ORG_LENS_EMPLOYEE_VIEW_FORBIDDEN_CODE, {
+        operation: 'require_org_lens_access',
+        service: 'LFX_V2_SERVICE',
+        path: req.path,
+      });
+    }
     next();
   } catch (error) {
     next(error);

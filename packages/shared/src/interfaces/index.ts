@@ -170,6 +170,8 @@ export * from './org-lens-empty-state.interface';
 
 // Org Lens URL scheme (spec 050) — address intent
 export * from './org-lens-url.interface';
+export * from './org-lens-employee-view-register.interface';
+export * from './org-lens-view-mode.interface';
 
 // Persona detection interfaces
 export * from './persona-detection.interface';
@@ -479,3 +481,4 @@ export * from './uikit.interface';
 export * from './social-share.interface';
 export * from './org-training-view.interface';
 export * from './formation-pipeline.interface';
+export * from './share-kit.interface';

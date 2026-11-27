@@ -318,10 +318,12 @@ export function prepareMemberImportRows(
  * Added rows and people already in the group never go back into the queue. An `already_member`
  * result confirms presence, not which request created the membership or applied its details.
  * Temporary and not-attempted rows wait for resubmission; invalid rows cannot succeed unchanged.
+ * Added and `already_member` rows carry their `memberUid` when upstream returns it, and added rows
+ * also carry the created `member`, so the create or edit wizard can promote the staged row (#5529).
  */
 export function classifyMemberImportBulkResult(result: CommitteeMemberBulkCreateRowResult, row: MemberImportRow): Partial<MemberImportRow> {
   if (result.status === 'added') {
-    return { status: 'added', reason: undefined, retryable: undefined, uncertain: false };
+    return { status: 'added', reason: undefined, retryable: undefined, uncertain: false, member: result.member, memberUid: result.member_uid };
   }
 
   if (result.status === 'skipped') {
@@ -334,9 +336,18 @@ export function classifyMemberImportBulkResult(result: CommitteeMemberBulkCreate
             'Already a member of this group. The earlier addition could not be confirmed; imported details may not have been applied. Review pending invitations.',
           retryable: undefined,
           uncertain: false,
+          unconfirmedAddition: true,
+          memberUid: result.member_uid,
         };
       }
-      return { status: 'skipped', conflict: true, reason: 'Already a member of this group.', retryable: undefined, uncertain: false };
+      return {
+        status: 'skipped',
+        conflict: true,
+        reason: 'Already a member of this group.',
+        retryable: undefined,
+        uncertain: false,
+        memberUid: result.member_uid,
+      };
     }
     return { status: 'skipped', reason: 'Duplicate of an earlier row in the file.', retryable: undefined, uncertain: false };
   }

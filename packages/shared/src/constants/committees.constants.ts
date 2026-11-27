@@ -5,6 +5,7 @@ import { CommitteeMemberAppointedBy, CommitteeMemberRole, CommitteeMemberVotingS
 import type {
   BehavioralClassDisplayConfig,
   CommitteeCategoryInfo,
+  CommitteeSettingsFeature,
   CommitteeTab,
   GroupBehavioralClass,
   GroupsHomeFilters,
@@ -13,6 +14,7 @@ import type {
 import type { MeetingAllowedVotingStatus } from '../interfaces/meeting.interface';
 import type { UiTone } from '../interfaces/uikit.interface';
 import { lfxColors } from './colors.constants';
+import { SOCIAL_LISTENING_GROUP_CATEGORIES } from './social-listening.constants';
 
 // Re-export helper functions from utils for backward compatibility
 export {
@@ -521,7 +523,7 @@ const ORG_REQUIRED_NOTE = 'Members joining this group will need to provide a com
  * Committee settings features for Step 2 form
  * @description Feature toggles for committee settings
  */
-export const COMMITTEE_SETTINGS_FEATURES = [
+export const COMMITTEE_SETTINGS_FEATURES: CommitteeSettingsFeature[] = [
   {
     key: 'business_email_required',
     icon: 'fa-light fa-shield',
@@ -569,7 +571,23 @@ export const COMMITTEE_SETTINGS_FEATURES = [
       'Let guests see who else is invited, and who has accepted, on the meeting in LFX. Also pre-selects the per-meeting Show attendees option when this committee is picked for a meeting. Board meetings never share their guest list.',
     color: lfxColors.blue[500],
   },
+  {
+    key: 'members_can_view_social_listening',
+    icon: 'fa-light fa-ear-listen',
+    title: 'Members Can View Social Listening',
+    description:
+      "Let this board's members view Social Listening for the whole foundation and filter it by project. Applies to the foundation's own boards, not its projects' groups. Executive Directors and LF staff always have access.",
+    color: lfxColors.violet[500],
+    categories: SOCIAL_LISTENING_GROUP_CATEGORIES,
+  },
 ];
+
+/**
+ * Shown as the SSO group name when a public or SSO-enabled group has no saved name yet.
+ * The committee service generates the name on the next save, so this mirrors PCC's
+ * "(auto-generated on save)" copy rather than guessing a slug.
+ */
+export const SSO_GROUP_NAME_PENDING_LABEL = 'Generated when you save';
 
 /**
  * Permission level options for committee member ACL dropdowns.
@@ -770,10 +788,10 @@ export const GROUPS_ENGAGEMENT_ICON_CLASS = {
 } as const;
 
 /**
- * List routes a group details page can return to. The page reads `backPath` from navigation state,
- * so an unknown value must fall back to `/groups` rather than navigate anywhere arbitrary.
+ * Routes a group details page can return to, including the Profile page (#6086). The page reads `backPath` from navigation
+ * state, so an unknown value must fall back to `/groups` rather than navigate anywhere arbitrary.
  */
-export const COMMITTEE_BACK_PATHS: readonly string[] = ['/groups', '/surveys', '/votes', '/mailing-lists', '/meetings', '/documents'];
+export const COMMITTEE_BACK_PATHS: readonly string[] = ['/groups', '/profile', '/surveys', '/votes', '/mailing-lists', '/meetings', '/documents'];
 
 /** How often the Members tab re-evaluates which pending invitations have expired while it stays open. */
 export const COMMITTEE_INVITE_EXPIRY_TICK_MS = 60 * 1000;

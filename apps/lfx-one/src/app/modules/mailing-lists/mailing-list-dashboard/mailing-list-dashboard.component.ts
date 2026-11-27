@@ -15,7 +15,7 @@ import {
   FilterOption,
   FilterPillOption,
   GroupsIOMailingList,
-  GroupsIOService,
+  InheritedGroupsIOService,
   MailingListTableRowVm,
   MyMailingList,
   ProjectContext,
@@ -25,7 +25,6 @@ import { LensService } from '@services/lens.service';
 import { MailingListService } from '@services/mailing-list.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { ProjectService } from '@services/project.service';
 import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { MessageService } from 'primeng/api';
 import { SkeletonModule } from 'primeng/skeleton';
@@ -54,7 +53,6 @@ import { PageHeaderComponent } from '@components/page-header/page-header.compone
 export class MailingListDashboardComponent {
   // Private injections
   private readonly projectContextService = inject(ProjectContextService);
-  private readonly projectService = inject(ProjectService);
   private readonly mailingListService = inject(MailingListService);
   private readonly personaService = inject(PersonaService);
   private readonly router = inject(Router);
@@ -113,7 +111,7 @@ export class MailingListDashboardComponent {
   // Stat card arrays consumed by <lfx-stat-card-grid>
   public readonly foundationStatCards: Signal<StatCardItem[]> = this.initFoundationStatCards();
   public readonly myStatCards: Signal<StatCardItem[]> = this.initMyStatCards();
-  public readonly availableServices: Signal<GroupsIOService[]> = this.initServices();
+  public readonly availableServices: Signal<InheritedGroupsIOService[]> = this.initServices();
   public readonly hasNoServices: Signal<boolean> = this.initHasNoServices();
   public readonly showNoServicesState: Signal<boolean> = this.initShowNoServicesState();
   protected readonly canCreateMailingList: Signal<boolean> = computed(() => this.canWrite() && !this.hasNoServices());
@@ -347,7 +345,7 @@ export class MailingListDashboardComponent {
     ]);
   }
 
-  private initServices(): Signal<GroupsIOService[]> {
+  private initServices(): Signal<InheritedGroupsIOService[]> {
     const project$ = toObservable(this.project);
     const lens$ = toObservable(this.lensService.activeLens);
 
@@ -371,17 +369,9 @@ export class MailingListDashboardComponent {
                 return of(services);
               }
 
-              // No services found, check parent project for services
-              return this.projectService.getProject(project.slug, false).pipe(
-                switchMap((fullProject) => {
-                  if (!fullProject?.parent_uid) {
-                    return of([]);
-                  }
-
-                  return this.mailingListService.getServicesByProject(fullProject.parent_uid);
-                }),
-                catchError(() => of([]))
-              );
+              // No services found, check parent project for services (resolved server-side so a project
+              // writer without direct access to the parent's service still sees it)
+              return this.mailingListService.getInheritedServices(project.uid).pipe(catchError(() => of([] as InheritedGroupsIOService[])));
             }),
             tap(() => this.servicesLoaded.set(true)),
             catchError(() => {

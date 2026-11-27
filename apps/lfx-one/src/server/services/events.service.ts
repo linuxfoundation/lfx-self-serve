@@ -45,7 +45,7 @@ import {
   VisaRequestRow,
   VisaRequestsResponse,
 } from '@lfx-one/shared/interfaces';
-import { formatDateToUTC, isBackfillEventSource, normalizeToUrl } from '@lfx-one/shared/utils';
+import { dateOnlyToUtcMidnightIso, formatDateToUTC, isBackfillEventSource, isLocalDateOnlyString, normalizeToUrl } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { MicroserviceError } from '../errors';
@@ -752,16 +752,22 @@ export class EventsService {
 
     const targetUrl = `${apiGwAudience.replace(/\/+$/, '')}/user-service/v1/users/${serverUserId}/visaletterrequests`;
 
+    // Converted up front so an impossible date (e.g. 1990-02-31) fails here instead of reaching user-service as null.
+    const birthDate = this.toUpstreamCalendarDate(req, 'birthDate', applicantInfo.birthDate);
+    const passportExpiryDate = this.toUpstreamCalendarDate(req, 'passportExpiryDate', applicantInfo.passportExpiryDate);
+
     const missingFields: string[] = [];
     if (!applicantInfo.attendeeType) missingFields.push('attendeeType');
     if (!applicantInfo.attendeeAccommodationPaidBy) missingFields.push('attendeeAccommodationPaidBy');
-    if (!applicantInfo.birthDate) missingFields.push('birthDate');
+    if (!birthDate) missingFields.push('birthDate');
     if (!applicantInfo.citizenshipCountry) missingFields.push('citizenshipCountry');
     if (!applicantInfo.passportNumber) missingFields.push('passportNumber');
     if (!applicantInfo.organizationID) missingFields.push('organizationID');
     if (!applicantInfo.embassyCity) missingFields.push('embassyCity');
+    // Optional, but a supplied value that doesn't convert is rejected rather than sent as null.
+    if (applicantInfo.passportExpiryDate && !passportExpiryDate) missingFields.push('passportExpiryDate');
     if (missingFields.length > 0) {
-      throw new MicroserviceError(`Missing required visa request fields: ${missingFields.join(', ')}`, 422, 'INVALID_REQUEST_FIELDS', {
+      throw new MicroserviceError(`Missing or invalid visa request fields: ${missingFields.join(', ')}`, 422, 'INVALID_REQUEST_FIELDS', {
         operation: 'submit_visa_request_application',
         errorBody: { missingFields },
       });
@@ -781,7 +787,7 @@ export class EventsService {
       attendeeAccommodationPaidBy: applicantInfo.attendeeAccommodationPaidBy,
       attendeeType: applicantInfo.attendeeType,
       birthCountry: applicantInfo.citizenshipCountry,
-      birthDate: formatDateToUTC(applicantInfo.birthDate),
+      birthDate,
       email: applicantInfo.email,
       eventID: eventID,
       firstName: applicantInfo.firstName,
@@ -795,9 +801,7 @@ export class EventsService {
       City: applicantInfo.embassyCity,
       ...(applicantInfo.company && { jobTitle: applicantInfo.company }),
       ...(applicantInfo.mailingAddress && { addressLine01: applicantInfo.mailingAddress }),
-      ...(applicantInfo.passportExpiryDate && {
-        passportExpiryDate: formatDateToUTC(applicantInfo.passportExpiryDate),
-      }),
+      ...(passportExpiryDate && { passportExpiryDate }),
     };
 
     logger.info(req, 'submit_visa_request_application', 'Calling API Gateway visa endpoint', {
@@ -1229,6 +1233,16 @@ export class EventsService {
       default:
         return { filter: '', binds: [] };
     }
+  }
+
+  // User-service keeps only the UTC day, so send the calendar day as UTC midnight. Tabs still running
+  // the old client send a local-midnight instant; keep accepting it so the submission isn't blocked.
+  private toUpstreamCalendarDate(req: Request, field: string, value: string | null): string | null {
+    // A date-only value is never sent through `new Date`, which rolls Feb 31 over to March 3.
+    if (!value || isLocalDateOnlyString(value)) return dateOnlyToUtcMidnightIso(value);
+
+    logger.warning(req, 'submit_visa_request_application', 'Visa date is not a YYYY-MM-DD calendar date; falling back to instant conversion', { field });
+    return formatDateToUTC(value);
   }
 
   private mapRowToVisaRequest(row: VisaRequestRow): VisaRequest {

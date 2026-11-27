@@ -11,6 +11,7 @@ import { NavigationEnd, NavigationStart, Router } from '@angular/router';
 import { MEETING_COMPOSER_SECTIONS } from '@lfx-one/shared/constants';
 import type { Meeting, MeetingWriteAccess, UiToastConfig } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
+import { FeatureFlagService } from '@services/feature-flag.service';
 import { IntercomService } from '@services/intercom.service';
 import { LensService } from '@services/lens.service';
 import { MeetingService } from '@services/meeting.service';
@@ -142,6 +143,7 @@ describe('MeetingComposerHostComponent', () => {
         },
         // The real service reads a cookie and an HTTP endpoint in its constructor; the host only ever
         // asks it which persona is active.
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(false) } },
         { provide: PersonaService, useValue: { currentPersona } },
         // Only reached by the project-context fallback, which never runs while no meeting is loaded.
         { provide: ProjectService, useValue: {} },
@@ -786,6 +788,7 @@ describe('MeetingComposerHostComponent — a refused edit load', () => {
             activeContextUid: signal('project-1'),
           },
         },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(false) } },
         { provide: PersonaService, useValue: { currentPersona: signal('maintainer') } },
         { provide: ProjectService, useValue: {} },
         { provide: LensService, useValue: { clearContextLens: vi.fn() } },
@@ -902,6 +905,7 @@ describe('MeetingComposerHostComponent — frozen while a save is in flight', ()
             activeContextUid: signal('project-1'),
           },
         },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(false) } },
         { provide: PersonaService, useValue: { currentPersona: signal('maintainer') } },
         { provide: ProjectService, useValue: {} },
         // Agenda & Resources opens its template picker through this, and the last section is the

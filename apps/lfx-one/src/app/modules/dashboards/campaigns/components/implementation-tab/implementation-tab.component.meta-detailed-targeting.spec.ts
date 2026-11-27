@@ -6,6 +6,7 @@ import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import type { CampaignBriefOutput, CampaignImplementationDraft, MetaDetailedTargetingPicks, ProjectContext } from '@lfx-one/shared/interfaces';
+import { emptyMetaDetailedTargetingPicks } from '@lfx-one/shared/utils';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
@@ -18,9 +19,10 @@ stubCreativeLibraryUpload();
 trackStateOnlyTests();
 
 /**
- * Wiring only (#5904 row 4). Which lists a flag sends, how a saved draft is read and when Create is held are rules
- * in `campaign-meta-detailed-targeting.utils.ts`, tested there; the picker is tested in its own spec. Here: the
- * picks reach the request, the draft and the restore, and the block reaches Create.
+ * Wiring only (#5904 rows 4 and 6). Which lists a flag sends, how a saved draft is read and when Create is held are rules
+ * in `campaign-meta-detailed-targeting.utils.ts`; when sent places replace the country fallback is in
+ * `campaign-meta-form.utils.ts`; both are tested there, and the picker in its own spec. Here: the picks reach the
+ * request, the draft and the restore, the block reaches Create, and sent places reach the geo list and DSA (the preview line is checked in the meta-objective-1 full render).
  */
 describe('ImplementationTabComponent meta detailed targeting', () => {
   let createCampaign: ReturnType<typeof vi.fn>;
@@ -29,6 +31,9 @@ describe('ImplementationTabComponent meta detailed targeting', () => {
     interests: [{ id: '6003', name: 'Open source' }],
     behaviors: [{ id: '6004', name: 'Early adopters' }],
     workPositions: [{ id: '105', name: 'Engineer' }],
+    locales: [{ id: '6', name: 'English (US)' }],
+    regions: [{ id: '3847', name: 'California, US', countryCode: 'US' }],
+    cities: [{ id: '2420379', name: 'Austin, Texas, US', countryCode: 'US' }],
   };
   const brief = (): CampaignBriefOutput =>
     ({
@@ -45,13 +50,16 @@ describe('ImplementationTabComponent meta detailed targeting', () => {
   async function mount(
     interest: boolean | null,
     behavior: boolean | null,
-    draft: CampaignImplementationDraft | null = null
+    draft: CampaignImplementationDraft | null = null,
+    localeRegion: boolean | null = true
   ): Promise<ComponentFixture<ImplementationTabComponent>> {
     const f = TestBed.createComponent(tabComponentUnderTest());
     f.componentRef.setInput('createCapabilityRead', 'ready');
     f.componentRef.setInput('briefPersistence', { status: 'saved', briefId: 'b-1', message: null, approved: true });
     f.componentRef.setInput('metaInterestTargetingEnabled', interest);
     f.componentRef.setInput('metaBehaviorTargetingEnabled', behavior);
+    f.componentRef.setInput('metaLocaleTargetingEnabled', localeRegion);
+    f.componentRef.setInput('metaRegionTargetingEnabled', localeRegion);
     if (draft !== null) f.componentRef.setInput('draft', draft);
     f.componentRef.setInput('briefData', brief());
     f.detectChanges();
@@ -91,7 +99,7 @@ describe('ImplementationTabComponent meta detailed targeting', () => {
     TestBed.inject(ProjectContextService).setFoundation({ uid: 'uid-tlf', slug: 'tlf', name: 'tlf' } as ProjectContext, false);
   });
 
-  it('sends the picks as metaConfig.targeting ids', STATE_ONLY, async () => {
+  it('sends the picks as metaConfig.targeting ids, languages as numbers and places split into regions and cities', STATE_ONLY, async () => {
     const f = await mount(true, true);
     c(f)['onMetaDetailedTargetingChange'](PICKS);
     f.detectChanges();
@@ -102,7 +110,28 @@ describe('ImplementationTabComponent meta detailed targeting', () => {
       interests: ['6003'],
       behaviors: ['6004'],
       workPositions: ['105'],
+      locales: [6],
+      regions: ['3847'],
+      cities: ['2420379'],
     });
+  });
+
+  it('sends a city pick with no country fallback when no geo chip is set', STATE_ONLY, async () => {
+    const f = await mount(true, true);
+    c(f)['metaGeoTargets'].set([]);
+    c(f)['onMetaDetailedTargetingChange']({ ...emptyMetaDetailedTargetingPicks(), cities: [{ id: '2420379', name: 'Austin, Texas, US', countryCode: 'US' }] });
+    f.detectChanges();
+    expect(c(f)['createBlockedReason']()).toBeNull();
+    c(f)['submit']();
+    await f.whenStable();
+    expect(createCampaign.mock.calls.at(-1)?.[0]['metaConfig']).toMatchObject({ geoTargets: [], targeting: { cities: ['2420379'] } });
+  });
+
+  it('makes the DSA disclosures required for a city in the EU', STATE_ONLY, async () => {
+    const f = await mount(true, true);
+    c(f)['onMetaDetailedTargetingChange']({ ...emptyMetaDetailedTargetingPicks(), cities: [{ id: '2420381', name: 'Paris, FR', countryCode: 'FR' }] });
+    f.detectChanges();
+    expect(c(f)['metaDsaCountries']()).toEqual(['FR']);
   });
 
   it('saves the picks in the draft, restores them, and drops them on a brief switch', STATE_ONLY, async () => {
@@ -123,11 +152,11 @@ describe('ImplementationTabComponent meta detailed targeting', () => {
     restored.componentRef.setInput('briefData', { ...brief(), eventDetails: { ...brief().eventDetails, name: 'OSS NA 2026', slug: 'oss-na-2026' } });
     restored.detectChanges();
     await restored.whenStable();
-    expect(c(restored)['metaDetailedTargeting']()).toEqual({ interests: [], behaviors: [], workPositions: [] });
+    expect(c(restored)['metaDetailedTargeting']()).toEqual(emptyMetaDetailedTargetingPicks());
   });
 
   it('holds Create for picks in a list this deployment does not send, until they are cleared', STATE_ONLY, async () => {
-    const f = await mount(true, false);
+    const f = await mount(true, false, null, false);
     c(f)['onMetaDetailedTargetingChange'](PICKS);
     f.detectChanges();
     expect(c(f)['metaDetailedTargetingBlock']()?.kind).toBe('unsupported');
