@@ -296,6 +296,37 @@ test.describe('AEO/GEO audit content', () => {
     expect(app.sessions.size).toBe(1);
   });
 
+  test('only the exclude question takes "none": any other question refuses it, and the exclude answer is sent as typed', async ({ page }, testInfo) => {
+    const app = await setupAudit(page, { questions: true, exclude: true });
+    await app.go('/aeo-geo');
+    await page.getByTestId('mktg-aeo-run-submit').click();
+    await expect(page.getByTestId('mktg-run-questions-progress')).toContainText('Question 1 of 5', { timeout: PAGE_LOAD_TIMEOUT });
+    // "none" says nothing about the audience: the stepper stays on the question and says an answer is needed.
+    const audience = page.locator('textarea[data-test="mktg-run-questions-answer-aeo-audience"]');
+    const suggested = await audience.inputValue();
+    await audience.fill('none');
+    await page.getByTestId('mktg-run-questions-next').click();
+    await expect(page.getByTestId('mktg-run-questions-error-aeo-audience')).toBeVisible();
+    await expect(page.getByTestId('mktg-run-questions-progress')).toContainText('Question 1 of 5');
+    await audience.fill(suggested);
+    for (let step = 0; step < 4; step++) await page.getByTestId('mktg-run-questions-next').click();
+    await expect(page.getByTestId('mktg-run-questions-progress')).toContainText('Question 5 of 5 · exclude');
+    // The agent had nothing to suggest, so the box opens empty, and an empty answer is still refused.
+    const exclude = page.locator('textarea[data-test="mktg-run-questions-answer-aeo-exclude"]');
+    await expect(exclude).toHaveValue('');
+    await page.getByTestId('mktg-run-questions-send').click();
+    await expect(page.getByTestId('mktg-run-questions-error-aeo-exclude')).toBeVisible();
+    expect(app.answers).toHaveLength(0);
+    await exclude.fill('none');
+    await page.screenshot({ path: testInfo.outputPath('audit-exclude-none.png'), fullPage: true });
+    await page.getByTestId('mktg-run-questions-send').click();
+    await expect(page).toHaveURL(/\/documents\/aeo-geo\/run-/, { timeout: PAGE_LOAD_TIMEOUT });
+    expect(app.answers).toHaveLength(1);
+    expect(app.answers[0].answers.map((answer) => answer.id)).toEqual(['audience', 'comparison-targets', 'priority-queries', 'project-identity', 'exclude']);
+    expect(app.answers[0].answers.map((answer) => answer.origin)).toEqual(['accepted', 'accepted', 'accepted', 'accepted', 'requester']);
+    expect(app.answers[0].answers.at(-1)?.text).toBe('none');
+  });
+
   test('a document-side refusal clears writing recovery and permits a fresh audit', async ({ page }, testInfo) => {
     const app = await setupAudit(page);
     app.state.reportReady = true;

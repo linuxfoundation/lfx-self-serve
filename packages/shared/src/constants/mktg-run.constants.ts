@@ -1025,5 +1025,12 @@ export const MKTG_RUN_QUESTIONS_ID_REGEX = /^(?:[a-f0-9]{8}|[a-f0-9]{64})$/;
 /** Plain validation message shared by every answers transport. */
 export const MKTG_ANSWERS_INCOMPLETE_MESSAGE = 'Every question needs an answer before the agent can continue.';
 
-/** Only LinkedIn's stable avoid question accepts a literal none answer. */
-export const MKTG_NONE_ALLOWED_QUESTION_IDS: readonly string[] = ['avoid'];
+/**
+ * The stable question ids that accept a literal none answer, per agent: LinkedIn's avoid, and AEO/GEO's exclude
+ * (since aeo-geo 2.1.2 the question about what to leave out of the audit always has that id, and no other question does).
+ * The exemption is per question, never per run: every other answer has to say something.
+ */
+export const MKTG_NONE_ALLOWED_QUESTION_IDS: Readonly<Record<'linkedin-post' | 'aeo-geo', readonly string[]>> = {
+  'linkedin-post': ['avoid'],
+  'aeo-geo': ['exclude'],
+};

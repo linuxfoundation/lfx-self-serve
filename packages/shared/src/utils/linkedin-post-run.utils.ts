@@ -115,7 +115,7 @@ export function validLinkedinAnswers(value: unknown): value is MktgRunAnswer[] {
       !Object.keys(LINKEDIN_PROFILE_GAP_LABELS).includes(answer['key']) ||
       seen.has(answer['key']) ||
       typeof answer['text'] !== 'string' ||
-      mktgAnswerProblem(answer['text'], { allowNone: MKTG_NONE_ALLOWED_QUESTION_IDS.includes(answer['key']) }) !== null ||
+      mktgAnswerProblem(answer['text'], { allowNone: MKTG_NONE_ALLOWED_QUESTION_IDS['linkedin-post'].includes(answer['key']) }) !== null ||
       answer['text'].length > 4000 ||
       !FOUNDATION_MESSAGE_ANSWER_ORIGINS.some((origin) => origin === answer['origin'])
     )

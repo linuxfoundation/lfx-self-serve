@@ -29,6 +29,8 @@ import type {
   AeoGeoValidationResult,
 } from '../interfaces/aeo-geo.interface';
 import { extractMktgEnvelopeCandidates } from './mktg-envelope.utils';
+import { mktgAnswerProblem } from './mktg-run-answers.utils';
+import { MKTG_NONE_ALLOWED_QUESTION_IDS } from '../constants/mktg-run.constants';
 import type { MktgRunQuestion } from '../interfaces/mktg-run.interface';
 
 /** Intake rejects literal addresses and private namespaces; RFC 2606 test names remain supported. */
@@ -788,9 +790,16 @@ export function isAeoGeoAnswers(value: unknown): value is AeoGeoAnswer[] {
   });
 }
 
-/** Raw HTTP input policy, deliberately separate from the agent's permissive framing codec. */
+/**
+ * Raw HTTP input policy, deliberately separate from the agent's permissive framing codec: every answer has to say
+ * something, and only the exclude question (its one stable id) takes a literal none.
+ */
 export function isAeoGeoSubmittedAnswers(value: unknown): value is AeoGeoAnswer[] {
-  return isAeoGeoAnswers(value) && value.length > 0 && value.every((answer) => answer.text.trim().length > 0);
+  return (
+    isAeoGeoAnswers(value) &&
+    value.length > 0 &&
+    value.every((answer) => mktgAnswerProblem(answer.text, { allowNone: MKTG_NONE_ALLOWED_QUESTION_IDS['aeo-geo'].includes(answer.id) }) === null)
+  );
 }
 
 /** Byte-for-byte equivalent of the agent's renderAnswersTurn and guardText. */

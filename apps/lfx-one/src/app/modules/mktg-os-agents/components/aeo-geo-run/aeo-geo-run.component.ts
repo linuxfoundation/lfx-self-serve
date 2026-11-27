@@ -20,6 +20,7 @@ import {
   AEO_GEO_TIMEOUT_MESSAGE,
   MKTG_AGENTS,
   MKTG_DOCUMENT_TYPES,
+  MKTG_NONE_ALLOWED_QUESTION_IDS,
   MKTG_POLL_MAX_BACKOFF_MS,
   MKTG_NOT_AVAILABLE_TEXT,
   MKTG_POLL_RETRYING_TEXT,
@@ -129,6 +130,8 @@ export class AeoGeoRunComponent {
   protected readonly retrying = signal(false);
   protected readonly retryingText = MKTG_POLL_RETRYING_TEXT;
   protected readonly notesMaxChars = AEO_GEO_NOTES_MAX_CHARS;
+  /** The exclude question, as the stepper keys it: the one answer that may be a literal none. */
+  protected readonly noneAllowedQuestionKeys = MKTG_NONE_ALLOWED_QUESTION_IDS['aeo-geo'].map((id) => `${AEO_GEO_QUESTION_KEY_PREFIX}${id}`);
   /** The catalog's Notes field: its label, placeholder, hint and rows are declared once, with the family's other forms. */
   protected readonly notesField = computed(() => this.intake().fields.find((field) => field.key === 'notes'));
   protected readonly documentLink = signal<string[] | null>(null);

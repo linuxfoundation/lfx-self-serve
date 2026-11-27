@@ -8,7 +8,7 @@ import { ApiMockHelper } from './api-mock.helper';
 import { suppressCookieBanner } from './account-settings-email.helper';
 import { pinMktgOsFlags } from './mktg-os-flags.helper';
 import { aeoGeoEnvelopeFixture, aeoGeoQuestionsFixture } from '@lfx-one/shared/utils/aeo-geo.fixture';
-import { aeoGeoRunQuestions } from '@lfx-one/shared/utils/aeo-geo.utils';
+import { aeoGeoRunQuestions, isAeoGeoSubmittedAnswers } from '@lfx-one/shared/utils/aeo-geo.utils';
 
 export const PAGE_LOAD_TIMEOUT = 20_000;
 export const AUDIT_PROJECT = { uid: 'audit-project-1', slug: 'audit-e2e-project', name: 'Synthetic Audit Project' };
@@ -26,6 +26,14 @@ export const AUDIT_ACTIVE_RUN: MktgActiveRunConflict = {
   documentId: 'run-ffffffffffffffffffffffff',
 };
 const QUESTIONS_ID = 'c'.repeat(64);
+/** The question about what to leave out, as aeo-geo 2.1.2 asks it: always the id exclude, here with nothing to suggest. */
+const EXCLUDE_QUESTION = {
+  id: 'exclude',
+  question: 'Is there anything this audit should leave out: pages, sections or comparisons?',
+  why: 'Neither the site nor the notes say what is out of scope for this audit.',
+  suggested_answer: '',
+  basis: '',
+};
 /** The stub's opaque run id for a session's document, as Generate returns it and an answers conflict repeats it. */
 const runIdOf = (documentId: string): string => documentId.slice('run-'.length).padStart(64, '0');
 const TYPE = (() => {
@@ -97,8 +105,11 @@ export function auditDocument(documentId: string, keyPagesNamed = 2, typed = fal
   return response;
 }
 
-/** Stub every Marketing OS call; nothing creates a live Guild session or writes a real document. */
-export async function setupAudit(page: Page, options: { writer?: boolean; previous?: boolean; questions?: boolean; typed?: boolean } = {}) {
+/**
+ * Stub every Marketing OS call; nothing creates a live Guild session or writes a real document.
+ * `exclude`: the questions turn also asks the exclude question, last. It only changes the stubbed turn; no state is written for it.
+ */
+export async function setupAudit(page: Page, options: { writer?: boolean; previous?: boolean; questions?: boolean; typed?: boolean; exclude?: boolean } = {}) {
   await suppressCookieBanner(page);
   const state = {
     reportReady: false,
@@ -165,6 +176,10 @@ export async function setupAudit(page: Page, options: { writer?: boolean; previo
     }
     if (path.endsWith('/aeo-geo/answers')) {
       const sent: AeoGeoAnswersBody = route.request().postDataJSON();
+      // The BFF's own input policy: a non-answer is a plain 400, and only the exclude question takes a literal none.
+      if (!isAeoGeoSubmittedAnswers(sent.answers)) {
+        return route.fulfill({ status: 400, json: { error: 'Synthetic answers refusal' } });
+      }
       answers.push(sent);
       // Either way the questions turn is answered: by this request, or by the one that won it first.
       state.answersSent = true;
@@ -188,9 +203,11 @@ export async function setupAudit(page: Page, options: { writer?: boolean; previo
         return route.fulfill({ json: { status: 'refused', reply: 'The target is unreachable. Can you confirm the domain?' } });
       }
       if (options.questions && !state.answersSent) {
-        return route.fulfill({
-          json: { status: 'questions', questions: aeoGeoRunQuestions(aeoGeoQuestionsFixture()), questionsId: QUESTIONS_ID, activity: [] },
-        });
+        const turn = aeoGeoQuestionsFixture();
+        if (options.exclude) {
+          turn.questions.push(EXCLUDE_QUESTION);
+        }
+        return route.fulfill({ json: { status: 'questions', questions: aeoGeoRunQuestions(turn), questionsId: QUESTIONS_ID, activity: [] } });
       }
       const documentId = sessions.get(route.request().postDataJSON().sessionId);
       if (!documentId) {
