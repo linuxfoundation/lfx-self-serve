@@ -503,7 +503,7 @@ export interface RedditConfigRefusal {
  */
 export interface RedditCreateRefusalInput {
   budgetUsd: number;
-  /** How many geo targets the request would carry (`redditEffectiveGeoTargets`). */
+  /** How many geo targets and regions, cities and DMAs the request would carry (`redditSentGeoTargets`, #6108 row 7). */
   geoTargetCount: number;
   videoGoalError: string | null;
   videoPostError: string | null;
@@ -517,6 +517,8 @@ export interface RedditCreateRefusalInput {
   targetingExclusionsBlock: string | null;
   /** Why the exclusion lists break campaign-service's rules (`redditTargetingExclusionsDraftRefusal`), or `null`. */
   targetingExclusionsRefusal: string | null;
+  /** Why the regions, cities and DMAs break campaign-service's rules (`redditSubCountryGeoDraftRefusal`, #6108 row 7), or `null`. */
+  subCountryGeoRefusal: string | null;
   /** Why the placements or devices cannot be sent (`redditDeliveryRefusal`), or `null`. */
   deliveryRefusal: string | null;
   /** Why the variants break campaign-service's one ad per variant rules (`redditAdPerVariantRefusal`), or `null`. */
@@ -1551,6 +1553,11 @@ export interface CampaignImplementationDraft {
    */
   redditExcludedSubreddits?: string[];
   redditExcludedGeoTargets?: string[];
+  /**
+   * The Reddit regions, cities and DMAs to target (#6108 row 7), as Reddit geolocation ids (`US-CA`, `CA:6167865`, `662`).
+   * Kept whatever the capability says, and carried only when non-empty; only the REQUEST is gated on the capability.
+   */
+  redditSubCountryGeoTargets?: string[];
   /**
    * The Reddit subreddits and interests as the operator edited them (#6108 row 4). Carried once they gained an editor,
    * as `linkedInVariants` is: restored over the brief's seed. Absent (an older draft), the brief's seed stands. Not the
@@ -4010,6 +4017,7 @@ export type RedditDraftSnapshot = Pick<
   | 'redditExcludedCustomAudienceIds'
   | 'redditExcludedSubreddits'
   | 'redditExcludedGeoTargets'
+  | 'redditSubCountryGeoTargets'
   | 'redditEditedSubreddits'
   | 'redditEditedInterests'
   | 'redditEditedVariants'
@@ -4038,6 +4046,8 @@ export interface RedditDraftState {
   conversionEvent: RedditConversionEvent;
   customAudiences: RedditCustomAudiencesDraft;
   targetingExclusions: RedditTargetingExclusionsDraft;
+  /** The regions, cities and DMAs to target (#6108 row 7), kept whatever the capability says. */
+  subCountryGeoTargets: string[];
   /** The subreddits and interests once the operator edited them, else `null`: an unedited list stays the brief's, out of the draft. */
   editedTargetingLists: RedditTargetingListsDraft | null;
   delivery: RedditDeliveryDraft;
@@ -4062,6 +4072,8 @@ export interface RedditDraftRestore {
   conversionEvent?: RedditConversionEvent;
   customAudiences?: RedditCustomAudiencesDraft;
   targetingExclusions?: RedditTargetingExclusionsDraft;
+  /** The regions, cities and DMAs (#6108 row 7); absent when the draft carries none. */
+  subCountryGeoTargets?: string[];
   /** Both lists as edited, set over the brief's seed; absent when the draft carries neither. */
   editedTargetingLists?: RedditTargetingListsDraft;
   /** The budget type, placements, devices and expansion; absent when the draft carries none of them. */
@@ -4089,6 +4101,7 @@ export interface RedditBriefReset extends RedditBriefSeed {
   conversionEvent: RedditConversionEvent;
   customAudiences: RedditCustomAudiencesDraft;
   targetingExclusions: RedditTargetingExclusionsDraft;
+  subCountryGeoTargets: string[];
   delivery: RedditDeliveryDraft;
   budgetUsd: number;
 }

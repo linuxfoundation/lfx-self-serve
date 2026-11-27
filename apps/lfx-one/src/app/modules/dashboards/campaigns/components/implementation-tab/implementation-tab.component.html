@@ -5989,14 +5989,26 @@
 
           <!-- Targeting, all AI-recommended from the brief. Rendered read-only so the operator can
                REVIEW what will dispatch; editing them is a separate change. -->
-          @if (redditEffectiveGeoTargets().length > 0) {
+          @if (redditSentGeoTargets().length > 0) {
             <div class="mb-4">
               <label class="mb-2 block text-xs font-medium text-gray-700">Geo Targets</label>
               <div class="flex flex-wrap gap-2">
-                @for (geo of redditEffectiveGeoTargets(); track geo) {
+                @for (geo of redditSentGeoTargets(); track geo) {
                   <span class="inline-flex items-center rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">{{ geo }}</span>
                 }
               </div>
+            </div>
+          }
+
+          <!-- Regions, cities and DMAs (#6108 row 7): only while this deployment sends them
+               (LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_SUBCOUNTRY_GEO); each one replaces its country in the geo targets above. -->
+          @if (redditSubCountryGeoAvailable()) {
+            <div class="mb-4">
+              <lfx-reddit-subcountry-geo
+                [excludedGeoTargets]="redditTargetingExclusions().excludedGeoTargets"
+                [refusal]="redditSubCountryGeoRefusal()"
+                [locations]="redditSubCountryGeoTargets()"
+                (locationsChange)="onRedditSubCountryGeoChange($event)" />
             </div>
           }
 

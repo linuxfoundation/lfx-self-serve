@@ -14,6 +14,7 @@ import { googleAdsToUpperCode } from './campaign-google-assets.utils';
 import { foldKey } from './campaign-linkedin-config.utils';
 import { goTrimSpace } from './campaign-linkedin.utils';
 import { redditDecodedConfigValue } from './campaign-reddit-targeting-exclusions.utils';
+import { redditTargetingListFromDraft } from './campaign-reddit-targeting-lists.utils';
 
 /**
  * Reddit regions, cities and DMAs on create (#6108 row 7): `redditConfig.subCountryGeoTargets`. Held to
@@ -104,4 +105,80 @@ export function redditSubCountryGeoRefusal(raw: unknown, enabled: boolean): Redd
     }
   }
   return null;
+}
+
+// === The Implement tab's regions, cities and DMAs editor (#6108 row 7) ===
+
+/** Whether the editor is offered and the list sent: only an explicit yes from `CampaignListResult.redditSubCountryGeoEnabled`. */
+export function redditSubCountryGeoCapability(enabled: boolean | null): boolean {
+  return enabled === true;
+}
+
+/** A typed id as the list holds it: trimmed and upper-cased as Go does, so `us-ca` is held, shown and sent as `US-CA`. */
+export function redditSubCountryGeoEntry(raw: string): string {
+  return googleAdsToUpperCode(goTrimSpace(raw));
+}
+
+/** A held id as its chip shows it, naming the kind of location: `US-CA (region)`, `CA:6167865 (city)`, `662 (DMA)`. */
+export function redditSubCountryGeoLabel(id: string): string {
+  if (REDDIT_SUBCOUNTRY_REGION_PATTERN.test(id)) return `${id} (region)`;
+  if (REDDIT_SUBCOUNTRY_CITY_PATTERN.test(id)) return `${id} (city)`;
+  return REDDIT_SUBCOUNTRY_DMA_PATTERN.test(id) ? `${id} (DMA)` : id;
+}
+
+/**
+ * Why a typed id ({@link redditSubCountryGeoEntry}) is not added, or `null`: blank, a whole country, not a region, city
+ * or DMA id in an assigned country, inside an excluded country, or a full list. An id the list already holds is not an
+ * error (adding it again changes nothing). A country the geo targets target is not an error either: the create drops it
+ * from the geo targets ({@link redditGeoTargetsBesideSubCountry}). Whether Reddit can target the id is campaign-service's
+ * read, at create time.
+ */
+export function redditSubCountryGeoAddRefusal(held: readonly string[], entry: string, excludedGeoTargets: readonly string[]): string | null {
+  if (entry === '') return 'Enter a Reddit geolocation id.';
+  if (/^[A-Z]{2}$/.test(entry)) return 'That is a whole country. Enter a region, city or DMA inside it.';
+  const country = subCountryCountry(entry);
+  if (country === null || !ASSIGNED_COUNTRY_CODES.has(country)) return 'Enter a Reddit region (US-CA), city (CA:6167865) or DMA (662) geolocation id.';
+  if (excludedGeoTargets.some((code) => googleAdsToUpperCode(goTrimSpace(code)) === country)) {
+    return `${country} is excluded. A location cannot be targeted inside an excluded country.`;
+  }
+  return !held.includes(entry) && held.length >= REDDIT_MAX_SUBCOUNTRY_GEO_TARGETS
+    ? `Target at most ${REDDIT_MAX_SUBCOUNTRY_GEO_TARGETS} regions, cities and DMAs.`
+    : null;
+}
+
+/**
+ * The geo targets a create sends beside its regions, cities and DMAs. With the capability on and at least one location,
+ * every country a location lies in is dropped, since a location replaces its whole country (campaign-service refuses a
+ * location inside a country the geo targets target); the list may then be empty. Otherwise the geo targets as before.
+ */
+export function redditGeoTargetsBesideSubCountry(geoTargets: readonly string[], subCountry: readonly string[], enabled: boolean | null): string[] {
+  if (!redditSubCountryGeoCapability(enabled) || subCountry.length === 0) return [...geoTargets];
+  const replaced = new Set(subCountry.map((entry) => subCountryCountry(redditSubCountryGeoEntry(entry))));
+  return geoTargets.filter((code) => !replaced.has(googleAdsToUpperCode(goTrimSpace(code))));
+}
+
+/** The `redditConfig` key a create carries: the list only on an explicit yes and when it holds an entry, so nothing changes until one is added. */
+export function redditSubCountryGeoField(subCountry: readonly string[], enabled: boolean | null): { subCountryGeoTargets?: string[] } {
+  return redditSubCountryGeoCapability(enabled) && subCountry.length > 0 ? { subCountryGeoTargets: [...subCountry] } : {};
+}
+
+/**
+ * Why the held locations break campaign-service's rules against the geo targets and excluded countries the create sends,
+ * or `null`: {@link redditSubCountryGeoRefusal} with the flag on, run only when the list is sent. An excluded country
+ * added after a location inside it is caught here rather than when the location was added.
+ */
+export function redditSubCountryGeoDraftRefusal(
+  subCountry: readonly string[],
+  geoTargets: readonly string[],
+  excludedGeoTargets: readonly string[],
+  enabled: boolean | null
+): string | null {
+  const field = redditSubCountryGeoField(subCountry, enabled);
+  if (field.subCountryGeoTargets === undefined) return null;
+  return redditSubCountryGeoRefusal({ geoTargets, excludedGeoTargets, ...field }, true)?.message ?? null;
+}
+
+/** A stored draft list as the editor holds it: the strings of an array, else `undefined` (the empty list stands). */
+export function redditSubCountryGeoFromDraft(value: unknown): string[] | undefined {
+  return redditTargetingListFromDraft(value);
 }

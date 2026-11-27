@@ -3,7 +3,17 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { redditSubCountryGeoRefusal } from './campaign-reddit-subcountry-geo.utils';
+import {
+  redditGeoTargetsBesideSubCountry,
+  redditSubCountryGeoAddRefusal,
+  redditSubCountryGeoCapability,
+  redditSubCountryGeoDraftRefusal,
+  redditSubCountryGeoEntry,
+  redditSubCountryGeoField,
+  redditSubCountryGeoFromDraft,
+  redditSubCountryGeoLabel,
+  redditSubCountryGeoRefusal,
+} from './campaign-reddit-subcountry-geo.utils';
 
 const FIELD = 'redditConfig.subCountryGeoTargets';
 
@@ -75,5 +85,101 @@ describe('redditSubCountryGeoRefusal', () => {
     expect(redditSubCountryGeoRefusal({ subCountryGeoTargets: ['<script>'] }, true)?.message).not.toContain('<script>');
     expect(redditSubCountryGeoRefusal({ geoTargets: ['US'], subCountryGeoTargets: ['US-WA'] }, true)?.message).not.toContain('US-WA');
     expect(redditSubCountryGeoRefusal({ excludedGeoTargets: ['GB'], subCountryGeoTargets: ['GB:2641599'] }, true)?.message).not.toContain('GB');
+  });
+});
+
+// The Implement tab's editor (#6108 row 7).
+describe('redditSubCountryGeoCapability', () => {
+  it.each<[boolean | null, boolean]>([
+    [true, true],
+    [false, false],
+    [null, false],
+  ])('%s offers the editor: %s', (enabled, expected) => {
+    expect(redditSubCountryGeoCapability(enabled)).toBe(expected);
+  });
+});
+
+describe('redditSubCountryGeoEntry and redditSubCountryGeoLabel', () => {
+  it.each<[string, string, string]>([
+    [' us-ca ', 'US-CA', 'US-CA (region)'],
+    ['ca:6167865', 'CA:6167865', 'CA:6167865 (city)'],
+    ['662', '662', '662 (DMA)'],
+    ['uſ-ca', 'US-CA', 'US-CA (region)'],
+    ['nope', 'NOPE', 'NOPE'],
+  ])('holds %j as %j, shown as %j', (raw, entry, label) => {
+    expect(redditSubCountryGeoEntry(raw)).toBe(entry);
+    expect(redditSubCountryGeoLabel(entry)).toBe(label);
+  });
+});
+
+describe('redditSubCountryGeoAddRefusal', () => {
+  const full = Array.from({ length: 50 }, (_v, i) => `US-${i}`);
+  it.each<[string, string[], string, string[], string | null]>([
+    ['a region', [], 'US-CA', [], null],
+    ['a city and a DMA beside an excluded other country', ['US-CA'], '662', ['CA'], null],
+    ['a blank id', [], '', [], 'Enter a Reddit geolocation id.'],
+    ['a whole country', [], 'US', [], 'whole country'],
+    ['a postal code', [], 'US-94107', [], 'Enter a Reddit region (US-CA)'],
+    ['an unassigned country', [], 'ZZ-CA', [], 'Enter a Reddit region (US-CA)'],
+    ['a city inside an excluded country', [], 'CA:6167865', [' ca '], 'CA is excluded'],
+    ['a DMA while the US is excluded', [], '662', ['US'], 'US is excluded'],
+    ['a 51st location', full, 'US-CA', [], 'at most 50'],
+    ['one the full list already holds', full, 'US-0', [], null],
+  ])('%s', (_name, held, entry, excluded, expected) => {
+    const refusal = redditSubCountryGeoAddRefusal(held, entry, excluded);
+    if (expected === null) expect(refusal).toBeNull();
+    else expect(refusal).toContain(expected);
+  });
+});
+
+describe('redditGeoTargetsBesideSubCountry', () => {
+  it.each<[string, string[], string[], boolean | null, string[]]>([
+    ['the geo targets as before while unanswered', ['US', 'CA'], ['US-CA'], null, ['US', 'CA']],
+    ['the geo targets as before once off', ['US', 'CA'], ['US-CA'], false, ['US', 'CA']],
+    ['the geo targets as before with no location', ['US', 'CA'], [], true, ['US', 'CA']],
+    ['each location country dropped', ['US', 'CA', 'GB'], ['us-ca', 'CA:6167865'], true, ['GB']],
+    ['the US dropped for a DMA', ['US'], ['662'], true, []],
+    ['nothing dropped for a malformed id, which the refusal names', ['US'], ['nope'], true, ['US']],
+  ])('sends %s', (_name, geoTargets, subCountry, enabled, expected) => {
+    expect(redditGeoTargetsBesideSubCountry(geoTargets, subCountry, enabled)).toEqual(expected);
+  });
+});
+
+describe('redditSubCountryGeoField', () => {
+  it.each<[string, string[], boolean | null, object]>([
+    ['the list on a yes', ['US-CA'], true, { subCountryGeoTargets: ['US-CA'] }],
+    ['nothing for an empty list', [], true, {}],
+    ['nothing while unanswered', ['US-CA'], null, {}],
+    ['nothing once off', ['US-CA'], false, {}],
+  ])('sends %s', (_name, list, enabled, expected) => {
+    expect(redditSubCountryGeoField(list, enabled)).toEqual(expected);
+  });
+});
+
+describe('redditSubCountryGeoDraftRefusal', () => {
+  it.each<[string, string[], string[], string[], boolean | null, string | null]>([
+    ['locations beside other countries', ['US-CA'], ['GB'], [], true, null],
+    ['a location inside an excluded country, added after it', ['CA:6167865'], [], ['CA'], true, 'inside an excluded country'],
+    ['a location inside a targeted country', ['US-CA'], ['US'], [], true, 'already target'],
+    ['a malformed restored entry', ['nope'], [], [], true, 'Location 1 is not a Reddit region'],
+    ['nothing while off, as nothing is sent', ['nope'], [], [], false, null],
+    ['nothing with no location', [], ['US'], [], true, null],
+  ])('%s', (_name, list, geoTargets, excluded, enabled, expected) => {
+    const refusal = redditSubCountryGeoDraftRefusal(list, geoTargets, excluded, enabled);
+    if (expected === null) expect(refusal).toBeNull();
+    else expect(refusal).toContain(expected);
+  });
+});
+
+describe('redditSubCountryGeoFromDraft', () => {
+  it.each<[unknown, unknown]>([
+    [undefined, undefined],
+    ['US-CA', undefined],
+    [
+      ['US-CA', 4, '662'],
+      ['US-CA', '662'],
+    ],
+  ])('reads %j as %j', (stored, expected) => {
+    expect(redditSubCountryGeoFromDraft(stored)).toEqual(expected);
   });
 });

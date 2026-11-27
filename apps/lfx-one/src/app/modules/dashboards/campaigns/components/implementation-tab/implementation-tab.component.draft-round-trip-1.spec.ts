@@ -741,6 +741,39 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     expect(latest()).not.toHaveProperty('redditEditedSubreddits');
   });
 
+  // Reddit regions, cities and DMAs (#6108 row 7): the rules are in `campaign-reddit-subcountry-geo.utils.spec.ts`; this tests
+  // the wiring, driven through the editor's binding so a handler that never emits fails here.
+  it("carries regions, cities and DMAs through a tab round-trip into the request in place of their country, and sends today's geo once off", async () => {
+    const mountWithSubCountryGeo = async (
+      draft: CampaignImplementationDraft | null,
+      enabled: boolean | null
+    ): Promise<{ fixture: ComponentFixture<ImplementationTabComponent>; latest: () => CampaignImplementationDraft | null }> => {
+      const mounted = await mount(draft);
+      mounted.fixture.componentRef.setInput('redditSubCountryGeoEnabled', enabled);
+      at(mounted.fixture).selectedPlatforms.set(['reddit-ads']);
+      mounted.fixture.detectChanges();
+      await mounted.fixture.whenStable();
+      return mounted;
+    };
+    const first = await mountWithSubCountryGeo(null, true);
+    expect(first.latest()).not.toHaveProperty('redditSubCountryGeoTargets');
+    first.fixture.debugElement.query(By.css('lfx-reddit-subcountry-geo')).triggerEventHandler('locationsChange', ['US-CA', '662']);
+    expect(first.latest()).toMatchObject({ redditSubCountryGeoTargets: ['US-CA', '662'] });
+    const draft = first.latest();
+    first.fixture.destroy();
+
+    const second = await mountWithSubCountryGeo(draft, true);
+    expect(submitReddit(second.fixture)).toMatchObject({ geoTargets: [], subCountryGeoTargets: ['US-CA', '662'] });
+    second.fixture.destroy();
+    createCampaign.mockClear();
+
+    const off = (await mountWithSubCountryGeo(draft, false)).fixture;
+    expect(off.nativeElement.querySelector('lfx-reddit-subcountry-geo')).toBeNull();
+    const sent = submitReddit(off);
+    expect(sent['geoTargets']).toEqual(['US']);
+    expect(sent).not.toHaveProperty('subCountryGeoTargets');
+  });
+
   // Reddit delivery choices and the pixel picker (#6108 row 5): the rules are in `campaign-reddit-delivery.utils.spec.ts`
   // and `campaign-reddit-pixels.utils.spec.ts`; this tests the wiring.
   it('carries delivery choices and a picked pixel through a tab round-trip and into the request', async () => {

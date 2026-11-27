@@ -28,6 +28,7 @@ describe('redditDraftFields', () => {
     conversionEvent: 'SIGN_UP',
     customAudiences: { customAudienceIds: ['aud_in'], excludedCustomAudienceIds: ['aud_out'] },
     targetingExclusions: { excludedSubreddits: ['politics'], excludedGeoTargets: ['CA'] },
+    subCountryGeoTargets: ['US-CA', '662'],
     editedTargetingLists: { subreddits: ['kubernetes'], interests: ['technology_v3'] },
     delivery: { budgetType: 'daily', placements: ['FEED'], platforms: ['DESKTOP', 'MOBILE_WEB'], expandTargeting: false },
     editedVariants: [{ headline: 'Edited headline', body: 'Brief body' }, { headline: 'Second' }],
@@ -54,6 +55,7 @@ describe('redditDraftFields', () => {
       redditExcludedCustomAudienceIds: ['aud_out'],
       redditExcludedSubreddits: ['politics'],
       redditExcludedGeoTargets: ['CA'],
+      redditSubCountryGeoTargets: ['US-CA', '662'],
       redditEditedSubreddits: ['kubernetes'],
       redditEditedInterests: ['technology_v3'],
       redditBudgetType: 'daily',
@@ -76,6 +78,10 @@ describe('redditDraftFields', () => {
     ['b1', 'Too big.'],
   ])('carries the failure message only with the brief it failed for (%j)', (failedBriefId, message) => {
     expect(redditDraftFields({ ...state, uploadFailedBriefId: failedBriefId }).redditImageUploadFailedMessage).toBe(message);
+  });
+
+  it('leaves the regions, cities and DMAs out until one is added, so an unused draft is unchanged', () => {
+    expect(redditDraftFields({ ...state, subCountryGeoTargets: [] })).not.toHaveProperty('redditSubCountryGeoTargets');
   });
 });
 
@@ -198,6 +204,16 @@ describe('redditDraftRestore: targeting exclusions', () => {
   });
 });
 
+describe('redditDraftRestore: regions, cities and DMAs', () => {
+  it.each<[string, unknown, unknown]>([
+    ['no key (an older draft), so the empty list stands', undefined, undefined],
+    ['a value that is not a list', 'US-CA', undefined],
+    ['only the strings of a list', ['US-CA', 3, null, '662'], ['US-CA', '662']],
+  ])('restores %s', (_name, stored, expected) => {
+    expect(redditDraftRestore(draft({ redditSubCountryGeoTargets: stored } as RedditDraftSnapshot)).subCountryGeoTargets).toEqual(expected);
+  });
+});
+
 describe('redditDraftRestore: edited subreddits and interests', () => {
   it.each<[string, unknown, unknown, unknown]>([
     ['both lists', ['kubernetes'], ['technology_v3'], { subreddits: ['kubernetes'], interests: ['technology_v3'] }],
@@ -253,6 +269,7 @@ describe('redditBriefReset', () => {
       conversionEvent: 'PURCHASE',
       customAudiences: { customAudienceIds: [], excludedCustomAudienceIds: [] },
       targetingExclusions: { excludedSubreddits: [], excludedGeoTargets: [] },
+      subCountryGeoTargets: [],
       delivery: { budgetType: 'lifetime', placements: ['FEED', 'COMMENTS_PAGE'], platforms: ['DESKTOP', 'MOBILE_NATIVE', 'MOBILE_WEB'], expandTargeting: true },
       budgetUsd: DEFAULT_REDDIT_BUDGET_USD,
       variants: [],
