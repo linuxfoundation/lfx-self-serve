@@ -573,6 +573,10 @@ import {
   redditTargetingExclusionsCapability,
   redditTargetingListsCapability,
   redditTargetingListsInEffect,
+  redditAdPerVariantAuthorsPost,
+  redditAdPerVariantRefusal,
+  redditAdVariantsCapability,
+  redditAdVariantsInEffect,
   redditTargetingExclusionsDraftRefusal,
   redditTargetingExclusionsField,
   redditBudgetCopy,
@@ -701,6 +705,7 @@ import { RedditCustomAudiencesComponent } from '../reddit-custom-audiences/reddi
 import { RedditTargetingExclusionsComponent } from '../reddit-targeting-exclusions/reddit-targeting-exclusions.component';
 import { RedditTargetingListsComponent } from '../reddit-targeting-lists/reddit-targeting-lists.component';
 import { RedditDeliveryComponent } from '../reddit-delivery/reddit-delivery.component';
+import { RedditAdVariantsComponent } from '../reddit-ad-variants/reddit-ad-variants.component';
 import { RedditPixelPickerComponent } from '../reddit-pixel-picker/reddit-pixel-picker.component';
 import { MetaDeliveryOptionsComponent } from '../meta-delivery-options/meta-delivery-options.component';
 import { MetaDeviceOsOptionsComponent } from '../meta-device-os-options/meta-device-os-options.component';
@@ -794,6 +799,7 @@ let linkedInVariantKeySequence = 0;
     RedditTargetingExclusionsComponent,
     RedditTargetingListsComponent,
     RedditDeliveryComponent,
+    RedditAdVariantsComponent,
     RedditPixelPickerComponent,
     MetaDetailedTargetingComponent,
     MetaDeliveryOptionsComponent,
@@ -1101,6 +1107,35 @@ export class ImplementationTabComponent implements OnInit {
       this.redditTargetingResolutionEnabled()
     )
   );
+  /**
+   * Whether a Reddit create that authors its post makes one ad per variant (`CampaignListResult.redditAdPerVariantEnabled`,
+   * #6108 row 6), so the variants' headlines are offered for editing. `null` until the parent has an answer, which keeps
+   * them the brief's, read-only, and sends them as before.
+   */
+  public readonly redditAdPerVariantEnabled = input<boolean | null>(null);
+  /** @see redditAdPerVariantEnabled — an explicit yes, never a `null`. */
+  protected readonly redditAdVariantsAvailable = computed<boolean>(() => redditAdVariantsCapability(this.redditAdPerVariantEnabled()));
+  /** The variants as the operator edited them on this brief, else `null`. Kept apart from the brief's seed (`redditVariants`), and in the draft only once edited. */
+  protected readonly redditEditedVariants = signal<RedditAdVariant[] | null>(null);
+  /** The variants shown and sent: the edits on an explicit yes, else the brief's seed (`redditAdVariantsInEffect`). */
+  protected readonly redditAdVariants = computed<RedditAdVariant[]>(() =>
+    redditAdVariantsInEffect(this.redditVariants(), this.redditEditedVariants(), this.redditAdPerVariantEnabled())
+  );
+  /** The keys of the request the one ad per variant rules read: the post, the image as sent, and the variants. */
+  protected readonly redditAdVariantsConfig = computed<Record<string, unknown>>(() => ({
+    postUrl: this.redditPostUrl(),
+    ...this.redditImageField(),
+    variants: this.redditAdVariants(),
+  }));
+  /** Whether each variant becomes its own ad: offered, an authored post, and 2 or more variants (campaign-service's `redditAdPerVariantApplies`). */
+  protected readonly redditAdPerVariantApplies = computed<boolean>(() => {
+    const image = this.redditImageField();
+    const imageUrl = 'imageUrl' in image ? image.imageUrl : '';
+    const imageAssetId = 'imageAssetId' in image ? image.imageAssetId : '';
+    return (
+      this.redditAdVariantsAvailable() && this.redditAdVariants().length >= 2 && redditAdPerVariantAuthorsPost(this.redditPostUrl(), imageUrl, imageAssetId)
+    );
+  });
 
   /**
    * Whether the Meta section may offer an image UPLOAD (`CampaignListResult.metaAssetUploadEnabled`).
@@ -4670,6 +4705,7 @@ export class ImplementationTabComponent implements OnInit {
           targetingExclusionsBlock: this.redditTargetingExclusionsBlock()?.message ?? null,
           targetingExclusionsRefusal: redditTargetingExclusionsDraftRefusal(this.redditTargetingExclusions(), this.redditTargetedLists()),
           deliveryRefusal: redditDeliveryRefusal(this.redditDelivery(), this.redditDeliveryCapabilities()),
+          variantsRefusal: redditAdPerVariantRefusal(this.redditAdVariantsConfig(), this.redditAdVariantsAvailable())?.message ?? null,
         })
       : null;
     if (redditRefusal !== null) return redditRefusal;
@@ -5898,6 +5934,12 @@ export class ImplementationTabComponent implements OnInit {
   /** The picker's lists, kept in the draft. */
   protected onRedditCustomAudiencesChange(audiences: RedditCustomAudiencesDraft): void {
     this.redditCustomAudiences.set(audiences);
+    this.emitDraft();
+  }
+
+  /** The edited ad variants, kept in the draft from now on (#6108 row 6). */
+  protected onRedditAdVariantsChange(variants: RedditAdVariant[]): void {
+    this.redditEditedVariants.set(variants);
     this.emitDraft();
   }
 
@@ -7789,7 +7831,8 @@ export class ImplementationTabComponent implements OnInit {
               subreddits: this.redditEffectiveSubreddits(),
               interests: this.redditTargetingLists().interests,
               keywords: this.redditKeywords().length > 0 ? this.redditKeywords() : this.briefKeywords().map((k) => k.term),
-              variants: this.redditVariants(),
+              // The edits only while one ad per variant is offered (#6108 row 6), else the brief's, as before.
+              variants: this.redditAdVariants(),
               // Always sent, never conditioned on differing from the default: both creators fall
               // back to the same objective when it is absent, so an explicit value is the only
               // thing that makes the payload say what the screen shows.
@@ -10097,6 +10140,7 @@ export class ImplementationTabComponent implements OnInit {
     if (redditRestore.targetingExclusions !== undefined) this.redditTargetingExclusions.set(redditRestore.targetingExclusions);
     if (redditRestore.delivery !== undefined) this.redditDelivery.set(redditRestore.delivery);
     if (redditRestore.editedTargetingLists !== undefined) this.redditEditedTargetingLists.set(redditRestore.editedTargetingLists);
+    if (redditRestore.editedVariants !== undefined) this.redditEditedVariants.set(redditRestore.editedVariants);
     // The Meta image, on the Reddit image's terms above.
     const metaImageRestore = metaImageDraftRestore(draft);
     if (metaImageRestore.imageUrl !== undefined) this.metaImageUrl.set(metaImageRestore.imageUrl);
@@ -10623,7 +10667,10 @@ export class ImplementationTabComponent implements OnInit {
       // `populateFromBrief` is now their ONLY writer — `applyDraft` no longer has a restore arm for
       // any of the six, which is exactly what this change removed. Carrying them made the draft
       // round-trip the brief's own recommendation back to itself. (`linkedInVariants` gained an
-      // editor in #5547 and is carried below, per the last paragraph.)
+      // editor in #5547 and is carried below, per the last paragraph. The Reddit variants gained one
+      // in #6108 row 6, and so did the subreddits and interests in row 4: each is carried by
+      // `redditDraftFields` as a separate `redditEdited*` key, and only once edited, so an unedited
+      // brief still re-seeds itself.)
       //
       // Removing them is not a loss, and that was MEASURED rather than reasoned about, because the
       // reasoning goes the wrong way twice:
@@ -10683,6 +10730,7 @@ export class ImplementationTabComponent implements OnInit {
         targetingExclusions: this.redditTargetingExclusions(),
         editedTargetingLists: this.redditEditedTargetingLists(),
         delivery: this.redditDelivery(),
+        editedVariants: this.redditEditedVariants(),
       }),
       ...metaImageDraftFields({
         imageUrl: this.metaImageUrl(),
@@ -10742,6 +10790,7 @@ export class ImplementationTabComponent implements OnInit {
     this.redditTargetingExclusions.set(redditReset.targetingExclusions);
     this.redditDelivery.set(redditReset.delivery);
     this.redditEditedTargetingLists.set(null);
+    this.redditEditedVariants.set(null);
     this.redditBudgetUsd.set(redditReset.budgetUsd);
     this.setRedditBriefLists(redditReset);
     // The other platforms on the same terms (#4624): every value the brief does not derive, or derives

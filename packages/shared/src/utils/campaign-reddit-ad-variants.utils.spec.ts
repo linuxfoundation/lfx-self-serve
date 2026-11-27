@@ -3,7 +3,16 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { redditAdPerVariantRefusal } from './campaign-reddit-ad-variants.utils';
+import {
+  redditAdPerVariantAuthorsPost,
+  redditAdPerVariantRefusal,
+  redditAdVariantsAdded,
+  redditAdVariantsFromDraft,
+  redditAdVariantsInEffect,
+  redditAdVariantsRemoved,
+  redditAdVariantsWithHeadline,
+  redditAdVariantViews,
+} from './campaign-reddit-ad-variants.utils';
 
 const v = (...headlines: string[]) => headlines.map((headline) => ({ headline, body: 'preview' }));
 const authored = (variants: unknown) => ({ imageUrl: 'https://img.example/a.png', variants });
@@ -69,5 +78,94 @@ describe('redditAdPerVariantRefusal', () => {
 
   it('never echoes a caller value', () => {
     expect(redditAdPerVariantRefusal(authored(v('<script>', `<b>${'x'.repeat(300)}`)), true)?.message).not.toContain('<');
+  });
+});
+
+// The Implement tab's editor (#6108 row 6).
+describe('redditAdPerVariantAuthorsPost', () => {
+  it.each<[string, string, string, string, boolean]>([
+    ['an image URL', '', 'https://img.example/a.png', '', true],
+    ['an uploaded image', '', '', 'asset-1', true],
+    ['an existing post', 'https://reddit.example/p', 'https://img.example/a.png', '', false],
+    ['no image', '', '  ', '', false],
+    ['a blank post URL beside an image', '  ', 'https://img.example/a.png', '', true],
+  ])('%s', (_name, postUrl, imageUrl, imageAssetId, expected) => {
+    expect(redditAdPerVariantAuthorsPost(postUrl, imageUrl, imageAssetId)).toBe(expected);
+  });
+});
+
+describe('redditAdVariantsInEffect', () => {
+  const seed = v('brief');
+  const edited = v('edited');
+  it.each<[string, ReturnType<typeof v> | null, boolean | null, ReturnType<typeof v>]>([
+    ['the edits on an explicit yes', edited, true, edited],
+    ['every variant removed, on a yes', [], true, []],
+    ['the seed while unanswered', edited, null, seed],
+    ['the seed once the capability is off, so a restored edit is not sent', edited, false, seed],
+    ['the seed when nothing was edited', null, true, seed],
+  ])('sends %s', (_name, held, enabled, expected) => {
+    expect(redditAdVariantsInEffect(seed, held, enabled)).toEqual(expected);
+  });
+});
+
+describe('redditAdVariantsFromDraft', () => {
+  it.each<[string, unknown, unknown]>([
+    ['nothing stored', undefined, undefined],
+    ['a value that is not a list', 'a', undefined],
+    ['an empty list', [], []],
+    [
+      'a body only when it is text',
+      [
+        { headline: 'a', body: 'b' },
+        { headline: 'c', body: 3 },
+      ],
+      [{ headline: 'a', body: 'b' }, { headline: 'c' }],
+    ],
+    ['only entries with a text headline', [{ headline: 'a' }, null, 'b', { headline: 2 }, { body: 'x' }], [{ headline: 'a' }]],
+  ])('reads %s', (_name, stored, expected) => {
+    expect(redditAdVariantsFromDraft(stored)).toEqual(expected);
+  });
+});
+
+describe('redditAdVariantViews', () => {
+  it.each<[string, ReturnType<typeof v>, boolean, string[], number[]]>([
+    ['good headlines', v('a', 'bb'), true, ['', ''], [1, 2]],
+    ['a blank headline while each variant is its own ad', v('a', '  '), true, ['', 'Enter a headline. Each variant becomes its own Reddit ad.'], [1, 0]],
+    ['a 301-character headline', v('x'.repeat(301), 'b'), true, ['Shorten the headline to 300 characters or fewer.', ''], [301, 1]],
+    ['300 emoji, counted once each', v('😀'.repeat(300), 'b'), true, ['', ''], [300, 1]],
+    ['no marks on the one-ad create', v(' ', 'x'.repeat(301)), false, ['', ''], [0, 301]],
+  ])('%s', (_name, variants, perVariant, errors, lengths) => {
+    const views = redditAdVariantViews(variants, perVariant);
+    expect(views.map((view) => view.error)).toEqual(errors);
+    expect(views.map((view) => view.length)).toEqual(lengths);
+  });
+
+  it('shows a missing body as blank', () => {
+    expect(redditAdVariantViews([{ headline: 'a' }], true)[0].body).toBe('');
+  });
+});
+
+describe('redditAdVariants edits', () => {
+  it('replaces one headline and keeps its body', () => {
+    expect(redditAdVariantsWithHeadline(v('a', 'b'), 1, 'c')).toEqual([
+      { headline: 'a', body: 'preview' },
+      { headline: 'c', body: 'preview' },
+    ]);
+  });
+
+  it.each<[string, ReturnType<typeof v>, number]>([
+    ['adds a blank variant', v('a'), 2],
+    ['adds the first variant', [], 1],
+    ['adds none past 5', v('a', 'b', 'c', 'd', 'e'), 5],
+    ['adds none to a seed already past 5', v('a', 'b', 'c', 'd', 'e', 'f'), 6],
+  ])('%s', (_name, variants, count) => {
+    const added = redditAdVariantsAdded(variants);
+    expect(added).toHaveLength(count);
+    if (count > variants.length) expect(added[count - 1]).toEqual({ headline: '' });
+  });
+
+  it('removes any variant, the last one included', () => {
+    expect(redditAdVariantsRemoved(v('a', 'b'), 0)).toEqual(v('b'));
+    expect(redditAdVariantsRemoved(v('a'), 0)).toEqual([]);
   });
 });

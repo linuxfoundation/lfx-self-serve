@@ -519,6 +519,8 @@ export interface RedditCreateRefusalInput {
   targetingExclusionsRefusal: string | null;
   /** Why the placements or devices cannot be sent (`redditDeliveryRefusal`), or `null`. */
   deliveryRefusal: string | null;
+  /** Why the variants break campaign-service's one ad per variant rules (`redditAdPerVariantRefusal`), or `null`. */
+  variantsRefusal: string | null;
 }
 
 /** The three inputs needed to author a promoted post, once a creator has decided to author one. */
@@ -1557,6 +1559,12 @@ export interface CampaignImplementationDraft {
    */
   redditEditedSubreddits?: string[];
   redditEditedInterests?: string[];
+  /**
+   * The Reddit ad variants as the operator edited them (#6108 row 6), on the terms of the edited subreddits above: carried
+   * only once edited, and restored over the brief's seed. Not the `redditVariants` key an older build wrote: that was a
+   * stale copy of the brief's seed, which a restore deliberately ignores. Sent only while one ad per variant is offered.
+   */
+  redditEditedVariants?: RedditAdVariant[];
   /**
    * The Reddit budget type, placements, devices and audience expansion (#6108 row 5), kept whatever the capabilities say;
    * only the REQUEST is gated on them. A choice the capability no longer confirms is not sent: the create then runs on
@@ -3057,6 +3065,17 @@ export interface RedditAdVariant {
   body?: string;
 }
 
+/** One variant as the Reddit variants editor shows it (#6108 row 6, `redditAdVariantViews`). */
+export interface RedditAdVariantView {
+  headline: string;
+  /** The brief's body, shown as preview text only: campaign-service never reads it. */
+  body: string;
+  /** The trimmed headline's length in code points, as Reddit counts it. */
+  length: number;
+  /** How to fix the headline, or `''`: only while each variant becomes its own ad. */
+  error: string;
+}
+
 export interface RedditBriefCopy {
   variants: RedditAdVariant[];
   recommendedSubreddits: string[];
@@ -3986,6 +4005,7 @@ export type RedditDraftSnapshot = Pick<
   | 'redditExcludedGeoTargets'
   | 'redditEditedSubreddits'
   | 'redditEditedInterests'
+  | 'redditEditedVariants'
   | 'redditBudgetType'
   | 'redditPlacements'
   | 'redditPlatforms'
@@ -4014,6 +4034,8 @@ export interface RedditDraftState {
   /** The subreddits and interests once the operator edited them, else `null`: an unedited list stays the brief's, out of the draft. */
   editedTargetingLists: RedditTargetingListsDraft | null;
   delivery: RedditDeliveryDraft;
+  /** The ad variants once the operator edited them (#6108 row 6), else `null`: unedited variants stay the brief's, out of the draft. */
+  editedVariants: RedditAdVariant[] | null;
 }
 
 /** What a restored draft does to the Reddit section (#5980): values to set, and at most one upload step for the component to run. */
@@ -4037,6 +4059,8 @@ export interface RedditDraftRestore {
   editedTargetingLists?: RedditTargetingListsDraft;
   /** The budget type, placements, devices and expansion; absent when the draft carries none of them. */
   delivery?: RedditDeliveryDraft;
+  /** The ad variants as edited, set over the brief's seed; absent when the draft carries none. */
+  editedVariants?: RedditAdVariant[];
 }
 
 /** The Reddit lists a brief seeds (#5980): the variants and the four targeting lists. */

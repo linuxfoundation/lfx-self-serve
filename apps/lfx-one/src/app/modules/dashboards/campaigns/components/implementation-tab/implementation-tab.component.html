@@ -6050,12 +6050,17 @@
             </div>
           }
 
-          <!-- Variant Preview -->
-          @if (redditVariants().length > 0) {
+          <!-- Ad variants (#6108 row 6): headlines editable while each variant can become its own ad, else the brief's, read-only. -->
+          @if (redditAdVariantsAvailable()) {
+            <lfx-reddit-ad-variants
+              [variants]="redditAdVariants()"
+              [perVariant]="redditAdPerVariantApplies()"
+              (variantsChange)="onRedditAdVariantsChange($event)" />
+          } @else if (redditAdVariants().length > 0) {
             <div>
-              <label class="mb-2 block text-xs font-medium text-gray-700">Ad Variants ({{ redditVariants().length }})</label>
+              <label class="mb-2 block text-xs font-medium text-gray-700">Ad Variants ({{ redditAdVariants().length }})</label>
               <div class="flex flex-col gap-2">
-                @for (variant of redditVariants(); track $index; let i = $index) {
+                @for (variant of redditAdVariants(); track $index; let i = $index) {
                   <div class="rounded-md border border-gray-200 bg-gray-50 p-3" [attr.data-testid]="'implementation-reddit-variant-' + i">
                     <p class="mb-1 text-xs font-medium text-gray-500">Variant {{ i + 1 }}</p>
                     <p class="text-sm text-gray-800">{{ variant.headline }}</p>

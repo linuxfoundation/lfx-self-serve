@@ -30,6 +30,7 @@ describe('redditDraftFields', () => {
     targetingExclusions: { excludedSubreddits: ['politics'], excludedGeoTargets: ['CA'] },
     editedTargetingLists: { subreddits: ['kubernetes'], interests: ['technology_v3'] },
     delivery: { budgetType: 'daily', placements: ['FEED'], platforms: ['DESKTOP', 'MOBILE_WEB'], expandTargeting: false },
+    editedVariants: [{ headline: 'Edited headline', body: 'Brief body' }, { headline: 'Second' }],
   };
 
   it('carries every typed value, the pixel and the upload slot as held', () => {
@@ -59,13 +60,15 @@ describe('redditDraftFields', () => {
       redditPlacements: ['FEED'],
       redditPlatforms: ['DESKTOP', 'MOBILE_WEB'],
       redditExpandTargeting: false,
+      redditEditedVariants: [{ headline: 'Edited headline', body: 'Brief body' }, { headline: 'Second' }],
     });
   });
 
-  it('leaves unedited subreddits and interests out, so the brief re-seeds them', () => {
-    const fields = redditDraftFields({ ...state, editedTargetingLists: null });
+  it('leaves unedited subreddits, interests and variants out, so the brief re-seeds them', () => {
+    const fields = redditDraftFields({ ...state, editedTargetingLists: null, editedVariants: null });
     expect(fields).not.toHaveProperty('redditEditedSubreddits');
     expect(fields).not.toHaveProperty('redditEditedInterests');
+    expect(fields).not.toHaveProperty('redditEditedVariants');
   });
 
   it.each([
@@ -225,6 +228,17 @@ describe('redditDraftRestore: delivery choices', () => {
     ['an expandTargeting that is not a boolean as on', { redditExpandTargeting: 'false' }, ALL],
   ])('restores %s', (_name, stored, expected) => {
     expect(redditDraftRestore(draft(stored as RedditDraftSnapshot)).delivery).toEqual(expected);
+  });
+});
+
+// The entry rules are `redditAdVariantsFromDraft`'s (campaign-reddit-ad-variants.utils.spec.ts); this tests the key.
+describe('redditDraftRestore: edited ad variants', () => {
+  it.each<[string, unknown, unknown]>([
+    ['no key (an older draft), so the seed stands', undefined, undefined],
+    ['every variant was removed', [], []],
+    ['the edits', [{ headline: 'One', body: 'b' }, { headline: 'Two' }], [{ headline: 'One', body: 'b' }, { headline: 'Two' }]],
+  ])('restores %s', (_name, stored, expected) => {
+    expect(redditDraftRestore(draft({ redditEditedVariants: stored } as RedditDraftSnapshot)).editedVariants).toEqual(expected);
   });
 });
 

@@ -1223,6 +1223,8 @@ export class CampaignsComponent {
   protected readonly briefCampaignsRedditPlacementsEnabled = signal<boolean | null>(null);
   protected readonly briefCampaignsRedditBudgetTypeEnabled = signal<boolean | null>(null);
   protected readonly briefCampaignsRedditPixelListEnabled = signal<boolean | null>(null);
+  /** `CampaignListResult.redditAdPerVariantEnabled` (#6108 row 6): whether the Reddit variants' headlines are editable, one ad each. */
+  protected readonly briefCampaignsRedditAdPerVariantEnabled = signal<boolean | null>(null);
   /** `CampaignListResult.redditTargetingResolutionEnabled` (#6108 row 4): whether the Reddit subreddits and interests are editable. */
   protected readonly briefCampaignsRedditTargetingResolutionEnabled = signal<boolean | null>(null);
   /** The Meta call to action, conversion event and optimization goal (#5934), one capability each, read and cleared like the capabilities above. */
@@ -3468,6 +3470,7 @@ export class CampaignsComponent {
         this.briefCampaignsRedditPlacementsEnabled.set(null);
         this.briefCampaignsRedditBudgetTypeEnabled.set(null);
         this.briefCampaignsRedditPixelListEnabled.set(null);
+        this.briefCampaignsRedditAdPerVariantEnabled.set(null);
         this.briefCampaignsRedditTargetingResolutionEnabled.set(null);
         this.briefCampaignsGoogleAudienceSegmentsEnabled.set(null);
         this.briefCampaignsGoogleConversionActionsEnabled.set(null);
@@ -6579,6 +6582,7 @@ export class CampaignsComponent {
           this.briefCampaignsRedditPlacementsEnabled.set(result.redditPlacementsEnabled ?? null);
           this.briefCampaignsRedditBudgetTypeEnabled.set(result.redditBudgetTypeEnabled ?? null);
           this.briefCampaignsRedditPixelListEnabled.set(result.redditPixelListEnabled ?? null);
+          this.briefCampaignsRedditAdPerVariantEnabled.set(result.redditAdPerVariantEnabled ?? null);
           this.briefCampaignsRedditTargetingResolutionEnabled.set(result.redditTargetingResolutionEnabled ?? null);
           this.briefCampaignsGoogleAudienceSegmentsEnabled.set(result.googleAudienceSegmentsEnabled);
           this.briefCampaignsGoogleConversionActionsEnabled.set(result.googleConversionActionsEnabled ?? null);
@@ -6652,6 +6656,7 @@ export class CampaignsComponent {
           this.briefCampaignsRedditPlacementsEnabled.set(null);
           this.briefCampaignsRedditBudgetTypeEnabled.set(null);
           this.briefCampaignsRedditPixelListEnabled.set(null);
+          this.briefCampaignsRedditAdPerVariantEnabled.set(null);
           this.briefCampaignsRedditTargetingResolutionEnabled.set(null);
           this.briefCampaignsGoogleAudienceSegmentsEnabled.set(null);
           this.briefCampaignsGoogleConversionActionsEnabled.set(null);
@@ -6770,6 +6775,7 @@ export class CampaignsComponent {
       this.briefCampaignsRedditPlacementsEnabled.set(null);
       this.briefCampaignsRedditBudgetTypeEnabled.set(null);
       this.briefCampaignsRedditPixelListEnabled.set(null);
+      this.briefCampaignsRedditAdPerVariantEnabled.set(null);
       this.briefCampaignsRedditTargetingResolutionEnabled.set(null);
       this.briefCampaignsGoogleAudienceSegmentsEnabled.set(null);
       this.briefCampaignsGoogleConversionActionsEnabled.set(null);
@@ -6858,6 +6864,7 @@ export class CampaignsComponent {
             this.briefCampaignsRedditPlacementsEnabled.set(result.redditPlacementsEnabled ?? null);
             this.briefCampaignsRedditBudgetTypeEnabled.set(result.redditBudgetTypeEnabled ?? null);
             this.briefCampaignsRedditPixelListEnabled.set(result.redditPixelListEnabled ?? null);
+            this.briefCampaignsRedditAdPerVariantEnabled.set(result.redditAdPerVariantEnabled ?? null);
             this.briefCampaignsRedditTargetingResolutionEnabled.set(result.redditTargetingResolutionEnabled ?? null);
             this.briefCampaignsGoogleAudienceSegmentsEnabled.set(result.googleAudienceSegmentsEnabled);
             this.briefCampaignsGoogleConversionActionsEnabled.set(result.googleConversionActionsEnabled ?? null);
@@ -6929,6 +6936,7 @@ export class CampaignsComponent {
             this.briefCampaignsRedditPlacementsEnabled.set(null);
             this.briefCampaignsRedditBudgetTypeEnabled.set(null);
             this.briefCampaignsRedditPixelListEnabled.set(null);
+            this.briefCampaignsRedditAdPerVariantEnabled.set(null);
             this.briefCampaignsRedditTargetingResolutionEnabled.set(null);
             this.briefCampaignsGoogleAudienceSegmentsEnabled.set(null);
             this.briefCampaignsGoogleConversionActionsEnabled.set(null);

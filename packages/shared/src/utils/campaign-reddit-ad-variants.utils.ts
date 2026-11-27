@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { MAX_REDDIT_AD_VARIANTS, MAX_REDDIT_HEADLINE_LENGTH } from '../constants/campaign.constants';
-import type { RedditConfigRefusal } from '../interfaces/campaign.interface';
+import type { RedditAdVariant, RedditAdVariantView, RedditConfigRefusal } from '../interfaces/campaign.interface';
 import { foldKey } from './campaign-linkedin-config.utils';
 import { goTrimSpace } from './campaign-linkedin.utils';
 
@@ -63,6 +63,14 @@ function decodedHeadlines(value: unknown): string[] | null {
 }
 
 /**
+ * Whether a create authors its post, the half of campaign-service's `redditAdPerVariantApplies` the variants do not
+ * decide: `postUrl` blank and `imageUrl` or `imageAssetId` not, each trimmed as Go trims.
+ */
+export function redditAdPerVariantAuthorsPost(postUrl: string, imageUrl: string, imageAssetId: string): boolean {
+  return goTrimSpace(postUrl) === '' && (goTrimSpace(imageUrl) !== '' || goTrimSpace(imageAssetId) !== '');
+}
+
+/**
  * Why `raw`'s variants cannot be sent, or `null` (#6108 row 6). Typed runtime checks, since the create route forwards
  * `redditConfig` as it comes. Nothing is refused while this deployment does not offer one ad per variant (`enabled`
  * false): creates already carry the brief's variants, and campaign-service applies its own rules only while its
@@ -90,8 +98,7 @@ export function redditAdPerVariantRefusal(raw: unknown, enabled: boolean): Reddi
   // Both images: campaign-service refuses that pair before it reads the variants (`checkRedditAssetChoice`).
   if (goTrimSpace(imageUrl) !== '' && goTrimSpace(imageAssetId) !== '') return null;
   // The one-ad create (`redditAdPerVariantApplies`): an existing post, no authored image, or fewer than 2 variants.
-  const authorsPost = goTrimSpace(postUrl) === '' && (goTrimSpace(imageUrl) !== '' || goTrimSpace(imageAssetId) !== '');
-  if (!authorsPost || headlines.length < 2) return null;
+  if (!redditAdPerVariantAuthorsPost(postUrl, imageUrl, imageAssetId) || headlines.length < 2) return null;
   // More variants than one ad per variant takes (`MaxAdVariants`), refused before any headline is read.
   if (headlines.length > MAX_REDDIT_AD_VARIANTS) {
     return {
@@ -111,4 +118,64 @@ export function redditAdPerVariantRefusal(raw: unknown, enabled: boolean): Reddi
     }
   }
   return null;
+}
+
+// === The Implement tab's variants editor (#6108 row 6) ===
+
+/** Whether the variants are offered for editing: only an explicit yes from `CampaignListResult.redditAdPerVariantEnabled`. */
+export function redditAdVariantsCapability(enabled: boolean | null): boolean {
+  return enabled === true;
+}
+
+/**
+ * The variants shown and sent: the edits on an explicit yes, else the brief's seed. A draft restored after the capability
+ * went off keeps its edits (they come back if it returns), but the create sends the brief's variants, as before row 6.
+ */
+export function redditAdVariantsInEffect(seed: RedditAdVariant[], edited: RedditAdVariant[] | null, enabled: boolean | null): RedditAdVariant[] {
+  return edited !== null && redditAdVariantsCapability(enabled) ? edited : seed;
+}
+
+/**
+ * The edited variants a stored draft carries, or `undefined` when it carries none (the brief's seed then stands). Not
+ * type-checked when stored, so only entries with a text headline are kept, each with its body when that is text.
+ */
+export function redditAdVariantsFromDraft(value: unknown): RedditAdVariant[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const variants: RedditAdVariant[] = [];
+  for (const entry of value) {
+    const variant = plainRecord(entry);
+    if (!variant || typeof variant['headline'] !== 'string') continue;
+    variants.push(typeof variant['body'] === 'string' ? { headline: variant['headline'], body: variant['body'] } : { headline: variant['headline'] });
+  }
+  return variants;
+}
+
+/**
+ * Each variant as the editor shows it. `perVariant` is whether each variant becomes its own ad (an authored post with
+ * 2 or more variants, while the capability is on): only then is a blank or over-long headline marked, since the one-ad
+ * create falls back to the event name for a blank first headline and reads no other.
+ */
+export function redditAdVariantViews(variants: readonly RedditAdVariant[], perVariant: boolean): RedditAdVariantView[] {
+  return variants.map((variant) => {
+    const length = [...goTrimSpace(variant.headline)].length;
+    let error = '';
+    if (perVariant && length === 0) error = 'Enter a headline. Each variant becomes its own Reddit ad.';
+    else if (perVariant && length > MAX_REDDIT_HEADLINE_LENGTH) error = `Shorten the headline to ${MAX_REDDIT_HEADLINE_LENGTH} characters or fewer.`;
+    return { headline: variant.headline, body: variant.body ?? '', length, error };
+  });
+}
+
+/** The variants with variant `index`'s headline replaced; its body is kept as preview text. */
+export function redditAdVariantsWithHeadline(variants: readonly RedditAdVariant[], index: number, headline: string): RedditAdVariant[] {
+  return variants.map((variant, i) => (i === index ? { ...variant, headline } : variant));
+}
+
+/** The variants with a blank one added, unless one ad per variant's limit is reached. */
+export function redditAdVariantsAdded(variants: readonly RedditAdVariant[]): RedditAdVariant[] {
+  return variants.length >= MAX_REDDIT_AD_VARIANTS ? [...variants] : [...variants, { headline: '' }];
+}
+
+/** The variants without variant `index`. Every variant may go: a create with none makes one ad headed by the event name. */
+export function redditAdVariantsRemoved(variants: readonly RedditAdVariant[], index: number): RedditAdVariant[] {
+  return variants.filter((_variant, i) => i !== index);
 }

@@ -767,6 +767,39 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     expect(submitReddit(second.fixture)).toMatchObject({ ...delivery, conversionPixelId: 't2_sitepixel' });
   });
 
+  // Editable Reddit ad variants (#6108 row 6): the rules are in `campaign-reddit-ad-variants.utils.spec.ts`; this tests the
+  // wiring, driven through the editor's binding so a handler that never emits fails here.
+  async function mountWithAdPerVariant(
+    draft: CampaignImplementationDraft | null,
+    enabled: boolean | null
+  ): Promise<{ fixture: ComponentFixture<ImplementationTabComponent>; latest: () => CampaignImplementationDraft | null }> {
+    const mounted = await mount(draft);
+    mounted.fixture.componentRef.setInput('redditAdPerVariantEnabled', enabled);
+    at(mounted.fixture).selectedPlatforms.set(['reddit-ads']);
+    mounted.fixture.detectChanges();
+    await mounted.fixture.whenStable();
+    return mounted;
+  }
+
+  it("carries edited ad variants through a tab round-trip into the request, and sends the brief's once the capability is off", async () => {
+    const edited = [{ headline: 'Edited reddit headline', body: 'Brief body' }, { headline: 'Second variant' }];
+    const first = await mountWithAdPerVariant(null, true);
+    expect(first.latest()).not.toHaveProperty('redditEditedVariants');
+    first.fixture.debugElement.query(By.css('lfx-reddit-ad-variants')).triggerEventHandler('variantsChange', edited);
+    expect(first.latest()).toMatchObject({ redditEditedVariants: edited });
+    const draft = first.latest();
+    first.fixture.destroy();
+
+    const second = await mountWithAdPerVariant(draft, true);
+    expect(submitReddit(second.fixture)['variants']).toEqual(edited);
+    second.fixture.destroy();
+    createCampaign.mockClear();
+
+    const off = (await mountWithAdPerVariant(draft, false)).fixture;
+    expect(off.nativeElement.querySelector('lfx-reddit-ad-variants')).toBeNull();
+    expect(submitReddit(off)['variants']).toEqual([{ headline: 'Brief reddit headline', destinationUrl: 'https://example.com/brief' }]);
+  });
+
   // === The other platforms on the same live brief switch (#4624) ===
 
   /** The next brief: another event, same platforms. `strip` removes copy blocks the conditional resets key on. */
