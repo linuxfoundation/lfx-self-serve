@@ -1493,8 +1493,9 @@ export class CampaignController {
       // held to campaign-service's rules (`checkRedditSubCountryGeo`), whose gate and value rules it runs after the
       // exclusions' and before the placements' (it type-checks every field first, so a mistyped later field may be named
       // there instead; either way nothing is created). Whether Reddit can target an id is campaign-service's own read. See
-      // `redditSubCountryGeoRefusal`.
-      const redditSubCountryGeoRefused = redditSubCountryGeoRefusal(body?.redditConfig, canSetRedditSubCountryGeo());
+      // `redditSubCountryGeoRefusal`. Only for a Reddit create: campaign-service runs the Reddit pre-check only for the
+      // platforms selected, so a `redditConfig` beside other platforms is never judged there.
+      const redditSubCountryGeoRefused = platforms.includes('reddit-ads') ? redditSubCountryGeoRefusal(body?.redditConfig, canSetRedditSubCountryGeo()) : null;
       if (redditSubCountryGeoRefused !== null) {
         throw ServiceValidationError.forField(redditSubCountryGeoRefused.field, redditSubCountryGeoRefused.message, {
           operation: 'campaign_create',

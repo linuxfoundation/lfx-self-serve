@@ -13183,6 +13183,17 @@ describe('CampaignController.createCampaign Reddit regions, cities and DMAs', ()
     expect((error.toResponse()['errors'] as { field: string }[])[0].field).toBe(field);
   });
 
+  // campaign-service pre-checks only the selected platforms, so a redditConfig beside another platform is not judged.
+  it('leaves the locations unjudged when Reddit is not selected', async () => {
+    isServerFeatureEnabled.mockImplementation((flag) => flag !== ServerFeatureFlag.CampaignServiceRedditSubCountryGeo);
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+
+    await controller.createCampaign(buildReq({ platforms: ['meta-ads'], redditConfig }, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    const errors = vi.mocked(next).mock.calls.map(([error]) => (error as unknown as ServiceValidationError | undefined)?.toResponse?.()['errors']);
+    expect(JSON.stringify(errors)).not.toContain('redditConfig.subCountryGeoTargets');
+  });
+
   it('forwards the locations untouched once the flag is on', async () => {
     isServerFeatureEnabled.mockImplementation(() => true);
     createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });

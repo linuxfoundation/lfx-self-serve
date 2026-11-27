@@ -85,8 +85,8 @@ export function redditSubCountryGeoRefusal(raw: unknown, enabled: boolean): Redd
     return { field, message: `Target at most ${REDDIT_MAX_SUBCOUNTRY_GEO_TARGETS} regions, cities and DMAs.` };
   const targeted = upperSet(config, 'geoTargets');
   const excluded = upperSet(config, 'excludedGeoTargets');
-  for (const [i, raw] of list.entries()) {
-    const id = googleAdsToUpperCode(goTrimSpace(raw));
+  for (const [i, entry] of list.entries()) {
+    const id = googleAdsToUpperCode(goTrimSpace(entry));
     if (id === '') return { field, message: `Location ${i + 1} is blank.` };
     if (/^[A-Z]{2}$/.test(id)) return { field, message: `Location ${i + 1} is a whole country. Put it in the geo targets instead.` };
     const country = subCountryCountry(id);
