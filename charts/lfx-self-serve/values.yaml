@@ -1014,7 +1014,7 @@ environment:
   # optimizationTargetType NONE and the bid as unitCost. An omitted objective with a manual bid is still Website
   # conversions.
   #
-  # A CAPABILITY flag of the Bidding kind: REQUIRES a campaign-service release carrying #676 (v1.0.45) DEPLOYED with
+  # A CAPABILITY flag of the Bidding kind: REQUIRES a campaign-service release carrying #676 DEPLOYED with
   # `LINKEDIN_ADS_TRAFFIC_MANUAL_BID_ENABLED` on, and the create pipeline on. Off (the default), the create route refuses
   # traffic with a manual bid with a 400, as before. Fields only, so turning it back off strands nothing.
   # Order: set campaign-service's flag and pass its paused probe, THEN this. Same accepted values as the flags above.

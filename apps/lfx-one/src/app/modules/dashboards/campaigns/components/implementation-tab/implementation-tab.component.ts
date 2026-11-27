@@ -12822,8 +12822,12 @@ export class ImplementationTabComponent implements OnInit {
         const value = drafts[platform] ?? defaultCampaignBiddingDraft();
         views[platform] = { platform, value, error: campaignBiddingError(platform, value, this.biddingContext(platform)) };
       }
-      // LinkedIn's Manual is a Website visits campaign while traffic is chosen and offered with a manual bid (campaign-service#676).
-      const linkedInManual = linkedInManualBidDescription(this.linkedInObjectiveDraft().objective, this.linkedInTrafficManualBidAvailable());
+      // LinkedIn's Manual is a Website visits campaign while traffic is chosen and both the objective and its manual bid
+      // are offered (campaign-service#676); a held traffic choice that cannot be sent keeps the usual text.
+      const linkedInManual = linkedInManualBidDescription(
+        this.linkedInObjectiveDraft().objective,
+        this.linkedInConversionsAvailable() && this.linkedInTrafficManualBidAvailable()
+      );
       if (linkedInManual !== null) views['linkedin-ads'] = { ...views['linkedin-ads'], manualDescription: linkedInManual };
       return views;
     });

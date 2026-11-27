@@ -675,7 +675,7 @@ export enum ServerFeatureFlag {
    * `linkedInConfig.objective: "traffic"` with a manual `bidding`, which campaign-service creates as `WEBSITE_VISIT` with
    * `costType` CPC, `optimizationTargetType` NONE and the bid as `unitCost`.
    *
-   * A CAPABILITY flag of the Bidding kind: REQUIRES a campaign-service release carrying #676 (v1.0.45) DEPLOYED with
+   * A CAPABILITY flag of the Bidding kind: REQUIRES a campaign-service release carrying #676 DEPLOYED with
    * `LINKEDIN_ADS_TRAFFIC_MANUAL_BID_ENABLED` on, since campaign-service refuses traffic with a manual bid with a 400
    * otherwise, and is only meaningful on the campaign-service create path (`cutoverOwnsCreate`). Off (the default), the
    * create route refuses traffic with a manual bid with a 400, as before. Request fields only, so flipping it back
