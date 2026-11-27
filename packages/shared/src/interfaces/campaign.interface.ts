@@ -3351,6 +3351,12 @@ export interface MetaVariantVideoView {
   error: string;
 }
 
+/** A video stored on the Implement tab (#6332), and the tab's library revision once it was stored (see `metaVideosNewerThanRead`). */
+export interface MetaVideoStoredAt {
+  id: string;
+  revision: number;
+}
+
 /** The one Meta video upload as the Implement tab tracks it (#6332). */
 export interface MetaVideoUploadState {
   status: CreativeAssetUploadStatus;
@@ -5291,6 +5297,8 @@ export interface CreativeAssetLibraryState {
   documents?: StoredCreativeDocument[];
   /** The stored MP4s (#6332), carried by a `ready` read only; a Meta video ad picks one. */
   videos?: StoredCreativeVideo[];
+  /** The Implement tab's library revision a `ready` read was made at (#6332), so a video stored after it is not judged by it. */
+  revision?: number;
 }
 
 /**

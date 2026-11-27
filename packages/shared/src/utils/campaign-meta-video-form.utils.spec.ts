@@ -20,6 +20,7 @@ import {
   metaVideoDraftRestore,
   metaVideoFileRefusal,
   metaVideoIdsInUse,
+  metaVideosNewerThanRead,
 } from './campaign-meta-video-form.utils';
 
 const A = '3f2504e0-4f89-11d3-9a0c-0305e82c3301';
@@ -76,6 +77,25 @@ describe('the variant video list', () => {
   });
 });
 
+describe('metaVideosNewerThanRead', () => {
+  it.each<[string, CreativeAssetLibraryState, string[]]>([
+    ['a read before both uploads', { ...library([]), revision: 1 }, [A, B]],
+    ['a read at the first upload', { ...library([A]), revision: 2 }, [B]],
+    ['a read after both', { ...library([A, B]), revision: 3 }, []],
+    ['a read with no revision predates every upload', library([]), [A, B]],
+  ])('%s', (_case, lib, expected) => {
+    expect(
+      metaVideosNewerThanRead(
+        [
+          { id: A, revision: 2 },
+          { id: B, revision: 3 },
+        ],
+        lib
+      )
+    ).toEqual(expected);
+  });
+});
+
 describe('metaVideoFileRefusal', () => {
   it.each<[string, { type: string; size: number }, string, string, string | null]>([
     ['an MP4 for a saved brief', { type: 'video/mp4', size: CREATIVE_ASSET_VIDEO_MAX_BYTES }, 'b-1', 'tlf', null],
@@ -89,7 +109,7 @@ describe('metaVideoFileRefusal', () => {
 
 describe('metaVariantVideoViews', () => {
   it('offers no video, then the stored videos by name or library label, and a fresh upload not listed yet', () => {
-    const [first] = metaVariantVideoViews(1, [vid(B, 'b-1', 'promo.mp4')], library([A]), 'b-1', idle);
+    const [first] = metaVariantVideoViews(1, [vid(B, 'b-1', 'promo.mp4')], library([A]), 'b-1', idle, [B]);
     expect(first.options).toEqual([
       { value: '', label: 'No video (image ad)' },
       { value: A, label: 'Video 1 (0abcdef0)' },
@@ -98,7 +118,7 @@ describe('metaVariantVideoViews', () => {
     expect(first).toMatchObject({ assetId: B, status: 'Uploaded: promo.mp4', problem: '' });
   });
 
-  it.each<[string, MetaVariantVideoDraft[], CreativeAssetLibraryState, Partial<ReturnType<typeof metaVariantVideoViews>[number]>]>([
+  it.each<[string, MetaVariantVideoDraft[], CreativeAssetLibraryState, Partial<ReturnType<typeof metaVariantVideoViews>[number]>, string[]?]>([
     [
       'another brief',
       [vid(A, 'b-2')],
@@ -107,8 +127,17 @@ describe('metaVariantVideoViews', () => {
     ],
     ['gone from a read library', [vid(A)], library([]), { assetId: A, problem: "No longer in the brief's library. Choose another video, or no video." }],
     ['library still loading', [vid(A)], { status: 'loading', assets: [] }, { assetId: A, problem: '' }],
-  ])('names the problem: %s', (_case, videos, lib, expected) => {
-    expect(metaVariantVideoViews(1, videos, lib, 'b-1', idle)[0]).toMatchObject(expected);
+    // An upload's file name exempts nothing: a read after it that lacks it means it is gone (a delete elsewhere).
+    [
+      'an uploaded video gone from a later read',
+      [vid(A, 'b-1', 'a.mp4')],
+      library([]),
+      { assetId: A, problem: "No longer in the brief's library. Choose another video, or no video." },
+    ],
+    // A read made before the upload cannot list it, whichever variant picked it (with or without its name).
+    ['a video stored after the read', [vid(A)], library([]), { assetId: A, problem: '' }, [A]],
+  ])('names the problem: %s', (_case, videos, lib, expected, fresh = []) => {
+    expect(metaVariantVideoViews(1, videos, lib, 'b-1', idle, fresh)[0]).toMatchObject(expected);
   });
 
   it('shows the one upload on its own variant only', () => {
@@ -144,6 +173,12 @@ describe('metaVideoCreateRefusal', () => {
       'Meta Ads: A video ad cannot use a lead form. Remove the lead form, or use an image on variant 2.',
     ],
     ['a video beyond the variants is ignored', { count: 1, videos: [none, vid(A, 'b-2')], config: { variants } }, null],
+    [
+      'an uploaded video a later read no longer lists',
+      { videos: [none, vid(A, 'b-1', 'a.mp4')], library: library([]) },
+      "Meta Ads: the video on variant 2 cannot be sent. No longer in the brief's library. Choose another video, or no video.",
+    ],
+    ['a video stored after the read', { library: library([]), fresh: [A] }, null],
   ])('%s', (_case, overrides, expected) => {
     expect(metaVideoCreateRefusal({ ...base, config: sent, ...overrides })).toBe(expected);
   });

@@ -29,6 +29,7 @@ describe('ImplementationTabComponent meta video', () => {
   const foundation = signal({ slug: 'tlf' });
   let createCampaign: ReturnType<typeof vi.fn>;
   let upload$: Subject<{ id: string; mimeType: string }>;
+  let cancelUpload: ReturnType<typeof vi.fn>;
 
   const brief = {
     eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', countryCode: 'US', registrationUrl: 'https://example.com/kubecon' },
@@ -75,6 +76,7 @@ describe('ImplementationTabComponent meta video', () => {
   beforeEach(async () => {
     createCampaign = vi.fn().mockReturnValue(of({ result: { campaigns: [], errors: [] } }));
     upload$ = new Subject();
+    cancelUpload = vi.fn();
     await TestBed.configureTestingModule({
       imports: [ImplementationTabComponent],
       providers: [
@@ -90,7 +92,7 @@ describe('ImplementationTabComponent meta video', () => {
             creativeVideoDeleting: signal(null),
             uploadCreativeAsset: () => upload$,
             forgetCreativeAssetUpload: vi.fn(),
-            cancelCreativeAssetUpload: vi.fn(),
+            cancelCreativeAssetUpload: cancelUpload,
             getLinkedInAccounts: () => of([]),
             getLinkedInTargetingProfiles: () => of([]),
             getCreativeAssetPlan: () => of({ platforms: [], assignments: [], gaps: [], unclassified: [], unused: [] }),
@@ -125,15 +127,38 @@ describe('ImplementationTabComponent meta video', () => {
     expect(sent()['variants'][1]).toEqual({ primaryText: 'Other', headline: 'Workshops', description: '', imageUrl: 'https://cdn/x.png' });
   });
 
-  it('holds Create while a variant video uploads, then puts it on that variant', STATE_ONLY, async () => {
+  const mp4 = (): { files: File[] } => ({ files: [new File([new Uint8Array(8)], 'promo.mp4', { type: 'video/mp4' })] });
+
+  it('holds Create while a variant video uploads, puts it on that variant, and re-reads the library on a delete', STATE_ONLY, async () => {
     const { f } = await mount(true);
-    c(f)['onMetaVariantVideoFileSelect'](1, { files: [new File([new Uint8Array(8)], 'promo.mp4', { type: 'video/mp4' })] });
+    const uploader = { clear: vi.fn() };
+    c(f)['onMetaVariantVideoFileSelect'](1, mp4(), uploader);
+    expect(uploader.clear).toHaveBeenCalled();
     expect(c(f)['createBlockedReason']()).toBe('Waiting for the Meta Ads video upload to finish.');
     expect(c(f)['metaVideoPickerHeld']()).toBe(true);
 
     upload$.next({ id: A, mimeType: 'video/mp4' });
     expect(c(f)['metaVariantVideos']()[1]).toEqual({ assetId: A, assetName: 'promo.mp4', assetBriefId: 'b-1' });
+    c(f)['onMetaVariantVideoPick'](0, A);
+    expect(c(f)['metaVariantVideos']()[0].assetName).toBe('promo.mp4');
     expect(c(f)['createBlockedReason']()).toBeNull();
+
+    const revision = c(f)['creativeLibraryRevision']();
+    c(f)['onStoredVideoDeleted'](A);
+    expect(c(f)['creativeLibraryRevision']()).toBe(revision + 1);
+    const videos: { assetId: string }[] = c(f)['metaVariantVideos']();
+    expect(videos.map((video) => video.assetId)).toEqual(['', '']);
+  });
+
+  it("lets go of an older brief's video upload on a brief switch, cancelling it", STATE_ONLY, async () => {
+    const { f } = await mount(true);
+    c(f)['onMetaVariantVideoFileSelect'](0, mp4());
+    f.componentRef.setInput('briefPersistence', { status: 'saved', briefId: 'b-2', message: null, approved: true });
+    expect(c(f)['createBlockedReason']()).not.toBe('Waiting for the Meta Ads video upload to finish.');
+    expect(c(f)['metaVariantVideoViews']()[0].uploading).toBe(false);
+
+    c(f)['resetMetaFields']();
+    expect(cancelUpload).toHaveBeenCalledWith('meta-video');
   });
 
   it('saves the picked videos in the draft and restores them through the bindings', STATE_ONLY, async () => {

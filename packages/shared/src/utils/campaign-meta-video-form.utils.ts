@@ -16,6 +16,7 @@ import type {
   MetaVariantVideoDraft,
   MetaVariantVideoView,
   MetaVideoUploadPending,
+  MetaVideoStoredAt,
   MetaVideoUploadState,
 } from '../interfaces/campaign.interface';
 import { metaVariantsWithImage } from './campaign-meta-image.utils';
@@ -104,14 +105,22 @@ export function metaVideoFileRefusal(file: { type: string; size: number }, brief
 }
 
 /**
- * Why variant `index`'s chosen video cannot be sent, or `''`: stored for another brief, or a picked video gone from a
- * library that was read. A video uploaded on this tab (it has a file name) is not judged by a read that may predate it;
- * a delete in the library clears it from the ads, and campaign-service checks the asset exists before any Meta call.
+ * The videos stored on this tab after the library read on screen was made (`library.revision`, the tab's library
+ * revision it was read at): that read cannot list them yet, so it is no evidence they are gone. Every later read is.
  */
-function videoProblem(video: MetaVariantVideoDraft | undefined, library: CreativeAssetLibraryState, briefId: string): string {
+export function metaVideosNewerThanRead(stored: readonly MetaVideoStoredAt[], library: CreativeAssetLibraryState): string[] {
+  const readAt = library.revision ?? -1;
+  return stored.filter((entry) => entry.revision > readAt).map((entry) => entry.id);
+}
+
+/**
+ * Why variant `index`'s chosen video cannot be sent, or `''`: stored for another brief, or gone from a library read
+ * that would list it. A video stored after that read (`fresh`, see `metaVideosNewerThanRead`) is not judged by it.
+ */
+function videoProblem(video: MetaVariantVideoDraft | undefined, library: CreativeAssetLibraryState, briefId: string, fresh: readonly string[]): string {
   if (video === undefined || video.assetId === '' || briefId === '') return '';
   if (video.assetBriefId !== briefId) return "Stored for a different brief. Choose a video from this brief's library, or no video.";
-  if (video.assetName === '' && library.status === 'ready' && !(library.videos ?? []).some((stored) => stored.id === video.assetId))
+  if (!fresh.includes(video.assetId) && library.status === 'ready' && !(library.videos ?? []).some((stored) => stored.id === video.assetId))
     return "No longer in the brief's library. Choose another video, or no video.";
   return '';
 }
@@ -137,7 +146,8 @@ export function metaVariantVideoViews(
   videos: readonly MetaVariantVideoDraft[],
   library: CreativeAssetLibraryState,
   briefId: string,
-  upload: MetaVideoUploadState
+  upload: MetaVideoUploadState,
+  fresh: readonly string[] = []
 ): MetaVariantVideoView[] {
   const options = videoOptions(videos.slice(0, count), library, briefId);
   return Array.from({ length: count }, (_, i) => {
@@ -150,7 +160,7 @@ export function metaVariantVideoViews(
     return {
       assetId: metaVariantVideoForBrief(videos, i, briefId) ? video.assetId : '',
       options,
-      problem: videoProblem(video, library, briefId),
+      problem: videoProblem(video, library, briefId, fresh),
       uploading,
       status,
       error: mine && upload.status === 'error' ? upload.error : '',
@@ -170,12 +180,14 @@ export function metaVideoCreateRefusal(input: {
   library: CreativeAssetLibraryState;
   briefId: string;
   config: { variants: readonly MetaAdVariant[]; leadFormId?: string };
+  /** The videos stored after the library read (`metaVideosNewerThanRead`). */
+  fresh?: readonly string[];
 }): string | null {
   if (!input.available) {
     return anyVideoChosen(input.videos, input.count) ? 'Meta Ads: video ads are not available right now. Set each ad to no video to send image ads.' : null;
   }
   for (let i = 0; i < input.count; i++) {
-    const problem = videoProblem(input.videos[i], input.library, input.briefId);
+    const problem = videoProblem(input.videos[i], input.library, input.briefId, input.fresh ?? []);
     if (problem !== '') return `Meta Ads: the video on variant ${i + 1} cannot be sent. ${problem}`;
   }
   const refusal = metaVideoRefusal(input.config, true);

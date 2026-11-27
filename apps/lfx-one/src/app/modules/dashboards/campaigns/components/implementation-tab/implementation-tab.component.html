@@ -5267,6 +5267,7 @@
                           }
                           @if (metaVideoAvailable() && briefPersistence().briefId) {
                             <lfx-file-upload
+                              #metaVideoUploader
                               mode="basic"
                               [accept]="metaVideoAccept"
                               [auto]="true"
@@ -5276,7 +5277,7 @@
                               chooseStyleClass="p-button-sm"
                               [disabled]="metaVideoPickerHeld()"
                               [dataTest]="'implementation-meta-variant-video-file-' + i"
-                              (onSelect)="onMetaVariantVideoFileSelect(i, $event)" />
+                              (onSelect)="onMetaVariantVideoFileSelect(i, $event, metaVideoUploader)" />
                             <p class="text-xs text-gray-500">MP4, up to 30 MB. Stored in the brief's library.</p>
                           }
                           @if (video.status) {
@@ -6474,7 +6475,7 @@
             [reloadToken]="creativeLibraryRevision()"
             [videoIdsInUse]="videoIdsInUse()"
             [videoUploadRunning]="linkedInImageUploadStatus() === 'uploading' || metaVideoUploadStatus() === 'uploading'"
-            (videoDeleted)="onLibraryVideoGone($event)"
+            (videoDeleted)="onStoredVideoDeleted($event)"
             (videoRelease)="onLibraryVideoGone($event)"
             [documentIdsInUse]="linkedInDocumentIdsInUse()"
             (documentDeleted)="onLibraryDocumentDeleted($event)"
