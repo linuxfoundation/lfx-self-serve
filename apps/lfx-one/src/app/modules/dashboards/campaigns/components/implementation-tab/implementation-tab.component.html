@@ -4189,41 +4189,31 @@
           @if (linkedInDeliveryOptionsShown()) {
             <fieldset class="mb-4" data-testid="implementation-linkedin-delivery-options">
               <legend class="mb-2 block text-xs font-medium text-gray-700">Delivery options</legend>
-              <div class="flex flex-col gap-2">
-                <label class="flex items-start gap-2 text-sm text-gray-700">
-                  <input
-                    type="checkbox"
+              <div class="flex flex-col gap-3">
+                <div class="flex flex-col gap-1">
+                  <lfx-ui-checkbox
+                    label="Audience Expansion"
                     [checked]="linkedInDeliveryOptions().audienceExpansion"
-                    (change)="onLinkedInDeliveryOptionChange('audienceExpansion', $event)"
-                    class="mt-0.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    [disabled]="linkedInAudienceExpansionDisabled()"
+                    (checkedChange)="onLinkedInDeliveryOptionChange('audienceExpansion', $event)"
                     data-testid="implementation-linkedin-audience-expansion" />
-                  <span>
-                    Audience Expansion
-                    <span class="block text-xs text-gray-500">Also reach members similar to the targeting. Off by default.</span>
-                  </span>
-                </label>
-                <label
-                  class="flex items-start gap-2 text-sm"
-                  [class.text-gray-700]="linkedInAudienceNetworkOffered()"
-                  [class.text-gray-400]="!linkedInAudienceNetworkOffered()">
-                  <input
-                    type="checkbox"
+                  <span class="text-xs text-gray-500">Also reach members similar to the targeting. Off by default.</span>
+                </div>
+                <div class="flex flex-col gap-1">
+                  <lfx-ui-checkbox
+                    label="LinkedIn Audience Network"
                     [checked]="linkedInDeliveryOptions().audienceNetwork"
-                    [disabled]="!linkedInAudienceNetworkOffered()"
-                    (change)="onLinkedInDeliveryOptionChange('audienceNetwork', $event)"
-                    class="mt-0.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    [disabled]="linkedInAudienceNetworkDisabled()"
+                    (checkedChange)="onLinkedInDeliveryOptionChange('audienceNetwork', $event)"
                     data-testid="implementation-linkedin-audience-network" />
-                  <span>
-                    LinkedIn Audience Network
-                    <span class="block text-xs text-gray-500">
-                      @if (linkedInAudienceNetworkOffered()) {
-                        Also show the ads on partner apps and sites outside LinkedIn. Off by default.
-                      } @else {
-                        Not available with text ads or lead generation, so it is not sent.
-                      }
-                    </span>
+                  <span class="text-xs text-gray-500">
+                    @if (linkedInAudienceNetworkOffered()) {
+                      Also show the ads on partner apps and sites outside LinkedIn. Off by default.
+                    } @else {
+                      Not available with text ads or lead generation, so it is not sent. Turn it off to clear it.
+                    }
                   </span>
-                </label>
+                </div>
               </div>
             </fieldset>
           }

@@ -17,15 +17,24 @@ export function emptyLinkedInDeliveryOptionsDraft(): LinkedInDeliveryOptionsDraf
 /**
  * Whether a toggle that is on waits on the capability: `linkedInDeliveryOptionsEnabled` is not read yet (`null`: loading,
  * a tab round-trip, or a failed read). Create is held rather than sending the campaign without the choice, as a typed
- * target cost is held, and the toggles stay shown so they can be turned off.
+ * target cost is held, and the toggles stay shown so they can be turned off. An Audience Network choice that is not
+ * offered (`networkOffered`) is never sent, so it holds nothing.
  */
-export function linkedInDeliveryOptionsPending(draft: LinkedInDeliveryOptionsDraft, enabled: boolean | null): boolean {
-  return enabled === null && (draft.audienceExpansion || draft.audienceNetwork);
+export function linkedInDeliveryOptionsPending(draft: LinkedInDeliveryOptionsDraft, enabled: boolean | null, networkOffered: boolean): boolean {
+  return enabled === null && (draft.audienceExpansion || (draft.audienceNetwork && networkOffered));
 }
 
 /** Whether the toggles show: on an explicit yes, and while a toggle that is on waits on the capability. */
-export function linkedInDeliveryOptionsShown(draft: LinkedInDeliveryOptionsDraft, enabled: boolean | null): boolean {
-  return enabled === true || linkedInDeliveryOptionsPending(draft, enabled);
+export function linkedInDeliveryOptionsShown(draft: LinkedInDeliveryOptionsDraft, enabled: boolean | null, networkOffered: boolean): boolean {
+  return enabled === true || linkedInDeliveryOptionsPending(draft, enabled, networkOffered);
+}
+
+/**
+ * Whether a toggle is disabled: only a new opt-in is blocked. A toggle that is on can always be turned off, even while the
+ * capability is unread or its option is not offered, so a held or unsendable choice can be cleared.
+ */
+export function linkedInDeliveryOptionDisabled(checked: boolean, optInAllowed: boolean): boolean {
+  return !checked && !optInAllowed;
 }
 
 /**
@@ -54,8 +63,8 @@ export function linkedInDeliveryOptionsForCreate(
 }
 
 /** Why the delivery options hold Create, as the create button says it, or `null`: only while a toggle that is on waits on the capability. */
-export function linkedInDeliveryOptionsCreateRefusal(draft: LinkedInDeliveryOptionsDraft, enabled: boolean | null): string | null {
-  if (!linkedInDeliveryOptionsPending(draft, enabled)) return null;
+export function linkedInDeliveryOptionsCreateRefusal(draft: LinkedInDeliveryOptionsDraft, enabled: boolean | null, networkOffered: boolean): string | null {
+  if (!linkedInDeliveryOptionsPending(draft, enabled, networkOffered)) return null;
   return "LinkedIn Ads: Audience Expansion and the Audience Network can't be confirmed yet. Wait for the campaign settings to load, or turn them off.";
 }
 

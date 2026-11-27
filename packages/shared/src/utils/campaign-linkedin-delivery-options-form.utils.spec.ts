@@ -9,6 +9,7 @@ import {
   linkedInDeliveryOptionsCreateRefusal,
   linkedInDeliveryOptionsDraftFromStored,
   linkedInDeliveryOptionsForCreate,
+  linkedInDeliveryOptionDisabled,
   linkedInDeliveryOptionsShown,
 } from './campaign-linkedin-delivery-options-form.utils';
 import { linkedInDeliveryOptionsRefusal } from './campaign-linkedin-delivery-options.utils';
@@ -18,12 +19,26 @@ const BOTH = { audienceExpansion: true, audienceNetwork: true };
 
 describe('linkedInDeliveryOptionsShown', () => {
   it.each([
-    ['on an explicit yes', OFF, true, true],
-    ['not while off', BOTH, false, false],
-    ['not while unread with both off', OFF, null, false],
-    ['while unread with a toggle on, so it can be turned off', { ...OFF, audienceNetwork: true }, null, true],
-  ])('%s', (_name, draft, enabled, expected) => {
-    expect(linkedInDeliveryOptionsShown(draft, enabled)).toBe(expected);
+    ['on an explicit yes', OFF, true, true, true],
+    ['not while off', BOTH, false, true, false],
+    ['not while unread with both off', OFF, null, true, false],
+    ['while unread with a toggle on, so it can be turned off', { ...OFF, audienceNetwork: true }, null, true, true],
+    ['on an explicit yes, with the Audience Network not offered', BOTH, true, false, true],
+    ['not while unread with only an Audience Network that is not offered', { ...OFF, audienceNetwork: true }, null, false, false],
+  ])('%s', (_name, draft, enabled, networkOffered, expected) => {
+    expect(linkedInDeliveryOptionsShown(draft, enabled, networkOffered)).toBe(expected);
+  });
+});
+
+describe('linkedInDeliveryOptionDisabled', () => {
+  it.each([
+    ['an unchecked option where opt-in is allowed', false, true, false],
+    ['an unchecked option where opt-in is blocked', false, false, true],
+    // A held or unsendable choice can always be cleared.
+    ['a checked option where opt-in is blocked', true, false, false],
+    ['a checked option where opt-in is allowed', true, true, false],
+  ])('%s', (_name, checked, optInAllowed, expected) => {
+    expect(linkedInDeliveryOptionDisabled(checked, optInAllowed)).toBe(expected);
   });
 });
 
@@ -58,8 +73,11 @@ describe('linkedInDeliveryOptionsCreateRefusal', () => {
     ['both off while unread', OFF, null, null],
     ['a toggle on while offered', BOTH, true, null],
     ['a toggle on while off: hidden and not sent', BOTH, false, null],
-  ])('%s', (_name, draft, enabled, expected) => {
-    const refusal = linkedInDeliveryOptionsCreateRefusal(draft, enabled);
+    // Not offered (text ads or lead generation), the Audience Network is never sent, so it holds nothing.
+    ['only an Audience Network that is not offered, while unread', { ...OFF, audienceNetwork: true }, null, null, false],
+    ['Audience Expansion beside a network that is not offered, while unread', BOTH, null, "can't be confirmed yet", false],
+  ])('%s', (_name, draft, enabled, expected, networkOffered = true) => {
+    const refusal = linkedInDeliveryOptionsCreateRefusal(draft, enabled, networkOffered);
     if (expected === null) expect(refusal).toBeNull();
     else expect(refusal).toContain(expected);
   });

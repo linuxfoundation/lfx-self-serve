@@ -2873,10 +2873,6 @@ export interface LinkedInConfigKeyRefusal {
   message: string;
 }
 
-/**
- * The Implement tab's LinkedIn objective and conversion rules as edited (#5764 rows 2 and 4), and the automatic-bidding
- * target cost beside them (linuxfoundation/lfx-v2-campaign-service#674), carried in the draft.
- */
 /** The Implement tab's LinkedIn delivery options as set (linuxfoundation/lfx-v2-campaign-service#667), carried in the draft. */
 export interface LinkedInDeliveryOptionsDraft {
   /** Audience Expansion on: sent as `audienceExpansionEnabled: true`. Off sends nothing (LinkedIn's default). */
@@ -2888,6 +2884,10 @@ export interface LinkedInDeliveryOptionsDraft {
   audienceNetwork: boolean;
 }
 
+/**
+ * The Implement tab's LinkedIn objective and conversion rules as edited (#5764 rows 2 and 4), and the automatic-bidding
+ * target cost beside them (linuxfoundation/lfx-v2-campaign-service#674), carried in the draft.
+ */
 export interface LinkedInObjectiveDraft {
   /** The objective chosen, or `null`: none is sent, so the bidding decides, as every create did before. */
   objective: LinkedInObjective | LinkedInLeadGenObjective | null;

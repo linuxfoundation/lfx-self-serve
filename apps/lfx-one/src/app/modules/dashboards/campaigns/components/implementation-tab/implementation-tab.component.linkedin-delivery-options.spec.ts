@@ -93,7 +93,7 @@ describe('ImplementationTabComponent linkedin delivery options', () => {
   });
 
   const toggle = (f: ComponentFixture<ImplementationTabComponent>, option: string, checked: boolean): void =>
-    c(f)['onLinkedInDeliveryOptionChange'](option, { target: { checked } });
+    c(f)['onLinkedInDeliveryOptionChange'](option, checked);
   const sent = (): Record<string, unknown> => createCampaign.mock.calls.at(-1)?.[0]['linkedInConfig'];
 
   it('sends nothing by default, both options once on, and nothing while the capability is off', STATE_ONLY, async () => {
@@ -121,7 +121,10 @@ describe('ImplementationTabComponent linkedin delivery options', () => {
     f.componentRef.setInput('linkedInDeliveryOptionsEnabled', null);
     toggle(f, 'audienceExpansion', true);
     expect(c(f)['linkedInDeliveryOptionsShown']()).toBe(true);
-    expect(c(f)['createBlockedReason']()).toBe(linkedInDeliveryOptionsCreateRefusal(c(f)['linkedInDeliveryOptions'](), null));
+    expect(c(f)['createBlockedReason']()).toBe(linkedInDeliveryOptionsCreateRefusal(c(f)['linkedInDeliveryOptions'](), null, true));
+    // A new opt-in waits for the capability; the option already on can still be turned off.
+    expect(c(f)['linkedInAudienceNetworkDisabled']()).toBe(true);
+    expect(c(f)['linkedInAudienceExpansionDisabled']()).toBe(false);
 
     f.componentRef.setInput('linkedInDeliveryOptionsEnabled', true);
     expect(c(f)['createBlockedReason']()).toBeNull();
