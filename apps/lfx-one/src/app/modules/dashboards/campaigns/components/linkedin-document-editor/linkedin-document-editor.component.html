@@ -29,7 +29,10 @@
     <p class="text-xs text-gray-500" data-testid="linkedin-document-editor-pdf-note">{{ view().pdfNote }}</p>
   }
 
-  @if (uploadAvailable()) {
+  <!-- Held while a stored asset's delete runs: an upload of identical bytes would answer with the asset being deleted. -->
+  @if (uploadAvailable() && deletingAssetId()) {
+    <p class="text-xs text-gray-500" data-testid="linkedin-document-editor-upload-held">Wait for the library delete to finish to upload a PDF.</p>
+  } @else if (uploadAvailable()) {
     <div class="flex flex-col gap-1" data-testid="linkedin-document-editor-upload">
       <label class="text-xs font-medium text-gray-700" for="linkedin-document-pdf-file">Upload a PDF to the brief's library</label>
       <input

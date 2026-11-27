@@ -300,6 +300,19 @@ export interface LinkedInStoredVideoRow {
   note: string;
 }
 
+/** One stored PDF as the library lists it (campaign-service#665), and whether it may be deleted now. */
+export interface LinkedInStoredDocumentRow {
+  id: string;
+  /** "PDF 1 (ab12cd34)": the library's order and the checksum's start, since campaign-service records no file name. */
+  label: string;
+  byteSize: number;
+  /** Whether the LinkedIn document ad on the tab names it, which offers "Remove from ad" and holds Delete. */
+  inUse: boolean;
+  deleteDisabled: boolean;
+  /** Why Delete is off, or `''`. */
+  note: string;
+}
+
 /**
  * A brief's creative-asset library plus its quota.
  *

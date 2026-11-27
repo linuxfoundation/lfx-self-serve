@@ -2157,6 +2157,13 @@ export class ImplementationTabComponent implements OnInit {
       .map((variant) => variant.videoAssetId ?? '')
       .filter((id) => id !== '')
   );
+  /** The stored asset whose delete is running, `''` for none: the PDF picker does not offer it, and Create waits while the document ad names it. */
+  protected readonly linkedInDocumentDeletingId = computed<string>(() => this.campaignService.creativeVideoDeleting()?.id ?? '');
+  /**
+   * The stored PDF the LinkedIn document ad names (campaign-service#665), whatever the format: the library will not delete
+   * it, so a create can never send a deleted asset. It offers "Remove from ad" (`onLibraryDocumentReleased`).
+   */
+  protected readonly linkedInDocumentIdsInUse = computed<string[]>(() => (this.linkedInDocument().assetId ? [this.linkedInDocument().assetId] : []));
   /** Whether this create is a video campaign (#5764 row 18): chosen, and offered by this deployment. */
   protected readonly linkedInVideoSelected = computed<boolean>(() => this.linkedInVideoAdsAvailable() && this.linkedInFormat() === 'video');
   /** Whether custom targeting replaces the targeting profile (#5764 rows 8–11), carried in the draft. */
@@ -4470,8 +4477,11 @@ export class ImplementationTabComponent implements OnInit {
     if (!form.eventName.value?.trim()) return 'Enter the Event Name.';
     // The remedy named is the brief editor, not this field (#5490): the campaign-service create reads
     // the destination from the SAVED brief, and the BFF refuses it while that brief has none, whatever
-    // is typed here (`createCampaign` in `campaign.controller.ts`).
-    if (!form.registrationUrl.value?.trim())
+    // is typed here (`createCampaign` in `campaign.controller.ts`). A LinkedIn document ad alone needs
+    // none (campaign-service#665): its post carries the PDF and no landing page, so neither the BFF nor
+    // campaign-service reads the URL for it.
+    const documentOnly = platforms.length === 1 && linkedInSelected && this.linkedInDocumentSelected();
+    if (!documentOnly && !form.registrationUrl.value?.trim())
       return 'Registration URL is empty. Select Edit brief, enter the Registration URL, then Save & Proceed to Implement.';
     if (!form.startDate.value) return 'Choose a Start Date.';
     if (!form.endDate.value) return 'Choose an End Date.';
@@ -5984,7 +5994,8 @@ export class ImplementationTabComponent implements OnInit {
   protected onLinkedInDocumentUpload(files: File[]): void {
     const briefId = this.briefPersistence().briefId ?? '';
     const projectSlug = this.activeFoundationSlug();
-    if (!briefId || !projectSlug) return;
+    // The editor holds its upload while a delete runs; this also refuses a pick that lands after it started.
+    if (!briefId || !projectSlug || this.linkedInDocumentDeletingId() !== '') return;
     this.campaignService.enqueueCreativeAssetUploads(files, projectSlug, briefId, { documents: true });
   }
 
@@ -6207,6 +6218,22 @@ export class ImplementationTabComponent implements OnInit {
     this.linkedInVariants.update((variants) =>
       variants.map((variant) => (variant.videoAssetId === assetId ? { ...variant, videoAssetId: '', videoAssetName: '', videoAssetBriefId: '' } : variant))
     );
+    this.emitDraft();
+  }
+
+  /**
+   * A stored PDF the library deleted (campaign-service#665): the library is read again, so the PDF picker stops offering
+   * it, and it is cleared from the document ad if an upload of identical bytes put it back there.
+   */
+  protected onLibraryDocumentDeleted(assetId: string): void {
+    this.onCreativeLibraryChanged();
+    this.onLibraryDocumentReleased(assetId);
+  }
+
+  /** A stored PDF the operator took off the document ad in the library (campaign-service#665), which then lets it be deleted. */
+  protected onLibraryDocumentReleased(assetId: string): void {
+    if (this.linkedInDocument().assetId !== assetId) return;
+    this.linkedInDocument.update((document) => ({ ...document, assetId: '', assetBriefId: '' }));
     this.emitDraft();
   }
 
@@ -9457,10 +9484,13 @@ export class ImplementationTabComponent implements OnInit {
               refusal:
                 this.briefSaveInFlight() || this.briefPersistence().status === 'saving'
                   ? null
-                  : linkedInDocumentCreateRefusal(this.linkedInDocument(), this.googleCreativeLibrary(), this.briefPersistence().briefId ?? '', {
-                      objective: this.linkedInObjectiveDraft().objective,
-                      bidding: this.biddingField('linkedin-ads').bidding,
-                    }),
+                  : linkedInDocumentCreateRefusal(
+                      this.linkedInDocument(),
+                      this.googleCreativeLibrary(),
+                      this.briefPersistence().briefId ?? '',
+                      { objective: this.linkedInObjectiveDraft().objective, bidding: this.biddingField('linkedin-ads').bidding },
+                      this.linkedInDocumentDeletingId()
+                    ),
             },
           }
         : {}),

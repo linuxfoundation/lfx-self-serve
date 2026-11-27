@@ -12,6 +12,7 @@ import {
   linkedInDocumentGatedWarning,
   linkedInDocumentPdfOptions,
   linkedInDocumentView,
+  linkedInStoredDocumentRows,
 } from './campaign-linkedin-document-form.utils';
 
 const PDF = '3f2b8c1e-5d4a-4e6f-9a7b-1c2d3e4f5a6b';
@@ -29,6 +30,27 @@ const draft = (fields: Partial<LinkedInDocumentDraft> = {}): LinkedInDocumentDra
   ...fields,
 });
 
+describe('linkedInStoredDocumentRows', () => {
+  const stored = [
+    { id: PDF, byteSize: 10, checksum: 'aaaaaaaaff' },
+    { id: OTHER, byteSize: 20, checksum: 'bbbbbbbbff' },
+  ];
+  const used = 'Used by the LinkedIn document ad on this tab. Remove it from the ad to delete it.';
+  const waiting = 'Wait for the uploads to finish.';
+  it.each([
+    ['neither in use', [], false, '', [false, false], ['', '']],
+    ['the first in use by the document ad', [PDF], false, '', [true, false], [used, '']],
+    ['an upload running', [], true, '', [true, true], [waiting, waiting]],
+    ['the second being deleted', [], false, OTHER, [true, true], ['', 'Deleting…']],
+  ])('%s', (_label, inUse, uploading, deletingId, disabled, notes) => {
+    const rows = linkedInStoredDocumentRows(stored, inUse, uploading, deletingId);
+    expect(rows.map((row) => row.label)).toEqual(['PDF 1 (aaaaaaaa)', 'PDF 2 (bbbbbbbb)']);
+    expect(rows.map((row) => row.deleteDisabled)).toEqual(disabled);
+    expect(rows.map((row) => row.note)).toEqual(notes);
+    expect(rows.map((row) => row.inUse)).toEqual(stored.map((document) => inUse.includes(document.id)));
+  });
+});
+
 describe('linkedInDocumentPdfOptions', () => {
   it('offers every stored PDF, labelled by order, checksum and size', () => {
     expect(linkedInDocumentPdfOptions(ready([PDF, OTHER]), '')).toEqual([
@@ -41,6 +63,16 @@ describe('linkedInDocumentPdfOptions', () => {
   it('keeps a held PDF the library does not list, after a clear option', () => {
     expect(linkedInDocumentPdfOptions(ready([]), OTHER).map((option) => option.value)).toEqual(['', OTHER]);
     expect(linkedInDocumentPdfOptions(ready([PDF]), PDF).map((option) => option.value)).toEqual(['', PDF]);
+  });
+
+  // A PDF whose delete is running is not offered, so it cannot be picked for a create that would name it once gone.
+  it.each([
+    ['no delete running', '', '', [PDF, OTHER]],
+    ['the other PDF being deleted', '', OTHER, [PDF]],
+    ['an asset not listed being deleted', '', 'v-1', [PDF, OTHER]],
+    ['the held PDF being deleted, kept by id so it can be cleared', PDF, PDF, ['', PDF, OTHER]],
+  ])('offers PDFs with %s', (_label, held, deletingId, values) => {
+    expect(linkedInDocumentPdfOptions(ready([PDF, OTHER]), held, deletingId).map((option) => option.value)).toEqual(values);
   });
 });
 
@@ -114,6 +146,17 @@ describe('linkedInDocumentCreateRefusal', () => {
     ['a manual bid', draft(), { bidding: { strategy: 'manual', bidAmount: 5 } }, 'b-1', 'automatic bidding only'],
   ])('judges %s', (_name, document, sent, briefId, expected) => {
     const refusal = linkedInDocumentCreateRefusal(document, ready(), briefId, sent);
+    if (expected === null) expect(refusal).toBeNull();
+    else expect(refusal).toContain(expected);
+  });
+
+  // Create waits while the picked PDF's delete runs: the create would name a PDF about to be gone.
+  it.each([
+    ['the picked PDF being deleted', PDF, 'is being deleted'],
+    ['another asset being deleted', OTHER, null],
+    ['no delete running', '', null],
+  ])('judges %s', (_name, deletingId, expected) => {
+    const refusal = linkedInDocumentCreateRefusal(draft(), ready([PDF, OTHER]), 'b-1', {}, deletingId);
     if (expected === null) expect(refusal).toBeNull();
     else expect(refusal).toContain(expected);
   });

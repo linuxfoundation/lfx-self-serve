@@ -184,6 +184,7 @@ export * from './campaign-linkedin-delivery-options.utils';
 export * from './campaign-linkedin-delivery-options-form.utils';
 export * from './campaign-linkedin-document.utils';
 export * from './campaign-linkedin-document-form.utils';
+export * from './campaign-creative-asset-queue.utils';
 export * from './campaign-linkedin-lead-gen-form.utils';
 export * from './campaign-linkedin-objective-form.utils';
 export * from './campaign-linkedin-text-ads-form.utils';

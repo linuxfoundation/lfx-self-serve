@@ -8,6 +8,8 @@ import type {
   LinkedInDocumentDraft,
   LinkedInDocumentPdfOption,
   LinkedInDocumentView,
+  LinkedInStoredDocumentRow,
+  StoredCreativeDocument,
 } from '../interfaces/campaign.interface';
 import { linkedInDocumentRefusal } from './campaign-linkedin-document.utils';
 import { linkedInCreativeTextLength } from './campaign-linkedin.utils';
@@ -30,12 +32,42 @@ function pdfLabel(position: number, checksum: string, byteSize: number): string 
 }
 
 /**
+ * The library's stored PDFs with whether each may be deleted (campaign-service#665), `linkedInStoredVideoRows`' sibling.
+ * Delete is the operator's, never automatic: it is off while the document ad on the tab names the PDF (the create would
+ * name a deleted asset), while the library's upload queue runs (identical bytes come back as the asset already stored),
+ * and while another delete runs.
+ */
+export function linkedInStoredDocumentRows(
+  documents: readonly StoredCreativeDocument[],
+  inUse: readonly string[],
+  uploading: boolean,
+  deletingId: string
+): LinkedInStoredDocumentRow[] {
+  return documents.map((document, index) => {
+    let note = '';
+    const used = inUse.includes(document.id);
+    if (used) note = 'Used by the LinkedIn document ad on this tab. Remove it from the ad to delete it.';
+    else if (uploading) note = 'Wait for the uploads to finish.';
+    else if (deletingId === document.id) note = 'Deleting…';
+    return {
+      id: document.id,
+      label: `PDF ${index + 1} (${document.checksum.slice(0, 8)})`,
+      byteSize: document.byteSize,
+      inUse: used,
+      deleteDisabled: note !== '' || deletingId !== '',
+      note,
+    };
+  });
+}
+
+/**
  * The PDFs the picker offers: every PDF stored for the brief, and a held PDF the library does not list kept by id. While
  * a PDF is held, a first "No PDF" option (value `''`) clears it: the select does not re-emit the value it holds, so
- * without it a PDF held for another brief could not be picked again when it is the only one.
+ * without it a PDF held for another brief could not be picked again when it is the only one. A PDF whose delete is
+ * running (`deletingId`) is not offered, so it cannot be picked for a create that would name it once it is gone.
  */
-export function linkedInDocumentPdfOptions(library: CreativeAssetLibraryState, held: string): LinkedInDocumentPdfOption[] {
-  const documents = library.documents ?? [];
+export function linkedInDocumentPdfOptions(library: CreativeAssetLibraryState, held: string, deletingId = ''): LinkedInDocumentPdfOption[] {
+  const documents = (library.documents ?? []).filter((document) => deletingId === '' || document.id !== deletingId);
   const options = documents.map((document, index) => ({ value: document.id, label: pdfLabel(index + 1, document.checksum, document.byteSize) }));
   if (held !== '' && !documents.some((document) => document.id === held)) options.unshift({ value: held, label: `Stored PDF ${held.slice(0, 8)}` });
   if (held !== '') options.unshift({ value: '', label: 'No PDF (choose again)' });
@@ -67,8 +99,8 @@ function assetProblem(draft: LinkedInDocumentDraft, library: CreativeAssetLibrar
   return (library.documents ?? []).some((document) => document.id === draft.assetId) ? '' : "No longer in the brief's library. Choose another PDF.";
 }
 
-/** The document editor's view: its counters, the error or hint under each field, and the PDF picker. */
-export function linkedInDocumentView(draft: LinkedInDocumentDraft, library: CreativeAssetLibraryState, briefId: string): LinkedInDocumentView {
+/** The document editor's view: its counters, the error or hint under each field, and the PDF picker (`deletingId`: see `linkedInDocumentPdfOptions`). */
+export function linkedInDocumentView(draft: LinkedInDocumentDraft, library: CreativeAssetLibraryState, briefId: string, deletingId = ''): LinkedInDocumentView {
   const { title, introText, recommendedIntroText } = LINKEDIN_DOCUMENT_LIMITS;
   const titleLength = linkedInCreativeTextLength(draft.title);
   const introLength = linkedInCreativeTextLength(draft.introText);
@@ -85,7 +117,7 @@ export function linkedInDocumentView(draft: LinkedInDocumentDraft, library: Crea
     introHint,
     assetProblem: assetProblem(draft, library, briefId),
     pdfNote: pdfNote(library),
-    pdfOptions: linkedInDocumentPdfOptions(library, draft.assetId),
+    pdfOptions: linkedInDocumentPdfOptions(library, draft.assetId, deletingId),
   };
 }
 
@@ -107,17 +139,20 @@ export function linkedInDocumentFieldsForCreate(
 }
 
 /**
- * Why a document create waits, or `null`: no brief id (the PDF is the saved brief's), then a picked PDF that cannot be
- * used (the message is under the picker), then the request the tab would send, with its objective and bidding, checked by
+ * Why a document create waits, or `null`: no brief id (the PDF is the saved brief's), then a picked PDF whose delete is
+ * running (`deletingId`: the create would name a PDF about to be gone), then a picked PDF that cannot be used (the message
+ * is under the picker), then the request the tab would send, with its objective and bidding, checked by
  * `linkedInDocumentRefusal` as the create route will. A save in flight is the caller's to hold first.
  */
 export function linkedInDocumentCreateRefusal(
   draft: LinkedInDocumentDraft,
   library: CreativeAssetLibraryState,
   briefId: string,
-  sent: { objective?: string | null; bidding?: unknown }
+  sent: { objective?: string | null; bidding?: unknown },
+  deletingId = ''
 ): string | null {
   if (briefId === '') return 'LinkedIn Ads: save the brief, so the document ad can use its PDF.';
+  if (deletingId !== '' && draft.assetId === deletingId) return 'LinkedIn Ads: the PDF chosen for the document ad is being deleted. Choose another PDF.';
   if (assetProblem(draft, library, briefId) !== '') return 'LinkedIn Ads: choose another PDF for the document ad.';
   const request: Record<string, unknown> = { ...linkedInDocumentFieldsForCreate(draft, briefId) };
   if (sent.objective !== undefined && sent.objective !== null) request['objective'] = sent.objective;

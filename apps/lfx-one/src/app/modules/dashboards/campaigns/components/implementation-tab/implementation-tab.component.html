@@ -4291,6 +4291,7 @@
               (documentChange)="onLinkedInDocumentChange($event)"
               [library]="googleCreativeLibrary()"
               [briefId]="briefPersistence().briefId ?? ''"
+              [deletingAssetId]="linkedInDocumentDeletingId()"
               [uploadAvailable]="linkedInAssetUploadAvailable() && !!briefPersistence().briefId"
               [gatedWarning]="linkedInDocumentGatedWarning()"
               (upload)="onLinkedInDocumentUpload($event)"
@@ -6339,6 +6340,9 @@
             [videoUploadRunning]="linkedInImageUploadStatus() === 'uploading'"
             (videoDeleted)="onLibraryVideoDeleted($event)"
             (videoRelease)="onLibraryVideoDeleted($event)"
+            [documentIdsInUse]="linkedInDocumentIdsInUse()"
+            (documentDeleted)="onLibraryDocumentDeleted($event)"
+            (documentRelease)="onLibraryDocumentReleased($event)"
             (libraryChanged)="onCreativeLibraryChanged()" />
           <lfx-creative-slot-grid
             [projectSlug]="activeFoundationSlug()"

@@ -46,6 +46,7 @@ describe('ImplementationTabComponent linkedin document', () => {
   });
   let createCampaign: ReturnType<typeof vi.fn>;
   let enqueueCreativeAssetUploads: ReturnType<typeof vi.fn>;
+  const deleting = signal<{ briefId: string; id: string } | null>(null);
 
   const brief = (): CampaignBriefOutput =>
     ({
@@ -84,6 +85,7 @@ describe('ImplementationTabComponent linkedin document', () => {
 
   beforeEach(async () => {
     createCampaign = vi.fn().mockReturnValue(of({ result: { campaigns: [], errors: [] } }));
+    deleting.set(null);
     enqueueCreativeAssetUploads = vi.fn();
     await TestBed.configureTestingModule({
       imports: [ImplementationTabComponent],
@@ -98,6 +100,7 @@ describe('ImplementationTabComponent linkedin document', () => {
           useValue: {
             createCampaign,
             enqueueCreativeAssetUploads,
+            creativeVideoDeleting: deleting.asReadonly(),
             getLinkedInAccounts: () => of([ACCOUNT]),
             getLinkedInTargetingProfiles: () => of([]),
             getLinkedInLeadForms: () => of({ accountId: '111', forms: [] }),
@@ -170,6 +173,47 @@ describe('ImplementationTabComponent linkedin document', () => {
     expect(c(f)['linkedInDocumentGatedWarning']()).toBe('');
     c(f)['onLinkedInObjectiveDraftChange'](LEAD_GEN);
     expect(c(f)['linkedInDocumentGatedWarning']()).toContain('one-page PDF');
+  });
+
+  it('needs no registration URL for a document-only create, and still does beside another format or platform', STATE_ONLY, async () => {
+    const f = await mount();
+    c(f)['campaignForm'].controls['registrationUrl'].setValue('');
+    c(f)['onLinkedInFormatSelect']('document');
+    c(f)['onLinkedInDocumentChange'](document());
+
+    expect(c(f)['createBlockedReason']()).toBeNull();
+    c(f)['onLinkedInFormatSelect']('single_image');
+    expect(c(f)['createBlockedReason']()).toContain('Registration URL is empty');
+    c(f)['onLinkedInFormatSelect']('document');
+    c(f)['selectedPlatforms'].set(['linkedin-ads', 'reddit-ads']);
+    expect(c(f)['createBlockedReason']()).toContain('Registration URL is empty');
+  });
+
+  it('clears a PDF the library deleted or took off the ad, and reads the library again after a delete', STATE_ONLY, async () => {
+    const f = await mount();
+    c(f)['onLinkedInDocumentChange'](document());
+    expect(c(f)['linkedInDocumentIdsInUse']()).toEqual([PDF]);
+    const revision = c(f)['creativeLibraryRevision']();
+
+    // Another PDF deleted: the ad keeps its own, and the picker's library is read again.
+    c(f)['onLibraryDocumentDeleted']('9a7b1c2d-3e4f-4a6b-8c1e-5d4a3f2b4e6f');
+    expect(c(f)['linkedInDocument']().assetId).toBe(PDF);
+    expect(c(f)['creativeLibraryRevision']()).toBe(revision + 1);
+
+    // While the held PDF's delete runs, Create waits; the rule and the picker's exclusion are rows in the utils spec.
+    c(f)['onLinkedInFormatSelect']('document');
+    deleting.set({ briefId: 'b-1', id: PDF });
+    expect(c(f)['createBlockedReason']()).toContain('is being deleted');
+    // A PDF picked after the delete started is refused, not queued.
+    c(f)['onLinkedInDocumentUpload']([new File([new Uint8Array(16)], 'deck.pdf', { type: 'application/pdf' })]);
+    expect(enqueueCreativeAssetUploads).not.toHaveBeenCalled();
+    deleting.set(null);
+
+    // Taken off the ad: cleared, with nothing re-read.
+    c(f)['onLibraryDocumentReleased'](PDF);
+    expect(c(f)['linkedInDocument']()).toMatchObject({ assetId: '', assetBriefId: '', title: 'Sponsor prospectus' });
+    expect(c(f)['linkedInDocumentIdsInUse']()).toEqual([]);
+    expect(c(f)['creativeLibraryRevision']()).toBe(revision + 1);
   });
 
   it('offers the document and its editor in place of the variants, and only engagement or lead generation beside it', async () => {

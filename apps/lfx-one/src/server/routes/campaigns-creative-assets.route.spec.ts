@@ -80,6 +80,7 @@ const campaignsRouter = (await import('./campaigns.route')).default;
 const { apiErrorHandler } = await import('../middleware/error-handler.middleware');
 const { MicroserviceError } = await import('../errors/microservice.error');
 const {
+  CREATIVE_ASSET_DOCUMENT_DISABLED_MESSAGE,
   CREATIVE_ASSET_DOCUMENT_MAX_BYTES,
   CREATIVE_ASSET_DOCUMENT_TOO_LARGE_MESSAGE,
   CREATIVE_ASSET_DOCUMENT_WRONG_TYPE_MESSAGE,
@@ -259,13 +260,13 @@ describe('POST /api/campaigns/brief/creative-assets', () => {
       expect(uploadCreativeAsset).not.toHaveBeenCalled();
     });
 
-    it('refuses a PDF while LinkedIn document ads are off without reading it, so even one over the limit is a 415', async () => {
+    it('refuses a PDF while LinkedIn document ads are off without reading it, so even one over the limit is a 415 saying so', async () => {
       isServerFeatureEnabled.mockImplementation((flag) => flag !== ServerFeatureFlag.CampaignServiceLinkedInDocument);
 
       const response = await upload(pdf(CREATIVE_ASSET_DOCUMENT_MAX_BYTES + 1), 'application/pdf');
 
       expect(response.status).toBe(415);
-      expect((await response.json()).error).toBe(CREATIVE_ASSET_DOCUMENT_WRONG_TYPE_MESSAGE);
+      expect((await response.json()).error).toBe(CREATIVE_ASSET_DOCUMENT_DISABLED_MESSAGE);
       expect(uploadCreativeAsset).not.toHaveBeenCalled();
     });
 

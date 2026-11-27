@@ -31,6 +31,7 @@
           type="file"
           multiple
           [attr.accept]="accept"
+          [disabled]="!uploadAllowed()"
           (change)="onFilesPicked($event, false)"
           aria-describedby="creative-library-hint"
           class="text-sm text-gray-900 file:mr-3 file:rounded-md file:border file:border-gray-300 file:bg-white file:px-3 file:py-1.5 file:text-sm file:text-gray-700 hover:file:bg-gray-50"
@@ -42,12 +43,16 @@
           id="creative-library-folder"
           type="file"
           webkitdirectory
+          [disabled]="!uploadAllowed()"
           (change)="onFilesPicked($event, true)"
           aria-describedby="creative-library-hint"
           class="text-sm text-gray-900 file:mr-3 file:rounded-md file:border file:border-gray-300 file:bg-white file:px-3 file:py-1.5 file:text-sm file:text-gray-700 hover:file:bg-gray-50"
           data-testid="creative-library-upload-folder" />
       </div>
     </div>
+    @if (!uploadAllowed()) {
+      <p class="text-xs text-gray-500" data-testid="creative-library-upload-held">Wait for the delete to finish to upload more files.</p>
+    }
     <p id="creative-library-hint" class="text-xs text-gray-500">
       PNG or JPEG, up to 10 MB each, sent one at a time. From a folder, only images at its top level are uploaded; every file is listed with what happened to
       it.
@@ -90,6 +95,45 @@
       </ul>
       @if (videoDeleteError()) {
         <p role="alert" class="text-xs text-red-600" data-testid="creative-library-video-delete-error">{{ videoDeleteError() }}</p>
+      }
+    </div>
+  }
+
+  @if (documentRows().length > 0) {
+    <div class="flex flex-col gap-1" data-testid="creative-library-documents">
+      <span class="text-xs font-medium text-gray-700">Stored PDFs</span>
+      <ul class="flex flex-col gap-1">
+        @for (row of documentRows(); track row.id) {
+          <li class="flex flex-wrap items-center gap-2 rounded border border-gray-200 px-3 py-2" [attr.data-testid]="'creative-library-document-' + row.id">
+            <span class="min-w-0 flex-1 text-xs text-gray-900">{{ row.label }}</span>
+            <span class="text-2xs tabular-nums text-gray-500">{{ row.byteSize | fileSize }}</span>
+            @if (row.inUse) {
+              <lfx-button
+                label="Remove from ad"
+                size="small"
+                severity="secondary"
+                [text]="true"
+                [ariaLabel]="'Remove ' + row.label + ' from the document ad'"
+                (onClick)="releaseDocument(row)"
+                [attr.data-testid]="'creative-library-document-release-' + row.id" />
+            }
+            <lfx-button
+              label="Delete"
+              size="small"
+              severity="secondary"
+              [text]="true"
+              [disabled]="row.deleteDisabled"
+              [ariaLabel]="'Delete ' + row.label"
+              (onClick)="deleteDocument(row)"
+              [attr.data-testid]="'creative-library-document-delete-' + row.id" />
+            @if (row.note) {
+              <span class="w-full text-2xs text-gray-600">{{ row.note }}</span>
+            }
+          </li>
+        }
+      </ul>
+      @if (documentDeleteError()) {
+        <p role="alert" class="text-xs text-red-600" data-testid="creative-library-document-delete-error">{{ documentDeleteError() }}</p>
       }
     </div>
   }

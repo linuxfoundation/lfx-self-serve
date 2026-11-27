@@ -26,6 +26,8 @@ export class LinkedInDocumentEditorComponent {
   public readonly library = input<CreativeAssetLibraryState>({ status: 'idle', assets: [] });
   /** The brief the PDF is stored for; a pick records it. */
   public readonly briefId = input('');
+  /** The stored asset whose delete is running, `''` for none: the picker does not offer it, and the upload waits for it. */
+  public readonly deletingAssetId = input('');
   /** Whether a PDF may be uploaded into the brief's library from here: an explicit yes from the LinkedIn upload capability. */
   public readonly uploadAvailable = input(false);
   /** The gated-document warning, or `''`: shown, never holding Create. */
@@ -35,7 +37,7 @@ export class LinkedInDocumentEditorComponent {
 
   protected readonly limits = LINKEDIN_DOCUMENT_LIMITS;
   protected readonly pdfAccept = CREATIVE_ASSET_DOCUMENT_MIME_TYPE;
-  protected readonly view = computed<LinkedInDocumentView>(() => linkedInDocumentView(this.document(), this.library(), this.briefId()));
+  protected readonly view = computed<LinkedInDocumentView>(() => linkedInDocumentView(this.document(), this.library(), this.briefId(), this.deletingAssetId()));
 
   protected onTextChange(field: 'title' | 'introText', value: string): void {
     this.document.update((document) => ({ ...document, [field]: value }));
