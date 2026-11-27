@@ -43,7 +43,10 @@ export class RedditDeliveryComponent {
   protected readonly platformRows = computed<RedditDeliveryOptionView<RedditDevicePlatform>[]>(() =>
     redditDeliveryOptions(this.delivery().platforms, REDDIT_DEVICE_PLATFORMS, REDDIT_DEVICE_PLATFORM_LABELS)
   );
-  /** Why the lists cannot be sent, or `null`; only a restored draft can reach it, since the last box cannot be unticked. */
+  /**
+   * Why the lists cannot be sent, or `null`. A backstop: the last box cannot be unticked and a restored empty list comes
+   * back as every value, so no path reaches it today.
+   */
   protected readonly refusal = computed<string | null>(() =>
     redditDeliveryRefusal(this.delivery(), { placements: this.placementsEnabled(), budgetType: this.budgetTypeEnabled() })
   );
