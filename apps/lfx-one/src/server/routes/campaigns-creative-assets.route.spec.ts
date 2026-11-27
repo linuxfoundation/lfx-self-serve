@@ -218,7 +218,9 @@ describe('POST /api/campaigns/brief/creative-assets', () => {
 
     // A Reddit video post (#6108 row 8) uses the same upload, so either video capability admits an MP4.
     it('forwards an MP4 while only Reddit video posts are on', async () => {
-      isServerFeatureEnabled.mockImplementation((flag) => flag !== ServerFeatureFlag.CampaignServiceLinkedInVideo);
+      isServerFeatureEnabled.mockImplementation(
+        (flag) => flag !== ServerFeatureFlag.CampaignServiceLinkedInVideo && flag !== ServerFeatureFlag.CampaignServiceMetaVideo
+      );
       uploadCreativeAsset.mockResolvedValue({ ...ASSET, mimeType: 'video/mp4' });
 
       const response = await upload(Buffer.concat([MP4, Buffer.alloc(CREATIVE_ASSET_MAX_BYTES)]), 'video/mp4');
