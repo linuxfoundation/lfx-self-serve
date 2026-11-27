@@ -140,6 +140,14 @@ describe('metaVariantVideoViews', () => {
     expect(metaVariantVideoViews(1, videos, lib, 'b-1', idle, fresh)[0]).toMatchObject(expected);
   });
 
+  it.each<[string, MetaVariantVideoDraft[], string]>([
+    ['an upload no variant holds keeps its file name', [vid(A, 'b-1', 'promo.mp4')], 'promo.mp4'],
+    ["another brief's upload names nothing here", [vid(A, 'b-2', 'promo.mp4')], 'Video 1 (0abcdef0)'],
+  ])('labels a stored video: %s', (_case, uploaded, label) => {
+    const [view] = metaVariantVideoViews(1, [none], library([A]), 'b-1', idle, [], uploaded);
+    expect(view.options[1]).toEqual({ value: A, label });
+  });
+
   it('shows the one upload on its own variant only', () => {
     const views = metaVariantVideoViews(2, [], library([]), 'b-1', { status: 'uploading', variant: 1, name: 'a.mp4', error: '' });
     expect(views.map((view) => [view.uploading, view.status])).toEqual([
@@ -186,8 +194,12 @@ describe('metaVideoCreateRefusal', () => {
 
 describe('metaVideoDraftRestore', () => {
   it('round-trips what metaVideoDraftFields keeps', () => {
-    const fields = metaVideoDraftFields([vid(A, 'b-1', 'a.mp4')], { variant: 1, name: 'b.mp4', briefId: 'b-1' });
-    expect(metaVideoDraftRestore(fields)).toEqual({ videos: [vid(A, 'b-1', 'a.mp4')], pendingUpload: { variant: 1, name: 'b.mp4', briefId: 'b-1' } });
+    const fields = metaVideoDraftFields([vid(A, 'b-1', 'a.mp4')], { variant: 1, name: 'b.mp4', briefId: 'b-1' }, [vid(B, 'b-1', 'c.mp4')]);
+    expect(metaVideoDraftRestore(fields)).toEqual({
+      videos: [vid(A, 'b-1', 'a.mp4')],
+      uploaded: [vid(B, 'b-1', 'c.mp4')],
+      pendingUpload: { variant: 1, name: 'b.mp4', briefId: 'b-1' },
+    });
   });
 
   it('restores nothing from a draft saved before #6332', () => {

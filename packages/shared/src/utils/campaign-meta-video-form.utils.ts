@@ -127,10 +127,18 @@ function videoProblem(video: MetaVariantVideoDraft | undefined, library: Creativ
 
 /**
  * The picker's options: no video, then the brief's stored MP4s, named as the library lists them (or by the file name
- * when uploaded on this tab), then any video held for this brief that a read has not listed yet (a fresh upload).
+ * when uploaded on this tab, from `uploaded` or a variant), then any video held for this brief that a read has not
+ * listed yet (a fresh upload).
  */
-function videoOptions(videos: readonly MetaVariantVideoDraft[], library: CreativeAssetLibraryState, briefId: string): LinkedInCarouselImageOption[] {
-  const names = new Map(videos.filter((video) => video.assetBriefId === briefId && video.assetName !== '').map((video) => [video.assetId, video.assetName]));
+function videoOptions(
+  videos: readonly MetaVariantVideoDraft[],
+  library: CreativeAssetLibraryState,
+  briefId: string,
+  uploaded: readonly MetaVariantVideoDraft[]
+): LinkedInCarouselImageOption[] {
+  const names = new Map(
+    [...uploaded, ...videos].filter((video) => video.assetBriefId === briefId && video.assetName !== '').map((video) => [video.assetId, video.assetName])
+  );
   const stored = library.status === 'ready' ? (library.videos ?? []) : [];
   const options = stored.map((video, i) => ({ value: video.id, label: names.get(video.id) ?? `Video ${i + 1} (${video.checksum.slice(0, 8)})` }));
   for (const video of videos) {
@@ -147,9 +155,10 @@ export function metaVariantVideoViews(
   library: CreativeAssetLibraryState,
   briefId: string,
   upload: MetaVideoUploadState,
-  fresh: readonly string[] = []
+  fresh: readonly string[] = [],
+  uploaded: readonly MetaVariantVideoDraft[] = []
 ): MetaVariantVideoView[] {
-  const options = videoOptions(videos.slice(0, count), library, briefId);
+  const options = videoOptions(videos.slice(0, count), library, briefId, uploaded);
   return Array.from({ length: count }, (_, i) => {
     const video = videos[i];
     const mine = upload.variant === i;
@@ -194,12 +203,17 @@ export function metaVideoCreateRefusal(input: {
   return refusal === null ? null : `Meta Ads: ${refusal.message}`;
 }
 
-/** What the draft keeps: each variant's video as values, and the upload in flight, if any. */
+/** What the draft keeps: each variant's video as values, the upload in flight, if any, and the videos uploaded on the tab. */
 export function metaVideoDraftFields(
   videos: readonly MetaVariantVideoDraft[],
-  pending: MetaVideoUploadPending | null
-): Pick<CampaignImplementationDraft, 'metaVariantVideos' | 'metaVideoUploadPending'> {
-  return { metaVariantVideos: videos.map((video) => ({ ...video })), metaVideoUploadPending: pending === null ? null : { ...pending } };
+  pending: MetaVideoUploadPending | null,
+  uploaded: readonly MetaVariantVideoDraft[] = []
+): Pick<CampaignImplementationDraft, 'metaVariantVideos' | 'metaVideoUploadPending' | 'metaUploadedVideos'> {
+  return {
+    metaVariantVideos: videos.map((video) => ({ ...video })),
+    metaVideoUploadPending: pending === null ? null : { ...pending },
+    metaUploadedVideos: uploaded.map((video) => ({ ...video })),
+  };
 }
 
 /** A stored string, or `''`. */
@@ -207,25 +221,31 @@ function text(value: unknown): string {
   return typeof value === 'string' ? value : '';
 }
 
+/** A stored list of videos, each entry read field by field so a malformed one is no video; `undefined` for no list. */
+function videoList(raw: unknown): MetaVariantVideoDraft[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  return raw.map((entry: unknown) => {
+    const record = (typeof entry === 'object' && entry !== null ? entry : {}) as Record<string, unknown>;
+    return { assetId: text(record['assetId']), assetName: text(record['assetName']), assetBriefId: text(record['assetBriefId']) };
+  });
+}
+
 /**
- * What a restored draft sets back: the videos only when the draft carries a list (each entry read field by field, so a
- * malformed one is no video), and an upload to resume only with a file name and a variant position.
+ * What a restored draft sets back: the variants' videos and the uploaded videos' names only when the draft carries each
+ * list, and an upload to resume only with a file name and a variant position.
  */
-export function metaVideoDraftRestore(draft: Pick<CampaignImplementationDraft, 'metaVariantVideos' | 'metaVideoUploadPending'>): {
+export function metaVideoDraftRestore(draft: Pick<CampaignImplementationDraft, 'metaVariantVideos' | 'metaVideoUploadPending' | 'metaUploadedVideos'>): {
   videos?: MetaVariantVideoDraft[];
+  uploaded?: MetaVariantVideoDraft[];
   pendingUpload?: MetaVideoUploadPending;
 } {
-  const raw: unknown = draft.metaVariantVideos;
   const pending = draft.metaVideoUploadPending as Partial<Record<keyof MetaVideoUploadPending, unknown>> | null | undefined;
-  const videos = Array.isArray(raw)
-    ? raw.map((entry: unknown) => {
-        const record = (typeof entry === 'object' && entry !== null ? entry : {}) as Record<string, unknown>;
-        return { assetId: text(record['assetId']), assetName: text(record['assetName']), assetBriefId: text(record['assetBriefId']) };
-      })
-    : undefined;
+  const videos = videoList(draft.metaVariantVideos);
+  const uploaded = videoList(draft.metaUploadedVideos);
   const resumable = pending && text(pending.name) !== '' && Number.isInteger(pending.variant) && (pending.variant as number) >= 0;
   return {
     ...(videos === undefined ? {} : { videos }),
+    ...(uploaded === undefined ? {} : { uploaded }),
     ...(resumable ? { pendingUpload: { variant: pending.variant as number, name: text(pending.name), briefId: text(pending.briefId) } } : {}),
   };
 }

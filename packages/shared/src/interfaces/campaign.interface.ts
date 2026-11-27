@@ -1432,6 +1432,8 @@ export interface CampaignImplementationDraft {
    */
   metaVariantVideos?: MetaVariantVideoDraft[];
   metaVideoUploadPending?: MetaVideoUploadPending | null;
+  /** The videos uploaded on the tab with their file names (#6332), so a video keeps its name in the picker once no variant holds it. */
+  metaUploadedVideos?: MetaVariantVideoDraft[];
   /**
    * The Meta budget and its mode, which `submit()` sends as `budgetUsd`/`lifetimeBudget`.
    *

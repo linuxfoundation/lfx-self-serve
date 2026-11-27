@@ -3122,6 +3122,8 @@ export class ImplementationTabComponent implements OnInit {
   private metaVideoUploadSub: Subscription | null = null;
   /** The videos uploaded on this tab and the library revision each was stored at (#6332); see `metaVideosNewerThanRead`. */
   private readonly metaVideosStored = signal<MetaVideoStoredAt[]>([]);
+  /** The videos uploaded on this tab with their file names (#6332), kept apart from the variants so a name survives "No video". */
+  private readonly metaUploadedVideos = signal<MetaVariantVideoDraft[]>([]);
   /** The uploaded videos the library read on screen predates, so it is no evidence they are gone (#6332). */
   private readonly metaVideosFresh = computed<string[]>(() => metaVideosNewerThanRead(this.metaVideosStored(), this.googleCreativeLibrary()));
   /**
@@ -3160,7 +3162,8 @@ export class ImplementationTabComponent implements OnInit {
         name: this.metaVideoUploadName(),
         error: this.metaVideoUploadError(),
       },
-      this.metaVideosFresh()
+      this.metaVideosFresh(),
+      this.metaUploadedVideos()
     )
   );
   /**
@@ -6593,7 +6596,10 @@ export class ImplementationTabComponent implements OnInit {
     const assetId = value ?? '';
     const briefId = assetId === '' ? '' : (this.briefPersistence().briefId ?? '');
     // The file name another variant holds for the same upload, so the video keeps its name wherever it is picked.
-    const assetName = this.metaVariantVideos().find((video) => assetId !== '' && video.assetId === assetId && video.assetBriefId === briefId)?.assetName ?? '';
+    const assetName =
+      [...this.metaUploadedVideos(), ...this.metaVariantVideos()].find(
+        (video) => assetId !== '' && video.assetId === assetId && video.assetBriefId === briefId && video.assetName !== ''
+      )?.assetName ?? '';
     if (this.metaVideoUploadVariant() === index) this.clearMetaVideoUpload();
     this.metaVariantVideos.update((videos) => metaVariantVideosWith(videos, index, { assetId, assetName, assetBriefId: briefId }));
     this.emitDraft();
@@ -9002,6 +9008,7 @@ export class ImplementationTabComponent implements OnInit {
           this.creativeLibraryRevision.update((revision) => revision + 1);
           // Stored as of this revision: an earlier read cannot list it, a later one must (`metaVideosNewerThanRead`).
           this.metaVideosStored.update((stored) => [...stored, { id: asset.id, revision: this.creativeLibraryRevision() }]);
+          this.metaUploadedVideos.update((uploaded) => [...uploaded, { assetId: asset.id, assetName: fileName, assetBriefId: briefId }]);
         }
         this.emitDraft();
       },
@@ -10537,6 +10544,7 @@ export class ImplementationTabComponent implements OnInit {
     // The Meta variants' videos (#6332), present-only, and their upload in flight.
     const metaVideoRestore = metaVideoDraftRestore(draft);
     if (metaVideoRestore.videos !== undefined) this.metaVariantVideos.set(metaVideoRestore.videos);
+    if (metaVideoRestore.uploaded !== undefined) this.metaUploadedVideos.set(metaVideoRestore.uploaded);
     if (metaVideoRestore.pendingUpload) this.resumeMetaVideoUpload(metaVideoRestore.pendingUpload);
     // The LinkedIn variants as edited, each with its own image, over the brief's seed (#5547). Each
     // entry copied, so the parent's draft is never reachable from the editor.
@@ -11122,7 +11130,7 @@ export class ImplementationTabComponent implements OnInit {
         editedVariants: this.redditEditedVariants(),
       }),
       // The variants' videos and the one video upload in flight (#6332), whatever the capability says.
-      ...metaVideoDraftFields(this.metaVariantVideos(), this.metaVideoUploadPending()),
+      ...metaVideoDraftFields(this.metaVariantVideos(), this.metaVideoUploadPending(), this.metaUploadedVideos()),
       ...metaImageDraftFields({
         imageUrl: this.metaImageUrl(),
         assetId: this.metaImageAssetId(),
@@ -11441,6 +11449,7 @@ export class ImplementationTabComponent implements OnInit {
     // Held by the previous brief's variant positions (#6332), which mean nothing for this one. An upload for another
     // brief is cancelled; one for this brief (a re-seed of the same brief) is left for the draft restore to resume.
     this.metaVariantVideos.set([]);
+    this.metaUploadedVideos.set([]);
     if (!this.metaVideoUploadForThisBrief()) this.clearMetaVideoUpload();
   }
 
