@@ -36,6 +36,7 @@ import {
   TouchedChangeEvent,
 } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
+import { FileUploadComponent } from '@components/file-upload/file-upload.component';
 import { AutocompleteComponent } from '@components/autocomplete/autocomplete.component';
 import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
@@ -246,6 +247,7 @@ import { UiOptionComponent } from '@shared/uikit/select/option.component';
 import { UiSelectComponent } from '@shared/uikit/select/select.component';
 import { UiTextareaComponent } from '@shared/uikit/textarea/textarea.component';
 import { DialogService } from 'primeng/dynamicdialog';
+import { FileSelectEvent } from 'primeng/fileupload';
 import { AutoCompleteCompleteEvent, AutoCompleteSelectEvent } from 'primeng/autocomplete';
 import { ProjectContextService } from '@services/project-context.service';
 import { extractFieldOrEnvelopeMessage, isBffValidationError, serverAuthoredMessage } from '@shared/utils/http-error.utils';
@@ -796,6 +798,7 @@ let linkedInVariantKeySequence = 0;
   imports: [
     ReactiveFormsModule,
     ButtonComponent,
+    FileUploadComponent,
     AutocompleteComponent,
     CheckboxComponent,
     UiCheckboxComponent,
@@ -3100,6 +3103,13 @@ export class ImplementationTabComponent implements OnInit {
       error: this.metaVideoUploadError(),
     })
   );
+  /**
+   * Whether the Meta video pickers are held (#6332): an upload is running (one slot; its Cancel ends it), or the library
+   * is deleting a video, since an upload of identical bytes would answer with the asset being deleted.
+   */
+  protected readonly metaVideoPickerHeld = computed<boolean>(
+    () => this.metaVideoUploadStatus() === 'uploading' || this.campaignService.creativeVideoDeleting() !== null
+  );
   /** The Meta video upload's status, announced with the variant it is for (#6332). */
   protected readonly metaVideoUploadLiveMessage = computed<string>(() => {
     const view = this.metaVariantVideoViews()[this.metaVideoUploadVariant()];
@@ -4981,7 +4991,7 @@ export class ImplementationTabComponent implements OnInit {
       metaImageUploadHoldsCreate({
         showMetaSection: this.showMetaSection(),
         uploadAvailable: this.metaAssetUploadAvailable(),
-        // Nor once every variant is a video ad (#6332), which hides the one image's upload too.
+        // `carouselSelected` means "the one image's upload control is hidden": also once every variant is a video ad (#6332).
         carouselSelected: this.metaCarouselSelected() || !this.metaImageWanted(),
         uploadStatus: this.metaImageUploadStatus(),
       })
@@ -6468,10 +6478,6 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
-   * A stored video the library deleted, or the operator took off the ads there (#5764 row 18): cleared from any ad that
-   * names it. Delete is off while an ad uses a video, so after a delete this only catches an upload that came back with it.
-   */
-  /**
    * A stored video the library deleted, or the operator took off the ads there: cleared from any Meta variant that names
    * it (#6332), then from the LinkedIn ads (`onLibraryVideoDeleted`).
    */
@@ -6493,24 +6499,21 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
-   * Upload the chosen MP4 for one Meta variant of this brief (#6332), in the one Meta video upload slot: a new pick
-   * replaces an upload still running for any variant. A file that cannot be uploaded is refused before anything
-   * changes, and the reason shows under that variant's picker.
+   * Upload the chosen MP4 for one Meta variant of this brief (#6332), in the one Meta video upload slot. The pickers are
+   * held while an upload runs or the library deletes a video (`metaVideoPickerHeld`), so this never replaces a running
+   * upload; a file that cannot be uploaded is refused before any upload, and the reason shows under that variant's picker.
    */
-  protected onMetaVariantVideoFileChange(index: number, event: Event): void {
-    const input = event.target as HTMLInputElement;
-    const file = input.files?.[0] ?? null;
-    input.value = '';
-    if (!file || this.campaignService.creativeVideoDeleting() !== null) return;
+  protected onMetaVariantVideoFileSelect(index: number, event: FileSelectEvent): void {
+    const file: File | undefined = event.files?.[0];
+    if (!file || this.metaVideoPickerHeld()) return;
 
-    this.clearMetaVideoUpload();
-    this.metaVideoUploadVariant.set(index);
     const briefId = this.briefPersistence().briefId ?? '';
     const projectSlug = this.activeFoundationSlug();
     const refusal = metaVideoFileRefusal(file, briefId, projectSlug);
+    this.clearMetaVideoUpload();
+    this.metaVideoUploadVariant.set(index);
     if (refusal !== null) {
-      this.metaVideoUploadStatus.set('error');
-      this.metaVideoUploadError.set(refusal);
+      this.failMetaVideoUpload(refusal);
       this.emitDraft();
       return;
     }
@@ -6524,6 +6527,10 @@ export class ImplementationTabComponent implements OnInit {
     this.emitDraft();
   }
 
+  /**
+   * A stored video the library deleted, or the operator took off the ads there (#5764 row 18): cleared from any LinkedIn ad
+   * that names it. Delete is off while an ad uses a video, so after a delete this only catches an upload that came back with it.
+   */
   protected onLibraryVideoDeleted(assetId: string): void {
     if (!this.linkedInVariants().some((variant) => variant.videoAssetId === assetId)) return;
     this.linkedInVariants.update((variants) =>

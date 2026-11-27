@@ -155,11 +155,14 @@ describe('metaVideoDraftRestore', () => {
     expect(metaVideoDraftRestore(fields)).toEqual({ videos: [vid(A, 'b-1', 'a.mp4')], pendingUpload: { variant: 1, name: 'b.mp4', briefId: 'b-1' } });
   });
 
-  it.each<[string, unknown, unknown, ReturnType<typeof metaVideoDraftRestore>]>([
-    ['a draft from before #6332', undefined, undefined, {}],
-    ['a malformed entry is no video', [null, { assetId: 7 }], null, { videos: [none, none] }],
-    ['an upload with no file name or position is not resumed', [], { variant: -1, name: 'x' }, { videos: [] }],
-  ])('%s', (_case, videos, pending, expected) => {
-    expect(metaVideoDraftRestore({ metaVariantVideos: videos, metaVideoUploadPending: pending } as never)).toEqual(expected);
+  it('restores nothing from a draft saved before #6332', () => {
+    expect(metaVideoDraftRestore({})).toEqual({});
+  });
+
+  it('reads a malformed entry as no video, and resumes no upload without a file name and a position', () => {
+    // @ts-expect-error -- stored drafts are untyped JSON; a malformed entry must read as no video.
+    expect(metaVideoDraftRestore({ metaVariantVideos: [null, { assetId: 7 }] })).toEqual({ videos: [none, none] });
+    expect(metaVideoDraftRestore({ metaVariantVideos: [], metaVideoUploadPending: { variant: -1, name: 'x', briefId: 'b-1' } })).toEqual({ videos: [] });
+    expect(metaVideoDraftRestore({ metaVideoUploadPending: { variant: 0, name: '', briefId: 'b-1' } })).toEqual({});
   });
 });

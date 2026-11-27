@@ -5245,6 +5245,7 @@
                             label="Video"
                             size="small"
                             [value]="video.assetId"
+                            [disabled]="metaVideoPickerHeld()"
                             (valueChange)="onMetaVariantVideoPick(i, $event)"
                             [error]="video.problem"
                             hint="A video ad plays the MP4 in place of the image. Meta picks its thumbnail from the video."
@@ -5253,19 +5254,30 @@
                               <lfx-ui-option [value]="option.value" [label]="option.label" />
                             }
                           </lfx-ui-select>
+                          @if (video.problem) {
+                            <div>
+                              <lfx-button
+                                label="Remove video"
+                                size="small"
+                                severity="secondary"
+                                [text]="true"
+                                (onClick)="onMetaVariantVideoPick(i, '')"
+                                [attr.data-testid]="'implementation-meta-variant-video-remove-' + i" />
+                            </div>
+                          }
                           @if (metaVideoAvailable() && briefPersistence().briefId) {
-                            <label class="mt-1 text-xs font-medium text-gray-700" [attr.for]="'meta-variant-video-file-' + i">Or upload a video</label>
-                            <!-- A raw file input, as the Meta image and LinkedIn video pickers are: there is no LFX file wrapper bound to the creative-asset upload. -->
-                            <input
-                              [id]="'meta-variant-video-file-' + i"
-                              type="file"
-                              [attr.accept]="metaVideoAccept"
-                              (change)="onMetaVariantVideoFileChange(i, $event)"
-                              [attr.aria-describedby]="'meta-variant-video-hint-' + i"
-                              [attr.aria-invalid]="video.error ? 'true' : null"
-                              class="text-sm text-gray-900 file:mr-3 file:rounded-md file:border file:border-gray-300 file:bg-white file:px-3 file:py-1.5 file:text-sm file:text-gray-700 hover:file:bg-gray-50"
-                              [attr.data-testid]="'implementation-meta-variant-video-file-' + i" />
-                            <p [id]="'meta-variant-video-hint-' + i" class="text-xs text-gray-500">MP4, up to 30 MB. Stored in the brief's library.</p>
+                            <lfx-file-upload
+                              mode="basic"
+                              [accept]="metaVideoAccept"
+                              [auto]="true"
+                              [customUpload]="true"
+                              chooseLabel="Upload a video"
+                              chooseIcon="fa-light fa-video"
+                              chooseStyleClass="p-button-sm"
+                              [disabled]="metaVideoPickerHeld()"
+                              [dataTest]="'implementation-meta-variant-video-file-' + i"
+                              (onSelect)="onMetaVariantVideoFileSelect(i, $event)" />
+                            <p class="text-xs text-gray-500">MP4, up to 30 MB. Stored in the brief's library.</p>
                           }
                           @if (video.status) {
                             <p class="text-xs text-gray-700" [attr.data-testid]="'implementation-meta-variant-video-status-' + i">{{ video.status }}</p>

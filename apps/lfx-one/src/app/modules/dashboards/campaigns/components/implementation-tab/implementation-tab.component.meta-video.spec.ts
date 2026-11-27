@@ -10,7 +10,7 @@ import type { CampaignBriefOutput, CampaignImplementationDraft } from '@lfx-one/
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
-import { of } from 'rxjs';
+import { of, Subject } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ImplementationTabComponent } from './implementation-tab.component';
 import { stubCreativeLibraryUpload, STATE_ONLY, tabComponentUnderTest, trackStateOnlyTests } from './implementation-tab.spec-helper';
@@ -28,6 +28,7 @@ describe('ImplementationTabComponent meta video', () => {
   const A = '3f2504e0-4f89-11d3-9a0c-0305e82c3301';
   const foundation = signal({ slug: 'tlf' });
   let createCampaign: ReturnType<typeof vi.fn>;
+  let upload$: Subject<{ id: string; mimeType: string }>;
 
   const brief = {
     eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', countryCode: 'US', registrationUrl: 'https://example.com/kubecon' },
@@ -73,6 +74,7 @@ describe('ImplementationTabComponent meta video', () => {
 
   beforeEach(async () => {
     createCampaign = vi.fn().mockReturnValue(of({ result: { campaigns: [], errors: [] } }));
+    upload$ = new Subject();
     await TestBed.configureTestingModule({
       imports: [ImplementationTabComponent],
       providers: [
@@ -86,6 +88,9 @@ describe('ImplementationTabComponent meta video', () => {
           useValue: {
             createCampaign,
             creativeVideoDeleting: signal(null),
+            uploadCreativeAsset: () => upload$,
+            forgetCreativeAssetUpload: vi.fn(),
+            cancelCreativeAssetUpload: vi.fn(),
             getLinkedInAccounts: () => of([]),
             getLinkedInTargetingProfiles: () => of([]),
             getCreativeAssetPlan: () => of({ platforms: [], assignments: [], gaps: [], unclassified: [], unused: [] }),
@@ -118,6 +123,17 @@ describe('ImplementationTabComponent meta video', () => {
     c(f)['onMetaVariantVideoPick'](1, '');
     c(f)['submit']();
     expect(sent()['variants'][1]).toEqual({ primaryText: 'Other', headline: 'Workshops', description: '', imageUrl: 'https://cdn/x.png' });
+  });
+
+  it('holds Create while a variant video uploads, then puts it on that variant', STATE_ONLY, async () => {
+    const { f } = await mount(true);
+    c(f)['onMetaVariantVideoFileSelect'](1, { files: [new File([new Uint8Array(8)], 'promo.mp4', { type: 'video/mp4' })] });
+    expect(c(f)['createBlockedReason']()).toBe('Waiting for the Meta Ads video upload to finish.');
+    expect(c(f)['metaVideoPickerHeld']()).toBe(true);
+
+    upload$.next({ id: A, mimeType: 'video/mp4' });
+    expect(c(f)['metaVariantVideos']()[1]).toEqual({ assetId: A, assetName: 'promo.mp4', assetBriefId: 'b-1' });
+    expect(c(f)['createBlockedReason']()).toBeNull();
   });
 
   it('saves the picked videos in the draft and restores them through the bindings', STATE_ONLY, async () => {
