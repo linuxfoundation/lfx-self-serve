@@ -3123,6 +3123,23 @@ export interface RedditCampaignCreateRequest {
    */
   imageAssetId?: string;
   /**
+   * A video post instead (#6108 row 8): the id of an MP4 uploaded to THIS brief through
+   * `POST /api/campaigns/brief/creative-assets`, served to Reddit at a short-lived signed URL like `imageAssetId`. Needs
+   * `thumbnailAssetId`, and is never sent with `postUrl`, `imageUrl` or `imageAssetId`, nor with 2 or more `variants`
+   * while one ad per variant is on: a video post is one post and one ad.
+   *
+   * campaign-service only, while its `REDDIT_VIDEO_ENABLED` is on and its URL signing configured. Hence
+   * `CampaignListResult.redditVideoEnabled`; the create route refuses this field while that is off, never dropping it
+   * (`redditVideoRefusal`).
+   */
+  videoAssetId?: string;
+  /**
+   * The video post's thumbnail (#6108 row 8): the id of a PNG or JPEG uploaded to THIS brief, never the video's own id.
+   * Reddit requires one for a video post, and campaign-service cannot cut a frame, so it is never derived. Only with
+   * `videoAssetId`.
+   */
+  thumbnailAssetId?: string;
+  /**
    * Button label on an authored post, matched case-insensitively against `REDDIT_CALL_TO_ACTIONS`.
    * Empty resolves on either arm to `DEFAULT_REDDIT_CALL_TO_ACTION`.
    */
@@ -9268,6 +9285,13 @@ export interface CampaignListResult {
    * campaign-service's rules. Optional, so a BFF that predates it reads as unanswered.
    */
   redditAdPerVariantEnabled?: boolean;
+  /**
+   * Whether a Reddit create may carry `redditConfig.videoAssetId` and `thumbnailAssetId`, a video post from stored assets
+   * (#6108 row 8): `redditAssetUploadEnabled` AND `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_VIDEO`, which follows
+   * campaign-service's own `REDDIT_VIDEO_ENABLED`. On, the creative-asset upload also takes an MP4. Off, the create route
+   * refuses either field. Optional, so a BFF that predates it reads as unanswered.
+   */
+  redditVideoEnabled?: boolean;
   /**
    * Whether a Meta create may carry `metaConfig.callToAction`, `conversionEvent` and `optimizationGoal`
    * (#5934), one flag each: `cutoverOwnsCreate()` AND `LFX_CUTOVER_CAMPAIGN_SERVICE_META_CALL_TO_ACTION`,

@@ -13290,6 +13290,69 @@ describe('CampaignController.createCampaign Reddit placements and budget type', 
 });
 
 /**
+ * `redditConfig.videoAssetId` / `thumbnailAssetId`, a Reddit video post (#6108 row 8): refused, never dropped, unless
+ * both the Reddit assets flag and the video flag are on, and only when Reddit is selected. The rules are table rows in
+ * `campaign-reddit-video.utils.spec.ts`.
+ */
+describe('CampaignController.createCampaign Reddit video post', () => {
+  let controller: CampaignController;
+  let res: Response;
+  let next: NextFunction;
+  const redditConfig = { budgetUsd: 50, videoAssetId: '3f2504e0-4f89-11d3-9a0c-0305e82c3301', thumbnailAssetId: '6ba7b810-9dad-11d1-80b4-00c04fd430c8' };
+  const create = (platforms: string[], config: Record<string, unknown> = redditConfig) =>
+    controller.createCampaign(buildReq({ platforms, redditConfig: config }, { project: 'tlf', brief_id: 'b-1' }), res, next);
+  const refusedField = (): string => (vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError).toResponse()['errors'][0].field;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new CampaignController();
+    res = buildRes();
+    next = vi.fn();
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+  });
+
+  it.each([ServerFeatureFlag.CampaignServiceRedditVideo, ServerFeatureFlag.CampaignServiceRedditAssets])(
+    'refuses a video while %s is off, creating nothing',
+    async (off) => {
+      isServerFeatureEnabled.mockImplementation((flag) => flag !== off);
+
+      await create(['reddit-ads']);
+
+      expect(createCampaigns).not.toHaveBeenCalled();
+      expect(refusedField()).toBe('redditConfig.videoAssetId');
+    }
+  );
+
+  it('forwards the video and thumbnail untouched once both flags are on', async () => {
+    isServerFeatureEnabled.mockImplementation(() => true);
+
+    await create(['reddit-ads']);
+
+    const envelope = createCampaigns.mock.calls[0][4] as Record<string, Record<string, unknown>>;
+    expect(envelope['redditConfig']).toMatchObject({ videoAssetId: redditConfig.videoAssetId, thumbnailAssetId: redditConfig.thumbnailAssetId });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('refuses a video with two variants while one ad per variant is on', async () => {
+    isServerFeatureEnabled.mockImplementation(() => true);
+
+    await create(['reddit-ads'], { ...redditConfig, variants: [{ headline: 'a' }, { headline: 'b' }] });
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(refusedField()).toBe('redditConfig.variants');
+  });
+
+  it('leaves an unused redditConfig alone when Reddit is not selected, flag off', async () => {
+    isServerFeatureEnabled.mockImplementation((flag) => flag !== ServerFeatureFlag.CampaignServiceRedditVideo);
+
+    await create(['meta-ads']);
+
+    expect(createCampaigns).toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+  });
+});
+
+/**
  * `redditConfig.variants` under one ad per variant (#6108 row 6): never refused while the flag is off, since creates
  * already carry the brief's variants, and held to campaign-service's rules once it is on. The rules are table rows in
  * `campaign-reddit-ad-variants.utils.spec.ts`.

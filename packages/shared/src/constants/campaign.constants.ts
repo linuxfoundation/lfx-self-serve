@@ -4494,9 +4494,9 @@ export const CREATIVE_ASSET_WRONG_TYPE_MESSAGE = 'Only PNG and JPEG images can b
 
 /**
  * The video type a creative-asset upload accepts (#5764 row 18): campaign-service's `MimeTypeMP4`, checked structurally
- * there (`validateMP4Upload`). Only a LinkedIn video ad consumes one here, so the BFF admits it only while
- * `canSetLinkedInVideoAds()`. Kept apart from `CREATIVE_ASSET_MIME_TYPES`, which every image slot and the image library
- * check against.
+ * there (`validateMP4Upload`). Only a LinkedIn video ad or a Reddit video post (#6108 row 8) consumes one here, so the
+ * BFF admits it only while `canSetLinkedInVideoAds() || canSetRedditVideo()`. Kept apart from `CREATIVE_ASSET_MIME_TYPES`,
+ * which every image slot and the image library check against.
  */
 export const CREATIVE_ASSET_VIDEO_MIME_TYPE = 'video/mp4';
 
@@ -5046,6 +5046,12 @@ export const REDDIT_DEMOGRAPHIC_KEYS = ['gender', 'languages', 'schedule'] as co
 
 /** The four fields of one `redditConfig.schedule` window (#6108 row 9), as campaign-service's `ScheduleWindow` spells them. */
 export const REDDIT_SCHEDULE_WINDOW_KEYS = ['startDay', 'startHour', 'endDay', 'endHour'] as const;
+
+/**
+ * The two `redditConfig` keys of a Reddit video post (#6108 row 8), as campaign-service spells them: the stored MP4 and
+ * its stored PNG or JPEG thumbnail (`internal/dispatch/reddit_video.go`, #549).
+ */
+export const REDDIT_VIDEO_KEYS = ['videoAssetId', 'thumbnailAssetId'] as const;
 
 /** A Reddit pixel id campaign-service offers (`ValidPixelID`): 1 to 64 letters, digits or underscores. */
 export const REDDIT_PIXEL_ID_PATTERN = /^[A-Za-z0-9_]{1,64}$/;

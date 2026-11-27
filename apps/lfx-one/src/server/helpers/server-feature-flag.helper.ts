@@ -432,6 +432,22 @@ export enum ServerFeatureFlag {
   CampaignServiceRedditGenderLanguageDayparting = 'LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_GENDER_LANGUAGE_DAYPARTING',
 
   /**
+   * Reddit video posts (#6108 row 8, linuxfoundation/lfx-v2-campaign-service#549): a create may carry
+   * `redditConfig.videoAssetId` (a stored video/mp4) and `thumbnailAssetId` (a stored PNG or JPEG), and the creative-asset
+   * upload takes an MP4 for it.
+   *
+   * A CAPABILITY flag of the Bidding kind: REQUIRES campaign-service DEPLOYED with `REDDIT_VIDEO_ENABLED` on, since
+   * campaign-service refuses both fields with a 400 otherwise. Reddit fetches the video and thumbnail from signed URLs,
+   * so it is only meaningful together with `CampaignServiceRedditAssets` (URL signing configured) on the campaign-service
+   * create path; `canSetRedditVideo` needs all three. Off (the default), the create route refuses either field, never
+   * drops it. On, it refuses what campaign-service would: a thumbnail without a video or a video without one, a video
+   * beside `postUrl`, `imageUrl` or `imageAssetId`, a video with 2 or more variants while one ad per variant is on, an id
+   * that is not a UUID, or the same id twice. Request fields only, so flipping it back strands nothing. Same accepted
+   * values as the flags above.
+   */
+  CampaignServiceRedditVideo = 'LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_VIDEO',
+
+  /**
    * Reddit pixel list (#6108 row 5, linuxfoundation/lfx-v2-campaign-service#549): answer
    * `GET /api/campaigns/reddit/pixels` (404 while off), the conversion pixels on the Reddit ad account a create uses, so a
    * picker can fill the existing `redditConfig.conversionPixelId`. Choosing a pixel stays gated by

@@ -27,6 +27,7 @@ import { redditSubCountryGeoRefusal } from '@lfx-one/shared/utils/campaign-reddi
 import { redditAdPerVariantRefusal } from '@lfx-one/shared/utils/campaign-reddit-ad-variants.utils';
 import { redditBudgetTypeRefusal, redditPlacementsRefusal } from '@lfx-one/shared/utils/campaign-reddit-delivery.utils';
 import { redditDemographicsRefusal } from '@lfx-one/shared/utils/campaign-reddit-demographics.utils';
+import { redditVideoRefusal } from '@lfx-one/shared/utils/campaign-reddit-video.utils';
 import { redditPixelsFromPayload } from '@lfx-one/shared/utils/campaign-reddit-pixels.utils';
 import {
   redditConfigNamesCustomAudiences,
@@ -516,6 +517,7 @@ import {
   canSetRedditBudgetType,
   canSetRedditAdPerVariant,
   canSetRedditDemographics,
+  canSetRedditVideo,
   canListRedditPixels,
   canSetRedditConversionPixel,
   canUseGoogleCreativeAssets,
@@ -1531,6 +1533,20 @@ export class CampaignController {
         redditBudgetTypeRefusal(body?.redditConfig, canSetRedditBudgetType());
       if (redditDeliveryRefused !== null) {
         throw ServiceValidationError.forField(redditDeliveryRefused.field, redditDeliveryRefused.message, {
+          operation: 'campaign_create',
+          service: 'campaign_controller',
+        });
+      }
+      // A Reddit video post (#6108 row 8): `videoAssetId` and `thumbnailAssetId` refused, never dropped, while this
+      // deployment cannot send them (`canSetRedditVideo`, which needs the Reddit assets flag too, so a stored video is
+      // refused wherever a stored image is), and held to campaign-service's rules (`checkRedditVideoChoice`), which it
+      // checks after the budget type. One ad per variant decides whether 2 or more variants may ride along. See
+      // `redditVideoRefusal`. Only when Reddit is selected, as below.
+      const redditVideoRefused = platforms.includes('reddit-ads')
+        ? redditVideoRefusal(body?.redditConfig, canSetRedditVideo(), canSetRedditAdPerVariant())
+        : null;
+      if (redditVideoRefused !== null) {
+        throw ServiceValidationError.forField(redditVideoRefused.field, redditVideoRefused.message, {
           operation: 'campaign_create',
           service: 'campaign_controller',
         });
@@ -3658,7 +3674,7 @@ export class CampaignController {
 
   /**
    * `POST /api/campaigns/brief/creative-assets?project=&brief_id=` — the raw image bytes, typed
-   * `image/png` or `image/jpeg`, the raw video bytes typed `video/mp4` (#5764 row 18), or a PDF typed `application/pdf`
+   * `image/png` or `image/jpeg`, the raw video bytes typed `video/mp4` (#5764 row 18, #6108 row 8), or a PDF typed `application/pdf`
    * (campaign-service#665), stored against the brief by campaign-service's
    * `upload-creative-asset`. Answers `{ id, mimeType, byteSize, checksum, created }` with 201 when
    * the asset was stored and 200 when an identical one already was (the id is usable either way).
@@ -3666,8 +3682,8 @@ export class CampaignController {
    * Refused before anything is sent upstream: EVERY capability off (`canUseRedditCreativeAssets`,
    * `canUseGoogleCreativeAssets`, `canUseMetaCreativeAssets`, `canUseLinkedInCreativeAssets`,
    * `canUseMicrosoftCreativeAssets` and `canCreateTwitter` (the tweet image) — nothing could use the asset; any one alone admits the upload), a missing `project` or `brief_id`, a type outside
-   * `CREATIVE_ASSET_UPLOAD_MIME_TYPES`, an MP4 while `canSetLinkedInVideoAds()` is off (only a LinkedIn video ad uses
-   * one), a PDF while `canSetLinkedInDocument()` is off (only a LinkedIn document ad uses one, campaign-service#665), or
+   * `CREATIVE_ASSET_UPLOAD_MIME_TYPES`, an MP4 while `canSetLinkedInVideoAds()` and `canSetRedditVideo()` are both off
+   * (only a LinkedIn video ad or a Reddit video post uses one), a PDF while `canSetLinkedInDocument()` is off (only a LinkedIn document ad uses one, campaign-service#665), or
    * bytes that are not the type they claim (415), an empty body (400). Over the type's own limit
    * (`creativeAssetUploadMaxBytes`: 10 MiB for an image, 30 MiB for a video or a PDF) is a 413 from the route's raw parsers
    * before this runs; the length is re-checked here so a direct caller of this method gets the same answer.
@@ -3714,10 +3730,10 @@ export class CampaignController {
     // no Buffer — told apart from an empty file by the declared type, not by the body.
     const declaredType = (req.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase();
     const image: unknown = req.body;
-    // A video is stored only where something can use it: a LinkedIn video ad (#5764 row 18). The route does not even
-    // read its body otherwise.
+    // A video is stored only where something can use it: a LinkedIn video ad (#5764 row 18) or a Reddit video post
+    // (#6108 row 8). The route does not even read its body otherwise.
     const video = declaredType === CREATIVE_ASSET_VIDEO_MIME_TYPE;
-    if (video && !canSetLinkedInVideoAds()) {
+    if (video && !canSetLinkedInVideoAds() && !canSetRedditVideo()) {
       next(this.unsupportedCreativeAsset(req, operation, declaredType));
       return;
     }
@@ -7569,7 +7585,9 @@ export class CampaignController {
    *
    * `in`, as for bidding: an explicit `imageAssetId: null` is still the field, and campaign-service
    * would refuse it. Off means either the legacy creator serves (it never reads the field, so the
-   * campaign would have no ad) or campaign-service's URL signing is unconfigured (it refuses).
+   * campaign would have no ad) or campaign-service's URL signing is unconfigured (it refuses). A video post's
+   * `videoAssetId` and `thumbnailAssetId` are refused in that state too, by `redditVideoRefusal`: its gate,
+   * `canSetRedditVideo`, needs this same capability.
    */
   private unservedRedditAssetField(body: CampaignCreateRequest): string | null {
     if (canUseRedditCreativeAssets()) return null;

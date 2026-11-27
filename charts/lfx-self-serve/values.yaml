@@ -801,6 +801,21 @@ environment:
   LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_GENDER_LANGUAGE_DAYPARTING:
     value:
 
+  # Reddit video posts (#6108 row 8, linuxfoundation/lfx-v2-campaign-service#549): accepts `redditConfig.videoAssetId`
+  # (a stored MP4) and `thumbnailAssetId` (a stored PNG or JPEG), and lets the creative-asset upload take an MP4 for it.
+  #
+  # A CAPABILITY flag of the Bidding kind: REQUIRES campaign-service DEPLOYED with `REDDIT_VIDEO_ENABLED` on, the create
+  # pipeline on, and LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_ASSETS on, since Reddit fetches the video and thumbnail from the
+  # same signed URLs as a stored image (CREATIVE_ASSET_URL_SIGNING_KEY and CREATIVE_ASSET_PUBLIC_BASE_URL set). Off (the
+  # default), the create route refuses either field with a 400, never dropping it. On, it also refuses what
+  # campaign-service would: a thumbnail without a video or a video without one, a video beside `postUrl`, `imageUrl` or
+  # `imageAssetId`, a video with 2 or more variants while REDDIT_AD_PER_VARIANT is on, an id that is not a UUID, or the
+  # same id twice. Fields only, so turning it back off strands nothing. Order: campaign-service's signing settings, then
+  # REDDIT_ASSETS, then campaign-service's REDDIT_VIDEO_ENABLED and its paused video probe, THEN this. Same accepted values
+  # as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_VIDEO:
+    value:
+
   # Reddit pixel list (#6108 row 5, linuxfoundation/lfx-v2-campaign-service#549): serves `GET /api/campaigns/reddit/pixels`,
   # the conversion pixels on the shared Reddit ad account, for a picker that fills the existing
   # `redditConfig.conversionPixelId` (still gated by LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_CONVERSION_PIXEL's create path).
