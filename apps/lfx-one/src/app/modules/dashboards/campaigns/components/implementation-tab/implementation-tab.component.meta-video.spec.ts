@@ -133,7 +133,7 @@ describe('ImplementationTabComponent meta video', () => {
   const mp4 = (): { files: File[] } => ({ files: [new File([new Uint8Array(8)], 'promo.mp4', { type: 'video/mp4' })] });
 
   it('holds Create while a variant video uploads, puts it on that variant, and re-reads the library on a delete', STATE_ONLY, async () => {
-    const { f } = await mount(true);
+    const { f, latest } = await mount(true);
     const uploader = { clear: vi.fn() };
     c(f)['onMetaVariantVideoFileSelect'](1, mp4(), uploader);
     expect(uploader.clear).toHaveBeenCalled();
@@ -142,6 +142,9 @@ describe('ImplementationTabComponent meta video', () => {
 
     upload$.next({ id: A, mimeType: 'video/mp4' });
     expect(c(f)['metaVariantVideos']()[1]).toEqual({ assetId: A, assetName: 'promo.mp4', assetBriefId: 'b-1' });
+    // Taken off its variant, the upload keeps its name for a re-pick and in the draft.
+    c(f)['onMetaVariantVideoPick'](1, '');
+    expect(latest()?.metaUploadedVideos).toEqual([{ assetId: A, assetName: 'promo.mp4', assetBriefId: 'b-1' }]);
     c(f)['onMetaVariantVideoPick'](0, A);
     expect(c(f)['metaVariantVideos']()[0].assetName).toBe('promo.mp4');
     expect(c(f)['createBlockedReason']()).toBeNull();
