@@ -1305,6 +1305,19 @@ describe('MktgDocumentRunService core', () => {
         expect(audits('mktg_run_dismiss_audit').map((call) => call[3]?.['discardedBySubject'])).toEqual(['synthetic-closer']);
       });
 
+      it('names the writer whose retry landed between this read and this write, closing nothing', async () => {
+        await failedRun();
+        redraft.forSession.mockImplementationOnce(async () => {
+          await new MktgDocumentRunService().retry(retrier, project, types[0].agentKey, 'living', runId);
+          return null;
+        });
+        flows.author.mockResolvedValue({ name: 'Synthetic Retrier' });
+        expect(await refusal(late)).toMatchObject({ change: 'retried', changedBy: 'Synthetic Retrier', changedByViewer: false, changedAt: retriedAt });
+        expect(stored().metadata).toMatchObject({ state: 'writing', 'retried-by': 'synthetic-retrier', 'retried-at': retriedAt });
+        expect(stored().metadata).not.toHaveProperty('closed-by');
+        expect(audits('mktg_run_dismiss_audit')).toHaveLength(0);
+      });
+
       it('records who retried and when as an opaque subject, and names them to a later dismiss', async () => {
         await failedRun();
         await service.retry(retrier, project, types[0].agentKey, 'living', runId);

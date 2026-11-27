@@ -99,6 +99,17 @@ describe('refused dismiss', () => {
     expect(mktgRunNotFailedNotice(facts, localTime, { label, started: '19 Oct, 12:10' })).toBe(line);
   });
   it.each([
+    ['ends in the word run', 'Synthetic run', 'Synthetic'],
+    ['ends in the word Run', 'Synthetic Run', 'Synthetic'],
+    ['only ends in the letters run', 'Synthetic rerun', 'Synthetic rerun'],
+    ['has a long run of spaces before run', `Synthetic${' '.repeat(50_000)}run`, 'Synthetic'],
+  ])('never doubles the word run for a label that %s', (_case, label, named) => {
+    const facts = { change: 'closed', changedBy: 'Synthetic Writer', changedByViewer: false, changedAt: null } as const;
+    expect(mktgRunNotFailedNotice(facts, '', { label, started: '19 Oct, 12:10' })).toBe(
+      `Synthetic Writer already closed the ${named} run started at 19 Oct, 12:10.`
+    );
+  });
+  it.each([
     [{ changedBy: null, changedByViewer: true }, 'You already closed the Brand Kit run started at 19 Oct, 12:10.'],
     [{ changedBy: null, changedByViewer: false }, 'Someone on your team already closed the Brand Kit run started at 19 Oct, 12:10.'],
   ])('keeps the viewer and the unnamed writer as they are with a run to name %j', (who, line) => {
