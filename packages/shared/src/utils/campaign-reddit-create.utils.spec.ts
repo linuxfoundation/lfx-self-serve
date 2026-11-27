@@ -19,6 +19,18 @@ const OFF: RedditCreateConfigCapabilities = {
   adPerVariant: false,
 };
 
+const ON: RedditCreateConfigCapabilities = {
+  conversionEvent: true,
+  customAudiences: true,
+  targetingExclusions: true,
+  subCountryGeo: true,
+  placements: true,
+  demographics: true,
+  budgetType: true,
+  video: true,
+  adPerVariant: true,
+};
+
 const ASSET = '3f2504e0-4f89-11d3-9a0c-0305e82c3301';
 
 // One field per feature that this deployment cannot send with every flag off, and the field each refusal names.
@@ -57,7 +69,6 @@ describe('redditCreateConfigRefusal', () => {
 
   it('passes a plain config, and every feature once its flag is on', () => {
     expect(redditCreateConfigRefusal(['reddit-ads'], { budgetUsd: 50 }, OFF)).toBeNull();
-    const on = Object.fromEntries(Object.keys(OFF).map((key) => [key, true])) as unknown as RedditCreateConfigCapabilities;
-    expect(redditCreateConfigRefusal(['reddit-ads'], { budgetUsd: 50, gender: 'FEMALE', placements: ['FEED'], budgetType: 'daily' }, on)).toBeNull();
+    expect(redditCreateConfigRefusal(['reddit-ads'], { budgetUsd: 50, gender: 'FEMALE', placements: ['FEED'], budgetType: 'daily' }, ON)).toBeNull();
   });
 });

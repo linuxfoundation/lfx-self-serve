@@ -1472,10 +1472,12 @@ export class CampaignController {
 
       // Reddit's config refusals (#6108 rows 1-3 and 5-9): each feature refused, never dropped, while this deployment
       // cannot send it, and held to campaign-service's rules, in its PreflightCreate order. Only for a create that
-      // selects Reddit: campaign-service pre-checks only the selected platforms, so a Reddit draft must never block
-      // another platform's create. The rules are table rows in `campaign-reddit-create.utils.spec.ts` and each
-      // feature's own spec. Custom audiences on the shared ad account are named only by a caller holding
-      // `global_marketing_ops` on the project, as campaign-service requires (403), and never on a check that failed (503).
+      // selects Reddit: campaign-service pre-checks only the selected platforms, so these refusals never block another
+      // platform's create. The rules are table rows in `campaign-reddit-create.utils.spec.ts` and each feature's own spec.
+      // Not gated, on purpose: the image-asset, pixel and bidding checks above, since `redditConfig` is forwarded
+      // whatever is selected, and the custom-audiences access check below: those ids on the shared ad account are named
+      // only by a caller holding `global_marketing_ops` on the project, as campaign-service requires (403), and never on
+      // a check that failed (503).
       const redditConfigRefused = redditCreateConfigRefusal(platforms, body?.redditConfig, {
         conversionEvent: canSetRedditConversionEvent(),
         customAudiences: canSetRedditCustomAudiences(),
