@@ -4184,6 +4184,50 @@
               data-testid="implementation-linkedin-objective" />
           }
 
+          <!-- Delivery options (campaign-service#667), offered on an explicit yes, and kept on screen while one that is on
+               waits on the capability, so it can be turned off. Both off sends nothing. -->
+          @if (linkedInDeliveryOptionsShown()) {
+            <fieldset class="mb-4" data-testid="implementation-linkedin-delivery-options">
+              <legend class="mb-2 block text-xs font-medium text-gray-700">Delivery options</legend>
+              <div class="flex flex-col gap-2">
+                <label class="flex items-start gap-2 text-sm text-gray-700">
+                  <input
+                    type="checkbox"
+                    [checked]="linkedInDeliveryOptions().audienceExpansion"
+                    (change)="onLinkedInDeliveryOptionChange('audienceExpansion', $event)"
+                    class="mt-0.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    data-testid="implementation-linkedin-audience-expansion" />
+                  <span>
+                    Audience Expansion
+                    <span class="block text-xs text-gray-500">Also reach members similar to the targeting. Off by default.</span>
+                  </span>
+                </label>
+                <label
+                  class="flex items-start gap-2 text-sm"
+                  [class.text-gray-700]="linkedInAudienceNetworkOffered()"
+                  [class.text-gray-400]="!linkedInAudienceNetworkOffered()">
+                  <input
+                    type="checkbox"
+                    [checked]="linkedInDeliveryOptions().audienceNetwork"
+                    [disabled]="!linkedInAudienceNetworkOffered()"
+                    (change)="onLinkedInDeliveryOptionChange('audienceNetwork', $event)"
+                    class="mt-0.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    data-testid="implementation-linkedin-audience-network" />
+                  <span>
+                    LinkedIn Audience Network
+                    <span class="block text-xs text-gray-500">
+                      @if (linkedInAudienceNetworkOffered()) {
+                        Also show the ads on partner apps and sites outside LinkedIn. Off by default.
+                      } @else {
+                        Not available with text ads or lead generation, so it is not sent.
+                      }
+                    </span>
+                  </span>
+                </label>
+              </div>
+            </fieldset>
+          }
+
           <!-- The upload's status and any image notice, announced. Always mounted; only their text changes. -->
           <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-linkedin-image-status-live">
             {{ linkedInImageUploadLiveMessage() }}

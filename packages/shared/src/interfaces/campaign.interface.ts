@@ -1593,6 +1593,11 @@ export interface CampaignImplementationDraft {
    */
   linkedInObjectiveDraft?: LinkedInObjectiveDraft;
   /**
+   * The LinkedIn Audience Expansion and Audience Network toggles as set (campaign-service#667). Restored only when
+   * present; sent only while `linkedInDeliveryOptionsEnabled` is on, and otherwise kept but neither sent nor held.
+   */
+  linkedInDeliveryOptions?: LinkedInDeliveryOptionsDraft;
+  /**
    * The X section as edited: the daily budget and the authored tweet's copy as RAW text, so a
    * blank budget stays blank rather than turning into 0, and the tweet image upload on the LinkedIn
    * upload fields' terms above. All optional and restored only when present, so a draft written
@@ -2675,6 +2680,8 @@ export interface LinkedInCreateRefusalInput {
   objectiveRefusal?: string | null;
   /** Why the target cost entered cannot be sent (campaign-service#674), or `null`; see `linkedInTargetCostCreateRefusal`. */
   targetCostRefusal?: string | null;
+  /** Why the delivery options set cannot be sent yet (campaign-service#667), or `null`; see `linkedInDeliveryOptionsCreateRefusal`. */
+  deliveryOptionsRefusal?: string | null;
 }
 
 export interface LinkedInCampaignCreateRequest {
@@ -2870,6 +2877,17 @@ export interface LinkedInConfigKeyRefusal {
  * The Implement tab's LinkedIn objective and conversion rules as edited (#5764 rows 2 and 4), and the automatic-bidding
  * target cost beside them (linuxfoundation/lfx-v2-campaign-service#674), carried in the draft.
  */
+/** The Implement tab's LinkedIn delivery options as set (linuxfoundation/lfx-v2-campaign-service#667), carried in the draft. */
+export interface LinkedInDeliveryOptionsDraft {
+  /** Audience Expansion on: sent as `audienceExpansionEnabled: true`. Off sends nothing (LinkedIn's default). */
+  audienceExpansion: boolean;
+  /**
+   * The LinkedIn Audience Network on: sent as `offsiteDeliveryEnabled: true`, but only while offered (not with Text Ads
+   * or lead generation). Off sends nothing (campaign-service sends it off).
+   */
+  audienceNetwork: boolean;
+}
+
 export interface LinkedInObjectiveDraft {
   /** The objective chosen, or `null`: none is sent, so the bidding decides, as every create did before. */
   objective: LinkedInObjective | LinkedInLeadGenObjective | null;
@@ -3733,6 +3751,7 @@ export type LinkedInDraftSnapshot = Pick<
   | 'linkedInCustomTargeting'
   | 'linkedInTargetingDraft'
   | 'linkedInObjectiveDraft'
+  | 'linkedInDeliveryOptions'
 >;
 
 /** The LinkedIn signals `linkedInDraftFields` snapshots into the draft (#5980): budget, cap, variants and the upload slot. */
@@ -3759,6 +3778,8 @@ export interface LinkedInDraftState {
   targetingDraft: LinkedInTargetingDraft;
   /** The objective and conversion rules as edited (#5764 rows 2 and 4). */
   objectiveDraft: LinkedInObjectiveDraft;
+  /** The Audience Expansion and Audience Network toggles as set (campaign-service#667). */
+  deliveryOptions: LinkedInDeliveryOptionsDraft;
 }
 
 /** What a restored draft does to the LinkedIn section (#5980): values to set, and at most one upload step for the component to run. */
@@ -3780,6 +3801,7 @@ export interface LinkedInDraftRestore {
   customTargeting?: boolean;
   targetingDraft?: LinkedInTargetingDraft;
   objectiveDraft?: LinkedInObjectiveDraft;
+  deliveryOptions?: LinkedInDeliveryOptionsDraft;
 }
 
 /** What a brief's LinkedIn copy seeds (#5980): variants, geos and profile, and a lifetime budget when the strategy names one. */

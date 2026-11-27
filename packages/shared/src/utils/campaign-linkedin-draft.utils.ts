@@ -12,6 +12,7 @@ import type {
   LinkedInVariantDraft,
 } from '../interfaces/campaign.interface';
 import { linkedInCarouselCardsFromStored } from './campaign-linkedin-carousel-form.utils';
+import { linkedInDeliveryOptionsDraftFromStored } from './campaign-linkedin-delivery-options-form.utils';
 import { linkedInDocumentDraftFromStored } from './campaign-linkedin-document-form.utils';
 import { linkedInObjectiveDraftFromStored } from './campaign-linkedin-objective-form.utils';
 import { linkedInTargetingDraftFromStored } from './campaign-linkedin-targeting-form.utils';
@@ -59,6 +60,7 @@ export function linkedInDraftFields(
   | 'linkedInCustomTargeting'
   | 'linkedInTargetingDraft'
   | 'linkedInObjectiveDraft'
+  | 'linkedInDeliveryOptions'
 > {
   return {
     linkedInBudgetUsd: state.budgetUsd,
@@ -78,6 +80,7 @@ export function linkedInDraftFields(
     linkedInCustomTargeting: state.customTargeting,
     linkedInTargetingDraft: structuredClone(state.targetingDraft),
     linkedInObjectiveDraft: { ...state.objectiveDraft, conversions: [...state.objectiveDraft.conversions] },
+    linkedInDeliveryOptions: { ...state.deliveryOptions },
   };
 }
 
@@ -130,6 +133,9 @@ export function linkedInDraftRestore(draft: LinkedInDraftSnapshot): LinkedInDraf
   // The objective and conversion rules (#5764 rows 2 and 4): present-only, so an older draft keeps the default.
   const objectiveDraft = linkedInObjectiveDraftFromStored(draft.linkedInObjectiveDraft);
   if (objectiveDraft) restore.objectiveDraft = objectiveDraft;
+  // The delivery options (campaign-service#667): present-only, so an older draft keeps both off.
+  const deliveryOptions = linkedInDeliveryOptionsDraftFromStored(draft.linkedInDeliveryOptions);
+  if (deliveryOptions) restore.deliveryOptions = deliveryOptions;
   if (draft.linkedInImageUploadPendingName) {
     restore.pendingUpload = { name: draft.linkedInImageUploadPendingName, briefId: draft.linkedInImageUploadPendingBriefId ?? '' };
   }

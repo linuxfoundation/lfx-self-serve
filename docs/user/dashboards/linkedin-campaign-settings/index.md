@@ -62,6 +62,15 @@ The target must be more than 0, no more than 1,000,000 and use at most two decim
 
 The box is only there with automatic bidding, and only where your deployment supports a target cost. Switch to manual bidding and the target is not sent. If you typed a target and the campaign settings are still loading, **Create** waits until they load, so the campaign is never created without the target you entered. If they can't be loaded, clear the target cost to continue.
 
+## Delivery options
+
+Where your deployment supports them, **Delivery options** has two checkboxes under the LinkedIn bidding choice. Both are off by default, and a campaign created with both off is set up the same way as before.
+
+- **Audience Expansion** lets LinkedIn also reach members similar to your targeting.
+- **LinkedIn Audience Network** also shows the ads on partner apps and sites outside LinkedIn. You can't use it with text ads or with the lead generation objective, so the checkbox is greyed out and not sent while either is chosen.
+
+A campaign that reuses an existing LinkedIn campaign keeps that campaign's own settings. If you turned an option on and the campaign settings are still loading, **Create** waits until they load. If they can't be loaded, turn the options off to continue.
+
 ## Locations
 
 The LinkedIn section starts with the locations the brief recommends. To change them:

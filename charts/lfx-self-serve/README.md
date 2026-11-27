@@ -505,8 +505,8 @@ boost input follows in a later change; until then this opens the server half onl
 `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_DELIVERY_OPTIONS` is of the Bidding kind too (campaign-service v1.0.44 with
 `LINKEDIN_ADS_DELIVERY_OPTIONS_ENABLED` on). Off (the default), the create route refuses
 `linkedInConfig.audienceExpansionEnabled` and `linkedInConfig.offsiteDeliveryEnabled` with a 400, `false` included,
-since campaign-service refuses either while its own flag is off. The Implement tab's toggles follow in a later change;
-until then this opens the server half only.
+since campaign-service refuses either while its own flag is off. On, the Implement tab offers both as checkboxes under
+the LinkedIn bidding choice, off by default; a create sends only an option that is on.
 
 `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_CONVERSION_EVENT` is of the Bidding kind too (campaign-service with
 `REDDIT_CONVERSION_EVENT_ENABLED` on). Off (the default), the Implement tab hides the conversion event picker and the

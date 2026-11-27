@@ -57,7 +57,14 @@ describe('linkedInDraftFields', () => {
     customTargeting: true,
     targetingDraft: { clauses: [{ skills: [{ urn: 'urn:li:skill:1', name: 'Go' }] }], exclude: {}, segmentsAccountId: null },
     objectiveDraft: { objective: 'conversions', conversions: ['104012'], conversionsOwner: 'tlf|' },
+    deliveryOptions: { audienceExpansion: true, audienceNetwork: false },
   };
+
+  it('carries a copy of the delivery options', () => {
+    const fields = linkedInDraftFields(state);
+    expect(fields.linkedInDeliveryOptions).toEqual(state.deliveryOptions);
+    expect(fields.linkedInDeliveryOptions).not.toBe(state.deliveryOptions);
+  });
 
   it('carries the objective and a copy of its conversion rules', () => {
     const fields = linkedInDraftFields(state);
@@ -201,6 +208,14 @@ describe('linkedInDraftRestore', () => {
   ])('restores the objective: %s', (_label, stored, expected) => {
     const restore = linkedInDraftRestore(draft({ linkedInObjectiveDraft: stored as unknown as LinkedInDraftSnapshot['linkedInObjectiveDraft'] }));
     expect(restore.objectiveDraft).toEqual(expected);
+  });
+
+  // The delivery options (campaign-service#667); their stored-shape rows are in `campaign-linkedin-delivery-options-form.utils.spec.ts`.
+  it.each([
+    ['present', { audienceExpansion: true, audienceNetwork: true }, { audienceExpansion: true, audienceNetwork: true }],
+    ['absent, from an older draft', undefined, undefined],
+  ])('restores the delivery options: %s', (_label, stored, expected) => {
+    expect(linkedInDraftRestore(draft({ linkedInDeliveryOptions: stored })).deliveryOptions).toEqual(expected);
   });
 
   it('restores a copy of each text ad', () => {
