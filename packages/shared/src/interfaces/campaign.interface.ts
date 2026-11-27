@@ -26,6 +26,7 @@ import type {
   GOOGLE_BIDDING_STRATEGIES,
   GOOGLE_CAMPAIGN_CHANNELS,
   GOOGLE_CHANNELS_WITH_CREATIVE,
+  LINKEDIN_AD_FORMAT_CHOICES,
   LINKEDIN_AD_FORMATS,
   LINKEDIN_LEAD_GEN_CALL_TO_ACTION_LABELS,
   LINKEDIN_LEAD_GEN_OBJECTIVE,
@@ -3027,7 +3028,7 @@ export type LinkedInAdFormat = (typeof LINKEDIN_AD_FORMATS)[number];
  * a request `format`: it is the single-image request with a `videoAssetId` on every variant, which campaign-service
  * creates as SINGLE_VIDEO.
  */
-export type LinkedInAdFormatChoice = LinkedInAdFormat | 'video';
+export type LinkedInAdFormatChoice = (typeof LINKEDIN_AD_FORMAT_CHOICES)[number];
 
 export interface LinkedInCampaignCreateResult {
   platform: 'linkedin-ads';

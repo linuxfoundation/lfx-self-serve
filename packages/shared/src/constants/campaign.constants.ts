@@ -883,6 +883,9 @@ export const LINKEDIN_VARIANT_FIELD_LIMITS = {
  */
 export const LINKEDIN_AD_FORMATS = ['single_image', 'text', 'carousel', 'document', 'boost'] as const;
 
+/** The formats the Implement tab's LinkedIn picker offers: every request format, plus `video` (#5764 row 18). */
+export const LINKEDIN_AD_FORMAT_CHOICES = [...LINKEDIN_AD_FORMATS, 'video'] as const;
+
 /** The field a LinkedIn boost refusal names (linuxfoundation/lfx-v2-campaign-service#673). */
 export const LINKEDIN_BOOST_POST_FIELD = 'linkedInConfig.boostPost';
 

@@ -10,7 +10,13 @@ import type {
   LinkedInTargetingStrategy,
   LinkedInVariantDraft,
 } from '../interfaces/campaign.interface';
-import { linkedInBriefSeed, linkedInDraftFields, linkedInDraftRestore, newLinkedInVariantDraft } from './campaign-linkedin-draft.utils';
+import {
+  linkedInAdFormatChoiceFrom,
+  linkedInBriefSeed,
+  linkedInDraftFields,
+  linkedInDraftRestore,
+  newLinkedInVariantDraft,
+} from './campaign-linkedin-draft.utils';
 
 const variant = (key: string, over: Partial<LinkedInVariantDraft> = {}): LinkedInVariantDraft => ({
   key,
@@ -114,6 +120,24 @@ describe('linkedInDraftFields', () => {
     ['b1', 'Too big.'],
   ])('carries the failure message only with the brief it failed for (%j)', (failedBriefId, message) => {
     expect(linkedInDraftFields({ ...state, uploadFailedBriefId: failedBriefId }).linkedInImageUploadFailedMessage).toBe(message);
+  });
+});
+
+describe('linkedInAdFormatChoiceFrom', () => {
+  it.each([
+    ['single_image', 'single_image'],
+    ['text', 'text'],
+    ['video', 'video'],
+    ['carousel', 'carousel'],
+    ['document', 'document'],
+    ['boost', 'boost'],
+    // Not a format the picker offers: a case variant, blank, another type.
+    ['Boost', undefined],
+    ['', undefined],
+    [null, undefined],
+    [3, undefined],
+  ] as const)('%s reads as %s', (value, format) => {
+    expect(linkedInAdFormatChoiceFrom(value)).toBe(format);
   });
 });
 
