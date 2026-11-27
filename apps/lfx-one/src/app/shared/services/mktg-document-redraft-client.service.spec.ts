@@ -166,6 +166,7 @@ describe('comments-only redraft transport/recovery', () => {
     [400, 'VALIDATION_ERROR'],
     [404, 'NOT_FOUND'],
     [409, 'MKTG_REDRAFT_COMMENTS_BUSY'],
+    [409, 'MKTG_RUN_ACTIVE'],
   ] as const)('clears allow-listed primary %s/%s and lets a new explicit send freeze new open IDs', (status, code) => {
     client.send(scope, 1).subscribe({ error: () => undefined });
     const first = http.expectOne(path);
@@ -179,6 +180,63 @@ describe('comments-only redraft transport/recovery', () => {
     expect(next.request.body.clientRequestId).not.toBe(id);
     expect(next.request.body.commentIds).toEqual(['new-open-comment']);
     next.flush({ code: 'MKTG_REDRAFT_REQUEST_FAILED' }, { status: 409, statusText: 'Failed send' });
+    expect(client.hasIntent(scope)).toBe(false);
+  });
+  it.each([
+    [
+      'the named sender of the same comments',
+      { code: 'MKTG_REDRAFT_COMMENTS_BUSY', sentBy: 'Synthetic sender', sentByViewer: false, sentAt: '2026-10-21T12:00:00.000Z', runId: 'c'.repeat(64) },
+      { message: 'Synthetic sender already sent these — the agent is redrafting.', runId: 'c'.repeat(64) },
+    ],
+    [
+      'a send that has no recorded run yet',
+      { code: 'MKTG_REDRAFT_COMMENTS_BUSY', sentBy: null, sentByViewer: true, sentAt: '2026-10-21T12:00:00.000Z', runId: null },
+      { message: 'You already sent these — the agent is redrafting.', runId: null },
+    ],
+    [
+      'the active run of the document',
+      {
+        code: 'MKTG_RUN_ACTIVE',
+        message: 'A run is in progress.',
+        startedBy: 'Synthetic writer',
+        startedByViewer: false,
+        startedAt: '2026-10-21T12:00:00',
+        activeRunId: 'b'.repeat(64),
+        state: 'writing',
+        agentKey: scope.agentKey,
+        documentId: scope.documentId,
+      },
+      {
+        message: "Synthetic writer's Messaging framework run is in progress (started 21 Oct 2026, 12:00). Your comments were not sent.",
+        runId: 'b'.repeat(64),
+      },
+    ],
+  ] as const)('answers a 409 that names %s as one elsewhere event, with nothing left to retry or release', (_case, conflict, expected) => {
+    const progress: unknown[] = [];
+    const failed = vi.fn();
+    const done = vi.fn();
+    client.send(scope, 1).subscribe({ next: (value) => progress.push(value), error: failed, complete: done });
+    http.expectOne(path).flush(conflict, { status: 409, statusText: 'Conflict' });
+    expect(progress).toEqual([{ type: 'elsewhere', ...expected }]);
+    expect(failed).not.toHaveBeenCalled();
+    expect(done).toHaveBeenCalledTimes(1);
+    expect(client.hasIntent(scope)).toBe(false);
+    expect(client.canRelease(scope)).toBe(false);
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(observe).not.toHaveBeenCalled();
+    http.expectNone(path);
+  });
+  it.each([
+    { code: 'MKTG_REDRAFT_COMMENTS_BUSY' },
+    { code: 'MKTG_RUN_ACTIVE', startedBy: 'Synthetic writer', activeRunId: '../unsafe' },
+    { code: 'MKTG_RUN_ACTIVE', startedBy: 'Synthetic writer', activeRunId: 'b'.repeat(64), agentKey: 'faq', documentId: 'living' },
+  ])('names nobody and follows no run for an unvalidated conflict %j', (conflict) => {
+    const next = vi.fn();
+    const failed = vi.fn();
+    client.send(scope, 1).subscribe({ next, error: failed });
+    http.expectOne(path).flush(conflict, { status: 409, statusText: 'Conflict' });
+    expect(next).not.toHaveBeenCalled();
+    expect(failed).toHaveBeenCalledTimes(1);
     expect(client.hasIntent(scope)).toBe(false);
   });
   it.each([

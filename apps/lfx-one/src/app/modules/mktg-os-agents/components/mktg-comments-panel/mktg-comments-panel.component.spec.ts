@@ -394,6 +394,39 @@ describe('MktgCommentsPanelComponent', () => {
     stream.complete();
   });
 
+  it('says who already sent the comments, hands their run to the host and offers no retry, release or feed', async () => {
+    const rows = signal([mktgCommentFixture()]);
+    const stream = new Subject<MktgRedraftProgress>();
+    const send = vi.fn(() => stream);
+    TestBed.configureTestingModule({ providers: [provideMktgCommentsStub({ loaded: signal(true), threads: rows })] });
+    TestBed.overrideProvider(MktgDocumentRedraftClientService, {
+      useValue: { hasIntent: () => false, hasAcceptedAttempt: () => false, canRelease: () => false, resume: () => EMPTY, send },
+    });
+    const fixture = TestBed.createComponent(MktgCommentsPanelComponent);
+    fixture.componentRef.setInput('scope', mktgCommentScopeFixture());
+    fixture.componentRef.setInput('priorVersion', 1);
+    const elsewhere = vi.fn();
+    const ready = vi.fn();
+    fixture.componentInstance.elsewhere.subscribe(elsewhere);
+    fixture.componentInstance.ready.subscribe(ready);
+    await fixture.whenStable();
+    const el = fixture.nativeElement as HTMLElement;
+    el.querySelector<HTMLButtonElement>('[data-testid="mktg-comments-send"] button')?.click();
+    const message = 'Synthetic sender already sent these — the agent is redrafting.';
+    stream.next({ type: 'elsewhere', message, runId: 'c'.repeat(64) });
+    // The client re-read the comments: the other send now holds them.
+    rows.set([mktgCommentFixture({ status: 'sent', sentInRun: 'c'.repeat(64) })]);
+    stream.complete();
+    fixture.detectChanges();
+    expect(elsewhere).toHaveBeenCalledExactlyOnceWith({ message, runId: 'c'.repeat(64) });
+    expect(ready).not.toHaveBeenCalled();
+    expect(el.querySelector('[data-testid="mktg-comments-run-message"]')?.textContent).toBe(message);
+    expect(el.querySelector('[data-testid="mktg-comments-send"]')).toBeNull();
+    expect(el.querySelector('[data-testid="mktg-comments-release"]')).toBeNull();
+    expect(el.querySelector('[data-testid="mktg-comments-feed"]')).toBeNull();
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
   it('gives concurrent panels distinct declaratively-bound description idrefs without DOM effects', async () => {
     TestBed.configureTestingModule({ providers: [provideMktgCommentsStub({ loaded: signal(true), threads: signal([mktgCommentFixture()]) })] });
     const first = TestBed.createComponent(MktgCommentsPanelComponent);

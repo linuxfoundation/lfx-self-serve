@@ -17,14 +17,17 @@ import {
 import { MKTG_LIVING_DOCUMENT_ID, MKTG_REVISION_ID_REGEX, MKTG_STARTED_RUN_ID_REGEX } from '../constants/mktg-document-store.constants';
 import {
   MKTG_REDRAFT_ANCHOR_KEYS,
+  MKTG_REDRAFT_COMMENTS_BUSY,
   MKTG_REDRAFT_CONTEXT_KEYS,
   MKTG_REDRAFT_CONTEXT_SCHEMA,
   MKTG_REDRAFT_SNAPSHOT_KEYS,
   MKTG_REDRAFT_REQUEST_KEYS,
+  MKTG_REDRAFT_SENDER_FALLBACK,
+  MKTG_REDRAFT_SENT_CLAUSE,
 } from '../constants/mktg-document-redraft.constants';
 import { MKTG_RUN_POLL } from '../constants/mktg-run.constants';
 import type { MktgCommentAgentKey, MktgReviseDocumentRequest, MktgDocumentCommentSubmission } from '../interfaces/mktg-document-comments.interface';
-import type { MktgDocumentRedraftContext, MktgRedraftResultValidation } from '../interfaces/mktg-document-redraft.interface';
+import type { MktgDocumentRedraftContext, MktgRedraftBusyConflict, MktgRedraftResultValidation } from '../interfaces/mktg-document-redraft.interface';
 import type { BrandKitEnvelope } from '../interfaces/brand-kit.interface';
 import type { FoundationMessageEnvelope } from '../interfaces/foundation-message.interface';
 import type { BoilerplatesEnvelope } from '../interfaces/boilerplates.interface';
@@ -143,6 +146,33 @@ export function isMktgRedraftSubmissionBusy(submission: Pick<MktgDocumentComment
     submission.state === 'started' ||
     (submission.state === 'reserved' && (!!submission.runId || now - Date.parse(submission.createdAt) <= MKTG_RUN_POLL.timeoutMs))
   );
+}
+
+/** Validate the server's top-level busy facts before naming anyone; a 409 without them (a creator release) stays unnamed. */
+export function readMktgRedraftBusyConflict(value: unknown): MktgRedraftBusyConflict | null {
+  if (
+    !record(value) ||
+    value['code'] !== MKTG_REDRAFT_COMMENTS_BUSY ||
+    typeof value['sentByViewer'] !== 'boolean' ||
+    typeof value['sentAt'] !== 'string' ||
+    !Number.isFinite(Date.parse(value['sentAt'])) ||
+    (value['runId'] !== null && (typeof value['runId'] !== 'string' || !MKTG_STARTED_RUN_ID_REGEX.test(value['runId'])))
+  )
+    return null;
+  const name = typeof value['sentBy'] === 'string' ? value['sentBy'].trim() : '';
+  return {
+    code: MKTG_REDRAFT_COMMENTS_BUSY,
+    // A display name only: an email, subject or markup-like value is never shown.
+    sentBy: name && !/[<>@|:]/.test(name) ? name : null,
+    sentByViewer: value['sentByViewer'],
+    sentAt: value['sentAt'],
+    runId: value['runId'],
+  };
+}
+
+/** One line for every surface that hears the comments were already sent. */
+export function mktgRedraftSentElsewhereNotice(conflict: Pick<MktgRedraftBusyConflict, 'sentBy' | 'sentByViewer'>): string {
+  return `${conflict.sentByViewer ? 'You' : (conflict.sentBy ?? MKTG_REDRAFT_SENDER_FALLBACK)}${MKTG_REDRAFT_SENT_CLAUSE}`;
 }
 
 export function isFoundationMessageEnvelope(value: unknown): value is FoundationMessageEnvelope {
