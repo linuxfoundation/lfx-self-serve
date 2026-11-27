@@ -194,6 +194,13 @@ describe('redditScheduleWindowAdded', () => {
     expect(redditScheduleWindowAdded(schedule)).toEqual(expected);
   });
 
+  it('skips a window already held: the 8th from Monday moves an hour on rather than repeat window 1', () => {
+    let schedule: RedditDemographicsDraft['schedule'] = [];
+    for (let i = 0; i < 8; i++) schedule = redditScheduleWindowAdded(schedule);
+    expect(schedule[7]).toEqual({ startDay: 1, startHour: 10, endDay: 1, endHour: 18 });
+    expect(redditDemographicsDraftRefusal({ ...NONE, schedule }, true)).toBeNull();
+  });
+
   it('adds nothing at the cap', () => {
     expect(redditScheduleWindowAdded(windows(REDDIT_MAX_SCHEDULE_WINDOWS))).toHaveLength(REDDIT_MAX_SCHEDULE_WINDOWS);
   });

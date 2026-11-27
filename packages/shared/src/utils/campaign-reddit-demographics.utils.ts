@@ -212,12 +212,30 @@ export function redditLanguagesChoice(values: readonly string[]): RedditLanguage
 /**
  * The schedule with one more window, or unchanged at the cap: the first is {@link DEFAULT_REDDIT_SCHEDULE_WINDOW}, and
  * each later one the last window moved one day on (Saturday wraps to Sunday), so adding builds a weekday-by-weekday schedule.
+ * A move that would repeat a window already held moves on another day, then an hour, so an added window is never one
+ * campaign-service would refuse as a repeat (7 days by 24 hours of distinct starts is more than the cap).
  */
 export function redditScheduleWindowAdded(schedule: readonly RedditScheduleWindow[]): RedditScheduleWindow[] {
   if (schedule.length >= REDDIT_MAX_SCHEDULE_WINDOWS) return [...schedule];
   const last = schedule.at(-1);
-  const next = last ? { ...last, startDay: (last.startDay + 1) % 7, endDay: (last.endDay + 1) % 7 } : { ...DEFAULT_REDDIT_SCHEDULE_WINDOW };
-  return [...schedule, next];
+  if (!last) return [{ ...DEFAULT_REDDIT_SCHEDULE_WINDOW }];
+  const held = new Set(schedule.map(scheduleWindowKey));
+  for (let hours = 0; hours < 24; hours++) {
+    for (let days = 1; days <= 7; days++) {
+      const next = {
+        startDay: (last.startDay + days) % 7,
+        startHour: (last.startHour + hours) % 24,
+        endDay: (last.endDay + days) % 7,
+        endHour: (last.endHour + hours) % 24,
+      };
+      if (!held.has(scheduleWindowKey(next))) return [...schedule, next];
+    }
+  }
+  return [...schedule];
+}
+
+function scheduleWindowKey(window: RedditScheduleWindow): string {
+  return `${window.startDay}|${window.startHour}|${window.endDay}|${window.endHour}`;
 }
 
 /** The schedule with window `index`'s `key` set from a select value; a value that is not a whole number (a cleared select) changes nothing. */
