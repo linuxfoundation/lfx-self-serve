@@ -838,15 +838,13 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
   it('carries a picked video post through a tab round-trip into the request, and sends none once the capability is off', async () => {
     const VIDEO = '3f2504e0-4f89-11d3-9a0c-0305e82c3301';
     const THUMB = '6ba7b810-9dad-11d1-80b4-00c04fd430c8';
-    Object.assign(TestBed.inject(CampaignService), {
-      creativeVideoDeleting: () => null,
-      listCreativeAssets: () =>
-        of({
-          assets: [{ id: THUMB, mimeType: 'image/png', byteSize: 2048, checksum: 'cd'.repeat(32) }],
-          videos: [{ id: VIDEO, byteSize: 4096, checksum: 'ab'.repeat(32) }],
-          documents: [],
-        }),
-    });
+    const listCreativeAssets = () =>
+      of({
+        assets: [{ id: THUMB, mimeType: 'image/png', byteSize: 2048, checksum: 'cd'.repeat(32) }],
+        videos: [{ id: VIDEO, byteSize: 4096, checksum: 'ab'.repeat(32) }],
+        documents: [],
+      });
+    Object.assign(TestBed.inject(CampaignService), { creativeVideoDeleting: () => null, listCreativeAssets });
     const mountWithVideo = async (draft: CampaignImplementationDraft | null, enabled: boolean) => {
       const mounted = await mount(draft);
       mounted.fixture.componentRef.setInput('briefPersistence', { status: 'saved', briefId: 'b-1', message: null, approved: true });
@@ -863,6 +861,11 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     first.fixture.debugElement.query(By.css('lfx-reddit-video-post')).triggerEventHandler('videoPostChange', picked);
     const draft = first.latest();
     expect(draft).toMatchObject({ redditVideoPost: picked });
+    // A stored video deleted in the library bumps the library revision, so the picker's library is read again and stops offering it.
+    const revision = (): number => (first.fixture.componentInstance as unknown as { creativeLibraryRevision: () => number }).creativeLibraryRevision();
+    const before = revision();
+    first.fixture.debugElement.query(By.css('lfx-creative-library-upload')).triggerEventHandler('videoDeleted', 'another-video');
+    expect(revision()).toBe(before + 1);
     first.fixture.destroy();
 
     const second = await mountWithVideo(draft, true);

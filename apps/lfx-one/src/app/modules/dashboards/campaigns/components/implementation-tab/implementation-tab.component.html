@@ -6419,7 +6419,7 @@
             [reloadToken]="creativeLibraryRevision()"
             [videoIdsInUse]="videoIdsInUse()"
             [videoUploadRunning]="linkedInImageUploadStatus() === 'uploading'"
-            (videoDeleted)="onLibraryVideoGone($event)"
+            (videoDeleted)="onStoredVideoDeleted($event)"
             (videoRelease)="onLibraryVideoGone($event)"
             [documentIdsInUse]="linkedInDocumentIdsInUse()"
             (documentDeleted)="onLibraryDocumentDeleted($event)"

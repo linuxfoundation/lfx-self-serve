@@ -6451,6 +6451,12 @@ export class ImplementationTabComponent implements OnInit {
     else this.onLinkedInVariantImageRemove(key);
   }
 
+  /** A stored video the library deleted: the library is read again, so no picker offers it, then it leaves the ads. */
+  protected onStoredVideoDeleted(assetId: string): void {
+    this.onCreativeLibraryChanged();
+    this.onLibraryVideoGone(assetId);
+  }
+
   /**
    * A stored video the library deleted, or the operator took off the ads there: cleared from the Reddit video post that
    * names it (#6108 row 8), then from the LinkedIn ads (`onLibraryVideoDeleted`).
