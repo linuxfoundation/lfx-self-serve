@@ -743,6 +743,38 @@ environment:
   LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_TARGETING_RESOLUTION:
     value:
 
+  # Reddit placements, devices and expansion (#6108 row 5, linuxfoundation/lfx-v2-campaign-service#549): accepts
+  # `redditConfig.placements` (FEED, COMMENTS_PAGE), `redditConfig.platforms` (DESKTOP, MOBILE_NATIVE, MOBILE_WEB; not
+  # ALL, omit the list for every device) and `redditConfig.expandTargeting`.
+  #
+  # A CAPABILITY flag of the Bidding kind: REQUIRES campaign-service DEPLOYED with `REDDIT_PLACEMENT_TARGETING_ENABLED`
+  # on, and the create pipeline on. Off (the default), the create route refuses the fields with a 400 (`expandTargeting`
+  # even when true), never dropping them. Fields only, so turning it back off strands nothing. Order: set
+  # campaign-service's flag and pass its live probe, THEN this. Same accepted values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_PLACEMENTS:
+    value:
+
+  # Reddit daily budgets (#6108 row 5, linuxfoundation/lfx-v2-campaign-service#549): accepts `redditConfig.budgetType`
+  # (`lifetime` or `daily`; omitted is lifetime).
+  #
+  # A CAPABILITY flag of the Bidding kind: REQUIRES campaign-service DEPLOYED with `REDDIT_DAILY_BUDGET_ENABLED` on, and
+  # the create pipeline on. Off (the default), the create route refuses the field with a 400 (`lifetime` included), never
+  # dropping it. A field only, so turning it back off strands nothing. Order: set campaign-service's flag and pass its
+  # live probe, THEN this. Same accepted values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_DAILY_BUDGET:
+    value:
+
+  # Reddit pixel list (#6108 row 5, linuxfoundation/lfx-v2-campaign-service#549): serves `GET /api/campaigns/reddit/pixels`,
+  # the conversion pixels on the shared Reddit ad account, for a picker that fills the existing
+  # `redditConfig.conversionPixelId` (still gated by LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_CONVERSION_PIXEL's create path).
+  # Answered only to `global_marketing_ops` on the project.
+  #
+  # A CAPABILITY flag of the Bidding kind: REQUIRES campaign-service DEPLOYED with `REDDIT_PIXEL_LIST_ENABLED` on, and the
+  # create pipeline on. Off (the default), the read answers 404. A read only, so turning it back off strands nothing.
+  # Order: set campaign-service's flag and pass its live probe, THEN this. Same accepted values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_PIXEL_LIST:
+    value:
+
   # Offers a stored-image LIBRARY in each Google creative image slot (Demand Gen, Performance Max
   # and Display): upload a PNG/JPEG into the brief's library (the same library REDDIT_ASSETS and
   # META_ASSETS upload into), or pick a stored image that fits the slot's aspect ratio and minimum

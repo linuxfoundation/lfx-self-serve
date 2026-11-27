@@ -112,6 +112,7 @@ import {
   KeywordMetricsResponse,
   MetaCustomAudiencesResult,
   RedditCustomAudiencesResult,
+  RedditPixelsResult,
   MetaLeadFormsResult,
   MetaTargetingSearchResult,
   MetaTargetingSearchType,
@@ -154,6 +155,7 @@ import type {
   RedditKeywordMetricsResponse,
   RedditKeywordsWindow,
 } from '@lfx-one/shared/interfaces';
+import { redditPixelsQueryParams } from '@lfx-one/shared/utils';
 import { extractErrorMessage, isTransientHttpError, retryTransientHttpError } from '@shared/utils/http-error.utils';
 import { strictHttpParams } from '@shared/utils/http-params.utils';
 import {
@@ -815,6 +817,15 @@ export class CampaignService {
    */
   public getRedditCustomAudiences(projectSlug: string): Observable<RedditCustomAudiencesResult> {
     return this.http.get<RedditCustomAudiencesResult>('/api/campaigns/reddit/custom-audiences', { params: { project: projectSlug } });
+  }
+
+  /**
+   * The conversion pixels on the Reddit ad account a create for this project uses, for the `conversionPixelId` picker
+   * (#6108 row 5). A coded 403 without `global_marketing_ops` on the project, a coded 503 when that check cannot be made,
+   * and a 404 while the pixel list is off.
+   */
+  public getRedditPixels(projectSlug: string): Observable<RedditPixelsResult> {
+    return this.http.get<RedditPixelsResult>('/api/campaigns/reddit/pixels', { params: redditPixelsQueryParams(projectSlug) });
   }
 
   /**

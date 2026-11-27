@@ -4959,6 +4959,9 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       redditConversionEventEnabled: false,
       redditTargetingExclusionsEnabled: false,
       redditTargetingResolutionEnabled: false,
+      redditPlacementsEnabled: false,
+      redditBudgetTypeEnabled: false,
+      redditPixelListEnabled: false,
       googleAssetUploadEnabled: false,
       metaCreativeEnabled: false,
       metaAssetUploadEnabled: false,
@@ -5697,6 +5700,24 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
     }
   });
 
+  /** Reddit placements, budget type and pixel list (#6108 row 5): the cutover and each one's own flag. */
+  it.each([
+    ['redditPlacementsEnabled', ServerFeatureFlag.CampaignServiceRedditPlacements],
+    ['redditBudgetTypeEnabled', ServerFeatureFlag.CampaignServiceRedditDailyBudget],
+    ['redditPixelListEnabled', ServerFeatureFlag.CampaignServiceRedditPixelList],
+  ] as const)('reports %s from the cutover and %s', async (field, own) => {
+    const read = async (cutover: boolean, enabled: boolean): Promise<boolean | undefined> => {
+      isServerFeatureEnabled.mockImplementation((flag: unknown) => (flag === own ? enabled : cutover));
+      proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+      return (await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1'))[field];
+    };
+    try {
+      expect([await read(true, true), await read(true, false), await read(false, true)]).toEqual([true, false, false]);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
   /** Reddit targeting exclusions (#6108 row 3): the cutover and its own flag. */
   it.each([
     [{ cutover: true, exclusions: true }, true],
@@ -5909,6 +5930,9 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       redditConversionEventEnabled: false,
       redditTargetingExclusionsEnabled: false,
       redditTargetingResolutionEnabled: false,
+      redditPlacementsEnabled: false,
+      redditBudgetTypeEnabled: false,
+      redditPixelListEnabled: false,
       googleAssetUploadEnabled: false,
       metaCreativeEnabled: false,
       metaAssetUploadEnabled: false,

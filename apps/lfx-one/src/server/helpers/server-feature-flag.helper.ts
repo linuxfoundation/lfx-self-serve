@@ -365,6 +365,45 @@ export enum ServerFeatureFlag {
   CampaignServiceRedditTargetingResolution = 'LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_TARGETING_RESOLUTION',
 
   /**
+   * Reddit placements, devices and expansion (#6108 row 5, linuxfoundation/lfx-v2-campaign-service#549): accept
+   * `redditConfig.placements` (`FEED`, `COMMENTS_PAGE`), `redditConfig.platforms` (`DESKTOP`, `MOBILE_NATIVE`,
+   * `MOBILE_WEB`) and `redditConfig.expandTargeting`, the ad group's placements, devices and audience expansion.
+   *
+   * A CAPABILITY flag of the Bidding kind: REQUIRES campaign-service DEPLOYED with `REDDIT_PLACEMENT_TARGETING_ENABLED`
+   * on, since campaign-service refuses any of the three with a 400 otherwise (`expandTargeting` even when true), and is
+   * only meaningful on the campaign-service create path (`cutoverOwnsCreate`): the legacy creator ignores them. Off (the
+   * default), the create route refuses them with a 400, never dropping them. Keep it off until campaign-service's flag is
+   * on and probed. Request fields only, so flipping it back strands nothing. Same accepted values as the flags above.
+   */
+  CampaignServiceRedditPlacements = 'LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_PLACEMENTS',
+
+  /**
+   * Reddit daily budgets (#6108 row 5, linuxfoundation/lfx-v2-campaign-service#549): accept `redditConfig.budgetType`
+   * (`lifetime` or `daily`; omitted is lifetime), which decides whether `budgetUsd` is spent over the flight or per day.
+   *
+   * A CAPABILITY flag of the Bidding kind: REQUIRES campaign-service DEPLOYED with `REDDIT_DAILY_BUDGET_ENABLED` on, since
+   * campaign-service refuses the field with a 400 otherwise (`lifetime` included), and is only meaningful on the
+   * campaign-service create path (`cutoverOwnsCreate`): the legacy creator ignores it. Off (the default), the create
+   * route refuses it with a 400, never dropping it. Keep it off until campaign-service's flag is on and probed. A request
+   * field only, so flipping it back strands nothing. Same accepted values as the flags above.
+   */
+  CampaignServiceRedditDailyBudget = 'LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_DAILY_BUDGET',
+
+  /**
+   * Reddit pixel list (#6108 row 5, linuxfoundation/lfx-v2-campaign-service#549): answer
+   * `GET /api/campaigns/reddit/pixels` (404 while off), the conversion pixels on the Reddit ad account a create uses, so a
+   * picker can fill the existing `redditConfig.conversionPixelId`. Choosing a pixel stays gated by
+   * `CampaignServiceRedditConversionPixel`; this flag serves the read only.
+   *
+   * A CAPABILITY flag of the Bidding kind: REQUIRES campaign-service DEPLOYED with `REDDIT_PIXEL_LIST_ENABLED` on, since
+   * campaign-service refuses the read with a 400 otherwise, and only meaningful on the campaign-service create path
+   * (`cutoverOwnsCreate`). The read is also gated on `global_marketing_ops` on the project, whatever this flag says,
+   * because the ad account is shared by every foundation. A read only, so flipping it back strands nothing. Same accepted
+   * values as the flags above.
+   */
+  CampaignServiceRedditPixelList = 'LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_PIXEL_LIST',
+
+  /**
    * Offers a stored-image LIBRARY in each Google creative image slot — upload an image into the
    * brief's library, or pick a stored one that fits the slot — sent as `{ imageAssetId }` entries in
    * the slot's own array beside any pasted image URLs (`demandGenCreative.logoImages`,

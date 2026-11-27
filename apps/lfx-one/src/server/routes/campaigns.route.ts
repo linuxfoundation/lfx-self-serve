@@ -29,6 +29,7 @@ import {
   requireLinkedInLeadFormsAccess,
   requireMetaLeadFormsAccess,
   requireRedditCustomAudiencesAccess,
+  requireRedditPixelsAccess,
 } from '../middleware/require-marketing-access.middleware';
 import { canSetLinkedInDocument, canSetLinkedInVideoAds } from '../services/campaign-service.service';
 
@@ -122,6 +123,12 @@ router.get('/meta/custom-audiences', requireMetaCustomAudiencesAccess, (req, res
 // `global_marketing_ops` on the project, as campaign-service answers (lfx-v2-campaign-service#549). 404 while Reddit
 // custom audiences are off. Ahead of `router.use(requireCampaignManager)` for the same reason as the lists above.
 router.get('/reddit/custom-audiences', requireRedditCustomAudiencesAccess, (req, res, next) => campaignController.getRedditCustomAudiences(req, res, next));
+
+// The conversion pixels on the Reddit ad account a create uses, for the `conversionPixelId` picker (#6108 row 5). The ad
+// account is shared, so the list names every foundation's pixels: answered only to `global_marketing_ops` on the project,
+// as campaign-service answers (lfx-v2-campaign-service#549). 404 while the pixel list is off. Ahead of
+// `router.use(requireCampaignManager)` for the same reason as the lists above.
+router.get('/reddit/pixels', requireRedditPixelsAccess, (req, res, next) => campaignController.getRedditPixels(req, res, next));
 
 // The Instant Forms of the Facebook Page a Meta create uses, for the Implement tab's lead form picker (#5940).
 // A project without its own connection uses the shared LF Page, which holds every foundation's forms: answered
