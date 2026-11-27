@@ -2784,6 +2784,45 @@ describe('CampaignController.createCampaign cutover', () => {
   });
 
   /**
+   * Meta carousel ads (#6331): wiring only. Every rule is a row of `campaign-meta-carousel.utils.spec.ts`.
+   */
+  describe('meta carousel', () => {
+    const CARDS = [
+      { primaryText: 'p', headline: 'h1', imageUrl: 'https://cdn.example/1.png' },
+      { primaryText: '', headline: 'h2', imageAssetId: '11111111-1111-4111-8111-111111111111' },
+    ];
+    async function sendWith(extra: Record<string, unknown>): Promise<Record<string, unknown> | null> {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+      const metaConfig = {
+        budgetUsd: 250,
+        lifetimeBudget: false,
+        startDate: '2026-01-01',
+        endDate: '2026-02-01',
+        geoTargets: ['US'],
+        variants: CARDS,
+        ...extra,
+      };
+      await controller.createCampaign(buildReq({ platforms: ['meta-ads'], metaConfig }, { project: 'tlf', brief_id: 'b-1' }), res, next);
+      return createCampaigns.mock.calls.length > 0 ? (envelopeFor(createCampaigns)['metaConfig'] as Record<string, unknown>) : null;
+    }
+
+    it('refuses a carousel with a 400 while the flag is off, creating nothing', async () => {
+      isServerFeatureEnabled.mockImplementation((flag: unknown) => flag !== ServerFeatureFlag.CampaignServiceMetaCarousel);
+
+      expect(await sendWith({ format: 'carousel' })).toBeNull();
+      const error = vi.mocked(next).mock.calls[0]?.[0] as unknown as ServiceValidationError;
+      expect(error).toBeInstanceOf(ServiceValidationError);
+      expect(error.toResponse()['errors'][0].field).toBe('metaConfig.format');
+    });
+
+    it('forwards the normalized format and the cards while the flag is on', async () => {
+      isServerFeatureEnabled.mockImplementation(() => true);
+
+      expect(await sendWith({ format: ' Carousel ' })).toMatchObject({ format: 'carousel', variants: CARDS });
+    });
+  });
+
+  /**
    * The Meta Instant Form of a `leads` create (#5940): refused with a 400 while its flag is off (never
    * dropped), checked by the tab's own rules, answered on `global_marketing_ops`, and sent trimmed.
    */

@@ -5016,6 +5016,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       metaOsTargetingEnabled: false,
       metaAdScheduleEnabled: false,
       metaFrequencyCapEnabled: false,
+      metaCarouselEnabled: false,
       googleAudienceSegmentsEnabled: false,
       googleGeoSearchEnabled: false,
       multiCampaignPlatforms: [],
@@ -5279,15 +5280,19 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
     [{ cutover: true, own: true }, true],
     [{ cutover: true, own: false }, false],
     [{ cutover: false, own: true }, false],
-  ])('reports each meta delivery capability only when the cutover owns the create and its flag is on (%o)', async (flags, expected) => {
-    const own = [ServerFeatureFlag.CampaignServiceMetaAdSchedule, ServerFeatureFlag.CampaignServiceMetaFrequencyCap];
+  ])('reports each meta delivery and carousel capability only when the cutover owns the create and its flag is on (%o)', async (flags, expected) => {
+    const own = [
+      ServerFeatureFlag.CampaignServiceMetaAdSchedule,
+      ServerFeatureFlag.CampaignServiceMetaFrequencyCap,
+      ServerFeatureFlag.CampaignServiceMetaCarousel,
+    ];
     isServerFeatureEnabled.mockImplementation((flag: unknown) => (own.includes(flag as ServerFeatureFlag) ? flags.own : flags.cutover));
     proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
 
     try {
       const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
 
-      expect([result.metaAdScheduleEnabled, result.metaFrequencyCapEnabled]).toEqual([expected, expected]);
+      expect([result.metaAdScheduleEnabled, result.metaFrequencyCapEnabled, result.metaCarouselEnabled]).toEqual([expected, expected, expected]);
     } finally {
       isServerFeatureEnabled.mockImplementation(() => false);
     }
@@ -6009,6 +6014,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       metaOsTargetingEnabled: false,
       metaAdScheduleEnabled: false,
       metaFrequencyCapEnabled: false,
+      metaCarouselEnabled: false,
       googleAudienceSegmentsEnabled: false,
       googleGeoSearchEnabled: false,
       multiCampaignPlatforms: [],

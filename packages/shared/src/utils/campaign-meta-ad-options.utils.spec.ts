@@ -165,6 +165,9 @@ describe('metaConfigKeyVariant', () => {
     [{ targeting: { CITIES: ['2420379'] } }, 'metaConfig.targeting.cities'],
     [{ targeting: { Interests: ['6003'] } }, 'metaConfig.targeting.interests'],
     [{ targeting: { ageMin: 30, locales: [6], regions: ['3847'] } }, null],
+    // The carousel format and its cards (#6331), so a differently cased one never slips past the carousel gate.
+    [{ Format: 'carousel' }, 'metaConfig.format'],
+    [{ VARIANTS: [] }, 'metaConfig.variants'],
     [{ variants: [], geoTargets: [] }, null],
     [null, null],
   ])('finds the field %j sends under another spelling: %s', (raw, field) => {

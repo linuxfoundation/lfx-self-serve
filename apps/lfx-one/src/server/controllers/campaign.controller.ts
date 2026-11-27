@@ -98,6 +98,7 @@ import {
   metaConfigRecord,
 } from '@lfx-one/shared/utils/campaign-meta-ad-options.utils';
 import { hasMetaLeadFormKeyVariant, metaLeadFormId, metaLeadFormRefusal } from '@lfx-one/shared/utils/campaign-meta-lead-form.utils';
+import { metaAdFormatToSend, metaCarouselRefusal } from '@lfx-one/shared/utils/campaign-meta-carousel.utils';
 import {
   compactMetaDeliveryOptions,
   metaAdScheduleRefusal,
@@ -199,6 +200,7 @@ import type {
   NormalizedGoogleAdSchedule,
   NormalizedGoogleDeviceBidModifier,
   MetaAdOptionKey,
+  MetaAdFormat,
   MetaAdOptions,
   MetaDeliveryOptions,
   MetaAudienceTargeting,
@@ -497,6 +499,7 @@ import {
   canSetMetaOsTargeting,
   canSetMetaAdSchedule,
   canSetMetaFrequencyCap,
+  canSetMetaCarousel,
   canSetMetaOptimizationGoal,
   canSetRedditConversionEvent,
   canSetRedditCustomAudiences,
@@ -1690,6 +1693,8 @@ export class CampaignController {
       // The Meta ad schedule and frequency cap (#5904 row 5), checked here, before the lead form's upstream reads,
       // so a bad one fails fast. See `metaDeliveryOptionsToForward`.
       const metaDelivery = this.metaDeliveryOptionsToForward(body);
+      // The Meta creative format and a carousel's cards (#6331), checked here for the same reason. See `metaFormatToForward`.
+      const metaFormat = this.metaFormatToForward(body);
       // The Meta Instant Form of a `leads` create (#5940), or none. See `metaLeadFormToForward`.
       const metaLeadFormIdToSend = await this.metaLeadFormToForward(req, projectSlug, body);
       // The addresses a NEWSLETTER brief's notes carry, or null for every other create. See
@@ -1702,6 +1707,7 @@ export class CampaignController {
         metaAdOptions,
         metaLeadFormIdToSend,
         metaDelivery,
+        metaFormat,
         emailNoteLinks
       );
 
@@ -7979,6 +7985,7 @@ export class CampaignController {
     metaAdOptions: MetaAdOptions = {},
     metaLeadFormIdToSend: string | null = null,
     metaDelivery: MetaDeliveryOptions = {},
+    metaFormat: MetaAdFormat | null = null,
     emailNoteLinks: readonly string[] | null = null
   ): Record<string, unknown> {
     const envelope: Record<string, unknown> = {};
@@ -7991,7 +7998,7 @@ export class CampaignController {
     if (linkedInConfig) envelope['linkedInConfig'] = linkedInConfig;
     if (body?.redditConfig) envelope['redditConfig'] = body.redditConfig;
 
-    const metaConfig = this.buildMetaConfig(body, metaTargeting, metaAdOptions, metaLeadFormIdToSend, metaDelivery);
+    const metaConfig = this.buildMetaConfig(body, metaTargeting, metaAdOptions, metaLeadFormIdToSend, metaDelivery, metaFormat);
     if (metaConfig) envelope['metaConfig'] = metaConfig;
 
     const microsoftConfig = this.buildMicrosoftConfig(body);
@@ -10586,14 +10593,16 @@ export class CampaignController {
    * compacted (#5905), and otherwise nothing. Likewise the call to action, conversion event and
    * optimization goal: only what `metaAdOptionsToForward` checked (#5934), and the lead form: only the id
    * `metaLeadFormToForward` checked (#5940), and the ad schedule and frequency cap: only what
-   * `metaDeliveryOptionsToForward` checked (#5904 row 5).
+   * `metaDeliveryOptionsToForward` checked (#5904 row 5), and the creative format: only the normalized one
+   * `metaFormatToForward` checked (#6331).
    */
   private buildMetaConfig(
     body: CampaignCreateRequest,
     targeting: MetaTargeting | null = null,
     adOptions: MetaAdOptions = {},
     leadFormId: string | null = null,
-    delivery: MetaDeliveryOptions = {}
+    delivery: MetaDeliveryOptions = {},
+    format: MetaAdFormat | null = null
   ): Record<string, unknown> | null {
     if (!body?.metaConfig) return null;
 
@@ -10602,6 +10611,7 @@ export class CampaignController {
     delete rest.leadFormId;
     delete rest.adSchedule;
     delete rest.frequencyCap;
+    delete rest.format;
     for (const { key } of META_AD_OPTION_FIELDS) delete rest[key];
     return {
       ...rest,
@@ -10610,7 +10620,27 @@ export class CampaignController {
       ...adOptions,
       ...(leadFormId !== null ? { leadFormId } : {}),
       ...delivery,
+      ...(format !== null ? { format } : {}),
     };
+  }
+
+  /**
+   * The `metaConfig.format` a create sends (#6331), or `null` to send none (single, campaign-service's default):
+   *
+   * - a format other than blank or single while carousel ads are off (`canSetMetaCarousel`): 400, never a silent drop.
+   *   Dropping it would create one ad per card where the operator chose one carousel ad;
+   * - a carousel that breaks campaign-service's rules (`metaCarouselRefusal`, in campaign-service's order: no lead form,
+   *   2 to 10 variants, one message, an image and no video on every card): 400 naming the field;
+   * - otherwise the format trimmed and lower-cased. The cards are the variants, forwarded as they are.
+   *
+   * A differently cased `format` or `variants` key is refused before this, by `metaConfigKeyVariant`.
+   */
+  private metaFormatToForward(body: CampaignCreateRequest): MetaAdFormat | null {
+    const refusal = metaCarouselRefusal(body?.metaConfig, canSetMetaCarousel());
+    if (refusal !== null) {
+      throw ServiceValidationError.forField(refusal.field, refusal.message, { operation: 'campaign_create', service: 'campaign_controller' });
+    }
+    return metaAdFormatToSend(body?.metaConfig);
   }
 
   /**

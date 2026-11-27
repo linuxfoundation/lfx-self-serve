@@ -31,6 +31,7 @@ import type {
   LINKEDIN_LEAD_GEN_OBJECTIVE,
   LINKEDIN_OBJECTIVES,
   LINKEDIN_TARGETING_SEARCH_FACETS,
+  META_AD_FORMATS,
   MICROSOFT_KEYWORDS_WINDOWS,
   MONITOR_DATE_RANGE_OPTIONS,
   REDDIT_BUDGET_TYPES,
@@ -3199,6 +3200,14 @@ export interface RedditCampaignCreateResult {
 // Meta Ads — Campaign Creation
 // ---------------------------------------------------------------------------
 
+/** A Meta creative format (`metaConfig.format`, #6331): one ad per variant, or one carousel ad whose cards are the variants. */
+export type MetaAdFormat = (typeof META_AD_FORMATS)[number];
+
+/**
+ * One Meta ad, or one card of a carousel (`format: 'carousel'`, #6331; campaign-service#550 gap 10). As a card, it shows
+ * its own image, `headline` (the card's name), `description` and UTM-tagged link, and it carries no video. A carousel
+ * has ONE message, variant 1's `primaryText`: every later card leaves `primaryText` empty or repeats it verbatim.
+ */
 export interface MetaAdVariant {
   primaryText: string;
   headline: string;
@@ -3294,6 +3303,14 @@ export interface MetaCampaignCreateRequest {
   endDate: string;
   geoTargets: string[];
   variants: MetaAdVariant[];
+  /**
+   * The creative format (#6331; campaign-service#550 gap 10). Absent, blank or `single` is one ad per variant;
+   * `carousel` is ONE ad whose 2 to 10 cards are `variants`, in order, each with an image (`imageUrl` or
+   * `imageAssetId`) and no video, with variant 1's `primaryText` as the one message, never with `leadFormId`. Sent as
+   * anything but single ONLY when `CampaignListResult.metaCarouselEnabled` is a yes; the create route refuses it with a
+   * 400 otherwise.
+   */
+  format?: MetaAdFormat;
   project?: string;
   objective?: MetaObjective;
   /**
@@ -9176,6 +9193,11 @@ export interface CampaignListResult {
    */
   metaAdScheduleEnabled?: boolean;
   metaFrequencyCapEnabled?: boolean;
+  /**
+   * Whether a Meta create may carry `metaConfig.format: 'carousel'` (#6331; campaign-service#550 gap 10):
+   * `cutoverOwnsCreate()` AND `LFX_CUTOVER_CAMPAIGN_SERVICE_META_CAROUSEL`. Deployment-wide.
+   */
+  metaCarouselEnabled?: boolean;
   /**
    * Whether THIS caller may offer the `leads` objective with an Instant Form, through
    * `GET /api/campaigns/meta/lead-forms`, and send `metaConfig.leadFormId` (#5940): `cutoverOwnsCreate()` AND
