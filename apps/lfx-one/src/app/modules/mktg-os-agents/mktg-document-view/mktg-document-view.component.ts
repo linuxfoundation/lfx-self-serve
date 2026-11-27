@@ -2082,7 +2082,10 @@ export class MktgDocumentViewComponent {
               switchMap((detail) => {
                 const id = detail.current?.revisionId ?? detail.revisions.find((revision) => revision.latest)?.id ?? detail.revisions[0]?.id;
                 tracked = id ? undefined : detail.runs?.find((run) => run.documentId === documentId);
-                return id ? this.documentStore.getRevision(project, agentKey, documentId, id) : throwError(() => new HttpErrorResponse({ status: 404 }));
+                if (id) return this.documentStore.getRevision(project, agentKey, documentId, id);
+                // A run record the server could not read says nothing about the audit: a transient failure, as on the living
+                // document's receiver. The poller retries it; a follow's deadline (`followUntil`) is kept across the retry.
+                return throwError(() => new HttpErrorResponse({ status: detail.progressUnavailable ? 503 : 404 }));
               })
             );
       });
@@ -2102,7 +2105,10 @@ export class MktgDocumentViewComponent {
         const commands = this.runAgainLink();
         return commands ? this.router.navigate(commands, { queryParams: this.runAgainParams(), replaceUrl: true }) : of(false);
       }).pipe(
-        catchError(() => of(false)),
+        catchError((error: unknown) => {
+          console.error('Failed to open the audit run page', error);
+          return of(false);
+        }),
         switchMap((opened) => (opened ? EMPTY : throwError(() => runPageUnopened)))
       );
     const attempt = (): Observable<MktgRevisionResponse | null> => {

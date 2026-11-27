@@ -1419,6 +1419,36 @@ describe('MktgDocumentViewComponent', () => {
       expect(store.getDocument).toHaveBeenCalledTimes(2);
       vi.useRealTimers();
     });
+    it('re-reads a followed audit whose run record the server could not read, instead of ending on not found', async () => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+      vi.spyOn(Math, 'random').mockReturnValue(0);
+      const documentId = 'run-012345678901234567890123';
+      const unstored = { ...detail, documentId, current: null, revisions: [] };
+      const writing = of({ ...unstored, runs: [{ ...started('writing'), agentKey: 'aeo-geo' as const, documentId }] });
+      store.getDocument
+        .mockReturnValueOnce(writing)
+        .mockReturnValueOnce(of({ ...unstored, runs: [], progressUnavailable: true }))
+        .mockReturnValue(writing);
+      await render('/documents/aeo-geo/run-012345678901234567890123');
+      const firstRead = Date.now();
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+      await settle();
+      // The tracker could not be read while the audit is still writing: the one retrying line, never a final not-found.
+      expect(store.getDocument).toHaveBeenCalledTimes(2);
+      expect(query('mktg-document-view-refresh-warning')?.textContent).toContain(MKTG_POLL_RETRYING_TEXT);
+      expect(query('mktg-document-view-error')).toBeNull();
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+      await settle();
+      expect(store.getDocument).toHaveBeenCalledTimes(3);
+      expect(query('mktg-document-view-generating')?.textContent).toContain('Generating your report');
+      expect(query('mktg-document-view-error')).toBeNull();
+      // The retry never moved the follow's deadline.
+      vi.spyOn(Date, 'now').mockReturnValue(firstRead + MKTG_RUN_POLL.timeoutMs);
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+      await settle();
+      expect(query('mktg-document-view-error')?.textContent).toContain(AEO_GEO_TIMEOUT_MESSAGE);
+      vi.useRealTimers();
+    });
     it.each([
       ['questions', 'waiting for answers'],
       ['failed', 'ended without a report'],

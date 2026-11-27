@@ -34,9 +34,9 @@ closes that run and starts the new one. The accepted session is recorded with
 `MktgActiveRunGuardService` dialog ("Your AEO/GEO report run is in progress",
 "Started …"): "Open it" opens the run's document, "Discard and start over"
 re-sends the same audit with `discard`. A refused start leaves a capability this
-browser already holds in place; an earlier capability is cleared only once a
-start is accepted, and a confirmed discard clears the capability of the run it
-closes. "Open it" opens the run's Document page; in the browser that holds the
+browser already holds in place; an earlier capability, and that of a run the
+person discards, is cleared only once the replacement start is accepted, so a
+failed discard request leaves it. "Open it" opens the run's Document page; in the browser that holds the
 capability, that page shows an audit in its writing phase as generating and
 sends one that is still researching or waiting for answers back to the run page
 (see the Document component below), so the person can answer here.
@@ -72,7 +72,8 @@ the run and Document pages (its browser capability), not the shared run-progress
 browser, another writer, a Started runs row), the Document page shows the same generating state and re-reads until the
 recorded run is stored; a recorded run waiting for answers or failed is a plain line with Run again. That re-read
 trusts only its own answer: a run the server no longer lists (discarded, superseded or dismissed) is a 404 and ends on
-the plain not-found line, and the loop ends at `MKTG_RUN_POLL.timeoutMs` from the view's first read of the run as
+the plain not-found line, while a read whose run record the server could not read (`progressUnavailable`, no revision)
+is a transient failure the shared poller retries on its capped backoff, and the loop ends at `MKTG_RUN_POLL.timeoutMs` from the view's first read of the run as
 running ("The audit is taking longer than expected."), the server's writing budget, which a tab return never restarts.
 On the Documents page a Started runs row of an audit waiting for answers reads "Answer the questions" and opens the
 run page only in the browser that holds its capability; anywhere else the row reads "Open" and opens the run's

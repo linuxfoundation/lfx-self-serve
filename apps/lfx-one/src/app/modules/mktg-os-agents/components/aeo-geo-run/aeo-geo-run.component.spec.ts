@@ -411,7 +411,7 @@ describe('AeoGeoRunComponent', () => {
     expect(start).toHaveBeenLastCalledWith(AEO_GEO_INTAKE, 'project-1', expect.anything(), active.activeRunId);
     expect(fixture.componentInstance['activeRun']()).toMatchObject({ sessionId: 'session-1' });
   });
-  it('leaves a running audit its capability when the second start is refused; only a confirmed discard clears it', async () => {
+  it('leaves a running audit its capability when the second start is refused; a discard clears it only once the new start is accepted', async () => {
     vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
     // Another tab of this browser started the audit after this form loaded: its capability is found only on submit.
     const running = { ...run(), documentId: 'run-0123456789abcdef01234567', sessionId: 'session-0' };
@@ -427,7 +427,8 @@ describe('AeoGeoRunComponent', () => {
       agentKey: 'aeo-geo',
       documentId: running.documentId,
     };
-    start.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 409, error: active })));
+    const replacement = new Subject<ReturnType<typeof run>>();
+    start.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 409, error: active }))).mockReturnValueOnce(replacement);
     poll.mockReturnValue(of({ status: 'pending' }));
     await render();
     query('mktg-aeo-run-submit').click();
@@ -437,8 +438,11 @@ describe('AeoGeoRunComponent', () => {
     options.onOpen(options.conflict);
     expect(clear).not.toHaveBeenCalled();
     options.onDiscard(options.conflict);
-    expect(clear).toHaveBeenCalledWith('project-1', running.documentId);
-    expect(clear.mock.invocationCallOrder[0]).toBeLessThan(start.mock.invocationCallOrder[1]);
+    // The discard is sent, not yet acknowledged: a failed request must leave the owner token of a run that may still be going.
+    expect(start).toHaveBeenLastCalledWith(AEO_GEO_INTAKE, 'project-1', expect.anything(), active.activeRunId);
+    expect(clear).not.toHaveBeenCalled();
+    replacement.next(run());
+    expect(clear).toHaveBeenCalledExactlyOnceWith('project-1', running.documentId);
   });
   it('forgets an earlier capability only after the new start is accepted', async () => {
     vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);

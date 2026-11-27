@@ -347,9 +347,10 @@ export class AeoGeoRunComponent {
     this.error.set('');
     this.submitted.set(true);
     if (!this.validation().valid) return;
-    // A capability this browser still holds is the owner token of a run that may be going. It is forgotten only once the
-    // server accepts this start, or when the person discards that run; a refused start leaves it for "Open it".
+    // A capability this browser still holds is the owner token of a run that may be going. It, and that of a run the person
+    // discards, is forgotten only once the server accepts this start; a refused or failed start leaves both for "Open it".
     const stale = this.pending.loadActive(project, this.intake().agentId);
+    const replaced = new Set(stale ? [stale.documentId] : []);
     this.busy.set(true);
     this.error.set('');
     this.documentLink.set(null);
@@ -363,7 +364,8 @@ export class AeoGeoRunComponent {
     const conflictOf = (error: unknown) =>
       error instanceof HttpErrorResponse && error.status === 409 ? readMktgActiveRunConflict(error.error, this.intake().agentId) : null;
     const follow = (run: MktgPendingDocumentRun) => {
-      if (stale && stale.documentId !== run.documentId) this.pending.clear(stale.projectUid, stale.documentId);
+      replaced.delete(run.documentId);
+      replaced.forEach((documentId) => this.pending.clear(project, documentId));
       this.activeRun.set(run);
       return this.watchRun(run);
     };
@@ -398,7 +400,7 @@ export class AeoGeoRunComponent {
                 this.generation = follow(run).pipe(takeUntilDestroyed(this.destroyRef)).subscribe();
               },
               onDiscard: (fresh) => {
-                this.pending.clear(project, fresh.documentId);
+                replaced.add(fresh.documentId);
                 start(fresh.activeRunId);
               },
               onOpen: (fresh) =>
