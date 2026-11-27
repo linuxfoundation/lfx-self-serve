@@ -22,8 +22,10 @@ import { redditAdVariantsFromDraft } from './campaign-reddit-ad-variants.utils';
 import { redditConversionEventFromDraft } from './campaign-reddit-conversion-event.utils';
 import { redditCustomAudienceIdsFromDraft } from './campaign-reddit-custom-audiences.utils';
 import { redditDeliveryDraftFields, redditDeliveryFromDraft } from './campaign-reddit-delivery.utils';
+import { redditSubCountryGeoFromDraft } from './campaign-reddit-subcountry-geo.utils';
 import { redditTargetingExclusionsFromDraft } from './campaign-reddit-targeting-exclusions.utils';
 import { redditTargetingListFromDraft } from './campaign-reddit-targeting-lists.utils';
+import { emptyRedditVideoPostDraft, redditVideoPostFromDraft, redditVideoPostHeld } from './campaign-reddit-video.utils';
 
 /**
  * The Implement tab's Reddit draft rules (#5980): what the draft carries, what a restore sets, what a brief switch resets
@@ -51,11 +53,15 @@ export function redditDraftFields(state: RedditDraftState): RedditDraftSnapshot 
     redditImageUploadFailedMessage: state.uploadFailedBriefId ? state.uploadError : '',
     redditImageUploadFailedBriefId: state.uploadFailedBriefId,
     redditVideoGoal: state.videoGoal,
+    // Only once the video or its thumbnail is picked (#6108 row 8), so a draft that never used them is unchanged.
+    ...(redditVideoPostHeld(state.videoPost) ? { redditVideoPost: { ...state.videoPost } } : {}),
     redditConversionEvent: state.conversionEvent,
     redditCustomAudienceIds: [...state.customAudiences.customAudienceIds],
     redditExcludedCustomAudienceIds: [...state.customAudiences.excludedCustomAudienceIds],
     redditExcludedSubreddits: [...state.targetingExclusions.excludedSubreddits],
     redditExcludedGeoTargets: [...state.targetingExclusions.excludedGeoTargets],
+    // Only once a location is added (#6108 row 7), so a draft that never used them is unchanged.
+    ...(state.subCountryGeoTargets.length > 0 ? { redditSubCountryGeoTargets: [...state.subCountryGeoTargets] } : {}),
     ...(state.editedTargetingLists
       ? {
           redditEditedSubreddits: [...state.editedTargetingLists.subreddits],
@@ -97,6 +103,9 @@ export function redditDraftRestore(draft: RedditDraftSnapshot): RedditDraftResto
     restore.pendingUpload = { name: draft.redditImageUploadPendingName, briefId: draft.redditImageUploadPendingBriefId ?? '' };
   }
   if (draft.redditVideoGoal !== undefined) restore.videoGoal = draft.redditVideoGoal;
+  // The stored video post (#6108 row 8) when it is an object, each field that is not text read as blank.
+  const videoPost = redditVideoPostFromDraft(draft.redditVideoPost);
+  if (videoPost !== undefined) restore.videoPost = videoPost;
   const conversionEvent = redditConversionEventFromDraft(draft.redditConversionEvent);
   if (conversionEvent !== undefined) restore.conversionEvent = conversionEvent;
   const customAudienceIds = redditCustomAudienceIdsFromDraft(draft.redditCustomAudienceIds);
@@ -109,6 +118,9 @@ export function redditDraftRestore(draft: RedditDraftSnapshot): RedditDraftResto
   if (excludedSubreddits !== undefined || excludedGeoTargets !== undefined) {
     restore.targetingExclusions = { excludedSubreddits: excludedSubreddits ?? [], excludedGeoTargets: excludedGeoTargets ?? [] };
   }
+  // The regions, cities and DMAs (#6108 row 7) when they are an array, keeping only its strings.
+  const subCountryGeoTargets = redditSubCountryGeoFromDraft(draft.redditSubCountryGeoTargets);
+  if (subCountryGeoTargets !== undefined) restore.subCountryGeoTargets = subCountryGeoTargets;
   const subreddits = redditTargetingListFromDraft(draft.redditEditedSubreddits);
   const interests = redditTargetingListFromDraft(draft.redditEditedInterests);
   if (subreddits !== undefined || interests !== undefined) {
@@ -124,7 +136,8 @@ export function redditDraftRestore(draft: RedditDraftSnapshot): RedditDraftResto
 /**
  * What a brief switch resets the Reddit section to (#4589, #4648): each value the brief does not derive back to its
  * default, and the lists seeded only from Reddit copy emptied, so a brief without any opens on none. The pixel form and
- * the uploaded image are not here: the form is reset in place, and the image is scoped to its brief.
+ * the uploaded image are not here: the form is reset in place, and the image is scoped to its brief. The video post's
+ * picks (#6108 row 8) are cleared: they belong to the brief they were picked from, and a held one changes what is sent.
  */
 export function redditBriefReset(): RedditBriefReset {
   return {
@@ -133,6 +146,7 @@ export function redditBriefReset(): RedditBriefReset {
     callToAction: '',
     objective: DEFAULT_REDDIT_OBJECTIVE,
     videoGoal: '',
+    videoPost: emptyRedditVideoPostDraft(),
     conversionEvent: DEFAULT_REDDIT_CONVERSION_EVENT,
     customAudiences: {
       customAudienceIds: [...DEFAULT_REDDIT_CUSTOM_AUDIENCES.customAudienceIds],
@@ -142,6 +156,7 @@ export function redditBriefReset(): RedditBriefReset {
       excludedSubreddits: [...DEFAULT_REDDIT_TARGETING_EXCLUSIONS.excludedSubreddits],
       excludedGeoTargets: [...DEFAULT_REDDIT_TARGETING_EXCLUSIONS.excludedGeoTargets],
     },
+    subCountryGeoTargets: [],
     delivery: {
       ...DEFAULT_REDDIT_DELIVERY,
       placements: [...DEFAULT_REDDIT_DELIVERY.placements],

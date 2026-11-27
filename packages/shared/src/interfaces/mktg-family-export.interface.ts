@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MKTG_FAMILY_EXPORT_KINDS } from '../constants/mktg-family-export.constants';
+import { MKTG_FAMILY_EXPORT_ACTIVE, MKTG_FAMILY_EXPORT_KINDS, MKTG_FAMILY_EXPORT_MARKER_SCHEMA } from '../constants/mktg-family-export.constants';
 import type { MktgDocumentType, MktgRevisionApproval, MktgStoredRevision } from './mktg-document-store.interface';
 import type { BrandKitBookView } from './brand-kit.interface';
 import type { MktgFamilyPrintConflict, MktgFamilyPrintDocument } from './mktg-family-print.interface';
@@ -68,11 +68,62 @@ export interface MktgFamilyExportResultRequest extends MktgFamilyExportTarget {
 
 export type MktgFamilyExportResultResponse = MktgSlidesExportPollResponse<MktgFamilyExportRecord>;
 
+/** The export that holds the family now, as a card shows it: display facts only, never a subject, a Guild session id or an owner capability. */
+export interface MktgFamilyExportRunning {
+  /** The starter's display name; null when the directory has none (the card then names nobody in particular). */
+  startedBy: string | null;
+  /** Whether the effective viewer started it: in another tab, or before this page was loaded. */
+  startedByViewer: boolean;
+  /** When that start took the family (ISO). */
+  startedAt: string;
+}
+
+/** Body of the 409 a second start gets: who holds the family and since when. It proves nothing was sent to the exporter. */
+export interface MktgFamilyExportActiveConflict extends MktgFamilyExportRunning {
+  code: typeof MKTG_FAMILY_EXPORT_ACTIVE;
+}
+
+/**
+ * BFF-only in-flight marker, one per family, written only with conditional writes (create-if-absent, then
+ * replace-this-version). It is never sent to a browser: `creatorSubject` is the opaque effective subject, resolved
+ * to a display name only in a response.
+ */
+export interface MktgFamilyExportMarker {
+  schema: typeof MKTG_FAMILY_EXPORT_MARKER_SCHEMA;
+  project: string;
+  familyId: string;
+  /** Random per start: names the holder before its Guild session exists, so only that start can release it. */
+  claim: string;
+  creatorSubject: string;
+  startedAt: string;
+  /** Epoch ms after which the marker holds nothing, never later than `startedAt` plus the TTL; 0 once released. */
+  expiresAt: number;
+  /** The Guild session once it exists: a result poll on any replica releases the marker of the session it reads. */
+  sessionId: string | null;
+}
+
+/** What a caller proves it holds when it releases the marker: the start's claim, the session's id, or both. */
+export interface MktgFamilyExportHold {
+  claim?: string;
+  sessionId?: string;
+}
+
+/** A card's own bookkeeping while it follows an export it did not start: which one, what the last export was then, and when it stops polling. */
+export interface MktgFamilyExportFollowState {
+  startedAt: string;
+  /** `mktgFamilyExportIdentity` of the last export when following began. */
+  baseline: string;
+  /** Browser clock (epoch ms) after which the card stops polling on its own. */
+  until: number;
+}
+
 export interface MktgFamilyExportLastResponse {
   last: MktgFamilyExportRecord | null;
   currentMembers: MktgFamilyExportMember[];
   skippedMembers: MktgFamilyExportAgentKey[];
   stale: boolean;
+  /** The export in flight for this family, whoever started it; null when none is. */
+  running: MktgFamilyExportRunning | null;
 }
 
 /** Browser stream: starts immediately, then reports selected members and the final result. */

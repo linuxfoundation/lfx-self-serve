@@ -199,6 +199,7 @@ export const MKTG_SLIDES_EXPORT_START_MESSAGES: Record<string, string> = {
   NOTHING_TO_EXPORT: 'This revision holds nothing that exports to Google Slides.',
   FAMILY_NOTHING_APPROVED: 'This family has no approved assets to export. Approve an asset first.',
   FAMILY_ASSET_UNREADABLE: 'An approved family asset could not be read for Google Slides. Open the asset, check its approved revision and try again.',
+  MKTG_FAMILY_EXPORT_ACTIVE: 'An export of this family is already running. Its deck appears here when it is ready.',
   REVISION_NOT_STORED: 'This version is not stored yet, so it cannot be exported. Try again in a moment, or export it from Documents.',
   FORBIDDEN: 'You need write access to this project to export its documents.',
 };

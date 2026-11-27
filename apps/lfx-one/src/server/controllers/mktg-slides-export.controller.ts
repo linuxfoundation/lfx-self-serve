@@ -159,7 +159,12 @@ export class MktgSlidesExportController {
     }
   }
 
-  /** Family routes share the document export's writer boundary; result context is signed, never browser-selected. */
+  /**
+   * Family routes share the document export's writer boundary; result context is signed, never browser-selected.
+   * A family exports one at a time: a start while another export holds the family is answered by the service's 409
+   * MKTG_FAMILY_EXPORT_ACTIVE (who started it and when, at the top level of the body), with no owner token and
+   * nothing sent, and `last` reports the export in flight as `running`.
+   */
   public async family(req: Request, res: Response, next: NextFunction, action: 'start' | 'result' | 'last'): Promise<void> {
     const operation = `mktg_family_export_${action}`;
     const startTime = logger.startOperation(req, operation, {});

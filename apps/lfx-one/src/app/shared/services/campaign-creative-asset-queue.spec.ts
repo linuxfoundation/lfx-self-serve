@@ -12,6 +12,8 @@ import {
   CREATIVE_ASSET_MAX_BYTES,
   CREATIVE_ASSET_QUOTA_MESSAGE,
   CREATIVE_ASSET_SUBFOLDER_MESSAGE,
+  CREATIVE_ASSET_VIDEO_TOO_LARGE_MESSAGE,
+  CREATIVE_ASSET_VIDEO_WRONG_TYPE_MESSAGE,
   CREATIVE_ASSET_WRONG_TYPE_MESSAGE,
 } from '@lfx-one/shared/constants';
 import { CreativeAssetQueueItem, CreativeAssetUploadResult } from '@lfx-one/shared/interfaces';
@@ -115,6 +117,20 @@ describe('CampaignService library upload queue', () => {
     // A 413 from the route names the PDF limit, not the image one.
     open()[0].flush({ message: 'too large' }, { status: 413, statusText: 'Payload Too Large' });
     expect(items()[1]).toMatchObject({ status: 'refused', refusal: 'size', message: CREATIVE_ASSET_DOCUMENT_TOO_LARGE_MESSAGE });
+  });
+
+  // Reddit video posts (#6108 row 8): the video post's upload takes only an MP4, within the video limit.
+  it('takes an MP4 from the Reddit video post, refusing an image there, and names the video limit on a 413', () => {
+    const mp4 = new File([new Uint8Array(16)], 'clip.mp4', { type: 'video/mp4' });
+
+    service.enqueueCreativeAssetUploads([png('hero.png'), mp4], 'tlf', BRIEF_ID, { videos: true });
+
+    expect(items().map((item) => [item.name, item.status, item.message])).toEqual([
+      ['hero.png', 'refused', CREATIVE_ASSET_VIDEO_WRONG_TYPE_MESSAGE],
+      ['clip.mp4', 'uploading', ''],
+    ]);
+    open()[0].flush({ message: 'too large' }, { status: 413, statusText: 'Payload Too Large' });
+    expect(items()[1]).toMatchObject({ status: 'refused', refusal: 'size', message: CREATIVE_ASSET_VIDEO_TOO_LARGE_MESSAGE });
   });
 
   // A PDF's 415 shows the BFF's reason, so document ads turned off is not reported as a broken PDF.

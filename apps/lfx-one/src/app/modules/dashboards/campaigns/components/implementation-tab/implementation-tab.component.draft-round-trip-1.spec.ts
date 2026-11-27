@@ -741,6 +741,39 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     expect(latest()).not.toHaveProperty('redditEditedSubreddits');
   });
 
+  // Reddit regions, cities and DMAs (#6108 row 7): the rules are in `campaign-reddit-subcountry-geo.utils.spec.ts`; this tests
+  // the wiring, driven through the editor's binding so a handler that never emits fails here.
+  it("carries regions, cities and DMAs through a tab round-trip into the request in place of their country, and sends today's geo once off", async () => {
+    const mountWithSubCountryGeo = async (
+      draft: CampaignImplementationDraft | null,
+      enabled: boolean | null
+    ): Promise<{ fixture: ComponentFixture<ImplementationTabComponent>; latest: () => CampaignImplementationDraft | null }> => {
+      const mounted = await mount(draft);
+      mounted.fixture.componentRef.setInput('redditSubCountryGeoEnabled', enabled);
+      at(mounted.fixture).selectedPlatforms.set(['reddit-ads']);
+      mounted.fixture.detectChanges();
+      await mounted.fixture.whenStable();
+      return mounted;
+    };
+    const first = await mountWithSubCountryGeo(null, true);
+    expect(first.latest()).not.toHaveProperty('redditSubCountryGeoTargets');
+    first.fixture.debugElement.query(By.css('lfx-reddit-subcountry-geo')).triggerEventHandler('locationsChange', ['US-CA', '662']);
+    expect(first.latest()).toMatchObject({ redditSubCountryGeoTargets: ['US-CA', '662'] });
+    const draft = first.latest();
+    first.fixture.destroy();
+
+    const second = await mountWithSubCountryGeo(draft, true);
+    expect(submitReddit(second.fixture)).toMatchObject({ geoTargets: [], subCountryGeoTargets: ['US-CA', '662'] });
+    second.fixture.destroy();
+    createCampaign.mockClear();
+
+    const off = (await mountWithSubCountryGeo(draft, false)).fixture;
+    expect(off.nativeElement.querySelector('lfx-reddit-subcountry-geo')).toBeNull();
+    const sent = submitReddit(off);
+    expect(sent['geoTargets']).toEqual(['US']);
+    expect(sent).not.toHaveProperty('subCountryGeoTargets');
+  });
+
   // Reddit delivery choices and the pixel picker (#6108 row 5): the rules are in `campaign-reddit-delivery.utils.spec.ts`
   // and `campaign-reddit-pixels.utils.spec.ts`; this tests the wiring.
   it('carries delivery choices and a picked pixel through a tab round-trip and into the request', async () => {
@@ -798,6 +831,51 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     const off = (await mountWithAdPerVariant(draft, false)).fixture;
     expect(off.nativeElement.querySelector('lfx-reddit-ad-variants')).toBeNull();
     expect(submitReddit(off)['variants']).toEqual([{ headline: 'Brief reddit headline', destinationUrl: 'https://example.com/brief' }]);
+  });
+
+  // A Reddit video post from stored assets (#6108 row 8): the rules are in `campaign-reddit-video.utils.spec.ts`; this tests
+  // the wiring, driven through the editor's binding so a handler that never emits fails here.
+  it('carries a picked video post through a tab round-trip into the request, and sends none once the capability is off', async () => {
+    const VIDEO = '3f2504e0-4f89-11d3-9a0c-0305e82c3301';
+    const THUMB = '6ba7b810-9dad-11d1-80b4-00c04fd430c8';
+    const listCreativeAssets = () =>
+      of({
+        assets: [{ id: THUMB, mimeType: 'image/png', byteSize: 2048, checksum: 'cd'.repeat(32) }],
+        videos: [{ id: VIDEO, byteSize: 4096, checksum: 'ab'.repeat(32) }],
+        documents: [],
+      });
+    Object.assign(TestBed.inject(CampaignService), { creativeVideoDeleting: () => null, listCreativeAssets });
+    const mountWithVideo = async (draft: CampaignImplementationDraft | null, enabled: boolean) => {
+      const mounted = await mount(draft);
+      mounted.fixture.componentRef.setInput('briefPersistence', { status: 'saved', briefId: 'b-1', message: null, approved: true });
+      mounted.fixture.componentRef.setInput('redditVideoEnabled', enabled);
+      at(mounted.fixture).selectedPlatforms.set(['reddit-ads']);
+      mounted.fixture.detectChanges();
+      await mounted.fixture.whenStable();
+      return mounted;
+    };
+    const picked = { videoAssetId: VIDEO, videoBriefId: 'b-1', thumbnailAssetId: THUMB, thumbnailBriefId: 'b-1' };
+
+    const first = await mountWithVideo(null, true);
+    expect(first.latest()).not.toHaveProperty('redditVideoPost');
+    first.fixture.debugElement.query(By.css('lfx-reddit-video-post')).triggerEventHandler('videoPostChange', picked);
+    const draft = first.latest();
+    expect(draft).toMatchObject({ redditVideoPost: picked });
+    // A stored video deleted in the library bumps the library revision, so the picker's library is read again and stops offering it.
+    const revision = (): number => (first.fixture.componentInstance as unknown as { creativeLibraryRevision: () => number }).creativeLibraryRevision();
+    const before = revision();
+    first.fixture.debugElement.query(By.css('lfx-creative-library-upload')).triggerEventHandler('videoDeleted', 'another-video');
+    expect(revision()).toBe(before + 1);
+    first.fixture.destroy();
+
+    const second = await mountWithVideo(draft, true);
+    expect(submitReddit(second.fixture)).toMatchObject({ videoAssetId: VIDEO, thumbnailAssetId: THUMB, variants: [{ headline: 'Brief reddit headline' }] });
+    second.fixture.destroy();
+    createCampaign.mockClear();
+
+    const off = (await mountWithVideo(draft, false)).fixture;
+    expect(off.nativeElement.querySelector('lfx-reddit-video-post')).toBeNull();
+    expect(submitReddit(off)).not.toHaveProperty('videoAssetId');
   });
 
   // === The other platforms on the same live brief switch (#4624) ===

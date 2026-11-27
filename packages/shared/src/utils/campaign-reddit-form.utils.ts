@@ -60,10 +60,11 @@ export function redditVideoGoalError(objective: RedditObjective, goal: string): 
 
 /**
  * The message under the Post URL while Video Views has no post, else `null`. A Video Views campaign promotes an existing
- * video post; neither creator checks the creative against the objective, so this is the only place it is enforced.
+ * video post, or authors one from a stored MP4 (`storedVideo`, #6108 row 8); neither creator checks the creative against
+ * the objective, so this is the only place it is enforced.
  */
-export function redditVideoPostError(objective: RedditObjective, postUrl: string): string | null {
-  return objective === 'video_views' && !postUrl ? 'Video Views promotes an existing Reddit video post — enter its Post URL.' : null;
+export function redditVideoPostError(objective: RedditObjective, postUrl: string, storedVideo = false): string | null {
+  return objective === 'video_views' && !postUrl && !storedVideo ? 'Video Views promotes an existing Reddit video post — enter its Post URL.' : null;
 }
 
 /**
@@ -89,6 +90,8 @@ export function redditCreateRefusal(input: RedditCreateRefusalInput): string | n
   if (input.videoGoalError !== null) return 'Reddit Ads: fix the Video Views goal.';
   // Video Views without a post would build an image-post ad or no ad, never a video view.
   if (input.videoPostError !== null) return 'Reddit Ads: Video Views needs a video post.';
+  // A stored video post that cannot go out (`redditVideoPostCreateRefusal`, #6108 row 8): an incomplete pair, a stale pick, or an image beside it.
+  if (input.videoAssetRefusal !== null) return `Reddit Ads: ${input.videoAssetRefusal}`;
   // A non-default conversion event this deployment has not confirmed: held, never dropped (`redditConversionEventBlock`).
   if (input.conversionEventBlock !== null) return `Reddit Ads: ${input.conversionEventBlock}`;
   // Custom audiences the deployment or the caller has not confirmed: held, never dropped (`redditCustomAudiencesBlock`).
@@ -99,6 +102,8 @@ export function redditCreateRefusal(input: RedditCreateRefusalInput): string | n
   if (input.targetingExclusionsBlock !== null) return `Reddit Ads: ${input.targetingExclusionsBlock}`;
   // Exclusions campaign-service would refuse, including one the targeting now overlaps (`redditTargetingExclusionsDraftRefusal`).
   if (input.targetingExclusionsRefusal !== null) return `Reddit Ads: ${input.targetingExclusionsRefusal}`;
+  // Regions, cities and DMAs campaign-service would refuse (`redditSubCountryGeoDraftRefusal`, #6108 row 7), in its order.
+  if (input.subCountryGeoRefusal !== null) return `Reddit Ads: ${input.subCountryGeoRefusal}`;
   // At least one placement and one device (`redditDeliveryRefusal`, #6108 row 5).
   if (input.deliveryRefusal !== null) return `Reddit Ads: ${input.deliveryRefusal}`;
   // Variants campaign-service would refuse while each becomes its own ad (`redditAdPerVariantRefusal`, #6108 row 6).

@@ -25,9 +25,11 @@ describe('redditDraftFields', () => {
     uploadError: 'Too big.',
     uploadFailedBriefId: '',
     videoGoal: 'VIDEO_VIEW_15S',
+    videoPost: { videoAssetId: 'v-1', videoBriefId: 'b1', thumbnailAssetId: 'i-1', thumbnailBriefId: 'b1' },
     conversionEvent: 'SIGN_UP',
     customAudiences: { customAudienceIds: ['aud_in'], excludedCustomAudienceIds: ['aud_out'] },
     targetingExclusions: { excludedSubreddits: ['politics'], excludedGeoTargets: ['CA'] },
+    subCountryGeoTargets: ['US-CA', '662'],
     editedTargetingLists: { subreddits: ['kubernetes'], interests: ['technology_v3'] },
     delivery: { budgetType: 'daily', placements: ['FEED'], platforms: ['DESKTOP', 'MOBILE_WEB'], expandTargeting: false },
     editedVariants: [{ headline: 'Edited headline', body: 'Brief body' }, { headline: 'Second' }],
@@ -49,11 +51,13 @@ describe('redditDraftFields', () => {
       redditImageUploadFailedMessage: '',
       redditImageUploadFailedBriefId: '',
       redditVideoGoal: 'VIDEO_VIEW_15S',
+      redditVideoPost: { videoAssetId: 'v-1', videoBriefId: 'b1', thumbnailAssetId: 'i-1', thumbnailBriefId: 'b1' },
       redditConversionEvent: 'SIGN_UP',
       redditCustomAudienceIds: ['aud_in'],
       redditExcludedCustomAudienceIds: ['aud_out'],
       redditExcludedSubreddits: ['politics'],
       redditExcludedGeoTargets: ['CA'],
+      redditSubCountryGeoTargets: ['US-CA', '662'],
       redditEditedSubreddits: ['kubernetes'],
       redditEditedInterests: ['technology_v3'],
       redditBudgetType: 'daily',
@@ -71,11 +75,20 @@ describe('redditDraftFields', () => {
     expect(fields).not.toHaveProperty('redditEditedVariants');
   });
 
+  it('leaves a video post with nothing picked out (#6108 row 8)', () => {
+    const empty = { videoAssetId: '', videoBriefId: '', thumbnailAssetId: '', thumbnailBriefId: '' };
+    expect(redditDraftFields({ ...state, videoPost: empty })).not.toHaveProperty('redditVideoPost');
+  });
+
   it.each([
     ['', ''],
     ['b1', 'Too big.'],
   ])('carries the failure message only with the brief it failed for (%j)', (failedBriefId, message) => {
     expect(redditDraftFields({ ...state, uploadFailedBriefId: failedBriefId }).redditImageUploadFailedMessage).toBe(message);
+  });
+
+  it('leaves the regions, cities and DMAs out until one is added, so an unused draft is unchanged', () => {
+    expect(redditDraftFields({ ...state, subCountryGeoTargets: [] })).not.toHaveProperty('redditSubCountryGeoTargets');
   });
 });
 
@@ -164,6 +177,20 @@ describe('redditDraftRestore', () => {
   });
 });
 
+// The field rules are `redditVideoPostFromDraft`'s (campaign-reddit-video.utils.spec.ts); this tests the key.
+describe('redditDraftRestore: video post', () => {
+  it.each<[string, unknown, unknown]>([
+    ['no key (an older draft)', undefined, undefined],
+    [
+      'the picks',
+      { videoAssetId: 'v-1', videoBriefId: 'b1', thumbnailAssetId: 'i-1', thumbnailBriefId: 'b1' },
+      { videoAssetId: 'v-1', videoBriefId: 'b1', thumbnailAssetId: 'i-1', thumbnailBriefId: 'b1' },
+    ],
+  ])('restores %s', (_name, stored, expected) => {
+    expect(redditDraftRestore(draft({ redditVideoPost: stored } as RedditDraftSnapshot)).videoPost).toEqual(expected);
+  });
+});
+
 describe('redditDraftRestore: custom audiences', () => {
   it.each<[string, Partial<RedditDraftSnapshot>, unknown]>([
     [
@@ -195,6 +222,16 @@ describe('redditDraftRestore: targeting exclusions', () => {
   ])('restores %s', (_name, subs, geos, expected) => {
     // @ts-expect-error -- a draft is replayed from stored JSON whose inner shape is not validated
     expect(redditDraftRestore(draft({ redditExcludedSubreddits: subs, redditExcludedGeoTargets: geos })).targetingExclusions).toEqual(expected);
+  });
+});
+
+describe('redditDraftRestore: regions, cities and DMAs', () => {
+  it.each<[string, unknown, unknown]>([
+    ['no key (an older draft), so the empty list stands', undefined, undefined],
+    ['a value that is not a list', 'US-CA', undefined],
+    ['only the strings of a list', ['US-CA', 3, null, '662'], ['US-CA', '662']],
+  ])('restores %s', (_name, stored, expected) => {
+    expect(redditDraftRestore(draft({ redditSubCountryGeoTargets: stored } as RedditDraftSnapshot)).subCountryGeoTargets).toEqual(expected);
   });
 });
 
@@ -250,9 +287,11 @@ describe('redditBriefReset', () => {
       callToAction: '',
       objective: DEFAULT_REDDIT_OBJECTIVE,
       videoGoal: '',
+      videoPost: { videoAssetId: '', videoBriefId: '', thumbnailAssetId: '', thumbnailBriefId: '' },
       conversionEvent: 'PURCHASE',
       customAudiences: { customAudienceIds: [], excludedCustomAudienceIds: [] },
       targetingExclusions: { excludedSubreddits: [], excludedGeoTargets: [] },
+      subCountryGeoTargets: [],
       delivery: { budgetType: 'lifetime', placements: ['FEED', 'COMMENTS_PAGE'], platforms: ['DESKTOP', 'MOBILE_NATIVE', 'MOBILE_WEB'], expandTargeting: true },
       budgetUsd: DEFAULT_REDDIT_BUDGET_USD,
       variants: [],

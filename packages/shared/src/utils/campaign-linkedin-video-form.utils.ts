@@ -69,7 +69,8 @@ export function linkedInVideoVariantsForCreate(
 /**
  * The library's stored videos with whether each may be deleted (#5764 row 18). Delete is the operator's, never automatic,
  * so it cannot race an upload: it is off while an ad on the tab uses the video (the create would name a deleted asset),
- * while a LinkedIn upload runs (identical bytes come back as an asset already stored), and while another delete runs.
+ * while a LinkedIn or library upload runs (identical bytes come back as an asset already stored), and while another
+ * delete runs.
  */
 export function linkedInStoredVideoRows(
   videos: readonly StoredCreativeVideo[],
@@ -81,7 +82,7 @@ export function linkedInStoredVideoRows(
     let note = '';
     const used = inUse.includes(video.id);
     if (used) note = 'Used by an ad on this tab. Remove it from the ads to delete it.';
-    else if (uploading) note = 'Wait for the LinkedIn upload to finish.';
+    else if (uploading) note = 'Wait for the uploads to finish.';
     else if (deletingId === video.id) note = 'Deleting…';
     return {
       id: video.id,

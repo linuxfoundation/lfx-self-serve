@@ -2,9 +2,18 @@
 // SPDX-License-Identifier: MIT
 
 import { REDDIT_VIDEO_KEYS } from '../constants/campaign.constants';
-import type { RedditConfigRefusal } from '../interfaces/campaign.interface';
+import type {
+  CreativeAssetLibraryState,
+  RedditCampaignCreateRequest,
+  RedditConfigRefusal,
+  RedditVideoPostDraft,
+  RedditVideoPostOption,
+  RedditVideoPostView,
+} from '../interfaces/campaign.interface';
+import { storedCreativeAssetLabel } from './campaign-google-creative.utils';
 import { foldKey } from './campaign-linkedin-config.utils';
 import { goTrimSpace } from './campaign-linkedin.utils';
+import { formatFileSize } from './file.utils';
 
 /**
  * A Reddit video post from stored assets on create (#6108 row 8): `redditConfig.videoAssetId` and `thumbnailAssetId`,
@@ -134,4 +143,191 @@ export function redditVideoRefusal(raw: unknown, enabled: boolean, adPerVariantE
   if (thumbnailId === null) return { field: THUMBNAIL_FIELD, message: 'The thumbnail is not a valid asset id. Upload it again.' };
   if (videoId === thumbnailId) return { field: THUMBNAIL_FIELD, message: 'The thumbnail names the video itself. Upload a separate PNG or JPEG.' };
   return null;
+}
+
+// === The Implement tab's video post editor (#6108 row 8) ===
+
+/** Whether the video post is offered: only an explicit yes from `CampaignListResult.redditVideoEnabled`. */
+export function redditVideoPostCapability(enabled: boolean | null): boolean {
+  return enabled === true;
+}
+
+/** A video post with nothing picked. */
+export function emptyRedditVideoPostDraft(): RedditVideoPostDraft {
+  return { videoAssetId: '', videoBriefId: '', thumbnailAssetId: '', thumbnailBriefId: '' };
+}
+
+/** Whether the video post holds a pick, the video or its thumbnail. Only then does the draft carry it. */
+export function redditVideoPostHeld(draft: RedditVideoPostDraft): boolean {
+  return draft.videoAssetId !== '' || draft.thumbnailAssetId !== '';
+}
+
+/**
+ * Whether a create is a video post: offered on an explicit yes, and the video or its thumbnail picked. Then the post is
+ * authored from the video, variant 1 alone heads it, and Create waits until the pair is complete. A pick restored after
+ * the capability went off is kept, but sends nothing: the create is exactly as before row 8.
+ */
+export function redditVideoPostChosen(draft: RedditVideoPostDraft, enabled: boolean | null): boolean {
+  return redditVideoPostCapability(enabled) && redditVideoPostHeld(draft);
+}
+
+/**
+ * The request's video fields: nothing unless a video post is chosen, and each id only when it was picked for the brief
+ * now open. A pick for another brief is not sent; it holds Create instead (`redditVideoPostCreateRefusal`).
+ */
+export function redditVideoPostField(
+  draft: RedditVideoPostDraft,
+  briefId: string,
+  enabled: boolean | null
+): Pick<RedditCampaignCreateRequest, 'videoAssetId' | 'thumbnailAssetId'> {
+  if (!redditVideoPostChosen(draft, enabled)) return {};
+  return {
+    ...(draft.videoAssetId !== '' && draft.videoBriefId === briefId ? { videoAssetId: draft.videoAssetId } : {}),
+    ...(draft.thumbnailAssetId !== '' && draft.thumbnailBriefId === briefId ? { thumbnailAssetId: draft.thumbnailAssetId } : {}),
+  };
+}
+
+/** The variants a create sends: variant 1 alone with a video post, which is one post and one ad; otherwise all of them. */
+export function redditVariantsSent<T>(variants: readonly T[], videoPost: boolean): T[] {
+  return videoPost ? variants.slice(0, 1) : [...variants];
+}
+
+/**
+ * What the video post says about the variants it leaves out, or `''`: a video post is one post and one ad, so only
+ * variant 1 is sent (`redditVariantsSent`), and the operator is told rather than left to find the others missing.
+ */
+export function redditVideoPostVariantsNote(draft: RedditVideoPostDraft, variantCount: number): string {
+  if (!redditVideoPostHeld(draft) || variantCount < 2) return '';
+  return variantCount === 2
+    ? 'Only variant 1 is sent with a video post. Variant 2 is not sent.'
+    : `Only variant 1 is sent with a video post. Variants 2 to ${variantCount} are not sent.`;
+}
+
+/** The draft with `assetId` picked as the video (`''` clears it), recorded with the brief it was picked for. */
+export function redditVideoPostWithVideo(draft: RedditVideoPostDraft, assetId: string, briefId: string): RedditVideoPostDraft {
+  return { ...draft, videoAssetId: assetId, videoBriefId: assetId === '' ? '' : briefId };
+}
+
+/** The draft with `assetId` picked as the thumbnail (`''` clears it), recorded with the brief it was picked for. */
+export function redditVideoPostWithThumbnail(draft: RedditVideoPostDraft, assetId: string, briefId: string): RedditVideoPostDraft {
+  return { ...draft, thumbnailAssetId: assetId, thumbnailBriefId: assetId === '' ? '' : briefId };
+}
+
+/** The draft without `assetId` wherever it is picked: a stored video the library deleted, or one taken off the ads there. */
+export function redditVideoPostWithout(draft: RedditVideoPostDraft, assetId: string): RedditVideoPostDraft {
+  if (assetId === '') return draft;
+  const video = draft.videoAssetId === assetId ? redditVideoPostWithVideo(draft, '', '') : draft;
+  return video.thumbnailAssetId === assetId ? redditVideoPostWithThumbnail(video, '', '') : video;
+}
+
+/** The video post a stored draft carries, or `undefined` when it carries none. Not type-checked when stored, so a field that is not text reads as blank. */
+export function redditVideoPostFromDraft(value: unknown): RedditVideoPostDraft | undefined {
+  const stored = plainRecord(value);
+  if (!stored) return undefined;
+  const text = (key: keyof RedditVideoPostDraft): string => (typeof stored[key] === 'string' ? (stored[key] as string) : '');
+  return {
+    videoAssetId: text('videoAssetId'),
+    videoBriefId: text('videoBriefId'),
+    thumbnailAssetId: text('thumbnailAssetId'),
+    thumbnailBriefId: text('thumbnailBriefId'),
+  };
+}
+
+/** The options of one picker: every listed asset, a held one the library does not list kept by id, and a first "none" option while one is held. */
+function pickerOptions(listed: RedditVideoPostOption[], held: string, noun: 'video' | 'image'): RedditVideoPostOption[] {
+  const options = [...listed];
+  if (held !== '' && !listed.some((option) => option.value === held)) options.unshift({ value: held, label: `Stored ${noun} ${held.slice(0, 8)}` });
+  if (held !== '') options.unshift({ value: '', label: `No ${noun} (choose again)` });
+  return options;
+}
+
+/**
+ * The videos the picker offers: every MP4 stored for the brief, labelled by the library's order, the checksum's start and
+ * the size (campaign-service records no file name). One whose delete is running (`deletingId`) is not offered, so it
+ * cannot be picked for a create that would name it once it is gone. See `pickerOptions` for the held and "none" options.
+ */
+export function redditVideoPostVideoOptions(library: CreativeAssetLibraryState, held: string, deletingId = ''): RedditVideoPostOption[] {
+  const listed = (library.videos ?? [])
+    .map((video, index) => ({ value: video.id, label: `Video ${index + 1} (${video.checksum.slice(0, 8)}, ${formatFileSize(video.byteSize)})` }))
+    .filter((option) => deletingId === '' || option.value !== deletingId);
+  return pickerOptions(listed, held, 'video');
+}
+
+/** The thumbnails the picker offers: every PNG or JPEG stored for the brief, labelled as every image picker labels them. */
+export function redditVideoPostThumbnailOptions(library: CreativeAssetLibraryState, held: string): RedditVideoPostOption[] {
+  return pickerOptions(
+    library.assets.map((asset) => ({ value: asset.id, label: storedCreativeAssetLabel(asset) })),
+    held,
+    'image'
+  );
+}
+
+/** Why the pickers offer nothing yet, or `''`. The library is not read (`idle`) while the brief is unsaved. */
+function libraryNote(library: CreativeAssetLibraryState): string {
+  switch (library.status) {
+    case 'idle':
+      return 'Save the brief to pick or upload its video.';
+    case 'loading':
+      return "Loading the brief's videos and images…";
+    case 'error':
+      return "Couldn't load the brief's library. Reload the page, or upload the video again.";
+    case 'ready':
+      if ((library.videos ?? []).length === 0) return 'No video is stored for this brief yet. Upload an MP4 to pick it.';
+      return library.assets.length === 0 ? 'No image is stored for this brief yet. Upload a PNG or JPEG in the library below for the thumbnail.' : '';
+  }
+}
+
+/**
+ * What is wrong with one pick, or `''`. Judged against the brief only while its id is known (the tab has none while a
+ * save runs, which is no evidence of another brief), and against the library only once it was read.
+ */
+function pickProblem(
+  assetId: string,
+  pickedBriefId: string,
+  briefId: string,
+  library: CreativeAssetLibraryState,
+  listed: readonly string[],
+  noun: string
+): string {
+  if (assetId === '' || briefId === '') return '';
+  if (pickedBriefId !== briefId) return `Stored for a different brief. Choose a ${noun} from this brief's library.`;
+  if (library.status !== 'ready') return '';
+  return listed.includes(assetId) ? '' : `No longer in the brief's library. Choose another ${noun}.`;
+}
+
+/** The video post editor's view: both pickers, what is wrong with each pick, and why the pickers offer nothing yet. */
+export function redditVideoPostView(draft: RedditVideoPostDraft, library: CreativeAssetLibraryState, briefId: string, deletingId = ''): RedditVideoPostView {
+  const videoIds = (library.videos ?? []).map((video) => video.id);
+  const imageIds = library.assets.map((asset) => asset.id);
+  return {
+    videoOptions: redditVideoPostVideoOptions(library, draft.videoAssetId, deletingId),
+    thumbnailOptions: redditVideoPostThumbnailOptions(library, draft.thumbnailAssetId),
+    videoProblem: pickProblem(draft.videoAssetId, draft.videoBriefId, briefId, library, videoIds, 'video'),
+    thumbnailProblem: pickProblem(draft.thumbnailAssetId, draft.thumbnailBriefId, briefId, library, imageIds, 'thumbnail'),
+    libraryNote: libraryNote(library),
+  };
+}
+
+/**
+ * Why a video post create waits, or `null`; nothing unless a video post is chosen (`redditVideoPostChosen`). In order: no
+ * brief id (the assets are the saved brief's); a picked video whose delete is running; a pick the editor marks; then the
+ * request the tab would send (`config`: its post, image, variants and video fields), checked by `redditVideoRefusal` as
+ * the create route will, which names a missing video or thumbnail and a post URL or image beside the video.
+ */
+export function redditVideoPostCreateRefusal(
+  draft: RedditVideoPostDraft,
+  enabled: boolean | null,
+  library: CreativeAssetLibraryState,
+  briefId: string,
+  deletingId: string,
+  config: Record<string, unknown>,
+  adPerVariantEnabled: boolean
+): string | null {
+  if (!redditVideoPostChosen(draft, enabled)) return null;
+  if (briefId === '') return 'Save the brief to send its video post.';
+  if (deletingId !== '' && draft.videoAssetId === deletingId) return 'Wait for the video to finish deleting, or choose another.';
+  const view = redditVideoPostView(draft, library, briefId);
+  if (view.videoProblem !== '') return `Video: ${view.videoProblem}`;
+  if (view.thumbnailProblem !== '') return `Thumbnail: ${view.thumbnailProblem}`;
+  return redditVideoRefusal(config, true, adPerVariantEnabled)?.message ?? null;
 }

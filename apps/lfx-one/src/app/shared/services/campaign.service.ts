@@ -7,10 +7,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import {
   CAMPAIGN_JOB_POLL_INTERVAL_MS,
   CREATIVE_ASSET_CANCELLED_UPLOADING_MESSAGE,
-  CREATIVE_ASSET_DOCUMENT_MAX_BYTES,
   CREATIVE_ASSET_DOCUMENT_MIME_TYPE,
-  CREATIVE_ASSET_DOCUMENT_TOO_LARGE_MESSAGE,
-  CREATIVE_ASSET_DOCUMENT_WRONG_TYPE_MESSAGE,
   CREATIVE_ASSET_CANCELLED_WAITING_MESSAGE,
   CREATIVE_ASSET_EMPTY_MESSAGE,
   CREATIVE_ASSET_FAILED_FALLBACK_MESSAGE,
@@ -22,10 +19,10 @@ import {
   CREATIVE_ASSET_READ_RETRIES,
   CREATIVE_ASSET_REFUSED_FALLBACK_MESSAGE,
   CREATIVE_ASSET_SUBFOLDER_MESSAGE,
-  CREATIVE_ASSET_TOO_LARGE_MESSAGE,
   CREATIVE_ASSET_UPLOADED_MESSAGE,
-  CREATIVE_ASSET_WRONG_TYPE_MESSAGE,
+  CREATIVE_ASSET_VIDEO_MIME_TYPE,
   creativeAssetTooLargeMessage,
+  creativeAssetUploadMaxBytes,
   creativeAssetWrongTypeMessage,
   isCreativeAssetMimeType,
   JOB_LOST_MESSAGE,
@@ -95,6 +92,7 @@ import {
   CreativeAssetLibrary,
   CreativeAssetPlan,
   CreativeAssetQueueItem,
+  CreativeAssetQueueKind,
   CreativeAssetQueueRefusal,
   CreativeAssetUploadOwner,
   CreativeAssetUploadResult,
@@ -518,16 +516,22 @@ export class CampaignService {
    *
    * Each item carries its brief, so files picked for another brief wait their turn in the same
    * serial lane and the first brief's outcomes stay listed for when the operator returns to it.
+   *
+   * `documents` takes only a PDF (campaign-service#665) and `videos` only an MP4 (a Reddit video post, #6108 row 8),
+   * each within its own limit; otherwise only images.
    */
   public enqueueCreativeAssetUploads(
     files: readonly File[],
     projectSlug: string,
     briefId: string,
-    options: { folder?: boolean; documents?: boolean } = {}
+    options: { folder?: boolean; documents?: boolean; videos?: boolean } = {}
   ): void {
+    let kind: CreativeAssetQueueKind | null = null;
+    if (options.documents === true) kind = CREATIVE_ASSET_DOCUMENT_MIME_TYPE;
+    else if (options.videos === true) kind = CREATIVE_ASSET_VIDEO_MIME_TYPE;
     const added = files.map((file): CreativeAssetQueueItem => {
       const id = `asset-${++this.creativeAssetQueueSequence}`;
-      const refused = this.refuseQueuedCreativeAsset(file, options.folder === true, options.documents === true);
+      const refused = this.refuseQueuedCreativeAsset(file, options.folder === true, kind);
       if (!refused) {
         this.creativeAssetQueueFiles.set(id, file);
       }
@@ -1711,20 +1715,25 @@ export class CampaignService {
   }
 
   /**
-   * Why a file can never be stored as it is, checked before it is sent; null when it may be sent. With `documents` (the
-   * LinkedIn document editor's upload, campaign-service#665), only a PDF within `CREATIVE_ASSET_DOCUMENT_MAX_BYTES` may be.
+   * Why a file can never be stored as it is, checked before it is sent; null when it may be sent. With a `kind` (a PDF from
+   * the LinkedIn document editor, campaign-service#665, or an MP4 from the Reddit video post, #6108 row 8), only that type
+   * within its own limit (`creativeAssetUploadMaxBytes`) may be; with none, only an image.
    */
-  private refuseQueuedCreativeAsset(file: File, folder: boolean, documents: boolean): { refusal: CreativeAssetQueueRefusal; message: string } | null {
+  private refuseQueuedCreativeAsset(
+    file: File,
+    folder: boolean,
+    kind: CreativeAssetQueueKind | null
+  ): { refusal: CreativeAssetQueueRefusal; message: string } | null {
     // `webkitRelativePath` is `folder/name.png` at the top level of a picked folder. Defaulted because
     // an engine without folder picks (and jsdom) leaves it undefined rather than empty.
     if (folder && (file.webkitRelativePath ?? '').split('/').length > 2) {
       return { refusal: 'subfolder', message: CREATIVE_ASSET_SUBFOLDER_MESSAGE };
     }
-    if (documents ? file.type !== CREATIVE_ASSET_DOCUMENT_MIME_TYPE : !isCreativeAssetMimeType(file.type)) {
-      return { refusal: 'type', message: documents ? CREATIVE_ASSET_DOCUMENT_WRONG_TYPE_MESSAGE : CREATIVE_ASSET_WRONG_TYPE_MESSAGE };
+    if (kind !== null ? file.type !== kind : !isCreativeAssetMimeType(file.type)) {
+      return { refusal: 'type', message: creativeAssetWrongTypeMessage(kind) };
     }
-    if (file.size > (documents ? CREATIVE_ASSET_DOCUMENT_MAX_BYTES : CREATIVE_ASSET_MAX_BYTES)) {
-      return { refusal: 'size', message: documents ? CREATIVE_ASSET_DOCUMENT_TOO_LARGE_MESSAGE : CREATIVE_ASSET_TOO_LARGE_MESSAGE };
+    if (file.size > (kind !== null ? creativeAssetUploadMaxBytes(kind) : CREATIVE_ASSET_MAX_BYTES)) {
+      return { refusal: 'size', message: creativeAssetTooLargeMessage(kind) };
     }
     if (file.size === 0) {
       return { refusal: 'other', message: CREATIVE_ASSET_EMPTY_MESSAGE };

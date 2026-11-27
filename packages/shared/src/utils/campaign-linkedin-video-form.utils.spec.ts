@@ -87,7 +87,7 @@ describe('linkedInStoredVideoRows', () => {
   it.each([
     ['neither in use', [], false, '', [false, false], ['', '']],
     ['the first in use by an ad', ['v-1'], false, '', [true, false], ['Used by an ad on this tab. Remove it from the ads to delete it.', '']],
-    ['a LinkedIn upload running', [], true, '', [true, true], ['Wait for the LinkedIn upload to finish.', 'Wait for the LinkedIn upload to finish.']],
+    ['a LinkedIn upload running', [], true, '', [true, true], ['Wait for the uploads to finish.', 'Wait for the uploads to finish.']],
     ['the second being deleted', [], false, 'v-2', [true, true], ['', 'Deleting…']],
   ])('%s', (_label, inUse, uploading, deletingId, disabled, notes) => {
     const rows = linkedInStoredVideoRows(stored, inUse, uploading, deletingId);
