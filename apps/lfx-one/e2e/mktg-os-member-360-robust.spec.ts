@@ -170,6 +170,111 @@ for (const width of [1280, 390]) {
   });
 }
 
+// 390px holds the longest live heading on one line (#5467). Where a row is too narrow for it, the heading breaks before the count, never inside the
+// team name. Which narrow widths that is depends on the layout around the card (a desktop browser keeps the collapsed nav rail, a phone has none),
+// so only 390px pins the line count: every width checks that a heading takes one line when it fits its row and two when it does not.
+for (const width of [390, 360]) {
+  test(`at ${width}px a long team header keeps its name on one line and a free-text deadline wraps inside the Actions card`, async ({ page }, info) => {
+    await page.setViewportSize({ width, height: 1000 });
+    await setupMember360(page, { stored: true }); // Includes suppressCookieBanner(page).
+    const view = member360Revision();
+    const envelope = view.member360;
+    if (!envelope) throw new Error('Member 360 fixture is missing');
+    const template = envelope.tabs.actions_by_team[0];
+    const spaced = 'when the board meets to approve the renewal plan for next year';
+    const unbroken = 'AfterTheBoardApprovesTheRenewalPlanForTheNextFinancialYear';
+    // The live shape that wrapped (#5467): the longest team name with a three-digit count. Deadlines are free text in the contract.
+    envelope.tabs.actions_by_team = [
+      { ...template, owner: 'Member Success', suggested_deadline: spaced },
+      { ...template, owner: 'Member Success', suggested_deadline: unbroken },
+      ...Array.from({ length: 200 }, () => ({ ...template, owner: 'Member Success' as const })),
+      { ...template, owner: 'Sales' },
+      { ...template, owner: 'Marketing' },
+    ];
+    envelope.content_sha256 = createHash('sha256').update(JSON.stringify(envelope.tabs)).digest('hex');
+    await page.route(`**/api/mktg-agents/documents/member-360/${MEMBER_360_DOCUMENT_ID}**`, (route) => json(route, view));
+    await openMember360(page, `documents/member-360/${MEMBER_360_DOCUMENT_ID}`);
+    const card = page.getByTestId('member-360-actions');
+    const team = page.getByTestId('member-360-team-member-success');
+    await expect(team.getByRole('heading')).toHaveText('Member Success · 202 actions');
+    // Free text sorts after every dated action, so it sits below the fold.
+    await team.getByTestId('member-360-show-all-member-success').click();
+    await expect(team.getByTestId('member-360-action-row')).toHaveCount(202);
+    const layout = await card.evaluate((element) => {
+      const lineCount = (target: Element) => Math.round(target.getBoundingClientRect().height / parseFloat(getComputedStyle(target).lineHeight));
+      const text = (target: Element) => target.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+      return {
+        headers: Array.from(element.querySelectorAll('h4'), (heading) => {
+          const box = heading.closest('[data-testid^="member-360-team-"]');
+          const copy = box?.querySelector('[data-testid^="member-360-copy-"]')?.getBoundingClientRect();
+          const name = heading.querySelector('[data-testid="member-360-team-name"]');
+          const count = name?.nextElementSibling;
+          const row = heading.parentElement;
+          if (!box || !copy || !name || !count || !row) throw new Error('Team box, heading row, team name, count or Copy list button is missing');
+          // An inline box has one rectangle per line it sits on.
+          const wrap = () => ({ lines: lineCount(heading), nameLines: name.getClientRects().length, countLines: count.getClientRects().length });
+          // The width the heading needs on one line: from the start of the name to the end of the count, in a hidden copy that cannot break.
+          const oneLine = heading.cloneNode(true) as HTMLElement;
+          oneLine.style.cssText = 'position: absolute; visibility: hidden; white-space: nowrap;';
+          row.append(oneLine);
+          const needed = oneLine.children[1].getBoundingClientRect().right - oneLine.children[0].getBoundingClientRect().left;
+          oneLine.remove();
+          const title = heading.getBoundingClientRect();
+          const style = getComputedStyle(box);
+          const inner = box.getBoundingClientRect().right - parseFloat(style.paddingRight) - parseFloat(style.borderRightWidth);
+          const natural = {
+            text: text(heading),
+            ...wrap(),
+            needed,
+            available: row.getBoundingClientRect().width,
+            titleInsideBox: title.right <= inner + 0.5,
+            copyInsideBox: copy.right <= inner + 0.5,
+            copyClearOfTitle: copy.left >= title.right - 0.5 || copy.top >= title.bottom - 0.5,
+          };
+          // The same heading in a row with room for the count only, so the break is measured in every browser and layout, whatever width
+          // the page leaves the card: a two-word name is wider than that row and still holds one line.
+          row.style.width = `${Math.ceil(count.getBoundingClientRect().width) + 1}px`;
+          const squeezed = wrap();
+          row.style.width = '';
+          return { ...natural, squeezed };
+        }),
+        dues: Array.from(element.querySelectorAll('[data-testid="member-360-action-due"]'), (due) => ({ text: text(due), lines: lineCount(due) })),
+        outsideRow: Array.from(element.querySelectorAll('[data-testid="member-360-action-row"]')).flatMap((row) => {
+          const right = row.getBoundingClientRect().right;
+          return Array.from(row.querySelectorAll('*'))
+            .filter((part) => part.getBoundingClientRect().right > right + 0.5)
+            .map(text);
+        }),
+        cardScrolls: element.scrollWidth > element.clientWidth,
+      };
+    });
+    expect(layout.headers.map((header) => header.text)).toEqual(['Sales · 1 action', 'Marketing · 1 action', 'Member Success · 202 actions']);
+    for (const header of layout.headers) {
+      info.annotations.push({ type: 'heading', description: `${header.text}: needs ${header.needed.toFixed(1)}px of ${header.available}px` });
+      // One line when the row has the room and two when it does not; the name and the count are each whole, inside the box and clear of Copy list.
+      expect(header, header.text).toMatchObject({
+        lines: header.needed <= header.available ? 1 : 2,
+        nameLines: 1,
+        countLines: 1,
+        titleInsideBox: true,
+        copyInsideBox: true,
+        copyClearOfTitle: true,
+        // Too narrow for one line: the name on the first, the count on the second.
+        squeezed: { lines: 2, nameLines: 1, countLines: 1 },
+      });
+    }
+    if (width === 390) expect(layout.headers.map((header) => header.lines)).toEqual([1, 1, 1]);
+    // A date keeps one line; free text wraps under the row instead of running out of the card, even with nowhere to break.
+    expect(layout.dues).toHaveLength(204);
+    expect(layout.dues.filter((due) => due.lines !== 1).map((due) => due.text)).toEqual([`Due ${unbroken}`, `Due ${spaced}`]);
+    expect(layout.outsideRow).toEqual([]);
+    expect(layout.cardScrolls).toBe(false);
+    const bounds = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, viewport: innerWidth }));
+    expect(bounds.scroll).toBeLessThanOrEqual(bounds.viewport);
+    await page.screenshot({ path: info.outputPath(`actions-${width}.png`), fullPage: true });
+  });
+}
+
 test('non-writer sees an access message, never a run form', async ({ page }, info) => {
   await setupMember360(page, { writer: false });
   await openMember360(page);
