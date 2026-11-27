@@ -418,6 +418,7 @@ import type {
   RedditTargetingListsDraft,
   RedditObjective,
   RedditVideoGoal,
+  RedditVideoPostDraft,
   StoredCreativeAsset,
   MetaAudienceTargetingDraft,
   MetaDetailedTargetingEnabled,
@@ -614,6 +615,13 @@ import {
   redditObjectiveIsUnavailable,
   redditVideoGoalError,
   redditVideoPostError,
+  emptyRedditVideoPostDraft,
+  redditVariantsSent,
+  redditVideoPostCapability,
+  redditVideoPostChosen,
+  redditVideoPostCreateRefusal,
+  redditVideoPostField,
+  redditVideoPostWithout,
   linkedInGeoSearchOptions,
   linkedInGeoSearchQueryRefusal,
   linkedInGeoSearchQueryText,
@@ -730,6 +738,7 @@ import { RedditSubCountryGeoComponent } from '../reddit-subcountry-geo/reddit-su
 import { RedditTargetingListsComponent } from '../reddit-targeting-lists/reddit-targeting-lists.component';
 import { RedditDeliveryComponent } from '../reddit-delivery/reddit-delivery.component';
 import { RedditAdVariantsComponent } from '../reddit-ad-variants/reddit-ad-variants.component';
+import { RedditVideoPostComponent } from '../reddit-video-post/reddit-video-post.component';
 import { RedditPixelPickerComponent } from '../reddit-pixel-picker/reddit-pixel-picker.component';
 import { MetaDeliveryOptionsComponent } from '../meta-delivery-options/meta-delivery-options.component';
 import { MetaDeviceOsOptionsComponent } from '../meta-device-os-options/meta-device-os-options.component';
@@ -826,6 +835,7 @@ let linkedInVariantKeySequence = 0;
     RedditTargetingListsComponent,
     RedditDeliveryComponent,
     RedditAdVariantsComponent,
+    RedditVideoPostComponent,
     RedditPixelPickerComponent,
     MetaDetailedTargetingComponent,
     MetaDeliveryOptionsComponent,
@@ -1158,7 +1168,7 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly redditAdVariantsConfig = computed<Record<string, unknown>>(() => ({
     postUrl: this.redditPostUrl(),
     ...this.redditImageField(),
-    variants: this.redditAdVariants(),
+    variants: this.redditVariantsSentNow(),
   }));
   /** Which headlines the create reads, so which the editor marks and Create holds on (`redditAdVariantsCheck`). */
   protected readonly redditAdVariantsCheck = computed<RedditAdVariantsCheck>(() => {
@@ -1167,10 +1177,41 @@ export class ImplementationTabComponent implements OnInit {
     const imageAssetId = 'imageAssetId' in image ? image.imageAssetId : '';
     return redditAdVariantsCheck(
       this.redditAdVariantsAvailable(),
-      redditAdPerVariantAuthorsPost(this.redditPostUrl(), imageUrl, imageAssetId),
-      this.redditAdVariants().length
+      // A video post (#6108 row 8) authors its post too, headed by variant 1 alone.
+      redditAdPerVariantAuthorsPost(this.redditPostUrl(), imageUrl, imageAssetId) || this.redditVideoPostSelected(),
+      this.redditVariantsSentNow().length
     );
   });
+  /**
+   * Whether a Reddit create may author a video post from stored assets (`CampaignListResult.redditVideoEnabled`, #6108
+   * row 8). `null` until the parent has an answer, which hides the video post and sends the create as before.
+   */
+  public readonly redditVideoEnabled = input<boolean | null>(null);
+  /** @see redditVideoEnabled — an explicit yes, never a `null`. */
+  protected readonly redditVideoAvailable = computed<boolean>(() => redditVideoPostCapability(this.redditVideoEnabled()));
+  /** The video post as picked (#6108 row 8), kept whatever the capability says; only the request is gated on it. */
+  protected readonly redditVideoPost = signal<RedditVideoPostDraft>(emptyRedditVideoPostDraft());
+  /** Whether this create is a video post: offered, and the video or its thumbnail picked (`redditVideoPostChosen`). */
+  protected readonly redditVideoPostSelected = computed<boolean>(() => redditVideoPostChosen(this.redditVideoPost(), this.redditVideoEnabled()));
+  /** The video post's request fields: nothing unless chosen, and only picks made for the open brief (`redditVideoPostField`). */
+  protected readonly redditVideoPostFields = computed(() =>
+    redditVideoPostField(this.redditVideoPost(), this.briefPersistence().briefId ?? '', this.redditVideoEnabled())
+  );
+  /** The variants a Reddit create sends: variant 1 alone with a video post, one post and one ad (`redditVariantsSent`). */
+  protected readonly redditVariantsSentNow = computed<RedditAdVariant[]>(() => redditVariantsSent(this.redditAdVariants(), this.redditVideoPostSelected()));
+  /** The stored asset whose delete is running, `''` for none: the video picker and its upload wait for it (#6108 row 8). */
+  protected readonly redditVideoDeletingId = computed<string>(() => this.campaignService.creativeVideoDeleting()?.id ?? '');
+  /**
+   * The stored videos any ad on this tab names: the LinkedIn video ads', the Reddit video post's (#6108 row 8) and the
+   * Meta variants' (#6332). The library will not delete them.
+   */
+  protected readonly videoIdsInUse = computed<string[]>(() => [
+    ...new Set([
+      ...this.linkedInVideoIdsInUse(),
+      ...(this.redditVideoPost().videoAssetId ? [this.redditVideoPost().videoAssetId] : []),
+      ...metaVideoIdsInUse(this.metaVariantVideos(), this.metaVariants().length),
+    ]),
+  ]);
 
   /**
    * Whether the Meta section may offer an image UPLOAD (`CampaignListResult.metaAssetUploadEnabled`).
@@ -2286,10 +2327,6 @@ export class ImplementationTabComponent implements OnInit {
       .map((variant) => variant.videoAssetId ?? '')
       .filter((id) => id !== '')
   );
-  /** The stored videos any ad on this tab names: LinkedIn's above and the Meta variants' (#6332). The library will not delete them. */
-  protected readonly videoIdsInUse = computed<string[]>(() => [
-    ...new Set([...this.linkedInVideoIdsInUse(), ...metaVideoIdsInUse(this.metaVariantVideos(), this.metaVariants().length)]),
-  ]);
   /** The stored asset whose delete is running, `''` for none: the PDF picker does not offer it, and Create waits while the document ad names it. */
   protected readonly linkedInDocumentDeletingId = computed<string>(() => this.campaignService.creativeVideoDeleting()?.id ?? '');
   /**
@@ -2508,7 +2545,7 @@ export class ImplementationTabComponent implements OnInit {
    * can never earn a video view, and with neither the campaign is created with no ad at all. Neither
    * creator checks the creative against the objective, so this is the only place it is enforced.
    */
-  protected readonly redditVideoPostError = computed(() => redditVideoPostError(this.redditObjective(), this.redditPostUrl()));
+  protected readonly redditVideoPostError = computed(() => redditVideoPostError(this.redditObjective(), this.redditPostUrl(), this.redditVideoPostSelected()));
   /**
    * Link to an EXISTING Reddit post to promote. Ungated, because both creators read it: the
    * legacy path extracts the post id and builds the ad from it (`reddit-ads.service.ts`), exactly
@@ -4834,6 +4871,18 @@ export class ImplementationTabComponent implements OnInit {
           subCountryGeoRefusal: this.redditSubCountryGeoRefusal(),
           videoGoalError: this.redditVideoGoalError(),
           videoPostError: this.redditVideoPostError(),
+          // Read only while a video post is chosen (#6108 row 8), so a create without one never reads the library.
+          videoAssetRefusal: this.redditVideoPostSelected()
+            ? redditVideoPostCreateRefusal(
+                this.redditVideoPost(),
+                this.redditVideoEnabled(),
+                this.googleCreativeLibrary(),
+                this.briefPersistence().briefId ?? '',
+                this.redditVideoDeletingId(),
+                { ...this.redditAdVariantsConfig(), ...this.redditVideoPostFields() },
+                this.redditAdVariantsAvailable()
+              )
+            : null,
           conversionEventBlock: this.redditConversionEventBlock()?.message ?? null,
           customAudiencesBlock: this.redditCustomAudiencesBlock()?.message ?? null,
           customAudiencesRefusal: redditCustomAudiencesDraftRefusal(this.redditCustomAudiences()),
@@ -6099,6 +6148,24 @@ export class ImplementationTabComponent implements OnInit {
     this.emitDraft();
   }
 
+  /** The video post as picked (#6108 row 8), kept in the draft once either asset is picked. */
+  protected onRedditVideoPostChange(videoPost: RedditVideoPostDraft): void {
+    this.redditVideoPost.set(videoPost);
+    this.emitDraft();
+  }
+
+  /**
+   * An MP4 chosen in the video post (#6108 row 8), queued into the brief's library the way the LinkedIn document editor
+   * queues its PDF, so it is listed there and offered to the video picker once stored (`onCreativeLibraryChanged`).
+   */
+  protected onRedditVideoUpload(files: File[]): void {
+    const briefId = this.briefPersistence().briefId ?? '';
+    const projectSlug = this.activeFoundationSlug();
+    // The editor holds its upload while a delete runs; this also refuses a pick that lands after it started.
+    if (!briefId || !projectSlug || this.redditVideoDeletingId() !== '') return;
+    this.campaignService.enqueueCreativeAssetUploads(files, projectSlug, briefId, { videos: true });
+  }
+
   /** The edited subreddits and interests, kept in the draft from now on (#6108 row 4). */
   protected onRedditTargetingListsChange(lists: RedditTargetingListsDraft): void {
     this.redditEditedTargetingLists.set(lists);
@@ -6501,21 +6568,23 @@ export class ImplementationTabComponent implements OnInit {
     else this.onLinkedInVariantImageRemove(key);
   }
 
-  /**
-   * A stored video the library deleted, or the operator took off the ads there: cleared from any Meta variant that names
-   * it (#6332), then from the LinkedIn ads (`onLibraryVideoDeleted`).
-   */
-  /** A stored video the library deleted (#6332): the library is read again, so no picker offers it, then it leaves the ads. */
+  /** A stored video the library deleted: the library is read again, so no picker offers it, then it leaves the ads. */
   protected onStoredVideoDeleted(assetId: string): void {
     this.onCreativeLibraryChanged();
     this.onLibraryVideoGone(assetId);
   }
 
+  /**
+   * A stored video the library deleted, or the operator took off the ads there: cleared from the Reddit video post that
+   * names it (#6108 row 8) and from any Meta variant that does (#6332), then from the LinkedIn ads (`onLibraryVideoDeleted`).
+   */
   protected onLibraryVideoGone(assetId: string): void {
-    if (this.metaVariantVideos().some((video) => video.assetId === assetId)) {
-      this.metaVariantVideos.update((videos) => metaVariantVideosWithout(videos, assetId));
-      this.emitDraft();
-    }
+    const redditVideoPost = redditVideoPostWithout(this.redditVideoPost(), assetId);
+    const redditHeld = redditVideoPost !== this.redditVideoPost();
+    const metaHeld = this.metaVariantVideos().some((video) => video.assetId === assetId);
+    if (redditHeld) this.redditVideoPost.set(redditVideoPost);
+    if (metaHeld) this.metaVariantVideos.update((videos) => metaVariantVideosWithout(videos, assetId));
+    if (redditHeld || metaHeld) this.emitDraft();
     this.onLibraryVideoDeleted(assetId);
   }
 
@@ -8055,8 +8124,8 @@ export class ImplementationTabComponent implements OnInit {
               subreddits: this.redditEffectiveSubreddits(),
               interests: this.redditTargetingLists().interests,
               keywords: this.redditKeywords().length > 0 ? this.redditKeywords() : this.briefKeywords().map((k) => k.term),
-              // The edits only while one ad per variant is offered (#6108 row 6), else the brief's, as before.
-              variants: this.redditAdVariants(),
+              // The edits only while one ad per variant is offered (#6108 row 6), else the brief's, as before; variant 1 alone with a video post (row 8).
+              variants: this.redditVariantsSentNow(),
               // Always sent, never conditioned on differing from the default: both creators fall
               // back to the same objective when it is absent, so an explicit value is the only
               // thing that makes the payload say what the screen shows.
@@ -8092,6 +8161,8 @@ export class ImplementationTabComponent implements OnInit {
               //
               // The image is ONE of an uploaded asset or the pasted URL — see `redditImageField`.
               ...this.redditImageField(),
+              // The stored video post, only on an explicit yes and once picked (#6108 row 8); Create holds an incomplete pair.
+              ...this.redditVideoPostFields(),
               ...(this.redditCreativeAvailable() && this.redditCallToAction() ? { callToAction: this.redditCallToAction() as RedditCallToAction } : {}),
               // Omitted when blank — upstream reads empty as "use the connection's pixel", the same
               // thing an absent key means — and gated on the capability, because the legacy
@@ -10445,6 +10516,7 @@ export class ImplementationTabComponent implements OnInit {
     if (redditRestore.failedUpload) this.failRedditImageUpload(redditRestore.failedUpload.message, redditRestore.failedUpload.briefId);
     if (redditRestore.pendingUpload) this.resumeRedditImageUpload(redditRestore.pendingUpload.name, redditRestore.pendingUpload.briefId);
     if (redditRestore.videoGoal !== undefined) this.redditVideoGoal.set(redditRestore.videoGoal);
+    if (redditRestore.videoPost !== undefined) this.redditVideoPost.set(redditRestore.videoPost);
     if (redditRestore.conversionEvent !== undefined) this.redditConversionEvent.set(redditRestore.conversionEvent);
     if (redditRestore.customAudiences !== undefined) this.redditCustomAudiences.set(redditRestore.customAudiences);
     if (redditRestore.targetingExclusions !== undefined) this.redditTargetingExclusions.set(redditRestore.targetingExclusions);
@@ -11040,6 +11112,7 @@ export class ImplementationTabComponent implements OnInit {
         uploadError: this.redditImageUploadError(),
         uploadFailedBriefId: this.redditImageUploadFailedBriefId(),
         videoGoal: this.redditVideoGoal(),
+        videoPost: this.redditVideoPost(),
         conversionEvent: this.redditConversionEvent(),
         customAudiences: this.redditCustomAudiences(),
         targetingExclusions: this.redditTargetingExclusions(),
@@ -11103,6 +11176,7 @@ export class ImplementationTabComponent implements OnInit {
     this.redditCallToAction.set(redditReset.callToAction);
     this.redditObjective.set(redditReset.objective);
     this.redditVideoGoal.set(redditReset.videoGoal);
+    this.redditVideoPost.set(redditReset.videoPost);
     this.redditConversionEvent.set(redditReset.conversionEvent);
     this.redditCustomAudiences.set(redditReset.customAudiences);
     this.redditTargetingExclusions.set(redditReset.targetingExclusions);
@@ -12042,6 +12116,8 @@ export class ImplementationTabComponent implements OnInit {
           this.linkedInDocumentSelected() ||
           // And a Meta carousel's cards (#6331), while stored images are offered.
           (this.metaCarouselSelected() && this.metaAssetUploadAvailable()) ||
+          // And a Reddit video post's video and thumbnail (#6108 row 8), while offered.
+          (this.showRedditSection() && this.redditVideoAvailable()) ||
           // And the Meta variants' video pickers (#6332).
           (this.showMetaSection() && this.metaVideoShown()),
       }),
@@ -13772,12 +13848,15 @@ export class ImplementationTabComponent implements OnInit {
    */
   private initRedditNoAdWarning(): Signal<string | null> {
     return computed(() =>
-      redditNoAdWarning({
-        showRedditSection: this.showRedditSection(),
-        postUrl: this.redditPostUrl(),
-        image: this.redditImageField(),
-        creativeAvailable: this.redditCreativeAvailable(),
-      })
+      // A video post (#6108 row 8) authors the post, so an ad is created.
+      this.redditVideoPostSelected()
+        ? null
+        : redditNoAdWarning({
+            showRedditSection: this.showRedditSection(),
+            postUrl: this.redditPostUrl(),
+            image: this.redditImageField(),
+            creativeAvailable: this.redditCreativeAvailable(),
+          })
     );
   }
 

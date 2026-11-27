@@ -833,6 +833,51 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     expect(submitReddit(off)['variants']).toEqual([{ headline: 'Brief reddit headline', destinationUrl: 'https://example.com/brief' }]);
   });
 
+  // A Reddit video post from stored assets (#6108 row 8): the rules are in `campaign-reddit-video.utils.spec.ts`; this tests
+  // the wiring, driven through the editor's binding so a handler that never emits fails here.
+  it('carries a picked video post through a tab round-trip into the request, and sends none once the capability is off', async () => {
+    const VIDEO = '3f2504e0-4f89-11d3-9a0c-0305e82c3301';
+    const THUMB = '6ba7b810-9dad-11d1-80b4-00c04fd430c8';
+    const listCreativeAssets = () =>
+      of({
+        assets: [{ id: THUMB, mimeType: 'image/png', byteSize: 2048, checksum: 'cd'.repeat(32) }],
+        videos: [{ id: VIDEO, byteSize: 4096, checksum: 'ab'.repeat(32) }],
+        documents: [],
+      });
+    Object.assign(TestBed.inject(CampaignService), { creativeVideoDeleting: () => null, listCreativeAssets });
+    const mountWithVideo = async (draft: CampaignImplementationDraft | null, enabled: boolean) => {
+      const mounted = await mount(draft);
+      mounted.fixture.componentRef.setInput('briefPersistence', { status: 'saved', briefId: 'b-1', message: null, approved: true });
+      mounted.fixture.componentRef.setInput('redditVideoEnabled', enabled);
+      at(mounted.fixture).selectedPlatforms.set(['reddit-ads']);
+      mounted.fixture.detectChanges();
+      await mounted.fixture.whenStable();
+      return mounted;
+    };
+    const picked = { videoAssetId: VIDEO, videoBriefId: 'b-1', thumbnailAssetId: THUMB, thumbnailBriefId: 'b-1' };
+
+    const first = await mountWithVideo(null, true);
+    expect(first.latest()).not.toHaveProperty('redditVideoPost');
+    first.fixture.debugElement.query(By.css('lfx-reddit-video-post')).triggerEventHandler('videoPostChange', picked);
+    const draft = first.latest();
+    expect(draft).toMatchObject({ redditVideoPost: picked });
+    // A stored video deleted in the library bumps the library revision, so the picker's library is read again and stops offering it.
+    const revision = (): number => (first.fixture.componentInstance as unknown as { creativeLibraryRevision: () => number }).creativeLibraryRevision();
+    const before = revision();
+    first.fixture.debugElement.query(By.css('lfx-creative-library-upload')).triggerEventHandler('videoDeleted', 'another-video');
+    expect(revision()).toBe(before + 1);
+    first.fixture.destroy();
+
+    const second = await mountWithVideo(draft, true);
+    expect(submitReddit(second.fixture)).toMatchObject({ videoAssetId: VIDEO, thumbnailAssetId: THUMB, variants: [{ headline: 'Brief reddit headline' }] });
+    second.fixture.destroy();
+    createCampaign.mockClear();
+
+    const off = (await mountWithVideo(draft, false)).fixture;
+    expect(off.nativeElement.querySelector('lfx-reddit-video-post')).toBeNull();
+    expect(submitReddit(off)).not.toHaveProperty('videoAssetId');
+  });
+
   // === The other platforms on the same live brief switch (#4624) ===
 
   /** The next brief: another event, same platforms. `strip` removes copy blocks the conditional resets key on. */

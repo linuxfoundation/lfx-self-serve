@@ -25,6 +25,7 @@ describe('redditDraftFields', () => {
     uploadError: 'Too big.',
     uploadFailedBriefId: '',
     videoGoal: 'VIDEO_VIEW_15S',
+    videoPost: { videoAssetId: 'v-1', videoBriefId: 'b1', thumbnailAssetId: 'i-1', thumbnailBriefId: 'b1' },
     conversionEvent: 'SIGN_UP',
     customAudiences: { customAudienceIds: ['aud_in'], excludedCustomAudienceIds: ['aud_out'] },
     targetingExclusions: { excludedSubreddits: ['politics'], excludedGeoTargets: ['CA'] },
@@ -50,6 +51,7 @@ describe('redditDraftFields', () => {
       redditImageUploadFailedMessage: '',
       redditImageUploadFailedBriefId: '',
       redditVideoGoal: 'VIDEO_VIEW_15S',
+      redditVideoPost: { videoAssetId: 'v-1', videoBriefId: 'b1', thumbnailAssetId: 'i-1', thumbnailBriefId: 'b1' },
       redditConversionEvent: 'SIGN_UP',
       redditCustomAudienceIds: ['aud_in'],
       redditExcludedCustomAudienceIds: ['aud_out'],
@@ -71,6 +73,11 @@ describe('redditDraftFields', () => {
     expect(fields).not.toHaveProperty('redditEditedSubreddits');
     expect(fields).not.toHaveProperty('redditEditedInterests');
     expect(fields).not.toHaveProperty('redditEditedVariants');
+  });
+
+  it('leaves a video post with nothing picked out (#6108 row 8)', () => {
+    const empty = { videoAssetId: '', videoBriefId: '', thumbnailAssetId: '', thumbnailBriefId: '' };
+    expect(redditDraftFields({ ...state, videoPost: empty })).not.toHaveProperty('redditVideoPost');
   });
 
   it.each([
@@ -170,6 +177,20 @@ describe('redditDraftRestore', () => {
   });
 });
 
+// The field rules are `redditVideoPostFromDraft`'s (campaign-reddit-video.utils.spec.ts); this tests the key.
+describe('redditDraftRestore: video post', () => {
+  it.each<[string, unknown, unknown]>([
+    ['no key (an older draft)', undefined, undefined],
+    [
+      'the picks',
+      { videoAssetId: 'v-1', videoBriefId: 'b1', thumbnailAssetId: 'i-1', thumbnailBriefId: 'b1' },
+      { videoAssetId: 'v-1', videoBriefId: 'b1', thumbnailAssetId: 'i-1', thumbnailBriefId: 'b1' },
+    ],
+  ])('restores %s', (_name, stored, expected) => {
+    expect(redditDraftRestore(draft({ redditVideoPost: stored } as RedditDraftSnapshot)).videoPost).toEqual(expected);
+  });
+});
+
 describe('redditDraftRestore: custom audiences', () => {
   it.each<[string, Partial<RedditDraftSnapshot>, unknown]>([
     [
@@ -266,6 +287,7 @@ describe('redditBriefReset', () => {
       callToAction: '',
       objective: DEFAULT_REDDIT_OBJECTIVE,
       videoGoal: '',
+      videoPost: { videoAssetId: '', videoBriefId: '', thumbnailAssetId: '', thumbnailBriefId: '' },
       conversionEvent: 'PURCHASE',
       customAudiences: { customAudienceIds: [], excludedCustomAudienceIds: [] },
       targetingExclusions: { excludedSubreddits: [], excludedGeoTargets: [] },
