@@ -35,6 +35,7 @@ import { compactLinkedInVariantFields, linkedInVariantFieldsRefusal } from '@lfx
 import { linkedInVideoVariantsRefusal } from '@lfx-one/shared/utils/campaign-linkedin-video.utils';
 import { linkedInCarouselRefusal } from '@lfx-one/shared/utils/campaign-linkedin-carousel.utils';
 import { linkedInBoostRefusal } from '@lfx-one/shared/utils/campaign-linkedin-boost.utils';
+import { linkedInDeliveryOptionsRefusal } from '@lfx-one/shared/utils/campaign-linkedin-delivery-options.utils';
 import { linkedInConfigIsDocument, linkedInDocumentRefusal } from '@lfx-one/shared/utils/campaign-linkedin-document.utils';
 import { linkedInTargetCostRefusal } from '@lfx-one/shared/utils/campaign-linkedin-target-cost.utils';
 import {
@@ -468,6 +469,7 @@ import {
   canSetLinkedInCallToAction,
   canSetLinkedInCarousel,
   canSetLinkedInBoost,
+  canSetLinkedInDeliveryOptions,
   canSetLinkedInDocument,
   canSetLinkedInConversions,
   canSetLinkedInLeadGen,
@@ -1573,6 +1575,15 @@ export class CampaignController {
       const linkedInBoostRefused = linkedInBoostRefusal(body?.linkedInConfig, canSetLinkedInBoost());
       if (linkedInBoostRefused !== null) {
         throw ServiceValidationError.forField(linkedInBoostRefused.field, linkedInBoostRefused.message, {
+          operation: 'campaign_create',
+          service: 'campaign_controller',
+        });
+      }
+      // LinkedIn Audience Expansion and Audience Network (campaign-service#667): refused, never dropped, while this
+      // deployment cannot send them, and held to campaign-service's rules. See `linkedInDeliveryOptionsRefusal`.
+      const linkedInDeliveryOptionsRefused = linkedInDeliveryOptionsRefusal(body?.linkedInConfig, canSetLinkedInDeliveryOptions());
+      if (linkedInDeliveryOptionsRefused !== null) {
+        throw ServiceValidationError.forField(linkedInDeliveryOptionsRefused.field, linkedInDeliveryOptionsRefused.message, {
           operation: 'campaign_create',
           service: 'campaign_controller',
         });

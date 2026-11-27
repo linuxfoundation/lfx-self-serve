@@ -452,4 +452,31 @@ describe('CampaignController LinkedIn config keys (#5764)', () => {
     expect(legacyCreate).not.toHaveBeenCalled();
     expect(refusal(next).field).toBe('linkedInConfig.format');
   });
+
+  // LinkedIn Audience Expansion and Audience Network (campaign-service#667); the rules are table rows in
+  // `campaign-linkedin-delivery-options.utils.spec.ts`.
+  const delivery = {
+    lifetimeBudget: false,
+    targetingProfile: 'cloud-native',
+    variants: [variant],
+    audienceExpansionEnabled: true,
+    offsiteDeliveryEnabled: true,
+  };
+
+  it('forwards the delivery options as they came', async () => {
+    const { next } = await create(delivery);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(sentLinkedInConfig()).toMatchObject({ audienceExpansionEnabled: true, offsiteDeliveryEnabled: true });
+  });
+
+  it('refuses the delivery options while their flag is off, before anything is created', async () => {
+    isServerFeatureEnabled.mockImplementation((flag) => flag !== ServerFeatureFlag.CampaignServiceLinkedInDeliveryOptions);
+
+    const { next } = await create(delivery);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    expect(legacyCreate).not.toHaveBeenCalled();
+    expect(refusal(next).field).toBe('linkedInConfig.audienceExpansionEnabled');
+  });
 });
