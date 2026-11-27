@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { formatDate } from '@angular/common';
 import { PLATFORM_ID, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
@@ -12,10 +13,14 @@ import {
   MKTG_FAMILY_PRINT_SEP,
   MKTG_KIT_POSITIONING_FAMILY_ID,
   MKTG_SLIDES_EXPORT_START_MESSAGES,
+  MKTG_FAMILY_EXPORT_ACTIVE,
+  MKTG_FAMILY_EXPORT_ACTIVE_TTL_MS,
+  MKTG_FAMILY_EXPORT_FOLLOWED_MESSAGES,
   MKTG_FAMILY_EXPORT_HIGHLIGHT_MS,
   MKTG_FAMILY_EXPORT_FORMAT_HINT,
   MKTG_POLL_RETRYING_TEXT,
   MKTG_RUN_POLL,
+  MKTG_SLIDES_EXPORT_POLL,
 } from '@lfx-one/shared/constants';
 import { MktgFamilyExportService } from '@services/mktg-family-export.service';
 import { MktgPrintService } from '@services/mktg-print.service';
@@ -796,6 +801,163 @@ describe('Family export slot', () => {
     if (change !== 'destroy') await fixture.whenStable();
     expect(print.printNow).not.toHaveBeenCalled();
     if (change === 'writer') expect(fixture.componentInstance['printView']()).toBeNull();
+  });
+
+  describe('one export at a time', () => {
+    const STARTED_AT = '2026-11-27T10:00:00.000Z';
+    const started = `(started ${formatDate(STARTED_AT, 'HH:mm', 'en-US')})`;
+    const other = { startedBy: 'Dana Example', startedByViewer: false, startedAt: STARTED_AT };
+    const following = (root: HTMLElement) => root.querySelector('[data-testid="family-export-following"]');
+    const followed = (root: HTMLElement) => root.querySelector('[data-testid="family-export-followed"]')?.textContent ?? null;
+    /** The follow poll runs on rxjs timers, and its deadline on the clock: both are the test's to move. */
+    const pollClock = () => vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
+    async function tick(fixture: { whenStable: () => Promise<unknown>; detectChanges: () => void }, ms: number = MKTG_SLIDES_EXPORT_POLL.intervalMs) {
+      await vi.advanceTimersByTimeAsync(ms);
+      await fixture.whenStable();
+      fixture.detectChanges();
+    }
+
+    it('follows the export its own start was refused for: who and since when, no error, then that export’s deck', async () => {
+      pollClock();
+      const errorLog = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      api.run.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 409, error: { code: MKTG_FAMILY_EXPORT_ACTIVE, ...other } })));
+      const { fixture, root, button } = await setup();
+      const prepared = api.printView.mock.calls.length;
+      api.last.mockClear();
+      api.last.mockReturnValue(of({ ...lookup(), running: other }));
+      button('slides')?.click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      // An answer, not a failure: the card says who holds the family and holds its own Slides export; the PDF is not touched.
+      expect(following(root)?.getAttribute('role')).toBe('status');
+      expect(following(root)?.textContent?.trim()).toBe(
+        `Dana Example is exporting this family to Google Slides ${started}. The deck appears here when it is ready.`
+      );
+      expect(root.querySelector('[data-testid="family-export-error"]')).toBeNull();
+      expect(root.textContent).not.toContain('Try exporting again');
+      expect(errorLog).not.toHaveBeenCalled();
+      expect(button('slides')?.disabled).toBe(true);
+      // The server's answer is read at once, then on the export's cadence while it names that export.
+      expect(api.last).toHaveBeenCalledTimes(1);
+      expect(api.last).toHaveBeenLastCalledWith(expect.anything(), true);
+      await tick(fixture);
+      expect(api.last).toHaveBeenCalledTimes(2);
+      expect(following(root)).not.toBeNull();
+      // Another writer's Slides export is not the PDF's business: it is neither held nor prepared again.
+      expect(api.printView).toHaveBeenCalledTimes(prepared);
+      expect(root.querySelector('[data-testid="family-export-loading"]')).toBeNull();
+      // Its record is kept before the family is freed: the read that names nobody carries the deck.
+      api.last.mockReturnValue(of({ ...lookup(), last: familyExportRecord({ exportedAt: '2026-11-27T10:01:30.000Z' }) }));
+      await tick(fixture);
+      expect(following(root)).toBeNull();
+      expect(followed(root)).toBe(MKTG_FAMILY_EXPORT_FOLLOWED_MESSAGES.done);
+      expect(root.querySelector('[data-testid="family-export-last-link"]')?.getAttribute('href')).toBe(familyExportRecord().link);
+      expect(button('slides')?.disabled).toBe(false);
+      // Nothing is read once the export is over.
+      const reads = api.last.mock.calls.length;
+      await tick(fixture, MKTG_SLIDES_EXPORT_POLL.intervalMs * 5);
+      expect(api.last).toHaveBeenCalledTimes(reads);
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    });
+
+    it('follows an export already in flight when the page opens, and says so when it ends without a deck', async () => {
+      pollClock();
+      const earlier = familyExportRecord();
+      api.last.mockReturnValue(of({ ...lookup(), last: earlier, running: { startedBy: null, startedByViewer: true, startedAt: STARTED_AT } }));
+      const { fixture, root, button } = await setup();
+      expect(following(root)?.textContent?.trim()).toBe(
+        `Your export of this family to Google Slides is running ${started}. The deck appears here when it is ready.`
+      );
+      // No second start, and no chooser to start one from.
+      expect(button('slides')?.disabled).toBe(true);
+      button('slides')?.click();
+      await fixture.whenStable();
+      expect(button('update')).toBeNull();
+      expect(api.run).not.toHaveBeenCalled();
+      // The same last export as when following began: that export kept no deck.
+      api.last.mockReturnValue(of({ ...lookup(), last: earlier }));
+      await tick(fixture);
+      expect(following(root)).toBeNull();
+      expect(followed(root)).toBe(MKTG_FAMILY_EXPORT_FOLLOWED_MESSAGES.ended);
+      expect(button('slides')?.disabled).toBe(false);
+      // The next export clears the line.
+      button('slides')?.click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(button('update')).not.toBeNull();
+      expect(followed(root)).toBeNull();
+      vi.useRealTimers();
+    });
+
+    it('names another writer without a display name as nobody in particular, and stops reading on its own at the marker’s deadline', async () => {
+      pollClock();
+      api.last.mockReturnValue(of({ ...lookup(), running: { startedBy: null, startedByViewer: false, startedAt: STARTED_AT } }));
+      const { fixture, root, button } = await setup();
+      expect(following(root)?.textContent).toContain('Another writer is exporting this family to Google Slides');
+      // A server that never stops naming the export is still read no longer than a marker can hold the family.
+      await tick(fixture, MKTG_FAMILY_EXPORT_ACTIVE_TTL_MS);
+      const reads = api.last.mock.calls.length;
+      expect(reads).toBeGreaterThan(MKTG_FAMILY_EXPORT_ACTIVE_TTL_MS / MKTG_SLIDES_EXPORT_POLL.intervalMs - 2);
+      await tick(fixture, MKTG_SLIDES_EXPORT_POLL.intervalMs * 10);
+      expect(api.last.mock.calls.length).toBeLessThanOrEqual(reads + 1);
+      // The card still says what the server last said, and starts nothing over it.
+      expect(following(root)).not.toBeNull();
+      expect(button('slides')?.disabled).toBe(true);
+      vi.useRealTimers();
+    });
+
+    it('names nobody on a refusal that carries no facts, and the next read says how that export ended', async () => {
+      pollClock();
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      api.run.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 409, error: { code: MKTG_FAMILY_EXPORT_ACTIVE, startedBy: 'a@b.example' } })));
+      const pending = new Subject<MktgFamilyExportLastResponse>();
+      const { fixture, root, button } = await setup();
+      api.last.mockReturnValue(pending);
+      button('slides')?.click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(followed(root)).toBe(MKTG_SLIDES_EXPORT_START_MESSAGES[MKTG_FAMILY_EXPORT_ACTIVE]);
+      expect(root.textContent).not.toContain('a@b.example');
+      expect(root.querySelector('[data-testid="family-export-error"]')).toBeNull();
+      pending.next(lookup());
+      pending.complete();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(followed(root)).toBe(MKTG_FAMILY_EXPORT_FOLLOWED_MESSAGES.ended);
+      expect(button('slides')?.disabled).toBe(false);
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    });
+
+    it('never follows its own run: a re-read that names it leaves the progress line, and no second reader starts', async () => {
+      pollClock();
+      const { fixture, root, button } = await setup();
+      button('slides')?.click();
+      // The run's first update, as the client service emits it on subscribe.
+      run.next({ mode: 'create', logoNote: null, skippedMembers: [], result: null });
+      await fixture.whenStable();
+      api.last.mockClear();
+      api.last.mockReturnValue(of({ ...lookup(), running: { startedBy: null, startedByViewer: true, startedAt: STARTED_AT } }));
+      window.dispatchEvent(new Event('focus'));
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(api.last).toHaveBeenCalledTimes(1);
+      expect(following(root)).toBeNull();
+      expect(root.querySelector('[data-testid="family-export-progress"]')).not.toBeNull();
+      await tick(fixture, MKTG_SLIDES_EXPORT_POLL.intervalMs * 3);
+      expect(api.last).toHaveBeenCalledTimes(1);
+      // Its own result ends it: the server freed the family before it answered.
+      api.last.mockReturnValue(of({ ...lookup(), last: familyExportRecord() }));
+      run.next({ mode: 'create', logoNote: null, skippedMembers: [], result: { status: 'ready', record: familyExportRecord() } });
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(root.textContent).toContain('Your deck is ready');
+      expect(following(root)).toBeNull();
+      expect(followed(root)).toBeNull();
+      expect(button('slides')?.disabled).toBe(false);
+      vi.useRealTimers();
+    });
   });
 
   it('refreshes cached server truth on every page entry without restarting a running export', async () => {

@@ -3,12 +3,13 @@
 
 import {
   MKTG_DOCUMENT_TYPES,
+  MKTG_FAMILY_EXPORT_ACTIVE,
   MKTG_FAMILY_EXPORT_API_PATH,
   MKTG_FAMILY_EXPORT_KINDS,
   MKTG_PORTRAIT_PAGE,
   SELECTED_PROJECT_COOKIE_KEY,
 } from '@lfx-one/shared/constants';
-import type { FaqContent, MktgDocumentsResponse, MktgRevisionResponse } from '@lfx-one/shared/interfaces';
+import type { FaqContent, MktgDocumentsResponse, MktgFamilyExportRunning, MktgRevisionResponse } from '@lfx-one/shared/interfaces';
 import { expect, Locator, Page } from '@playwright/test';
 import { familyExportMember, familyExportRecord, familyExportStarted } from '../../src/app/shared/testing/mktg-family-export-test-data';
 import { mockProjects } from '../fixtures/mock-data/projects.mock';
@@ -35,6 +36,8 @@ export async function openFamilyExports(
     faqContent?: FaqContent;
     /** The synthetic project's name instead of the canonical one (a long name, for the running head's measure). */
     projectName?: string;
+    /** An export of this family already in flight when the page opens: another writer's, or the viewer's own from elsewhere. */
+    running?: MktgFamilyExportRunning;
   } = {}
 ) {
   await suppressCookieBanner(page);
@@ -136,6 +139,9 @@ export async function openFamilyExports(
   let ready = options.result !== 'pending';
   let started = familyExportStarted(DOCUMENT_PROJECT.uid);
   let lookupReads = 0;
+  // The export that holds the family, as the BFF's marker would: reported on `/last` and the reason `/start` is refused.
+  // Written only here, by `hold` and by `release`; `/result` never reads it (it polls this page's own export).
+  let holder: MktgFamilyExportRunning | null = options.running ?? null;
   await page.route(`**${MKTG_FAMILY_EXPORT_API_PATH}/**`, (route) => {
     const path = new URL(route.request().url()).pathname;
     if (path.endsWith('/last')) {
@@ -147,10 +153,16 @@ export async function openFamilyExports(
           currentMembers: options.empty ? [] : members,
           skippedMembers: options.allAssets ? [] : ['brand-kit', 'boilerplates', 'faq'],
           stale: options.stale ?? false,
+          running: holder,
         },
       });
     }
     if (path.endsWith('/start')) {
+      // One export of a family at a time: nothing is started, and the body says who holds it and since when.
+      if (holder) {
+        const message = 'An export of this family is already running. Its deck appears here when it is ready.';
+        return route.fulfill({ status: 409, json: { ...holder, message, error: message, code: MKTG_FAMILY_EXPORT_ACTIVE } });
+      }
       const mode = route.request().postDataJSON().mode;
       started = { ...started, snapshot: { ...started.snapshot, mode, deckId: mode === 'update' ? (record?.deckId ?? null) : null } };
       return route.fulfill({ json: started });
@@ -184,6 +196,23 @@ export async function openFamilyExports(
     },
     lookupReads: () => lookupReads,
     releasePrint,
+    /** Another start takes the family after this page read it: the next `/start` is refused and `/last` reports that export. */
+    hold: (running: MktgFamilyExportRunning) => {
+      holder = running;
+    },
+    /** The export that holds the family ends: with its deck as the family's last export (kept before the family is freed), or with nothing kept. */
+    release: (deck: boolean) => {
+      if (deck) {
+        const deckId = 'synthetic_other_deck_123';
+        record = familyExportRecord({
+          project: DOCUMENT_PROJECT.uid,
+          deckId,
+          link: `https://docs.google.com/presentation/d/${deckId}/edit`,
+          exportedAt: '2026-11-27T10:01:30.000Z',
+        });
+      }
+      holder = null;
+    },
   };
 }
 

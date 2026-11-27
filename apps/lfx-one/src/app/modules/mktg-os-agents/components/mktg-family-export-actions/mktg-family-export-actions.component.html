@@ -14,8 +14,8 @@
     <lfx-button label="Download PDF" [disabled]="!canPrint()" [outlined]="true" [fluid]="true" data-testid="family-export-pdf" (onClick)="downloadPdf()" />
     <lfx-button
       label="Export to Google Slides"
-      [disabled]="!canExport()"
-      [loading]="phase() === 'running'"
+      [disabled]="!canExportSlides()"
+      [loading]="phase() === 'running' || !!following()"
       [outlined]="true"
       [fluid]="true"
       data-testid="family-export-slides"
@@ -39,10 +39,15 @@
           <p class="text-sm text-gray-700">
             A deck already exists for this family. Update it in place (same link, same sharing), or create a new deck in Google Drive.
           </p>
-          <lfx-button label="Update the existing deck" [disabled]="!canExport()" size="small" data-testid="family-export-update" (onClick)="choose('update')" />
+          <lfx-button
+            label="Update the existing deck"
+            [disabled]="!canExportSlides()"
+            size="small"
+            data-testid="family-export-update"
+            (onClick)="choose('update')" />
           <lfx-button
             label="Create a new deck"
-            [disabled]="!canExport()"
+            [disabled]="!canExportSlides()"
             [outlined]="true"
             size="small"
             data-testid="family-export-create"
@@ -60,6 +65,15 @@
         @case ('failed') {
           <p class="text-xs text-gray-500">Try exporting again. If the existing deck is unavailable, choose Create a new deck.</p>
         }
+      }
+      @if (following(); as running) {
+        <!-- One export of a family at a time: the card of whoever did not start it here says who did and when, and waits for its deck. -->
+        <p role="status" class="text-sm text-gray-700" data-testid="family-export-following">
+          {{ followingLead() }} (started {{ running.startedAt | date: 'HH:mm' }}). The deck appears here when it is ready.
+        </p>
+      }
+      @if (followedNote()) {
+        <p class="text-xs text-gray-500" data-testid="family-export-followed">{{ followedNote() }}</p>
       }
       @if (message()) {
         <lfx-message severity="error" [text]="message()" data-testid="family-export-error" />

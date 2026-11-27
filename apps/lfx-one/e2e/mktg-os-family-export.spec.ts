@@ -4,6 +4,7 @@
 import { expect, test } from '@playwright/test';
 import {
   MKTG_FAMILY_EXPORT_API_PATH,
+  MKTG_FAMILY_EXPORT_FOLLOWED_MESSAGES,
   MKTG_FAMILY_PRINT_BODY_CLASS,
   MKTG_FAMILY_PRINT_HEAD_TIGHT_CLASS,
   MKTG_FAMILY_PRINT_LABELS,
@@ -85,6 +86,54 @@ for (const mode of ['update', 'create'] as const) {
     await page.screenshot({ path: info.outputPath(`${mode}-family-deck.png`), fullPage: true });
   });
 }
+
+// The stub mirrors the BFF's answers (409 with who and when on `/start`, `running` on `/last`): these cases show what the
+// card does with them. That only one start wins is the server spec's to prove (mktg-slides-export.service.spec.ts).
+test('a second export is refused while another runs: the card names who started it, then shows that export’s deck', async ({ page }, info) => {
+  const controls = await openFamilyExports(page, { existing: true });
+  const slides = page.getByTestId('family-export-slides').getByRole('button');
+  await expect(slides).toBeEnabled();
+  // Another writer starts after this page read the family, so the server refuses this start.
+  controls.hold({ startedBy: 'Dana Example', startedByViewer: false, startedAt: '2026-11-27T10:00:00.000Z' });
+  await slides.click();
+  const refused = page.waitForResponse((response) => response.url().endsWith('/family/start'));
+  await page.getByTestId('family-export-update').getByRole('button').click();
+  expect((await refused).status()).toBe(409);
+  const following = page.getByTestId('family-export-following');
+  await expect(following).toContainText('Dana Example is exporting this family to Google Slides (started ');
+  await expect(following).toContainText('The deck appears here when it is ready.');
+  // An answer, not a failure: no error, no chooser, no second start; the PDF is not held.
+  await expect(page.getByTestId('family-export-error')).toHaveCount(0);
+  await expect(page.getByTestId('family-export-update')).toHaveCount(0);
+  await expect(slides).toBeDisabled();
+  await expect(page.getByTestId('family-export-pdf').getByRole('button')).toBeEnabled();
+  await page.screenshot({ path: info.outputPath('following-another-export.png'), fullPage: true });
+  controls.release(true);
+  await expect(page.getByTestId('family-export-followed')).toHaveText(MKTG_FAMILY_EXPORT_FOLLOWED_MESSAGES.done, { timeout: 15_000 });
+  await expect(following).toHaveCount(0);
+  await expect(page.getByTestId('family-export-last-link')).toHaveAttribute('href', 'https://docs.google.com/presentation/d/synthetic_other_deck_123/edit');
+  await expect(slides).toBeEnabled();
+  await page.screenshot({ path: info.outputPath('followed-export-deck.png'), fullPage: true });
+});
+
+test('an export already in flight holds the card when the page opens, and frees it when it ends without a deck', async ({ page }, info) => {
+  const controls = await openFamilyExports(page, {
+    existing: true,
+    running: { startedBy: null, startedByViewer: true, startedAt: '2026-11-27T10:00:00.000Z' },
+  });
+  const slides = page.getByTestId('family-export-slides').getByRole('button');
+  await expect(page.getByTestId('family-export-following')).toContainText('Your export of this family to Google Slides is running (started ');
+  await expect(slides).toBeDisabled();
+  const reads = controls.lookupReads();
+  // The card reads the server again on its own while that export runs.
+  await expect.poll(() => controls.lookupReads(), { timeout: 15_000 }).toBeGreaterThan(reads);
+  controls.release(false);
+  await expect(page.getByTestId('family-export-followed')).toHaveText(MKTG_FAMILY_EXPORT_FOLLOWED_MESSAGES.ended, { timeout: 15_000 });
+  await expect(page.getByTestId('family-export-following')).toHaveCount(0);
+  await expect(page.getByTestId('family-export-last-link')).toHaveAttribute('href', 'https://docs.google.com/presentation/d/synthetic_deck_123/edit');
+  await expect(slides).toBeEnabled();
+  await page.screenshot({ path: info.outputPath('followed-export-ended.png'), fullPage: true });
+});
 
 test('shows the stale badge without hiding the last link', async ({ page }, info) => {
   await openFamilyExports(page, { existing: true, stale: true });

@@ -35,6 +35,7 @@ import {
   mktgFamilyPrintNumberConflicts,
   mktgPrintBrand,
   readBrandKitRevision,
+  readMktgFamilyExportRunning,
 } from '@lfx-one/shared/utils';
 import { pollMktgSlidesExport } from '@shared/utils/mktg-slides-export-poll.util';
 import { catchError, finalize, forkJoin, map, Observable, shareReplay, startWith, switchMap, take, throwError } from 'rxjs';
@@ -55,6 +56,8 @@ export class MktgFamilyExportService {
     const params = new HttpParams().set('project', target.project).set('familyId', target.familyId);
     const lookup = this.http.get<MktgFamilyExportLastResponse>(`${MKTG_FAMILY_EXPORT_API_PATH}/last`, { params }).pipe(
       take(1),
+      // Who is exporting reaches a card only as validated display facts; an answer without them says nothing is running.
+      map((response) => ({ ...response, running: readMktgFamilyExportRunning(response.running) })),
       catchError((error: unknown) => {
         // Status only: the poller re-reads through an outage, and no upstream payload may enter diagnostics on each retry.
         console.error('[mktg-family-export] Last export read failed', { status: error instanceof HttpErrorResponse ? error.status : 0 });
