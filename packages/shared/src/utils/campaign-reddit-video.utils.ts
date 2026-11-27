@@ -50,8 +50,9 @@ function variantCount(record: Record<string, unknown>): number | null {
 
 /**
  * `text` as Go's `github.com/google/uuid` `Parse` reads it, in canonical lower-case form, or `null` when it would refuse
- * it. `Parse` takes the hyphenated 36-character form, that form in braces or after `urn:uuid:` (any case), and the 32
- * hex digits without hyphens.
+ * it. `Parse` takes the hyphenated 36-character form, that form after `urn:uuid:` (any case) or between any two
+ * one-byte characters (meant for braces, but `Parse` checks neither), and the 32 hex digits without hyphens. A
+ * non-ASCII wrapper is more than one byte in Go, so it is refused.
  */
 export function goParseUuid(text: string): string | null {
   let body = text;
@@ -59,7 +60,7 @@ export function goParseUuid(text: string): string | null {
     if (text.slice(0, 9).toLowerCase() !== 'urn:uuid:') return null;
     body = text.slice(9);
   } else if (text.length === 38) {
-    if (text[0] !== '{' || text[37] !== '}') return null;
+    if (text.charCodeAt(0) > 0x7f || text.charCodeAt(37) > 0x7f) return null;
     body = text.slice(1, 37);
   }
   let hex: string;
@@ -118,7 +119,7 @@ export function redditVideoRefusal(raw: unknown, enabled: boolean, adPerVariantE
       message: 'Reddit video posts are not enabled on this deployment. Remove the video and its thumbnail and create again.',
     };
   }
-  if (video === '') return { field: THUMBNAIL_FIELD, message: 'A thumbnail belongs to a video post. Add the video, or remove the thumbnail.' };
+  if (video === '') return { field: VIDEO_FIELD, message: 'A thumbnail belongs to a video post. Add the video, or remove the thumbnail.' };
   if (thumbnail === '') return { field: THUMBNAIL_FIELD, message: 'Reddit requires a thumbnail for a video post. Upload a PNG or JPEG for it.' };
   if (['postUrl', 'imageUrl', 'imageAssetId'].some((key) => setText(config, key))) {
     return { field: VIDEO_FIELD, message: 'A video post cannot also promote an existing post or carry an image. Keep only the video.' };

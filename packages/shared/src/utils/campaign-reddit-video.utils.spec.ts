@@ -42,7 +42,7 @@ describe('redditVideoRefusal', () => {
     // The flag, before any rule on the values.
     ['a video while off', { videoAssetId: 'not-a-uuid', imageUrl: 'https://img.example/a.png' }, false, false, 'redditConfig.videoAssetId', 'not enabled'],
     ['only a thumbnail while off', { thumbnailAssetId: THUMB }, false, false, 'redditConfig.thumbnailAssetId', 'not enabled'],
-    ['a thumbnail without a video', { videoAssetId: ' ', thumbnailAssetId: THUMB }, true, false, 'redditConfig.thumbnailAssetId', 'Add the video'],
+    ['a thumbnail without a video', { videoAssetId: ' ', thumbnailAssetId: THUMB }, true, false, 'redditConfig.videoAssetId', 'Add the video'],
     ['a video without a thumbnail', { videoAssetId: VIDEO }, true, false, 'redditConfig.thumbnailAssetId', 'requires a thumbnail'],
     ['a video with postUrl', post({ postUrl: 'https://reddit.example/p' }), true, false, 'redditConfig.videoAssetId', 'Keep only the video'],
     ['a video with imageUrl', post({ imageUrl: 'https://img.example/a.png' }), true, false, 'redditConfig.videoAssetId', 'Keep only the video'],
@@ -95,7 +95,10 @@ describe('goParseUuid', () => {
     [VIDEO.replace(/-/g, ''), VIDEO],
     [`{${VIDEO.replace(/-/g, '')}}`, null],
     [`urn:uuid:${VIDEO.replace(/-/g, '')}`, null],
-    [`(${VIDEO})`, null],
+    // `Parse` strips any one-byte wrapper without checking it.
+    [`(${VIDEO})`, VIDEO],
+    [`x${VIDEO}y`, VIDEO],
+    [`é${VIDEO}}`, null],
     [VIDEO.replace('-', '_'), null],
     [VIDEO.replace('3f', 'zz'), null],
     ['', null],

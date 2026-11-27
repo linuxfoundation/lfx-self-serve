@@ -3128,7 +3128,7 @@ export class CampaignServiceClient {
       Number.isFinite(list.bytes_used) &&
       typeof list.bytes_limit === 'number' &&
       Number.isFinite(list.bytes_limit);
-    // A LinkedIn video (#5764 row 18) shares the brief's store but is no image any image slot can use, so it is listed
+    // A LinkedIn video (#5764 row 18) or a Reddit video post's MP4 (#6108 row 8) shares the brief's store but is no image any image slot can use, so it is listed
     // apart, as `videos`, where it can be deleted to free the quota. `count` and `bytesUsed` stay upstream's.
     const isVideo = (asset: CampaignServiceCreativeAsset | undefined) => asset?.mime_type === CREATIVE_ASSET_VIDEO_MIME_TYPE;
     // Likewise a PDF (campaign-service#665), which only a LinkedIn document ad uses, listed as `documents`.

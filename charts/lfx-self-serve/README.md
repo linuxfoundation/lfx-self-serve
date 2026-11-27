@@ -560,8 +560,9 @@ campaign-service's flag is on and probed. The Implement tab's headline editor fo
 on), and needs `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_ASSETS` on as well, since Reddit fetches the video and its thumbnail
 from the same signed URLs as a stored image. Off (the default), the create route refuses `redditConfig.videoAssetId` and
 `thumbnailAssetId` with a 400, since the legacy creator ignores them. On, the creative-asset upload also takes an MP4,
-and the create route refuses what campaign-service would: a missing thumbnail, a video beside a post URL or an image, a
-video with 2 or more variants while `..._REDDIT_AD_PER_VARIANT` is on, or an id that is not a UUID. Keep it off until
+and the create route refuses what campaign-service would: a thumbnail without a video or a video without one, a video
+beside a post URL or an image, a video with 2 or more variants while `..._REDDIT_AD_PER_VARIANT` is on, an id that is
+not a UUID, or the same id twice. Keep it off until
 campaign-service's flag is on and probed. The Implement tab's video upload follows in a later change.
 
 `LFX_CUTOVER_CAMPAIGN_SERVICE_META_AUDIENCE_TARGETING` is of the Bidding kind too: does the deployed
