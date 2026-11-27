@@ -26,6 +26,7 @@ import {
   MKTG_RUN_POLL,
   VISIBILITY_POLL_WAKE_DEBOUNCE_MS,
   MKTG_RUN_ACTIVE,
+  MKTG_RUN_CLOSED,
   MKTG_RUN_RESUME_QUERY_CLEAR,
   MKTG_AGENT_INTAKES,
   MKTG_AGENTS,
@@ -1655,6 +1656,24 @@ describe('MktgDocumentViewComponent', () => {
       expect(pending.clear).toHaveBeenCalledWith(PROJECT.uid, 'run-012345678901234567890123');
     });
 
+    it('ends plainly when the server closed the audit this browser waits on (409 MKTG_RUN_CLOSED): the closed line, Run again, no further poll', async () => {
+      // Another tab chose "Discard and start over": this tab still holds the capability of the discarded audit.
+      store.getDocument.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
+      pending.load.mockReturnValue({ agentId: 'aeo-geo', projectUid: PROJECT.uid, documentId: 'run-012345678901234567890123', phase: 'writing' });
+      pending.waitForStorage.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 409, error: { code: MKTG_RUN_CLOSED } })));
+      await render('/documents/aeo-geo/run-012345678901234567890123');
+      expect(query('mktg-document-view-error')?.textContent).toContain('This audit was closed. Start a new audit.');
+      expect(query('mktg-document-view-run-again')).not.toBeNull();
+      expect(query('mktg-document-view-generating')).toBeNull();
+      expect(query('mktg-document-view-refresh-warning')).toBeNull();
+      // A closed run stays closed: a return to the tab reads and polls nothing again.
+      window.dispatchEvent(new Event('focus'));
+      await settle();
+      expect(pending.waitForStorage).toHaveBeenCalledTimes(1);
+      expect(store.getDocument).toHaveBeenCalledTimes(1);
+      expect(query('mktg-document-view-error')?.textContent).toContain('This audit was closed. Start a new audit.');
+    });
+
     it('keeps the loading indicator while the effective user is unresolved', async () => {
       viewer.set(null);
       await render('/documents/aeo-geo/run-012345678901234567890123');
@@ -2754,6 +2773,41 @@ describe('MktgDocumentViewComponent', () => {
     expect(service.resume).toHaveBeenCalledExactlyOnceWith(pending);
     expect(query('mktg-document-view-run')).not.toBeNull();
     expectNoKitAssetChrome();
+  });
+
+  it('treats a one-off result poll refused as closed (409 MKTG_RUN_CLOSED) as no failure: the record read ends on the closed run', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === 'linkedin-post');
+    const intake = MKTG_AGENT_INTAKES[type?.catalogAgentId ?? ''];
+    if (!type || !intake) throw new Error('Missing synthetic one-off registration');
+    const documentId = 'run-' + 'a'.repeat(24);
+    const pending: MktgPendingGeneration = {
+      request: { projectUid: PROJECT.uid, agentId: intake.agentId, intake, documentId, answers: {} },
+      attempt: {
+        documentId,
+        runId: 'b'.repeat(64),
+        session: { agentId: intake.agentId, sessionId: 'synthetic-session', ownerToken: 'synthetic-proof' },
+        priorVersion: 0,
+      },
+      state: 'writing',
+      updatedAt: new Date().toISOString(),
+    };
+    vi.mocked(TestBed.inject(MktgRunAttemptService).consume).mockReturnValue({ subject: subject(), pending });
+    vi.mocked(TestBed.inject(MktgAgentRunService).resume).mockReturnValue(
+      throwError(() => new HttpErrorResponse({ status: 409, error: { code: MKTG_RUN_CLOSED } }))
+    );
+    const response = { project: PROJECT.uid, type, documentId, revisions: [], approvedCurrent: null };
+    // The result poll's refusal arrives before a record read lists the run as closed.
+    store.getDocument.mockReturnValueOnce(of({ ...response, runs: [] }));
+    store.getDocument.mockReturnValue(of({ ...response, runs: [{ ...started('discarded'), agentKey: type.agentKey, documentId }] }));
+    await render(`/documents/linkedin-post/${documentId}?generation=synthetic-accepted`);
+    expect(query('mktg-document-view-failure-reply')).toBeNull();
+    expect(query('mktg-document-view-closed-run')).toBeNull();
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+    await settle();
+    expect(query('mktg-document-view-closed-message')?.textContent?.trim()).toBe('This run was discarded.');
+    expect(query('mktg-document-view-failure-reply')).toBeNull();
+    vi.useRealTimers();
   });
 
   it.each([false, true])('does not synchronously replace a one-off handoff without a run id (attempt present: %s)', async (hasAttempt) => {

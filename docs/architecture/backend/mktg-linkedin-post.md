@@ -70,6 +70,9 @@ link answers, source word count and original profile-initialization permission f
 reconciliation; the controller applies no completion policy. It reuses the fetched record
 and resolved outcome for tracking, without a duplicate pre-write record/result lookup.
 The existing post-write metadata winner confirmation remains unchanged.
+A poll for a stored run that is discarded or superseded is refused before the result is read (409 `MKTG_RUN_CLOSED`),
+so a late post is never stored for a closed run; the Document page treats that answer as no failure and ends on the
+record's closed-run line.
 Browser omissions or later source context cannot replace captured values. Legacy untracked
 sessions retain the result-body contract. One server utility classifies repository,
 Smithy timeout and network errors (including status 0, 408, 429 and 5xx). A transient tracking

@@ -1348,6 +1348,26 @@ describe('MktgDocumentRunService core', () => {
     await expect(service.assertRunOpen(owner, project, 'linkedin-post', session)).rejects.toMatchObject({ statusCode: 409, code: 'MKTG_RUN_CLOSED' });
   });
 
+  it.each([
+    ['discarded', 'aeo-geo'],
+    ['superseded', 'aeo-geo'],
+    ['discarded', 'linkedin-post'],
+    ['superseded', 'linkedin-post'],
+  ] as const)("refuses the creator's result poll of a %s %s run: no agent result is read and nothing is stored", async (state, agentId) => {
+    const creator = writerRequest('synthetic-creator');
+    await service.startForOneOff(creator, agentId, project, session);
+    stored().metadata['state'] = state;
+    const before = JSON.stringify([...objects]);
+    // A late report is waiting: reading it is what would store the closed run's document.
+    flows.aeo.mockResolvedValue(ready(agentId));
+    flows.linkedin.mockResolvedValue(ready(agentId));
+    await expect(service.ownedOneOffResult(creator, project, agentId, session, {})).rejects.toMatchObject({ statusCode: 409, code: 'MKTG_RUN_CLOSED' });
+    expect(flows.aeo).not.toHaveBeenCalled();
+    expect(flows.linkedin).not.toHaveBeenCalled();
+    expect(flows.events).not.toHaveBeenCalled();
+    expect(JSON.stringify([...objects])).toBe(before);
+  });
+
   it('keeps selected closed records lightweight even when omitted from discovery', async () => {
     await service.start(req, project, types[0].agentKey, session);
     stored().metadata['state'] = 'discarded';

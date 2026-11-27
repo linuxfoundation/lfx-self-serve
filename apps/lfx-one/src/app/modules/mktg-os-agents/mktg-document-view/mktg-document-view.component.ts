@@ -46,6 +46,7 @@ import {
   MKTG_AGENTS,
   MKTG_NOT_AVAILABLE_TEXT,
   MKTG_POLL_RETRYING_TEXT,
+  MKTG_RUN_CLOSED,
   MKTG_RUN_POLL,
   MKTG_DOCUMENT_PROGRESS_POLL,
   VISIBILITY_POLL_WAKE_DEBOUNCE_MS,
@@ -867,6 +868,9 @@ export class MktgDocumentViewComponent {
                     });
                     return EMPTY;
                   }
+                  // The server closed this run (discarded, or replaced by a newer one) and reads it no further: not a failure
+                  // to confirm. The record read beside this poll shows the closed-run line and the way to the newer run.
+                  if (this.isRunClosed(error)) return EMPTY;
                   const errorType = error instanceof Error ? error.name : typeof error;
                   console.error('Failed to confirm Marketing OS run', error instanceof HttpErrorResponse ? { status: error.status } : { errorType });
                   this.unconfirmed.set(true);
@@ -1945,6 +1949,11 @@ export class MktgDocumentViewComponent {
     return MKTG_NOT_AVAILABLE_TEXT.revision;
   }
 
+  /** The result endpoint's answer for a discarded or replaced run: 409 MKTG_RUN_CLOSED, final. */
+  private isRunClosed(error: unknown): boolean {
+    return error instanceof HttpErrorResponse && error.status === 409 && error.error?.code === MKTG_RUN_CLOSED;
+  }
+
   // === Private helpers ===
   private onProgress(progress: MktgGenerateProgress, pending: MktgPendingGeneration): void {
     if (progress.type === 'submitted' || progress.type === 'restored' || progress.type === 'failed' || progress.type === 'refused') {
@@ -2146,10 +2155,13 @@ export class MktgDocumentViewComponent {
           // A transient HTTP failure (RFC 9110: 408, 429, 5xx, no response) is retried by the poller below; a refusal, the
           // audit's own deadline and everything else, HTTP or not, is final.
           if (!refused && !(error instanceof TimeoutError) && isTransientHttpError(error)) throw error;
-          denied = status === 401 || status === 403;
+          // A closed run stays closed: like a refused read, no wake sends its poll again.
+          denied = status === 401 || status === 403 || this.isRunClosed(error);
           if (refused) this.errorText.set(error.message);
           else if (error === runPageUnopened) this.errorText.set('This audit is not finished. Open AEO/GEO from the kit to continue it.');
           else if (error instanceof TimeoutError) this.errorText.set(AEO_GEO_TIMEOUT_MESSAGE);
+          // The server closed this run (discarded, or replaced by a newer audit) and reads it no further: Run again is below.
+          else if (this.isRunClosed(error)) this.errorText.set('This audit was closed. Start a new audit.');
           else if (status === 404 && !canResume && tracked?.state === 'questions')
             this.errorText.set('This audit is waiting for answers. Answer them in the browser where it was started, or run a new audit.');
           else if (status === 404 && !canResume && tracked?.state === 'failed') this.errorText.set('The audit ended without a report. Start a new audit.');

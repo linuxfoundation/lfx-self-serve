@@ -17,6 +17,7 @@ import {
   MKTG_POLL_MAX_BACKOFF_MS,
   MKTG_POLL_RETRYING_TEXT,
   MKTG_RUN_ACTIVE_DIALOG_KEYS,
+  MKTG_RUN_CLOSED,
   MKTG_RUN_POLL,
 } from '@lfx-one/shared/constants';
 import { MktgAgentIntake, MktgDocumentType, MktgRevisionResponse } from '@lfx-one/shared/interfaces';
@@ -612,6 +613,22 @@ describe('AeoGeoRunComponent', () => {
     await render();
     expect(navigate).not.toHaveBeenCalled();
     expect(clear).toHaveBeenCalledWith('project-1', run().documentId);
+    expect(query('mktg-aeo-run-form')).not.toBeNull();
+    expect((query('mktg-aeo-run-submit') as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('ends a stale tab plainly when the server closed its audit (409 MKTG_RUN_CLOSED): the closed line and the form, one poll', async () => {
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    // Another tab chose "Discard and start over": this tab still holds the capability and polls with it.
+    loadActive.mockReturnValue(run());
+    poll.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 409, error: { code: MKTG_RUN_CLOSED } })));
+    await render();
+    expect(query('mktg-aeo-run-error').textContent).toContain('This audit was closed. Start a new audit.');
+    expect(query('mktg-aeo-run-error').textContent).not.toContain('could not finish');
+    expect(poll).toHaveBeenCalledTimes(1);
+    expect(navigate).not.toHaveBeenCalled();
+    expect(clear).toHaveBeenCalledWith('project-1', run().documentId);
+    expect(fixture.nativeElement.querySelector('[data-testid="mktg-aeo-run-activity"]')).toBeNull();
     expect(query('mktg-aeo-run-form')).not.toBeNull();
     expect((query('mktg-aeo-run-submit') as HTMLButtonElement).disabled).toBe(false);
   });

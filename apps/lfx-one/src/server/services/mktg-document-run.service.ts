@@ -252,6 +252,8 @@ export class MktgDocumentRunService {
     }
     if (stored && (stored.record.agentKey !== type.agentKey || stored.record.sessionId !== sessionId || stored.record.creatorSubject !== creatorSubject))
       throw new AuthorizationError('This run does not belong to this requester and project.');
+    // A discarded or replaced run is read no further: a stale tab's poll must not store its late result (409 MKTG_RUN_CLOSED).
+    this.assertNotRetired(stored?.record.state);
     const record: MktgStartedRunRecord = stored?.record ?? {
       schema: MKTG_STARTED_RUN_SCHEMA,
       project,

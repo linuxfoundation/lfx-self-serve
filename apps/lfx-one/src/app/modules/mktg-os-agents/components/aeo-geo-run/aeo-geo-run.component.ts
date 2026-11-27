@@ -25,6 +25,7 @@ import {
   MKTG_POLL_RETRYING_TEXT,
   MKTG_RUN_ACTIVE_DIALOG_KEYS,
   MKTG_RUN_ANSWERED_WRITING_CLAUSE,
+  MKTG_RUN_CLOSED,
   MKTG_RUN_POLL,
 } from '@lfx-one/shared/constants';
 import {
@@ -534,6 +535,9 @@ export class AeoGeoRunComponent {
         if (error instanceof TimeoutError) {
           this.busy.set(false);
           this.error.set(AEO_GEO_TIMEOUT_MESSAGE);
+        } else if (error instanceof HttpErrorResponse && error.status === 409 && error.error?.code === MKTG_RUN_CLOSED) {
+          // The server closed this run (discarded, or replaced by a newer audit) and reads it no further: the form is offered again.
+          this.failRun(run, 'This audit was closed. Start a new audit.');
         } else {
           this.failRun(run, 'The audit could not finish. Your inputs are kept — try again.');
         }

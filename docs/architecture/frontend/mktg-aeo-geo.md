@@ -67,7 +67,10 @@ A ready Markdown result without that receipt is not a stored document. Polling
 is bounded, retries transient failures and cancels on destruction or scope
 change. A refresh can resume the pending run; another user cannot load it.
 The audit's result endpoint reads through the tracker (`ownedOneOffResult`), so each poll records the run's state, and a
-writer's Documents read advances the same record and stores the report as the creator's. The audit keeps its own receiver on
+writer's Documents read advances the same record and stores the report as the creator's. A poll for a stored run that is
+discarded or superseded is refused before the audit result is read (409 `MKTG_RUN_CLOSED`), so a stale tab cannot store a
+late report of a discarded audit; the run page and the Document page end on "This audit was closed. Start a new audit."
+and poll no further. The audit keeps its own receiver on
 the run and Document pages (its browser capability), not the shared run-progress view: opened without that capability (another
 browser, another writer, a Started runs row), the Document page shows the same generating state and re-reads until the
 recorded run is stored; a recorded run waiting for answers or failed is a plain line with Run again. That re-read
