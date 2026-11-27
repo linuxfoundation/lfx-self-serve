@@ -238,6 +238,7 @@ import {
   DEFAULT_META_AUDIENCE_TARGETING,
 } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
+import { UiCheckboxComponent } from '@shared/uikit/checkbox/checkbox.component';
 import { UiComboboxComponent } from '@shared/uikit/combobox/combobox.component';
 import { UiInputComponent } from '@shared/uikit/input/input.component';
 import { UiMultiSelectComponent } from '@shared/uikit/multi-select/multi-select.component';
@@ -386,6 +387,7 @@ import type {
   LinkedInTargeting,
   LinkedInTargetingDraft,
   LinkedInObjectiveDraft,
+  LinkedInDeliveryOptionsDraft,
   LinkedInTargetCostOfferInput,
   LinkedInTextAdDraft,
   LinkedInCarouselCardDraft,
@@ -526,6 +528,12 @@ import {
   linkedInTargetCostCreateRefusal,
   linkedInTargetCostOffered,
   linkedInTargetCostPending,
+  emptyLinkedInDeliveryOptionsDraft,
+  linkedInAudienceNetworkOffered,
+  linkedInDeliveryOptionsCreateRefusal,
+  linkedInDeliveryOptionsForCreate,
+  linkedInDeliveryOptionsShown,
+  linkedInDeliveryOptionDisabled,
   linkedInTargetingDraftRefusal,
   linkedInTargetingForCreate,
   linkedInTargetingSegmentsAccountRefusal,
@@ -747,6 +755,7 @@ let linkedInVariantKeySequence = 0;
     ButtonComponent,
     AutocompleteComponent,
     CheckboxComponent,
+    UiCheckboxComponent,
     InputTextComponent,
     RadioButtonComponent,
     SelectComponent,
@@ -1177,6 +1186,12 @@ export class ImplementationTabComponent implements OnInit {
    * linuxfoundation/lfx-v2-campaign-service#674).
    */
   public readonly linkedInTargetCostEnabled = input<boolean | null>(null);
+
+  /**
+   * Whether a LinkedIn create may choose Audience Expansion and the LinkedIn Audience Network
+   * (`CampaignListResult.linkedInDeliveryOptionsEnabled`, linuxfoundation/lfx-v2-campaign-service#667).
+   */
+  public readonly linkedInDeliveryOptionsEnabled = input<boolean | null>(null);
 
   /** The calls to action the variant editor offers. */
   protected readonly linkedInCallToActionOptions = LINKEDIN_CALL_TO_ACTION_OPTIONS;
@@ -2192,6 +2207,27 @@ export class ImplementationTabComponent implements OnInit {
    * form's button replaces it), and a manual bid is refused in the Bidding control.
    */
   protected readonly linkedInLeadGenSelected = computed<boolean>(() => linkedInLeadGenChosen(this.linkedInObjectiveDraft()));
+  /** The Audience Expansion and Audience Network toggles as set (campaign-service#667), carried in the draft. */
+  protected readonly linkedInDeliveryOptions = signal<LinkedInDeliveryOptionsDraft>(emptyLinkedInDeliveryOptionsDraft());
+  /** The Audience Network goes with neither Text Ads nor lead generation; then a new opt-in is blocked and it is not sent. */
+  protected readonly linkedInAudienceNetworkOffered = computed<boolean>(() =>
+    linkedInAudienceNetworkOffered(this.linkedInTextAdsSelected(), this.linkedInLeadGenSelected())
+  );
+  /** The toggles show on an explicit yes, and while one that is on waits on the capability (`linkedInDeliveryOptionsShown`). */
+  protected readonly linkedInDeliveryOptionsShown = computed<boolean>(() =>
+    linkedInDeliveryOptionsShown(this.linkedInDeliveryOptions(), this.linkedInDeliveryOptionsEnabled(), this.linkedInAudienceNetworkOffered())
+  );
+  /** Audience Expansion takes a new opt-in only on an explicit yes; once on it can always be turned off. */
+  protected readonly linkedInAudienceExpansionDisabled = computed<boolean>(() =>
+    linkedInDeliveryOptionDisabled(this.linkedInDeliveryOptions().audienceExpansion, this.linkedInDeliveryOptionsEnabled() === true)
+  );
+  /** The Audience Network takes a new opt-in only on an explicit yes while offered; once on it can always be turned off. */
+  protected readonly linkedInAudienceNetworkDisabled = computed<boolean>(() =>
+    linkedInDeliveryOptionDisabled(
+      this.linkedInDeliveryOptions().audienceNetwork,
+      this.linkedInDeliveryOptionsEnabled() === true && this.linkedInAudienceNetworkOffered()
+    )
+  );
   /** A variant's call to action is offered (and sent) on its explicit yes, except on a lead gen create. */
   protected readonly linkedInVariantCallToActionShown = computed<boolean>(() => this.linkedInCallToActionAvailable() && !this.linkedInLeadGenSelected());
 
@@ -5975,6 +6011,12 @@ export class ImplementationTabComponent implements OnInit {
     this.emitDraft();
   }
 
+  /** A delivery option toggled (campaign-service#667). */
+  protected onLinkedInDeliveryOptionChange(option: keyof LinkedInDeliveryOptionsDraft, checked: boolean): void {
+    this.linkedInDeliveryOptions.update((options) => ({ ...options, [option]: checked }));
+    this.emitDraft();
+  }
+
   /** The objective picker's draft as edited (#5764 rows 2 and 4). */
   protected onLinkedInObjectiveDraftChange(draft: LinkedInObjectiveDraft): void {
     this.linkedInObjectiveDraft.set(draft);
@@ -7574,6 +7616,8 @@ export class ImplementationTabComponent implements OnInit {
               // choice sends what it always did and the bidding decides.
               // Lead generation (campaign-service#664) sends its form and button on its own capability.
               ...linkedInObjectiveFieldsForCreate(this.linkedInObjectiveDraft(), this.linkedInConversionsAvailable(), this.linkedInLeadGenAvailable()),
+              // Audience Expansion and the Audience Network (campaign-service#667), only when on and offered.
+              ...linkedInDeliveryOptionsForCreate(this.linkedInDeliveryOptions(), this.linkedInDeliveryOptionsEnabled(), this.linkedInAudienceNetworkOffered()),
             },
           }
         : {}),
@@ -9439,6 +9483,12 @@ export class ImplementationTabComponent implements OnInit {
         this.linkedInTargetCostShown(),
         this.linkedInTargetCostAwaitingCapability()
       ),
+      // The delivery options (campaign-service#667): held only while one that is on waits on the capability.
+      deliveryOptionsRefusal: linkedInDeliveryOptionsCreateRefusal(
+        this.linkedInDeliveryOptions(),
+        this.linkedInDeliveryOptionsEnabled(),
+        this.linkedInAudienceNetworkOffered()
+      ),
       // Text Ads replace the variant checks while chosen (#5764 row 19); they need a manual bid.
       ...(this.linkedInTextAdsSelected()
         ? {
@@ -9889,6 +9939,7 @@ export class ImplementationTabComponent implements OnInit {
     if (linkedInRestore.targetingDraft) this.linkedInTargetingDraft.set(linkedInRestore.targetingDraft);
     // The objective and conversion rules (#5764 rows 2 and 4), present-only.
     if (linkedInRestore.objectiveDraft) this.linkedInObjectiveDraft.set(linkedInRestore.objectiveDraft);
+    if (linkedInRestore.deliveryOptions) this.linkedInDeliveryOptions.set(linkedInRestore.deliveryOptions);
     // The LinkedIn upload, on the Meta upload's terms above, for the variant it was chosen for.
     this.linkedInImageUploadVariantKey.set(linkedInRestore.uploadVariantKey);
     if (linkedInRestore.failedUpload) this.failLinkedInImageUpload(linkedInRestore.failedUpload.message, linkedInRestore.failedUpload.briefId);
@@ -10417,6 +10468,7 @@ export class ImplementationTabComponent implements OnInit {
         customTargeting: this.linkedInCustomTargeting(),
         targetingDraft: this.linkedInTargetingDraft(),
         objectiveDraft: this.linkedInObjectiveDraft(),
+        deliveryOptions: this.linkedInDeliveryOptions(),
       }),
       // Snapshotted whatever `redditCreativeAvailable()` says — see the draft interface for why a
       // capability must not decide what the draft remembers. A failed upload is kept with its brief
@@ -10770,6 +10822,7 @@ export class ImplementationTabComponent implements OnInit {
     this.linkedInCustomTargeting.set(false);
     this.linkedInTargetingDraft.set(emptyLinkedInTargetingDraft());
     this.linkedInObjectiveDraft.set(emptyLinkedInObjectiveDraft());
+    this.linkedInDeliveryOptions.set(emptyLinkedInDeliveryOptionsDraft());
     this.campaignForm.patchValue({
       linkedInAccountId: untracked(() => this.linkedInAccounts())[0]?.accountId ?? '',
       linkedInGeoTargets: [],

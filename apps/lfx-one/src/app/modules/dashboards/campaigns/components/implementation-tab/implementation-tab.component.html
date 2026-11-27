@@ -4184,6 +4184,40 @@
               data-testid="implementation-linkedin-objective" />
           }
 
+          <!-- Delivery options (campaign-service#667), offered on an explicit yes, and kept on screen while one that is on
+               waits on the capability, so it can be turned off. Both off sends nothing. -->
+          @if (linkedInDeliveryOptionsShown()) {
+            <fieldset class="mb-4" data-testid="implementation-linkedin-delivery-options">
+              <legend class="mb-2 block text-xs font-medium text-gray-700">Delivery options</legend>
+              <div class="flex flex-col gap-3">
+                <div class="flex flex-col gap-1">
+                  <lfx-ui-checkbox
+                    label="Audience Expansion"
+                    [checked]="linkedInDeliveryOptions().audienceExpansion"
+                    [disabled]="linkedInAudienceExpansionDisabled()"
+                    (checkedChange)="onLinkedInDeliveryOptionChange('audienceExpansion', $event)"
+                    data-testid="implementation-linkedin-audience-expansion" />
+                  <span class="text-xs text-gray-500">Also reach members similar to the targeting. Off by default.</span>
+                </div>
+                <div class="flex flex-col gap-1">
+                  <lfx-ui-checkbox
+                    label="LinkedIn Audience Network"
+                    [checked]="linkedInDeliveryOptions().audienceNetwork"
+                    [disabled]="linkedInAudienceNetworkDisabled()"
+                    (checkedChange)="onLinkedInDeliveryOptionChange('audienceNetwork', $event)"
+                    data-testid="implementation-linkedin-audience-network" />
+                  <span class="text-xs text-gray-500">
+                    @if (linkedInAudienceNetworkOffered()) {
+                      Also show the ads on partner apps and sites outside LinkedIn. Off by default.
+                    } @else {
+                      Not available with text ads or lead generation, so it is not sent. Turn it off to clear it.
+                    }
+                  </span>
+                </div>
+              </div>
+            </fieldset>
+          }
+
           <!-- The upload's status and any image notice, announced. Always mounted; only their text changes. -->
           <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-linkedin-image-status-live">
             {{ linkedInImageUploadLiveMessage() }}
