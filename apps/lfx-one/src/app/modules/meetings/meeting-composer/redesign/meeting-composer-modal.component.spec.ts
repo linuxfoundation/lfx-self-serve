@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { BreakpointObserver } from '@angular/cdk/layout';
 import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { signal } from '@angular/core';
@@ -309,6 +310,28 @@ describe('MeetingComposerModalComponent (through the host, meetings-redesign on)
     await flush();
 
     expect(query('meeting-composer-project')).toBeNull();
+  });
+
+  describe('create on a phone', () => {
+    beforeEach(async () => {
+      vi.spyOn(TestBed.inject(BreakpointObserver), 'observe').mockReturnValue(of({ matches: true, breakpoints: {} }));
+      composer.open({ mode: 'create', projectUid: 'project-1' });
+      await flush();
+      formService.form().patchValue({ title: 'Weekly sync', meeting_type: 'Technical' });
+      await flush();
+      button('meeting-composer-next')?.click();
+      await flush();
+    });
+
+    it('uses smaller footer buttons and an icon-only Back', () => {
+      const back = button('meeting-composer-back');
+
+      expect(back?.getAttribute('aria-label')).toBe('Back');
+      expect(back?.textContent?.trim()).toBe('');
+      expect(back?.className).toContain('h-ui-small');
+      expect(button('meeting-composer-next')?.className).toContain('h-ui-small');
+      expect(button('meeting-composer-cancel')?.className).toContain('h-ui-small');
+    });
   });
 
   describe('edit', () => {

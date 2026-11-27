@@ -147,14 +147,19 @@
           data-testid="meeting-composer-footer">
           <span class="flex items-center gap-[8px]">
             @if (!isEditMode()) {
-              <lfx-ui-button variant="secondary" size="large" [disabled]="formService.submitting()" data-testid="meeting-composer-cancel" (click)="onClose()">
+              <lfx-ui-button
+                variant="secondary"
+                [size]="footerButtonSize()"
+                [disabled]="formService.submitting()"
+                data-testid="meeting-composer-cancel"
+                (click)="onClose()">
                 Cancel
               </lfx-ui-button>
             }
             @if (scope()?.kind === 'single') {
               <lfx-ui-button
                 variant="danger-tertiary"
-                size="large"
+                [size]="footerButtonSize()"
                 icon="fa-light fa-trash"
                 [disabled]="formService.submitting()"
                 data-testid="meeting-composer-delete"
@@ -165,7 +170,7 @@
             @if (scope()?.kind === 'occurrence') {
               <lfx-ui-button
                 variant="danger-tertiary"
-                size="large"
+                [size]="footerButtonSize()"
                 icon="fa-light fa-trash"
                 [disabled]="formService.submitting()"
                 data-testid="meeting-composer-cancel-occurrence"
@@ -177,11 +182,16 @@
 
           <div class="ml-auto flex flex-wrap items-center justify-end gap-[8px]">
             @if (isEditMode()) {
-              <lfx-ui-button variant="secondary" size="large" [disabled]="formService.submitting()" data-testid="meeting-composer-cancel" (click)="onClose()">
+              <lfx-ui-button
+                variant="secondary"
+                [size]="footerButtonSize()"
+                [disabled]="formService.submitting()"
+                data-testid="meeting-composer-cancel"
+                (click)="onClose()">
                 Cancel
               </lfx-ui-button>
               <lfx-ui-button
-                size="large"
+                [size]="footerButtonSize()"
                 [loading]="formService.submitting()"
                 [disabled]="!canSubmit()"
                 data-testid="meeting-composer-save"
@@ -192,17 +202,22 @@
               @if (activeIndex() > 0) {
                 <lfx-ui-button
                   variant="secondary"
-                  size="large"
+                  [size]="footerButtonSize()"
                   icon="fa-light fa-angle-left"
+                  [iconOnly]="phone()"
+                  [ariaLabel]="phone() ? 'Back' : ''"
+                  [lfxUiTooltip]="phone() ? 'Back' : ''"
                   [disabled]="formService.submitting()"
                   data-testid="meeting-composer-back"
                   (click)="back.emit()">
-                  Back
+                  @if (!phone()) {
+                    Back
+                  }
                 </lfx-ui-button>
               }
               @if (isLastSection()) {
                 <lfx-ui-button
-                  size="large"
+                  [size]="footerButtonSize()"
                   [loading]="formService.submitting()"
                   [disabled]="!canSubmit()"
                   data-testid="meeting-composer-create"
@@ -211,7 +226,7 @@
                 </lfx-ui-button>
               } @else {
                 <lfx-ui-button
-                  size="large"
+                  [size]="footerButtonSize()"
                   trailingIcon="fa-light fa-angle-right"
                   [disabled]="!canProceed()"
                   data-testid="meeting-composer-next"
