@@ -1137,6 +1137,30 @@ describe('MktgDocumentViewComponent', () => {
     );
   });
 
+  it('says who holds the document and opens their run when the server refused a comment send, and only then', async () => {
+    await render('/documents/brand-kit/living');
+    const component = harness.routeDebugElement?.injector.get(MktgDocumentViewComponent);
+    if (!component) throw new Error('Missing synthetic redraft receiver');
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    const toast = vi.spyOn(TestBed.inject(MessageService), 'add');
+    const scope = { projectUid: PROJECT.uid, agentKey: 'brand-kit' as const, documentId: 'living', revisionId: LATEST.id };
+    const message = 'Synthetic sender already sent these — the agent is redrafting.';
+    // A send still starting has no run to open, and a refusal for another document or project is not this page's.
+    component['onRedraftElsewhere'](scope, { message, runId: null });
+    component['onRedraftElsewhere'](scope, { message, runId: '../unsafe' });
+    component['onRedraftElsewhere']({ ...scope, agentKey: 'faq' }, { message, runId: 'c'.repeat(64) });
+    component['onRedraftElsewhere']({ ...scope, projectUid: 'another-synthetic-project' }, { message, runId: 'c'.repeat(64) });
+    expect(navigate).not.toHaveBeenCalled();
+    expect(toast).not.toHaveBeenCalled();
+    component['onRedraftElsewhere'](scope, { message, runId: 'c'.repeat(64) });
+    expect(toast).toHaveBeenCalledExactlyOnceWith({ severity: 'info', summary: message });
+    expect(navigate).toHaveBeenCalledExactlyOnceWith(
+      expect.arrayContaining([BRAND_KIT_INTAKE.agentId]),
+      expect.objectContaining({ queryParams: expect.objectContaining({ run: 'c'.repeat(64), revision: null, questions: null, generation: null }) })
+    );
+    expect(navigate.mock.calls[0][0]).not.toContain('documents');
+  });
+
   it('replaces the automatic questions leg with a scoped continuation URL', async () => {
     await render('/documents/brand-kit/living?tab=sources&profile=edit');
     const component = harness.routeDebugElement?.injector.get(MktgDocumentViewComponent);

@@ -10,6 +10,8 @@ import type { MktgDocumentRunService } from './mktg-document-run.service';
 import { MKTG_DOCUMENT_TYPES, MKTG_KIT_FRAMEWORK_KEY } from '@lfx-one/shared/constants';
 import { redraftContextFixture } from '@lfx-one/shared/utils/__fixtures__/mktg-redraft-context.fixture';
 const f = vi.hoisted(() => ({
+  admit: vi.fn(),
+  guard: vi.fn(),
   reserve: vi.fn(),
   bind: vi.fn(),
   guild: vi.fn(),
@@ -55,6 +57,7 @@ vi.mock('./guild.service', () => ({
 }));
 vi.mock('./mktg-document-comments.service', () => ({
   MktgDocumentCommentsService: class {
+    public admit = f.admit;
     public reserve = f.reserve;
     public bindRun = f.bind;
     public endStart = f.end;
@@ -99,7 +102,7 @@ const context = redraftContextFixture();
 const type = MKTG_DOCUMENT_TYPES.find((row) => row.agentKey === MKTG_KIT_FRAMEWORK_KEY);
 if (!type) throw new Error('Missing registered synthetic target');
 const body = { project: context.project, revisionId: context.basedOnId, commentIds: context.comments.map((row) => row.id), clientRequestId: context.requestId };
-const runs = { knownRedraftSession: f.known, start: f.start } as unknown as MktgDocumentRunService;
+const runs = { knownRedraftSession: f.known, start: f.start, assertSingleActiveRun: f.guard } as unknown as MktgDocumentRunService;
 const send = () => new MktgDocumentRedraftService().send(req, context.project, type, 'living', body, runs);
 describe('reserved redraft delivery', () => {
   beforeEach(() => {
@@ -120,6 +123,8 @@ describe('reserved redraft delivery', () => {
     f.prepare.mockResolvedValue({ context, message: 'synthetic canonical form', framework: null });
     f.guild.mockResolvedValue('synthetic-session');
     f.context.mockResolvedValue(context);
+    // A known request ID is a replay; only the first reservation of this double is fresh.
+    f.admit.mockImplementation(async () => !f.fresh);
     f.reserve.mockImplementation(async (_req, _project, _type, _document, _raw, preflight) => {
       const fresh = f.fresh;
       f.fresh = false;
@@ -147,6 +152,40 @@ describe('reserved redraft delivery', () => {
     expect(f.start).toHaveBeenLastCalledWith(req, context.project, type.agentKey, 'synthetic-session', context.priorVersion, context.requestId, {
       basedOnId: context.basedOnId,
     });
+  });
+  it("refuses a new send over the document's active run before any reservation, session or ledger write", async () => {
+    const active = new ConflictError('A run is already in progress.', 'MKTG_RUN_ACTIVE', {
+      details: { activeRunId: 'b'.repeat(64), startedBy: 'Synthetic writer' },
+    });
+    f.guard.mockRejectedValueOnce(active);
+    await expect(send()).rejects.toBe(active);
+    expect(f.guard).toHaveBeenCalledWith(req, context.project, type.agentKey, { documentId: 'living' });
+    expect(f.admit.mock.invocationCallOrder[0]).toBeLessThan(f.guard.mock.invocationCallOrder[0]);
+    expect(f.reserve).not.toHaveBeenCalled();
+    expect(f.configured).not.toHaveBeenCalled();
+    expect(f.guild).not.toHaveBeenCalled();
+    expect(f.end).not.toHaveBeenCalled();
+    // The run ended: the same request is still new to the ledger and starts normally.
+    await expect(send()).resolves.toMatchObject({ runId: 'c'.repeat(64) });
+    expect(f.guard.mock.invocationCallOrder[1]).toBeLessThan(f.reserve.mock.invocationCallOrder[0]);
+    expect(f.guild).toHaveBeenCalledTimes(1);
+  });
+  it('never checks the active run on a same-ID replay, whose own run would otherwise refuse its ACK', async () => {
+    await send();
+    expect(f.guard).toHaveBeenCalledTimes(1);
+    f.known.mockResolvedValue('synthetic-session');
+    f.guard.mockRejectedValue(new ConflictError('A run is already in progress.', 'MKTG_RUN_ACTIVE'));
+    await expect(send()).resolves.toMatchObject({ sessionId: 'synthetic-session' });
+    expect(f.guard).toHaveBeenCalledTimes(1);
+    expect(f.guild).toHaveBeenCalledTimes(1);
+  });
+  it('answers who already sent these comments before the active-run check names their run', async () => {
+    const busy = new ConflictError('Some comments are already reserved for another send.', 'MKTG_REDRAFT_COMMENTS_BUSY');
+    f.admit.mockRejectedValueOnce(busy);
+    await expect(send()).rejects.toBe(busy);
+    expect(f.guard).not.toHaveBeenCalled();
+    expect(f.reserve).not.toHaveBeenCalled();
+    expect(f.guild).not.toHaveBeenCalled();
   });
   it.each([400, 401, 409, 501])('records definitive Guild %s failure and replays that failure without another SDK call', async (status) => {
     const error = MicroserviceError.fromMicroserviceResponse(status, 'Synthetic rejection', {}, 'guild', '/synthetic', 'guild_create_session');
@@ -201,6 +240,7 @@ describe('reserved redraft delivery', () => {
         markdown: JSON.stringify({ mf: { tagline: 'Stored line' } }),
         sidecar: null,
       });
+      f.admit.mockImplementation(ledger.admit.bind(ledger));
       f.reserve.mockImplementation(ledger.reserve.bind(ledger));
       f.bind.mockImplementation(ledger.bindRun.bind(ledger));
       f.end.mockImplementation(ledger.endStart.bind(ledger));
@@ -283,6 +323,7 @@ describe('reserved redraft delivery', () => {
       markdown: JSON.stringify({ mf: { tagline: 'Stored line' } }),
       sidecar: null,
     });
+    f.admit.mockImplementation(ledger.admit.bind(ledger));
     f.reserve.mockImplementation(ledger.reserve.bind(ledger));
     f.bind.mockImplementation(ledger.bindRun.bind(ledger));
     f.end.mockImplementation(ledger.endStart.bind(ledger));

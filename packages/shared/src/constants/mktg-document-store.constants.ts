@@ -100,6 +100,8 @@ export const MKTG_DOCUMENT_CURRENT_KEY = 'current.json';
 /** The last successfully resolved display name per subject, served when a directory lookup fails: at most this many subjects, each for this long after its last success. */
 export const MKTG_DOCUMENT_AUTHOR_CACHE_LIMIT = 500;
 export const MKTG_DOCUMENT_AUTHOR_CACHE_TTL_MS = 60 * 60 * 1000;
+/** Characters a display name never carries: an email, an opaque subject (`auth0|…`) or markup has one, so such a value is never shown as a name. */
+export const MKTG_DISPLAY_NAME_UNSAFE_REGEX = /[<>@|:]/;
 
 /** The catalog's display name for an agent, so a rename in MKTG_AGENTS reaches the Documents area. */
 function catalogAgentName(catalogAgentId: string): string {

@@ -649,7 +649,15 @@ No source report fields or print surfaces are made editable. Send freezes the
 selected open IDs/nonce in subject-and-revision-bound private TTL recovery before
 POST. Unknown ACK restoration never auto-submits; retry reuses that exact intent.
 Only primary BFF allow-listed answers clear unaccepted intent: 400 VALIDATION_ERROR,
-404 NOT_FOUND, or 409 MKTG_REDRAFT_COMMENTS_BUSY / MKTG_REDRAFT_REQUEST_FAILED.
+404 NOT_FOUND, or 409 MKTG_REDRAFT_COMMENTS_BUSY / MKTG_RUN_ACTIVE / MKTG_REDRAFT_REQUEST_FAILED.
+A 409 whose validated body names the run that holds the document is not an error
+but one `elsewhere` event: "<name> already sent these — the agent is redrafting."
+for MKTG_REDRAFT_COMMENTS_BUSY ("You already sent these…" for the viewer's own
+send in another window), and the starter and start time for MKTG_RUN_ACTIVE. The
+panel shows the line and the document page repeats it as a toast and opens that
+run on its run page (the guard's "Open it" navigation); a send with no recorded
+run yet only shows the line. An unvalidated body names nobody and stays the plain
+"not accepted" rejection.
 Other 4xx, code-less 5xx and transport failures retain the nonce and permit creator
 release. Post-session server failures are always uncertain, not definitive 4xx. The ACK supplies the authoritative stored
 prior version for polling and exact version comparison, not legacy display metadata.

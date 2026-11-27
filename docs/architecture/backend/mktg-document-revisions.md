@@ -450,7 +450,7 @@ Every Generate or new catalog chat checks stored `writing`/`questions`/`storing`
 Only `discard: <current activeRunId>` settles any comment send and closes that run as `discarded`; a non-blocking best-effort interrupt mirrors `guild session interrupt <id>`: POST `/sessions/{id}/interrupt` with `{}` (`@guildai/cli src/commands/session/interrupt.ts`). Each successful discard writes an INFO `mktg_run_discard` audit with the project/run/document/agent IDs, opaque actor and creator subjects, a self-discard flag and closure time; names, emails and session capabilities are excluded. The known actor is persisted as private `closed-by` metadata with `closed-at`, never copied into the public display-name field. A refused/replayed metadata transition does not emit a new discard audit. No replacement ID is known at this pre-create step. Discarded runs are excluded from listing progress and skipped before body/Guild reads during reconciliation.
 The full-list preflight uses bounded read batches and the terminal cache, not an atomic reservation: individual read failures (including transient errors) warn and fail open; `retireOlderRuns` remains the same-document safety net, not a type-wide net for different one-off document ids. An explicitly selected active run is read and reconciled independently of the 128-entry navigation window, so Open it can reach an older uncached active record. A row already reconciled in the current snapshot avoids a duplicate Guild call; selected closed markers retain the lightweight metadata-only result path. After a selected run's result reconciliation, a newly observed discarded/superseded state wins over the old active snapshot, including when a pending result did not need a metadata write.
 Refusal uses stored state without reconciling deadlines; Discard is the escape for an unreconciled dead run. Discard commits before createSession: if creation fails, the old run stays closed and the person starts again (no orphan session).
-Retry of a failed run uses the same slot pre-check before returning to writing (no discard on Retry); another active run yields 409. Explicit null creators remain in the unknown-creator slot, never the retrying writer's slot. Catalog chat follow-ups check the stored session before sending: discarded/superseded sessions return `MKTG_RUN_CLOSED` (409), and a different active run in the slot returns `MKTG_RUN_ACTIVE`. Only the verified continuing session is exempt from its own slot check. The same pre-send check now protects Brand Kit, Framework, Boilerplates, FAQ and LinkedIn answers in this PR alone, with required project authorization; omitting project cannot skip it. The shared check recognizes creator-scoped tracked one-offs as well as living documents. The companion #4592 exact-turn answer claim remains the stronger conditional-write belt. Turn tracking also rejects retired records and excludes retired metadata from its write predicate, so a late follow-up cannot reopen them. This does not add a cross-writer atomic reservation to the existing HEAD/check/PUT store. Excluded follow-up: comments-redraft sends are not pre-checked and may supersede Generate.
+Retry of a failed run uses the same slot pre-check before returning to writing (no discard on Retry); another active run yields 409. Explicit null creators remain in the unknown-creator slot, never the retrying writer's slot. Catalog chat follow-ups check the stored session before sending: discarded/superseded sessions return `MKTG_RUN_CLOSED` (409), and a different active run in the slot returns `MKTG_RUN_ACTIVE`. Only the verified continuing session is exempt from its own slot check. The same pre-send check now protects Brand Kit, Framework, Boilerplates, FAQ and LinkedIn answers in this PR alone, with required project authorization; omitting project cannot skip it. The shared check recognizes creator-scoped tracked one-offs as well as living documents. The companion #4592 exact-turn answer claim remains the stronger conditional-write belt. Turn tracking also rejects retired records and excludes retired metadata from its write predicate, so a late follow-up cannot reopen them. This does not add a cross-writer atomic reservation to the existing HEAD/check/PUT store. A comments-redraft send runs the same living-slot pre-check before it reserves (see "Reserved comment sends and release"), so it no longer supersedes an active Generate or redraft.
 
 `POST /api/mktg-agents/documents/:agentKey/:documentId/runs/:runId/dismiss` with `{ project }` takes a failed run off Started runs for everyone. Any canonical project writer may dismiss any writer's failed run (as with Retry); the route is blocked while impersonating, so the recorded closer is never the impersonated user. Only a `failed` record can be dismissed: any other open state, including a retry that wins between the read and the write, returns 409 `MKTG_RUN_NOT_FAILED` with response-only `{ runId }`. A run that is already closed (`completed`, `superseded` or `discarded`) answers 204 again with no write and no audit. Dismiss settles any comment send as failed ("This run was dismissed."), then reuses the `discarded` state with the same private `closed-by`/`closed-at` metadata, so no new state exists and every listing already omits it; no document, revision or Guild session is touched. A successful dismiss writes an INFO `mktg_run_dismiss_audit` (instead of `mktg_run_discard`) with the same opaque-subject payload. The 204 has no body. A direct `?run=` link to a dismissed run then shows the ordinary closed marker, "This run was discarded by … at …". The Documents page offers Dismiss on failed Started runs rows only, removes the row locally before re-reading the list, and hides the control while impersonating.
 
@@ -609,6 +609,32 @@ not its version authority. Unknown requests and existing requests owned by someo
 else both release as `{ state: 'unknown' }` without creating or rewriting a ledger;
 the distinction is logged only at DEBUG. Writer and effective-subject checks still
 run, and only the creator may change an existing reservation.
+
+First answer wins, and the server decides it before any reservation is written. A
+new send is admitted in this order, each a read-only check:
+
+1. A request ID already in the ledger is a replay: it skips the two checks below
+   and re-observes its own run (its own active run would otherwise refuse its ACK).
+   A replay never creates a session.
+2. Another live send (`reserved` within the Run timeout, bound, or `started`) that
+   holds any of the same comments returns 409 `MKTG_REDRAFT_COMMENTS_BUSY` with
+   response-only `sentBy` (the sender's directory display name, or null when there
+   is none or the sender is the caller), `sentByViewer`, `sentAt` (that send's
+   reservation time) and `runId` (its opaque run hash, null until that send is
+   `started`: a bound hash has no run record to open yet). The name
+   is resolved only on this conflict and is never stored or logged; an email or the
+   subject itself is never returned as a name. The reservation repeats this check
+   inside its conditional write, so a send that loses the race there gets the same
+   answer. The creator-only release keeps its unnamed `MKTG_REDRAFT_COMMENTS_BUSY`.
+3. `assertSingleActiveRun` for the document's living slot, without `discard`:
+   any other active run on the document (a Generate, or a redraft of other
+   comments) returns the shared 409 `MKTG_RUN_ACTIVE` with `startedBy`,
+   `startedAt` and `activeRunId`. A send has no discard choice.
+
+All three precede the reservation, so either 409 proves nothing was sent: no ledger
+row, no session. The slot check is the same non-atomic read as for Generate: a send
+whose comments differ from a send still starting (reserved, no run record yet) can
+pass it, and `retireOlderRuns` remains the net for that window.
 
 Known window (a tracked follow-up): unknown releases write no tombstone. After a transport
 failure, an original revise request still in flight can reserve after its unknown

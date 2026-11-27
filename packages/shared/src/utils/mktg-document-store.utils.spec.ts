@@ -28,6 +28,7 @@ import {
   describeMktgRevision,
   describeMktgRevisionAuthor,
   findMktgDocumentType,
+  isMktgDisplayName,
   mktgDocumentLocationOfReceipt,
   mktgRunProgress,
   mktgRunClaimAnswers,
@@ -417,6 +418,21 @@ describe('mktg-document-store utils', () => {
     { author: undefined, expected: 'no name (stored before names were recorded)' },
   ])('describes revision authors consistently: %j', ({ author, expected }) => {
     expect(describeMktgRevisionAuthor(author)).toBe(expected);
+  });
+
+  it.each([
+    { name: 'Synthetic Writer', expected: true },
+    { name: "Synthetic O'Writer-Example Jr.", expected: true },
+    { name: '', expected: false },
+    { name: '   ', expected: false },
+    { name: null, expected: false },
+    { name: undefined, expected: false },
+    { name: 'writer@synthetic.example', expected: false },
+    { name: 'auth0|synthetic-subject', expected: false },
+    { name: 'urn:synthetic:subject', expected: false },
+    { name: '<script>synthetic</script>', expected: false },
+  ])('accepts only a display name, never an email, subject or markup: %j', ({ name, expected }) => {
+    expect(isMktgDisplayName(name)).toBe(expected);
   });
 
   it('renders real comment counts and nonsequential bases only', () => {

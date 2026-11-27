@@ -12,6 +12,7 @@ import type {
   MktgDocumentCommentsRecord,
   MktgDocumentCommentScope,
 } from './mktg-document-comments.interface';
+import type { MKTG_REDRAFT_COMMENTS_BUSY } from '../constants/mktg-document-redraft.constants';
 
 /** Frozen send input, with no directory identity, session capability or lifecycle state. */
 export type MktgRedraftCommentSnapshot = Pick<MktgStoredDocumentComment, 'id' | 'anchor' | 'text' | 'createdAt'>;
@@ -65,7 +66,28 @@ export type MktgRedraftProgress =
   | { type: 'activity'; activity: MktgRunActivity[] }
   | { type: 'storing' }
   | { type: 'ready'; location: MktgDocumentLocation }
-  | { type: 'failed'; message: string };
+  | { type: 'failed'; message: string }
+  | ({ type: 'elsewhere' } & MktgRedraftElsewhere);
+
+/** Safe facts of a send's 409 when another send holds its comments; never a subject, session or comment text. */
+export interface MktgRedraftBusyConflict {
+  code: typeof MKTG_REDRAFT_COMMENTS_BUSY;
+  /** Directory display name; null for the viewer's own send or when the directory has none. */
+  sentBy: string | null;
+  /** Whether the send that holds the comments is the effective viewer's. */
+  sentByViewer: boolean;
+  /** When that send was reserved (ISO). */
+  sentAt: string;
+  /** The redraft's opaque run id once its run record is published (the send is `started`); null while that send is still starting, bound or not. */
+  runId: string | null;
+}
+
+/** The server refused this send because another run holds the document: what to say and which run to open. */
+export interface MktgRedraftElsewhere {
+  message: string;
+  /** Null when the winning send has no recorded run yet. */
+  runId: string | null;
+}
 export type MktgReleaseRedraftResponse = { success: true } | { state: 'unknown' };
 /** Only a creator-owned terminal ledger row permits automatic local recovery cleanup. */
 export interface MktgRedraftRecoveryResponse {

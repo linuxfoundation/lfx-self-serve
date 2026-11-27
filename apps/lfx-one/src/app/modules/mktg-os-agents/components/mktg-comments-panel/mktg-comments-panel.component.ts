@@ -6,8 +6,8 @@ import { _IdGenerator } from '@angular/cdk/a11y';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { MktgSkeletonComponent } from '@components/mktg-skeleton/mktg-skeleton.component';
-import { MKTG_DOCUMENT_COMMENT_LIMITS, MKTG_POLL_RETRYING_TEXT } from '@lfx-one/shared/constants';
-import type { MktgDocumentCommentScope, MktgRedraftLanding, MktgRedraftProgress, MktgRunActivity } from '@lfx-one/shared/interfaces';
+import { MKTG_DOCUMENT_COMMENT_LIMITS, MKTG_POLL_RETRYING_TEXT, MKTG_REDRAFT_COMMENTS_BUSY } from '@lfx-one/shared/constants';
+import type { MktgDocumentCommentScope, MktgRedraftElsewhere, MktgRedraftLanding, MktgRedraftProgress, MktgRunActivity } from '@lfx-one/shared/interfaces';
 import { mktgDocumentCommentTab } from '@lfx-one/shared/utils';
 import { MktgDocumentCommentsService } from '@services/mktg-document-comments.service';
 import { MktgDocumentRedraftClientService } from '@services/mktg-document-redraft-client.service';
@@ -36,6 +36,8 @@ export class MktgCommentsPanelComponent {
   public readonly content = input<unknown>(null);
   public readonly priorVersion = input<number | null>(null);
   public readonly ready = output<MktgRedraftLanding>();
+  /** The server refused this send because another run holds the document; the host follows that run. */
+  public readonly elsewhere = output<MktgRedraftElsewhere>();
   protected readonly reasonId = this.ids.getId('mktg-comments-reason-');
   protected readonly retryingText = MKTG_POLL_RETRYING_TEXT;
 
@@ -203,6 +205,12 @@ export class MktgCommentsPanelComponent {
             this.runEnded.set(true);
             this.message.set(progress.message);
           }
+          if (progress.type === 'elsewhere') {
+            // Nothing was sent and no run of this send exists: the line stays here if the host cannot open the other run.
+            this.storing = false;
+            this.message.set(progress.message);
+            this.elsewhere.emit({ message: progress.message, runId: progress.runId });
+          }
           if (progress.type === 'ready') {
             this.storing = false;
             this.ready.emit(this.landingTab ? { ...progress.location, tab: this.landingTab } : progress.location);
@@ -227,7 +235,7 @@ export class MktgCommentsPanelComponent {
     const code = error instanceof HttpErrorResponse ? error.error?.code : '';
     if (this.redrafts.hasAcceptedAttempt(this.scope())) {
       this.message.set('The agent is still working on this redraft. Retry checks the same run.');
-    } else if (releasing && code === 'MKTG_REDRAFT_COMMENTS_BUSY') {
+    } else if (releasing && code === MKTG_REDRAFT_COMMENTS_BUSY) {
       this.message.set('Still starting — retry shortly.');
     } else if (this.releaseAvailable()) {
       this.message.set('Try the same send again, or release it. Release may say still starting until the hold expires.');

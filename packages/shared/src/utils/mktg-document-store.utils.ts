@@ -20,6 +20,7 @@ import type {
 } from '../interfaces/mktg-document-run.interface';
 import { MKTG_ARTIFACT_PARTITION_REGEX, MKTG_ARTIFACT_SHA256_REGEX } from '../constants/mktg-artifact.constants';
 import {
+  MKTG_DISPLAY_NAME_UNSAFE_REGEX,
   MKTG_DOCUMENT_CURRENT_CONFLICT_COPY,
   MKTG_DOCUMENT_ID_REGEX,
   MKTG_DOCUMENT_STORE_KEY_PREFIX,
@@ -147,6 +148,11 @@ export function parseMktgLegacyRevisionId(id: string): string | null {
 export function describeMktgRevisionAuthor(author: MktgRevisionAuthor | null | undefined): string {
   if (!author) return MKTG_REVISION_UNKNOWN_AUTHOR_LABEL;
   return author.name || MKTG_REVISION_NAME_UNAVAILABLE_LABEL;
+}
+
+/** One policy for every surface that names a person from a conflict or hint: a non-empty name that is not an email, subject or markup. */
+export function isMktgDisplayName(name: string | null | undefined): name is string {
+  return !!name?.trim() && !MKTG_DISPLAY_NAME_UNSAFE_REGEX.test(name);
 }
 
 /** "How it was made" for one revision, as the Revisions table shows it. */
