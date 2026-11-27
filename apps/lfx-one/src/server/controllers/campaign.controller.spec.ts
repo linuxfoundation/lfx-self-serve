@@ -13342,6 +13342,50 @@ describe('CampaignController.createCampaign Reddit one ad per variant', () => {
 });
 
 /**
+ * `redditConfig.gender` / `languages` / `schedule` (#6108 row 9): refused, never dropped, while this deployment cannot
+ * send them, checked after the placements and before the budget type (campaign-service's PreflightCreate order), and
+ * forwarded as typed once it can. The rules are table rows in `campaign-reddit-demographics.utils.spec.ts`.
+ */
+describe('CampaignController.createCampaign Reddit gender, languages and dayparting', () => {
+  const redditConfig = {
+    budgetUsd: 50,
+    placements: ['FEED'],
+    gender: 'FEMALE',
+    languages: ['EN'],
+    schedule: [{ startDay: 1, startHour: 9, endDay: 5, endHour: 17 }],
+    budgetType: 'daily',
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it.each([
+    // Placements (row 5) are checked first, then the demographics, then the budget type.
+    [ServerFeatureFlag.CampaignServiceRedditPlacements, 'redditConfig.placements'],
+    [ServerFeatureFlag.CampaignServiceRedditGenderLanguageDayparting, 'redditConfig.gender'],
+    [ServerFeatureFlag.CampaignServiceRedditDailyBudget, 'redditConfig.budgetType'],
+    [undefined, undefined],
+  ])('with %s off, refuses %s and creates nothing (forwards untouched when every flag is on)', async (off, field) => {
+    isServerFeatureEnabled.mockImplementation((flag) => flag !== off);
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+    const next = vi.fn();
+
+    await new CampaignController().createCampaign(buildReq({ platforms: ['reddit-ads'], redditConfig }, { project: 'tlf', brief_id: 'b-1' }), buildRes(), next);
+
+    if (field === undefined) {
+      const envelope = createCampaigns.mock.calls[0][4] as Record<string, Record<string, unknown>>;
+      expect(envelope['redditConfig']).toMatchObject({ gender: 'FEMALE', languages: ['EN'], schedule: redditConfig.schedule });
+      expect(next).not.toHaveBeenCalled();
+      return;
+    }
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error.toResponse()['errors']).toEqual([{ field, message: expect.any(String), code: 'FIELD_VALIDATION_ERROR' }]);
+  });
+});
+
+/**
  * `redditConfig.customAudienceIds` / `excludedCustomAudienceIds` (#6108 row 1): refused, never dropped, while this
  * deployment cannot send them; named only by a caller holding `global_marketing_ops` on the project; forwarded as typed
  * otherwise. Wiring only: the rules themselves are table rows in `campaign-reddit-custom-audiences.utils.spec.ts`.

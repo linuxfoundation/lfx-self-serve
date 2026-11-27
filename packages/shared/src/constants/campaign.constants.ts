@@ -5004,6 +5004,49 @@ export const REDDIT_PLACEMENT_KEYS = ['placements', 'platforms', 'expandTargetin
  */
 export const MAX_REDDIT_AD_VARIANTS = 5;
 
+/**
+ * The `redditConfig.gender` values campaign-service accepts (#6108 row 9), its `genderValues`
+ * (`internal/platform/reddit/demographic_targeting.go`, #549). Read trimmed and upper-cased; omitted is every gender.
+ */
+export const REDDIT_GENDERS = ['FEMALE', 'MALE'] as const;
+
+/**
+ * The `redditConfig.languages` codes campaign-service accepts (#6108 row 9), its `languageValues`: Reddit's
+ * `components_enum_targeting_language_codes` (ISO 639-1, upper-case), in that order. Omitted or empty is every language.
+ */
+export const REDDIT_LANGUAGES = [
+  'AR',
+  'CS',
+  'DA',
+  'DE',
+  'EL',
+  'EN',
+  'ES',
+  'FI',
+  'FR',
+  'HU',
+  'IT',
+  'JA',
+  'KO',
+  'NL',
+  'NO',
+  'PL',
+  'PT',
+  'RO',
+  'SV',
+  'VI',
+  'ZH',
+] as const;
+
+/** The most `redditConfig.schedule` windows one create may carry (#6108 row 9): campaign-service's `MaxScheduleWindows`. */
+export const REDDIT_MAX_SCHEDULE_WINDOWS = 50;
+
+/** The three `redditConfig` keys of the Reddit gender, language and dayparting choices (#6108 row 9), as campaign-service spells them. */
+export const REDDIT_DEMOGRAPHIC_KEYS = ['gender', 'languages', 'schedule'] as const;
+
+/** The four fields of one `redditConfig.schedule` window (#6108 row 9), as campaign-service's `ScheduleWindow` spells them. */
+export const REDDIT_SCHEDULE_WINDOW_KEYS = ['startDay', 'startHour', 'endDay', 'endHour'] as const;
+
 /** A Reddit pixel id campaign-service offers (`ValidPixelID`): 1 to 64 letters, digits or underscores. */
 export const REDDIT_PIXEL_ID_PATTERN = /^[A-Za-z0-9_]{1,64}$/;
 

@@ -813,6 +813,16 @@ export function canSetRedditAdPerVariant(): boolean {
 }
 
 /**
+ * Whether a Reddit create may carry `gender` / `languages` / `schedule` (#6108 row 9, campaign-service #549). Needs the
+ * campaign-service create path AND `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_GENDER_LANGUAGE_DAYPARTING`, which follows
+ * campaign-service's own `REDDIT_GENDER_LANGUAGE_DAYPARTING_ENABLED`: campaign-service refuses all three while that is
+ * off, and the legacy creator ignores them.
+ */
+export function canSetRedditDemographics(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceRedditGenderLanguageDayparting);
+}
+
+/**
  * Whether the Reddit pixel picker's read is served (#6108 row 5, campaign-service #549). Needs the campaign-service create
  * path AND `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_PIXEL_LIST`, which follows campaign-service's own
  * `REDDIT_PIXEL_LIST_ENABLED`: campaign-service refuses the read while that is off. The caller also needs
@@ -1432,6 +1442,7 @@ export class CampaignServiceClient {
         redditPlacementsEnabled: canSetRedditPlacements(),
         redditBudgetTypeEnabled: canSetRedditBudgetType(),
         redditAdPerVariantEnabled: canSetRedditAdPerVariant(),
+        redditDemographicsEnabled: canSetRedditDemographics(),
         redditPixelListEnabled: canListRedditPixels(),
         googleAssetUploadEnabled: canUseGoogleCreativeAssets(),
         metaCreativeEnabled: cutoverOwnsCreate(),
@@ -1540,6 +1551,7 @@ export class CampaignServiceClient {
       redditPlacementsEnabled: canSetRedditPlacements(),
       redditBudgetTypeEnabled: canSetRedditBudgetType(),
       redditAdPerVariantEnabled: canSetRedditAdPerVariant(),
+      redditDemographicsEnabled: canSetRedditDemographics(),
       redditPixelListEnabled: canListRedditPixels(),
       googleAssetUploadEnabled: canUseGoogleCreativeAssets(),
       metaCreativeEnabled: cutoverOwnsCreate(),

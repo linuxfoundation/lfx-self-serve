@@ -26,6 +26,7 @@ import { redditTargetingExclusionsRefusal } from '@lfx-one/shared/utils/campaign
 import { redditSubCountryGeoRefusal } from '@lfx-one/shared/utils/campaign-reddit-subcountry-geo.utils';
 import { redditAdPerVariantRefusal } from '@lfx-one/shared/utils/campaign-reddit-ad-variants.utils';
 import { redditBudgetTypeRefusal, redditPlacementsRefusal } from '@lfx-one/shared/utils/campaign-reddit-delivery.utils';
+import { redditDemographicsRefusal } from '@lfx-one/shared/utils/campaign-reddit-demographics.utils';
 import { redditPixelsFromPayload } from '@lfx-one/shared/utils/campaign-reddit-pixels.utils';
 import {
   redditConfigNamesCustomAudiences,
@@ -514,6 +515,7 @@ import {
   canSetRedditPlacements,
   canSetRedditBudgetType,
   canSetRedditAdPerVariant,
+  canSetRedditDemographics,
   canListRedditPixels,
   canSetRedditConversionPixel,
   canUseGoogleCreativeAssets,
@@ -1516,11 +1518,14 @@ export class CampaignController {
           service: 'campaign_controller',
         });
       }
-      // Reddit placements, devices and expansion, and the budget type (#6108 row 5): refused, never dropped, while this
-      // deployment cannot send them, and held to campaign-service's rules (`checkRedditPlacementTargeting`,
-      // `checkRedditBudgetType`). See `redditPlacementsRefusal` and `redditBudgetTypeRefusal`.
+      // Reddit placements, devices and expansion, gender, languages and dayparting, and the budget type (#6108 rows 5
+      // and 9): refused, never dropped, while this deployment cannot send them, and held to campaign-service's rules in
+      // its PreflightCreate order (`checkRedditPlacementTargeting`, `checkRedditDemographicTargeting`,
+      // `checkRedditBudgetType`). See `redditPlacementsRefusal`, `redditDemographicsRefusal` and `redditBudgetTypeRefusal`.
       const redditDeliveryRefused =
-        redditPlacementsRefusal(body?.redditConfig, canSetRedditPlacements()) ?? redditBudgetTypeRefusal(body?.redditConfig, canSetRedditBudgetType());
+        redditPlacementsRefusal(body?.redditConfig, canSetRedditPlacements()) ??
+        redditDemographicsRefusal(body?.redditConfig, canSetRedditDemographics()) ??
+        redditBudgetTypeRefusal(body?.redditConfig, canSetRedditBudgetType());
       if (redditDeliveryRefused !== null) {
         throw ServiceValidationError.forField(redditDeliveryRefused.field, redditDeliveryRefused.message, {
           operation: 'campaign_create',

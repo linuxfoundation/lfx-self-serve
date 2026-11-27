@@ -4976,6 +4976,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       redditPlacementsEnabled: false,
       redditBudgetTypeEnabled: false,
       redditAdPerVariantEnabled: false,
+      redditDemographicsEnabled: false,
       redditPixelListEnabled: false,
       googleAssetUploadEnabled: false,
       metaCreativeEnabled: false,
@@ -5722,11 +5723,12 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
     }
   });
 
-  /** Reddit placements, budget type and pixel list (#6108 row 5), one ad per variant (row 6), and regions, cities and DMAs (row 7): the cutover and each one's own flag. */
+  /** Reddit placements, budget type and pixel list (#6108 row 5), one ad per variant (row 6), regions, cities and DMAs (row 7), and demographics (row 9): the cutover and each one's own flag. */
   it.each([
     ['redditSubCountryGeoEnabled', ServerFeatureFlag.CampaignServiceRedditSubCountryGeo],
     ['redditPlacementsEnabled', ServerFeatureFlag.CampaignServiceRedditPlacements],
     ['redditBudgetTypeEnabled', ServerFeatureFlag.CampaignServiceRedditDailyBudget],
+    ['redditDemographicsEnabled', ServerFeatureFlag.CampaignServiceRedditGenderLanguageDayparting],
     ['redditPixelListEnabled', ServerFeatureFlag.CampaignServiceRedditPixelList],
     ['redditAdPerVariantEnabled', ServerFeatureFlag.CampaignServiceRedditAdPerVariant],
   ] as const)('reports %s from the cutover and %s', async (field, own) => {
@@ -5992,6 +5994,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       redditPlacementsEnabled: false,
       redditBudgetTypeEnabled: false,
       redditAdPerVariantEnabled: false,
+      redditDemographicsEnabled: false,
       redditPixelListEnabled: false,
       googleAssetUploadEnabled: false,
       metaCreativeEnabled: false,
