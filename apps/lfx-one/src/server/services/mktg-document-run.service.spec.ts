@@ -1247,6 +1247,235 @@ describe('MktgDocumentRunService core', () => {
       expect(audits('mktg_run_dismiss_audit')).toHaveLength(0);
     });
 
+    describe('when someone closed or retried the run first', () => {
+      const closer = writerRequest('synthetic-closer');
+      const retrier = writerRequest('synthetic-retrier');
+      const late = writerRequest('synthetic-late-dismisser');
+      const retriedAt = '2026-10-19T12:00:00.001Z';
+      const refusal = (actor: Request, agentKey = types[0].agentKey, documentId = 'living') =>
+        service.dismiss(actor, project, agentKey, documentId, runId).then(
+          () => null,
+          (err: unknown) => (err instanceof ConflictError ? err.toResponse() : err)
+        );
+      const logged = () => JSON.stringify([logger.info, logger.warning, logger.debug].map((log) => vi.mocked(log).mock.calls));
+
+      it('names who closed it and when, with no second write or audit and no name in the store or the log', async () => {
+        await failedRun();
+        await service.dismiss(closer, project, types[0].agentKey, 'living', runId);
+        const closed = JSON.stringify(stored());
+        flows.beforePut.mockClear();
+        flows.author.mockResolvedValue({ name: 'Synthetic Closer' });
+        expect(await refusal(late)).toEqual({
+          code: 'MKTG_RUN_NOT_FAILED',
+          runId,
+          change: 'closed',
+          changedBy: 'Synthetic Closer',
+          changedByViewer: false,
+          changedAt: '2026-10-19T12:00:00.000Z',
+          message: 'Synthetic Closer already closed this run.',
+          error: 'Synthetic Closer already closed this run.',
+          service: 'object_store',
+        });
+        expect(flows.author).toHaveBeenCalledExactlyOnceWith(late, 'synthetic-closer');
+        expect(JSON.stringify(stored())).toBe(closed);
+        expect(flows.beforePut).not.toHaveBeenCalled();
+        expect(audits('mktg_run_dismiss_audit')).toHaveLength(1);
+        expect(redraft.settle).not.toHaveBeenCalled();
+        expect(closed).not.toContain('Synthetic Closer');
+        expect(logged()).not.toContain('Synthetic Closer');
+      });
+
+      it('answers the closer’s own second dismiss as before, naming nobody', async () => {
+        await failedRun();
+        await service.dismiss(closer, project, types[0].agentKey, 'living', runId);
+        expect(await refusal(closer)).toBeNull();
+        expect(flows.author).not.toHaveBeenCalled();
+        expect(audits('mktg_run_dismiss_audit')).toHaveLength(1);
+      });
+
+      it('names the other writer whose dismiss landed between this read and this write', async () => {
+        await failedRun();
+        redraft.forSession.mockImplementationOnce(async () => {
+          await new MktgDocumentRunService().dismiss(closer, project, types[0].agentKey, 'living', runId);
+          return null;
+        });
+        flows.author.mockResolvedValue({ name: 'Synthetic Closer' });
+        expect(await refusal(late)).toMatchObject({ change: 'closed', changedBy: 'Synthetic Closer', changedByViewer: false });
+        expect(stored().metadata['closed-by']).toBe('synthetic-closer');
+        expect(audits('mktg_run_dismiss_audit').map((call) => call[3]?.['discardedBySubject'])).toEqual(['synthetic-closer']);
+      });
+
+      it('names the writer whose retry landed between this read and this write, closing nothing', async () => {
+        await failedRun();
+        redraft.forSession.mockImplementationOnce(async () => {
+          await new MktgDocumentRunService().retry(retrier, project, types[0].agentKey, 'living', runId);
+          return null;
+        });
+        flows.author.mockResolvedValue({ name: 'Synthetic Retrier' });
+        expect(await refusal(late)).toMatchObject({ change: 'retried', changedBy: 'Synthetic Retrier', changedByViewer: false, changedAt: retriedAt });
+        expect(stored().metadata).toMatchObject({ state: 'writing', 'retried-by': 'synthetic-retrier', 'retried-at': retriedAt });
+        expect(stored().metadata).not.toHaveProperty('closed-by');
+        expect(audits('mktg_run_dismiss_audit')).toHaveLength(0);
+      });
+
+      it('records who retried and when as an opaque subject, and names them to a later dismiss', async () => {
+        await failedRun();
+        await service.retry(retrier, project, types[0].agentKey, 'living', runId);
+        expect(stored().metadata).toMatchObject({ state: 'writing', 'retry-at': retriedAt, 'retried-by': 'synthetic-retrier', 'retried-at': retriedAt });
+        const retried = JSON.stringify(stored());
+        flows.author.mockResolvedValue({ name: 'Synthetic Retrier' });
+        expect(await refusal(late)).toEqual({
+          code: 'MKTG_RUN_NOT_FAILED',
+          runId,
+          change: 'retried',
+          changedBy: 'Synthetic Retrier',
+          changedByViewer: false,
+          changedAt: retriedAt,
+          message: 'Synthetic Retrier already retried this run.',
+          error: 'Synthetic Retrier already retried this run.',
+          service: 'object_store',
+        });
+        expect(flows.author).toHaveBeenCalledExactlyOnceWith(late, 'synthetic-retrier');
+        expect(JSON.stringify(stored())).toBe(retried);
+        expect(retried).not.toContain('Synthetic Retrier');
+        expect(logged()).not.toContain('Synthetic Retrier');
+        expect(audits('mktg_run_dismiss_audit')).toHaveLength(0);
+      });
+
+      it('says You for the viewer’s own retry without a directory lookup', async () => {
+        await failedRun();
+        await service.retry(retrier, project, types[0].agentKey, 'living', runId);
+        expect(await refusal(retrier)).toMatchObject({
+          change: 'retried',
+          changedBy: null,
+          changedByViewer: true,
+          changedAt: retriedAt,
+          message: 'You already retried this run.',
+        });
+        expect(flows.author).not.toHaveBeenCalled();
+      });
+
+      it.each([null, 'synthetic-retrier@example.test', 'synthetic-retrier', 'auth0|synthetic'])(
+        'never returns the unavailable or non-display name %s',
+        async (name) => {
+          await failedRun();
+          await service.retry(retrier, project, types[0].agentKey, 'living', runId);
+          flows.author.mockResolvedValue(name ? { name } : null);
+          expect(await refusal(late)).toMatchObject({
+            change: 'retried',
+            changedBy: null,
+            changedByViewer: false,
+            message: 'Someone on your team already retried this run.',
+          });
+        }
+      );
+
+      it('records an impersonated retry with its time and no subject, so it names nobody', async () => {
+        await failedRun();
+        const impersonated = Object.assign(writerRequest('synthetic-operator'), {
+          impersonationActive: true,
+          appSession: { impersonationUser: { sub: 'synthetic-target' } },
+        }) as unknown as Request;
+        await service.retry(impersonated, project, types[0].agentKey, 'living', runId);
+        expect(stored().metadata).toMatchObject({ state: 'writing', 'retried-at': retriedAt });
+        expect(stored().metadata).not.toHaveProperty('retried-by');
+        expect(JSON.parse(stored().body)).not.toHaveProperty('retriedBySubject');
+        expect(await refusal(writerRequest('synthetic-target'))).toMatchObject({
+          change: 'retried',
+          changedBy: null,
+          changedByViewer: false,
+          changedAt: retriedAt,
+          message: 'Someone on your team already retried this run.',
+        });
+        expect(flows.author).not.toHaveBeenCalled();
+      });
+
+      it('keeps the retry on record while the run moves on, and names it after the run completed', async () => {
+        await failedRun();
+        await service.retry(retrier, project, types[0].agentKey, 'living', runId);
+        vi.setSystemTime('2026-10-19T12:05:00Z');
+        await service.resumeAfterQuestions(req, project, session, 'a1234567');
+        expect(stored().metadata).toMatchObject({ 'retry-at': '2026-10-19T12:05:00.000Z', 'retried-by': 'synthetic-retrier', 'retried-at': retriedAt });
+        flows.result.mockResolvedValue(ready());
+        expect(await service.readProgress(req, project)).toEqual({ runs: [] });
+        expect(stored().metadata).toMatchObject({ state: 'completed', 'retried-by': 'synthetic-retrier', 'retried-at': retriedAt });
+        flows.author.mockResolvedValue({ name: 'Synthetic Retrier' });
+        expect(await refusal(late)).toMatchObject({ change: 'retried', changedBy: 'Synthetic Retrier', changedAt: retriedAt });
+      });
+
+      it('dismisses a run that failed again after a retry, and then names the closer, not the retry', async () => {
+        await failedRun();
+        await service.retry(retrier, project, types[0].agentKey, 'living', runId);
+        flows.result.mockResolvedValue({ status: 'failed', failureText: 'Synthetic second failure.' });
+        await service.readProgress(req, project);
+        // The failure ends what the retry started: nothing of it stays on the record.
+        expect(stored().metadata['state']).toBe('failed');
+        expect(stored().metadata).not.toHaveProperty('retried-by');
+        expect(stored().metadata).not.toHaveProperty('retried-at');
+        expect(stored().body).not.toContain('retried');
+        await expect(service.dismiss(closer, project, types[0].agentKey, 'living', runId)).resolves.toBeUndefined();
+        expect(stored().metadata).toMatchObject({ state: 'discarded', 'closed-by': 'synthetic-closer' });
+        expect(stored().metadata).not.toHaveProperty('retried-by');
+        expect(await refusal(late)).toMatchObject({ change: 'closed', changedByViewer: false });
+        expect(flows.author).toHaveBeenCalledExactlyOnceWith(late, 'synthetic-closer');
+      });
+
+      it('names nobody for a retry that predates the latest failure, once a late result completed the run', async () => {
+        await failedRun();
+        await service.retry(retrier, project, types[0].agentKey, 'living', runId);
+        flows.result.mockResolvedValue({ status: 'failed', failureText: 'Synthetic second failure.' });
+        await service.readProgress(req, project);
+        expect(stored().metadata['state']).toBe('failed');
+        flows.result.mockResolvedValue(ready());
+        await service.recordResult(req, session, ready(), project);
+        expect(stored().metadata['state']).toBe('completed');
+        expect(stored().metadata).not.toHaveProperty('retried-by');
+        expect(stored().metadata).not.toHaveProperty('retried-at');
+        // Nobody retried it after the failure this viewer's row still shows: the same 204 as any completed run.
+        expect(await refusal(late)).toBeNull();
+        expect(flows.author).not.toHaveBeenCalled();
+        expect(audits('mktg_run_dismiss_audit')).toHaveLength(0);
+      });
+
+      it('records an impersonated discard with its time and no closer, so a later dismiss names nobody', async () => {
+        await service.start(writerRequest('synthetic-creator'), project, types[0].agentKey, session);
+        const impersonated = Object.assign(writerRequest('synthetic-operator'), {
+          impersonationActive: true,
+          appSession: { impersonationUser: { sub: 'synthetic-target' } },
+        }) as unknown as Request;
+        // "Discard and start over" resends the start with the confirmed run to discard.
+        await service.assertSingleActiveRun(impersonated, project, types[0].agentKey, { discard: runId });
+        expect(stored().metadata).toMatchObject({ state: 'discarded', 'closed-at': '2026-10-19T12:00:00.000Z' });
+        expect(stored().metadata).not.toHaveProperty('closed-by');
+        expect(await refusal(late)).toBeNull();
+        expect(await refusal(writerRequest('synthetic-target'))).toBeNull();
+        expect(flows.author).not.toHaveBeenCalled();
+      });
+
+      it('names a Member 360 retry through the conditional member write', async () => {
+        await service.startForOneOff(writerRequest('synthetic-creator-a'), 'member-360', project, session);
+        stored().metadata['state'] = 'failed';
+        const documentId = `run-${runId.slice(0, 24)}`;
+        await service.retry(retrier, project, 'member-360', documentId, runId);
+        expect(stored().metadata).toMatchObject({ state: 'writing', 'retried-by': 'synthetic-retrier', 'retried-at': retriedAt });
+        flows.author.mockResolvedValue({ name: 'Synthetic Retrier' });
+        expect(await refusal(late, 'member-360', documentId)).toMatchObject({ change: 'retried', changedBy: 'Synthetic Retrier', changedAt: retriedAt });
+      });
+
+      it('names nobody once a new turn rewrote the record, or when the stored time is unusable', async () => {
+        await failedRun();
+        await service.retry(retrier, project, types[0].agentKey, 'living', runId);
+        stored().metadata['retried-at'] = 'not-a-time';
+        expect(await refusal(late)).toEqual(expect.objectContaining({ code: 'MKTG_RUN_NOT_FAILED', runId }));
+        expect(await refusal(late)).not.toHaveProperty('change');
+        stored().metadata['retried-at'] = retriedAt;
+        await service.start(retrier, project, types[0].agentKey, session, 0, 'second-turn');
+        expect(stored().metadata).not.toHaveProperty('retried-by');
+        expect(await refusal(late)).not.toHaveProperty('change');
+        expect(flows.author).not.toHaveBeenCalled();
+      });
+    });
+
     it('answers 404 for another agent, document or unknown run and 400 for a malformed id, without writing', async () => {
       await failedRun();
       await expect(service.dismiss(req, project, 'member-360', 'living', runId)).rejects.toBeInstanceOf(ResourceNotFoundError);

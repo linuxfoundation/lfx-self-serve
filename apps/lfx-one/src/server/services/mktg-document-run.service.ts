@@ -51,6 +51,7 @@ import {
   ObjectStoreListEntry,
   MktgActiveRunStartOptions,
   MktgMember360QuestionsClaim,
+  MktgRunNotFailedConflict,
 } from '@lfx-one/shared/interfaces';
 import { MKTG_RUN_ACTIVE, MKTG_RUN_ANSWERED, MKTG_RUN_CLOSED, MKTG_RUN_NOT_FAILED } from '@lfx-one/shared/constants/mktg-run.constants';
 import { createMember360Redactor } from '@lfx-one/shared/server';
@@ -67,6 +68,8 @@ import {
   mktgRunRenewAt,
   normalizeLinkedinShareAnswers,
   isMktgRunFailureReason,
+  isMktgDisplayName,
+  mktgRunNotFailedNotice,
 } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 import { createHash, randomUUID } from 'node:crypto';
@@ -723,12 +726,18 @@ export class MktgDocumentRunService {
     }
   }
 
-  /** Closes a failed run as discarded so it leaves Started runs for everyone; no document or revision is written. */
+  /**
+   * Closes a failed run as discarded so it leaves Started runs for everyone; no document or revision is written.
+   * First answer wins: a run someone else closed or retried first is refused with who did it and when.
+   */
   public async dismiss(req: Request, project: string, agentKey: string, documentId: string, runId: string): Promise<void> {
     const stored = await this.selected(req, project, agentKey, documentId, runId);
-    // Already off every list: no write and no audit.
-    if (isMktgRunClosed(stored.record.state)) return;
-    if (stored.record.state !== 'failed') throw this.notFailedConflict(stored.record);
+    if (stored.record.state !== 'failed') {
+      // Already off every list with nobody else to name: no write and no audit.
+      const refused = await this.notFailedConflict(req, stored.record);
+      if (refused) throw refused;
+      return;
+    }
     await this.settleRedraft(
       req,
       stored.record,
@@ -736,8 +745,9 @@ export class MktgDocumentRunService {
       await this.redrafts.forSession(req, stored.record.sessionId)
     );
     const closed = await this.mark(req, stored, 'discarded');
-    // A concurrent retry moved the run before this write landed.
-    if (!isMktgRunClosed(closed.state)) throw this.notFailedConflict(closed);
+    // A concurrent retry or another writer's dismiss landed before this write.
+    const lost = await this.notFailedConflict(req, closed);
+    if (lost) throw lost;
   }
 
   /** Caller resolves writer access and validates the creator token; only the returned CAS winner may send. */
@@ -922,14 +932,47 @@ export class MktgDocumentRunService {
     });
   }
 
-  /** Details carry only the opaque run id; the client re-reads Started runs for the current state. */
-  private notFailedConflict(run: MktgStartedRunRecord): ConflictError {
-    return new ConflictError('Only a failed run can be dismissed.', MKTG_RUN_NOT_FAILED, {
-      operation: 'mktg_run_dismiss',
-      service: 'object_store',
-      clientMessage: 'This run is no longer failed. Refresh to see where it stands.',
-      details: { runId: run.runId },
-    });
+  /**
+   * The answer to a dismiss of a run that is no longer failed, or null when a closed run has nobody else to name (the
+   * caller's own close, a superseded run, a completion with no retry on record). Who and when are resolved only here
+   * and are response-only: the record and the log keep the opaque subject. With nothing on record the details carry
+   * only the opaque run id, and the client re-reads Started runs for the current state.
+   */
+  private async notFailedConflict(req: Request, run: MktgStartedRunRecord): Promise<ConflictError | null> {
+    const viewer = getEffectiveSub(req);
+    const first = this.firstChange(run, viewer);
+    if (!first && isMktgRunClosed(run.state)) return null;
+    const options = { operation: 'mktg_run_dismiss', service: 'object_store' };
+    if (!first) {
+      return new ConflictError('Only a failed run can be dismissed.', MKTG_RUN_NOT_FAILED, {
+        ...options,
+        clientMessage: 'This run is no longer failed. Refresh to see where it stands.',
+        details: { runId: run.runId },
+      });
+    }
+    const changedByViewer = !!first.subject && first.subject === viewer;
+    const name = changedByViewer ? null : await this.displayName(req, first.subject);
+    const conflict: MktgRunNotFailedConflict = {
+      code: MKTG_RUN_NOT_FAILED,
+      runId: run.runId,
+      change: first.change,
+      // Never an identifier in place of a display name: the shared policy the client applies too.
+      changedBy: isMktgDisplayName(name) ? name : null,
+      changedByViewer,
+      changedAt: first.at && Number.isFinite(Date.parse(first.at)) ? first.at : null,
+    };
+    const { code, ...details } = conflict;
+    return new ConflictError('Only a failed run can be dismissed.', code, { ...options, clientMessage: mktgRunNotFailedNotice(conflict), details });
+  }
+
+  /** What is on record about who moved a failed run first: someone else's close, or the latest explicit retry. */
+  private firstChange(run: MktgStartedRunRecord, viewer: string | null): { change: MktgRunNotFailedConflict['change']; subject?: string; at?: string } | null {
+    if (run.state === 'discarded') {
+      return run.closedBySubject && run.closedBySubject !== viewer ? { change: 'closed', subject: run.closedBySubject, at: run.closedAt } : null;
+    }
+    // A newer run replaced a superseded one, and a failed run is still there to dismiss: neither has a first answer to name.
+    if (run.state === 'superseded' || run.state === 'failed' || !run.retriedAt) return null;
+    return { change: 'retried', subject: run.retriedBySubject, at: run.retriedAt };
   }
 
   private async displayName(req: Request, subject?: string): Promise<string | null> {
@@ -1162,12 +1205,23 @@ export class MktgDocumentRunService {
     const run = stored.record;
     const closedAt = state === 'discarded' || state === 'superseded' ? new Date().toISOString() : undefined;
     const discardedBySubject = state === 'discarded' ? getEffectiveSub(req) : null;
+    // Discard is open while impersonating, and that close is not the impersonated person's: it keeps its time and records no closer.
+    const closedBySubject = isImpersonating(req) ? null : discardedBySubject;
+    // Only an explicit retry moves a failed run back to writing: its actor and time stay on the record for a later refused dismiss.
+    // Retry is open while impersonating, and that retry is not the impersonated person's: it keeps its time and names nobody.
+    const retried = state === 'writing' && run.state === 'failed';
+    // A failure ends what the retry started: only a retry made after the latest failure stays on record.
+    const kept = state === 'failed' ? undefined : run;
+    const retriedBySubject = retried ? (!isImpersonating(req) && getEffectiveSub(req)) || undefined : kept?.retriedBySubject;
+    const retriedAt = retried ? retryAt : kept?.retriedAt;
     const turn = state === 'questions' ? pendingQuestions : null;
     // State must change the bytes/ETag too: metadata-only replacements can retain an S3 ETag.
     const body = JSON.stringify({
       ...run,
       state,
       retryAt,
+      retriedBySubject,
+      retriedAt,
       answeredQuestionsId: questionsId,
       persistRetries,
       failureText,
@@ -1181,12 +1235,14 @@ export class MktgDocumentRunService {
       {
         state,
         ...(closedAt && { 'closed-at': closedAt }),
-        ...(discardedBySubject && { 'closed-by': discardedBySubject }),
+        ...(closedBySubject && { 'closed-by': closedBySubject }),
         'started-at': run.startedAt,
         'prior-version': String(run.priorVersion),
         'attempt-id': run.attemptId ?? 'initial',
         'attempt-history': (run.acceptedAttemptIds ?? [run.attemptId ?? 'initial']).join(','),
         ...(retryAt && { 'retry-at': retryAt }),
+        ...(retriedBySubject && { 'retried-by': retriedBySubject }),
+        ...(retriedAt && { 'retried-at': retriedAt }),
         ...(revisionId && { 'revision-id': revisionId }),
         ...(run.priorRevisionId && { 'prior-revision-id': run.priorRevisionId }),
         ...(questionsId && { 'answered-questions-id': questionsId }),
@@ -1468,6 +1524,9 @@ export class MktgDocumentRunService {
           attemptId,
           acceptedAttemptIds: this.acceptedAttempts(m, attemptId),
           retryAt: m['retry-at'],
+          // Metadata is the only source, as for the closer: a turn that rewrites it leaves no retry to name.
+          retriedBySubject: m['retried-by'] || undefined,
+          retriedAt: Number.isFinite(Date.parse(m['retried-at'] ?? '')) ? m['retried-at'] : undefined,
           answeredQuestionsId: m['answered-questions-id'],
           answeredBySubject: m['answered-by'],
           answeredBy: m['answered-by'] ?? record.answeredBy,

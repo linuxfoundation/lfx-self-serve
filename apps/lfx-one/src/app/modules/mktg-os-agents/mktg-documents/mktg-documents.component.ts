@@ -1,9 +1,22 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, DOCUMENT, I18nPluralPipe, isPlatformBrowser, NgClass, NgTemplateOutlet } from '@angular/common';
+import { DATE_PIPE_DEFAULT_OPTIONS, DatePipe, DOCUMENT, formatDate, I18nPluralPipe, isPlatformBrowser, NgClass, NgTemplateOutlet } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, PLATFORM_ID, Signal, signal, viewChild } from '@angular/core';
+import {
+  afterNextRender,
+  Component,
+  computed,
+  DestroyRef,
+  ElementRef,
+  inject,
+  Injector,
+  LOCALE_ID,
+  PLATFORM_ID,
+  Signal,
+  signal,
+  viewChild,
+} from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
@@ -39,6 +52,8 @@ import {
   readMktgRetiredRunHint,
   mktgKitRootPath,
   mktgRunRouteFor,
+  mktgRunNotFailedNotice,
+  readMktgRunNotFailedConflict,
 } from '@lfx-one/shared/utils';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { MktgPendingDocumentService } from '@services/mktg-pending-document.service';
@@ -109,6 +124,8 @@ export class MktgDocumentsComponent {
   private readonly userService = inject(UserService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly pendingDocuments = inject(MktgPendingDocumentService);
+  private readonly locale = inject(LOCALE_ID);
+  private readonly dateOptions = inject(DATE_PIPE_DEFAULT_OPTIONS, { optional: true });
 
   // === Signals ===
   protected readonly loading = signal(true);
@@ -133,6 +150,8 @@ export class MktgDocumentsComponent {
   /** The one Started runs row whose dismiss is in flight; every other Dismiss waits for it. */
   protected readonly dismissingRunId = signal<string | null>(null);
   protected readonly dismissError = signal<{ runId: string; text: string } | null>(null);
+  /** Who closed or retried a run before this page's dismiss, as the server answered it; held by the section because that row may be gone. */
+  protected readonly dismissNotice = signal<string | null>(null);
   private readonly detailCache = new Map<string, MktgDocumentDetailResponse>();
   private listedType: string | null = null;
   private pendingSelectionScroll = false;
@@ -352,6 +371,7 @@ export class MktgDocumentsComponent {
     const scope = this.listedScope;
     this.dismissingRunId.set(run.runId);
     this.dismissError.set(null);
+    this.dismissNotice.set(null);
     // This one-shot write outlives the page, as Restore does on the document page: leaving Documents must not
     // cancel it. Only its presentation is scoped to the listing that started it, and to a live component.
     this.documentStore.dismissRun(project, run.agentKey, run.documentId, run.runId).subscribe({
@@ -361,6 +381,22 @@ export class MktgDocumentsComponent {
         // A 404 means the run is already gone from this document: the same outcome as a dismiss.
         if (error.status === 404) {
           this.dismissed(scope, run.runId);
+          return;
+        }
+        // A validated conflict is an answer, not an error: someone closed or retried this run first, and the line names them.
+        const lost = error.status === 409 ? readMktgRunNotFailedConflict(error.error, run.runId) : null;
+        if (lost) {
+          // The same short time, in the same zone, as the row's own "Started".
+          const short = (iso: string) => formatDate(iso, 'd MMM, HH:mm', this.locale, this.dateOptions?.timezone);
+          // The row may be gone or one of several: the line names it as its Dismiss button does.
+          const which = { label: run.label, started: short(run.startedAt) };
+          this.dismissNotice.set(mktgRunNotFailedNotice(lost, lost.changedAt ? short(lost.changedAt) : '', which));
+          // A closed run leaves as a dismissed one does; a retried run stays, and the re-read shows where it stands.
+          if (lost.change === 'closed') this.dismissed(scope, run.runId);
+          else {
+            this.dismissingRunId.set(null);
+            this.rereadList();
+          }
           return;
         }
         this.dismissingRunId.set(null);
@@ -421,6 +457,7 @@ export class MktgDocumentsComponent {
           this.startedRunsVisible.set(false);
           this.dismissingRunId.set(null);
           this.dismissError.set(null);
+          this.dismissNotice.set(null);
           this.errorText.set('');
           this.listFailing.set(false);
           this.listFailed.set(false);

@@ -579,6 +579,76 @@ describe('MktgDocumentsComponent', () => {
       expect(dismissButton()).toBeNull();
     });
 
+    it.each([
+      {
+        change: 'closed',
+        changedBy: 'Synthetic Closer',
+        changedByViewer: false,
+        line: `Synthetic Closer already closed the ${BRAND_KIT.itemLabel} run started at 19 Oct, 12:00 (closed at 19 Oct, 12:30).`,
+      },
+      {
+        change: 'closed',
+        changedBy: 'closer@synthetic.example',
+        changedByViewer: false,
+        line: `Someone on your team already closed the ${BRAND_KIT.itemLabel} run started at 19 Oct, 12:00 (closed at 19 Oct, 12:30).`,
+      },
+      {
+        change: 'retried',
+        changedBy: 'Synthetic Retrier',
+        changedByViewer: false,
+        line: `Synthetic Retrier already retried the ${BRAND_KIT.itemLabel} run started at 19 Oct, 12:00 (retried at 19 Oct, 12:30).`,
+      },
+      {
+        change: 'retried',
+        changedBy: null,
+        changedByViewer: true,
+        line: `You already retried the ${BRAND_KIT.itemLabel} run started at 19 Oct, 12:00 (retried at 19 Oct, 12:30).`,
+      },
+    ])('names who $change the run first ($line), as an answer and not an error', async ({ line, ...facts }) => {
+      const body = { code: 'MKTG_RUN_NOT_FAILED', runId: RUN_ID, changedAt: '2026-10-19T12:30:00Z', ...facts, message: 'server text', error: 'server text' };
+      store.dismissRun.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 409, error: body })));
+      const closed = facts.change === 'closed';
+      store.listDocuments
+        .mockReturnValueOnce(of({ ...documentsResponse(), runs: [startedRun('failed')] }))
+        // A closed run must not come back through kept rows; a retried one is read again where it stands.
+        .mockReturnValue(
+          of(closed ? { ...documentsResponse(), runs: [], progressUnavailable: true } : { ...documentsResponse(), runs: [startedRun('writing')] })
+        );
+      await render();
+      expect(query('mktg-documents-dismiss-notice')).toBeNull();
+      dismissButton()?.click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(store.listDocuments).toHaveBeenCalledTimes(2);
+      expect(query('mktg-documents-dismiss-notice')?.textContent?.trim()).toBe(line);
+      expect(query('mktg-documents-dismiss-error-' + RUN_ID)).toBeNull();
+      expect(dismissButton()).toBeNull();
+      if (closed) expect(query('mktg-documents-started-runs')?.textContent).toContain('No runs in progress');
+      else expect(query('mktg-documents-started-run-' + RUN_ID)?.textContent).toContain('Writing the document');
+    });
+
+    it('names nobody for a conflict about another run, and clears a shown name on the next dismiss', async () => {
+      const facts = { code: 'MKTG_RUN_NOT_FAILED', change: 'retried', changedBy: 'Synthetic Retrier', changedByViewer: false, changedAt: null };
+      store.dismissRun
+        .mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 409, error: { ...facts, runId: RUN_ID } })))
+        .mockReturnValue(throwError(() => new HttpErrorResponse({ status: 409, error: { ...facts, runId: 'c'.repeat(64) } })));
+      store.listDocuments.mockReturnValue(of({ ...documentsResponse(), runs: [startedRun('failed')] }));
+      await render();
+      dismissButton()?.click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(query('mktg-documents-dismiss-notice')?.textContent?.trim()).toBe(
+        `Synthetic Retrier already retried the ${BRAND_KIT.itemLabel} run started at 19 Oct, 12:00.`
+      );
+      dismissButton()?.click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(query('mktg-documents-dismiss-notice')).toBeNull();
+      expect(query('mktg-documents-dismiss-error-' + RUN_ID)?.textContent).toContain(
+        'This run changed before it could be dismissed. Started runs now shows where it stands.'
+      );
+    });
+
     it('keeps the row with a retry message when the dismiss fails for another reason', async () => {
       store.dismissRun.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
       store.listDocuments.mockReturnValue(of({ ...documentsResponse(), runs: [startedRun('failed')] }));
