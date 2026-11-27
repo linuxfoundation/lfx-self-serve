@@ -680,9 +680,10 @@ new send is admitted in this order, each a read-only check:
    reservation's 409, which names who and when and no run.
 
 All three precede the ledger reservation, so either 409 proves nothing was sent: no
-ledger row, no session. One answer is not a 409: when the slot is reserved by the
-caller's own start and no run is published yet, that start may be this same request
-sent twice (a reload while the first POST is still in flight), so the send answers
+ledger row, no session. One answer is not a 409: when the slot is reserved by a start
+with no run published yet, and that start is not known to be another writer's (the
+caller's own, or a holder that could not be read), it may be this same request sent
+twice (a reload while the first POST is still in flight), so the send answers
 503 `MKTG_REDRAFT_START_UNCERTAIN` and the browser keeps its recovery ID. The retry
 then replays its own run, or gets the named 409 of the other send.
 

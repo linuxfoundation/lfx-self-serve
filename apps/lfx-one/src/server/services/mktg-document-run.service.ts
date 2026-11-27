@@ -1616,7 +1616,9 @@ export class MktgDocumentRunService {
     const record = holder && 'runId' in holder ? holder : null;
     const startedByViewer = !!holder && holder.creatorSubject === getEffectiveSub(req);
     const author = !holder || startedByViewer ? null : await this.authors.resolveAuthor(req, holder.creatorSubject, 'mktg_run_start');
-    const startedBy = author?.name ?? 'Another writer';
+    // A directory name that is an email, the stored subject or markup is never returned in a name's place.
+    const name = author?.name?.trim();
+    const startedBy = isMktgDisplayName(name) && name !== holder?.creatorSubject ? name : 'Another writer';
     const itemLabel = type.itemLabel.replace(/\s+run$/i, '');
     const own = type.kind === 'run' || startedByViewer;
     const whose = own ? 'Your' : `${startedBy}'s`;

@@ -2513,6 +2513,20 @@ describe('MktgDocumentRunService active slot', () => {
     expect(sessions).toBe(1);
   });
 
+  it.each([
+    ['writer@example.com', 'Another writer'],
+    ['synthetic-writer-a', 'Another writer'],
+    ['<b>Synthetic Writer</b>', 'Another writer'],
+    ['Synthetic Writer', 'Synthetic Writer'],
+  ])('names a reservation holder only by a display name, never an email, the subject or markup (%s)', async (name, startedBy) => {
+    flows.author.mockResolvedValue({ name });
+    const [, second] = await Promise.allSettled([start(writerA, 'session-a'), start(writerB, 'session-b')]);
+    const refused = second.status === 'rejected' ? second.reason : null;
+    const response = refused instanceof ConflictError ? refused.toResponse() : null;
+    expect(response).toMatchObject({ message: `${startedBy}'s ${label} run is starting. Try again in a moment.`, startedBy, startedByViewer: false });
+    expect(JSON.stringify(response).includes(name)).toBe(name === startedBy);
+  });
+
   it.each<[string, boolean, () => Promise<unknown>]>([
     ['a failure before anything is sent', false, () => Promise.reject(new MicroserviceError('Source unavailable.', 503, 'SYNTHETIC_SOURCE'))],
     ['a refusal by Guild', false, guildAnswers({ ok: false, status: 400, statusText: 'Bad Request', text: () => Promise.resolve('') })],

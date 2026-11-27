@@ -185,11 +185,13 @@ describe('reserved redraft delivery', () => {
     expect(f.released).toHaveBeenCalledTimes(1);
   });
   it.each([
-    [true, 503, 'MKTG_REDRAFT_START_UNCERTAIN'],
-    [false, 409, 'MKTG_RUN_ACTIVE'],
-  ])('never answers a slot the creator’s own start still holds as proof that nothing was sent (own=%s)', async (startedByViewer, statusCode, code) => {
-    // A start with no run record yet names no run. The creator's own may be this same request sent twice.
-    const details = { agentKey: type.agentKey, startedBy: 'Synthetic writer', startedByViewer, startedAt: '2026-10-19T12:00:00.000Z' };
+    [{ startedBy: 'Synthetic writer', startedByViewer: true, startedAt: '2026-10-19T12:00:00.000Z' }, 503, 'MKTG_REDRAFT_START_UNCERTAIN'],
+    // No holder could be read (every write lost, an unreadable reservation): it may still be this same request.
+    [{}, 503, 'MKTG_REDRAFT_START_UNCERTAIN'],
+    [{ startedBy: 'Synthetic writer', startedByViewer: false, startedAt: '2026-10-19T12:00:00.000Z' }, 409, 'MKTG_RUN_ACTIVE'],
+  ])('answers a reserved slot as proof that nothing was sent only when another writer holds it (%j)', async (holder, statusCode, code) => {
+    // A start with no run record yet names no run. Unless it is known to be another writer's, it may be this same request sent twice.
+    const details = { agentKey: type.agentKey, ...holder };
     f.guard.mockRejectedValueOnce(new ConflictError('A run is already in progress.', 'MKTG_RUN_ACTIVE', { details }));
     await expect(send()).rejects.toMatchObject({ statusCode, code });
     expect(f.reserve).not.toHaveBeenCalled();

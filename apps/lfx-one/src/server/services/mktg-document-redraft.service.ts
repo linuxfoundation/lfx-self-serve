@@ -53,10 +53,11 @@ export class MktgDocumentRedraftService {
     try {
       return await runs.withActiveSlot(req, project, type.agentKey, { documentId }, start);
     } catch (error) {
-      // This creator's own start holds the slot and has no run record yet. It may be this same request sent twice, so the
-      // answer must not prove that nothing was sent: the same request ID is retried, and then finds its run or a named 409.
+      // A start with no run record yet holds the slot. Unless it is known to be another writer's, it may be this same
+      // request sent twice (the creator's own, or a holder that could not be read), so the answer must not prove that
+      // nothing was sent: the same request ID is retried, and then finds its run or a named 409.
       const details = error instanceof ConflictError && error.code === MKTG_RUN_ACTIVE ? error.details : undefined;
-      if (details?.['startedByViewer'] === true && !details['activeRunId']) throw this.uncertain();
+      if (details && details['startedByViewer'] !== false && !details['activeRunId']) throw this.uncertain();
       throw error;
     }
   }
