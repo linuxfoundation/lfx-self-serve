@@ -58,8 +58,10 @@ export const MKTG_RUN_CLOSED = 'MKTG_RUN_CLOSED';
 /** The second clause of every answered-elsewhere line, with its dash and full stop, so a rewrite anchors on the whole clause. */
 export const MKTG_RUN_ANSWERED_WRITING_CLAUSE = ' — the agent is writing.';
 export const MKTG_RUN_ANSWERED_READY_CLAUSE = ' — the asset is ready.';
-/** Only a failed started run can be dismissed from the Documents page. */
+/** Only a failed started run can be dismissed from the Documents page; the 409 names who closed or retried it first when that is on record. */
 export const MKTG_RUN_NOT_FAILED = 'MKTG_RUN_NOT_FAILED';
+/** Shown when the directory has no display name for who closed or retried the run. */
+export const MKTG_RUN_CHANGED_BY_FALLBACK = 'Someone on your team';
 /** Separate dialog hosts may coexist when a dedicated intake is rendered inside the catalog. */
 export const MKTG_RUN_ACTIVE_DIALOG_KEYS = { linkedin: 'mktg-active-linkedin', member360: 'mktg-active-member360', aeoGeo: 'mktg-active-aeo-geo' } as const;
 

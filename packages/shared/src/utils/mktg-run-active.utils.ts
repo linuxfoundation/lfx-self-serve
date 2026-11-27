@@ -1,9 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MKTG_RUN_ACTIVE, MKTG_RUN_ANSWERED } from '../constants/mktg-run.constants';
+import { MKTG_RUN_ACTIVE, MKTG_RUN_ANSWERED, MKTG_RUN_CHANGED_BY_FALLBACK, MKTG_RUN_NOT_FAILED } from '../constants/mktg-run.constants';
 import { MKTG_DOCUMENT_TYPES, MKTG_DOCUMENT_ID_REGEX, MKTG_LIVING_DOCUMENT_ID, MKTG_STARTED_RUN_ID_REGEX } from '../constants/mktg-document-store.constants';
-import type { MktgActiveRunConflict, MktgRunAnsweredConflict } from '../interfaces/mktg-document-run.interface';
+import type { MktgActiveRunConflict, MktgRunAnsweredConflict, MktgRunNotFailedConflict } from '../interfaces/mktg-document-run.interface';
+import { isMktgDisplayName } from './mktg-document-store.utils';
 
 /** Validate the server's top-level conflict facts before presenting navigation or discard. */
 export function readMktgActiveRunConflict(value: unknown, agentId: string, documentId?: string): MktgActiveRunConflict | null {
@@ -54,6 +55,43 @@ export function readMktgRunAnsweredConflict(value: unknown): MktgRunAnsweredConf
   )
     return null;
   return { code: MKTG_RUN_ANSWERED, answeredBy: body['answeredBy'].trim(), answeredAt: body['answeredAt'] };
+}
+
+/** Validate a refused dismiss before naming anyone: the facts must be about the run this page tried to dismiss. A 409 without them stays unnamed. */
+export function readMktgRunNotFailedConflict(value: unknown, runId: string): MktgRunNotFailedConflict | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const body = value as Record<string, unknown>;
+  const changedAt = body['changedAt'];
+  if (
+    body['code'] !== MKTG_RUN_NOT_FAILED ||
+    !MKTG_STARTED_RUN_ID_REGEX.test(runId) ||
+    body['runId'] !== runId ||
+    (body['change'] !== 'closed' && body['change'] !== 'retried') ||
+    typeof body['changedByViewer'] !== 'boolean' ||
+    (changedAt !== null && (typeof changedAt !== 'string' || !Number.isFinite(Date.parse(changedAt))))
+  )
+    return null;
+  const name = typeof body['changedBy'] === 'string' ? body['changedBy'].trim() : '';
+  return {
+    code: MKTG_RUN_NOT_FAILED,
+    runId,
+    change: body['change'],
+    // A display name only: an email, subject or markup-like value is never shown.
+    changedBy: isMktgDisplayName(name) ? name : null,
+    changedByViewer: body['changedByViewer'],
+    changedAt,
+  };
+}
+
+/** One line for a dismiss that lost: who closed or retried the run first and, with the caller's local short time, when. */
+export function mktgRunNotFailedNotice(
+  conflict: Pick<MktgRunNotFailedConflict, 'change' | 'changedBy' | 'changedByViewer' | 'changedAt'>,
+  localTime = ''
+): string {
+  const who = conflict.changedByViewer ? 'You' : (conflict.changedBy ?? MKTG_RUN_CHANGED_BY_FALLBACK);
+  const at = conflict.changedAt && localTime ? ` at ${localTime}` : '';
+  // The change is the verb: "closed" or "retried".
+  return `${who} already ${conflict.change} this run${at}.`;
 }
 
 /** One heading policy for catalog and dedicated one-off intakes; never double the word "run". */

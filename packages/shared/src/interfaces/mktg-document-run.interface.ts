@@ -5,7 +5,7 @@ import type { Observable } from 'rxjs';
 import type { MktgDocumentAgentKey, MktgDocumentLocation } from './mktg-document-store.interface';
 import type { MktgRunActivity, MktgRunAnswer, MktgRunKeptDraft, MktgRunQuestion } from './mktg-run.interface';
 import type { Member360FailureReason } from './member-360.interface';
-import type { MKTG_RUN_ACTIVE, MKTG_RUN_ANSWERED } from '../constants/mktg-run.constants';
+import type { MKTG_RUN_ACTIVE, MKTG_RUN_ANSWERED, MKTG_RUN_NOT_FAILED } from '../constants/mktg-run.constants';
 
 /** Safe conflict facts; never a Guild session id or owner capability. */
 export interface MktgActiveRunConflict {
@@ -27,6 +27,20 @@ export interface MktgRunAnsweredConflict {
   code: typeof MKTG_RUN_ANSWERED;
   answeredBy: string;
   answeredAt: string;
+}
+
+/** Safe facts of a refused dismiss: who closed or retried the run first and when; never a subject, email or session. */
+export interface MktgRunNotFailedConflict {
+  code: typeof MKTG_RUN_NOT_FAILED;
+  runId: string;
+  /** What the first writer did to the failed run: closed it (a dismiss, or a discard) or retried it. */
+  change: 'closed' | 'retried';
+  /** Directory display name; null for the viewer's own action or when the directory has none. */
+  changedBy: string | null;
+  /** Whether the effective viewer is the one who closed or retried it. */
+  changedByViewer: boolean;
+  /** When it was closed or retried (ISO); null when the record has no time for it. */
+  changedAt: string | null;
 }
 
 /** BFF-only Member claim; release is fenced to the exact winning object version. */
@@ -227,6 +241,10 @@ export interface MktgStartedRunRecord {
   closedBySubject?: string;
   /** Retry/answers-continuation budget origin; does not change the original Started label. */
   retryAt?: string;
+  /** Private opaque actor of the latest explicit retry; only a safe display name may reach a refused dismiss. */
+  retriedBySubject?: string;
+  /** When that retry was recorded; unlike retryAt, a later answers continuation does not move it. */
+  retriedAt?: string;
   /** Latest questions block answered on this session; a different block is a new human pause. */
   answeredQuestionsId?: string;
   /** Server-only Member claim attribution; never spread into public progress. */
