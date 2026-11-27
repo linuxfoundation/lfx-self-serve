@@ -35,6 +35,18 @@ describe('redditAdPerVariantRefusal', () => {
       { PostURL: 'https://reddit.example/p', imageUrl: 'https://img.example/a.png', variants: v('a', ' ') },
       true,
     ],
+    // campaign-service refuses both images first (`checkRedditAssetChoice`), so its message is the one to show.
+    ['an image URL and an uploaded image', { imageUrl: 'https://img.example/a.png', imageAssetId: 'asset-1', variants: v('a', ' ') }, true],
+    // Where Go's key matching could read the config differently, the create is left to campaign-service.
+    ['a non-ASCII spelling Go does not fold to variants', { imageUrl: 'https://img.example/a.png', variants: v('a'), varıants: [{}, {}, {}] }, true],
+    [
+      'postUrl under two spellings, the exact one null',
+      { postUrl: null, PostURL: 'https://reddit.example/p', imageUrl: 'https://img.example/a.png', variants: v('a', ' ') },
+      true,
+    ],
+    ['variants under two spellings, which Go merges', { imageUrl: 'https://img.example/a.png', variants: [{ body: 'z' }, null], Variants: v('a', 'b') }, true],
+    ['a headline under two spellings', authored([{ headline: 'a' }, { headline: ' ', Headline: 'b' }]), true],
+    ['only a non-ASCII spelling of variants, which Go ignores', { imageUrl: 'https://img.example/a.png', varıants: [{}, {}, {}] }, true],
   ])('accepts %s', (_name, raw, enabled) => {
     expect(redditAdPerVariantRefusal(raw, enabled)).toBeNull();
   });

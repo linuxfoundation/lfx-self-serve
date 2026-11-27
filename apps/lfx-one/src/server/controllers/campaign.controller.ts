@@ -1501,8 +1501,9 @@ export class CampaignController {
         });
       }
       // Reddit one ad per variant (#6108 row 6): while this deployment offers it, an authored-post create's variants are
-      // held to campaign-service's rules (`checkRedditAdPerVariant`), last as there; never refused while off, since
-      // creates already carry the brief's variants. See `redditAdPerVariantRefusal`.
+      // held to campaign-service's rules (`checkRedditAdPerVariant`), which campaign-service checks after every other
+      // config refusal; never refused while off, since creates already carry the brief's variants. See
+      // `redditAdPerVariantRefusal`.
       const redditAdPerVariantRefused = redditAdPerVariantRefusal(body?.redditConfig, canSetRedditAdPerVariant());
       if (redditAdPerVariantRefused !== null) {
         throw ServiceValidationError.forField(redditAdPerVariantRefused.field, redditAdPerVariantRefused.message, {

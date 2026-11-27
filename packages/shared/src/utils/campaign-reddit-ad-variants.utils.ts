@@ -3,19 +3,31 @@
 
 import { MAX_REDDIT_AD_VARIANTS, MAX_REDDIT_HEADLINE_LENGTH } from '../constants/campaign.constants';
 import type { RedditConfigRefusal } from '../interfaces/campaign.interface';
-import { goDecodedValue } from './campaign-linkedin-config.utils';
+import { foldKey } from './campaign-linkedin-config.utils';
 import { goTrimSpace } from './campaign-linkedin.utils';
 
 /**
  * One ad per variant on a Reddit create (#6108 row 6), held to campaign-service's `checkRedditAdPerVariant` /
  * `redditAdPerVariantApplies` (`internal/dispatch/reddit_ad_per_variant.go`) and `ValidateAdVariants`
  * (`internal/platform/reddit/ad_variants.go`, #549), so a create campaign-service would refuse is refused here first, with
- * the variant to point at. Every key is read as campaign-service decodes it (`goDecodedValue`), so a case variant of one
- * cannot make the check here differ from campaign-service's. Messages never echo a caller value.
+ * the variant to point at. It refuses only what campaign-service is sure to refuse: wherever its reading of the config
+ * could differ from Go's `encoding/json`, it steps aside and leaves the create to campaign-service. Messages never echo
+ * a caller value.
  */
 
 function plainRecord(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+}
+
+/**
+ * The value of `key` in `record`, or `undefined` when absent. `null` when the reading is ambiguous: Go matches keys
+ * ignoring case with its own folding and merges or skips repeated ones, so a key that several spellings fold to, or a
+ * spelling that is not ASCII (where JavaScript's case folding is not Go's), is not read here. The form never sends one.
+ */
+function plainValue(record: Record<string, unknown>, key: string): { value: unknown } | null {
+  const spellings = Object.keys(record).filter((k) => foldKey(k) === foldKey(key));
+  if (spellings.length > 1 || spellings.some((k) => /[^\x20-\x7e]/.test(k))) return null;
+  return { value: spellings.length === 0 ? undefined : record[spellings[0]] };
 }
 
 /** A string field as Go decodes it: absent and `null` are blank; any other non-string fails campaign-service's decode, so `null` here. */
@@ -40,9 +52,12 @@ function decodedHeadlines(value: unknown): string[] | null {
     }
     const variant = plainRecord(entry);
     if (!variant) return null;
-    const headline = goString(goDecodedValue(variant, 'headline'));
-    if (headline === null || goString(goDecodedValue(variant, 'body')) === null) return null;
-    headlines.push(headline);
+    const headline = plainValue(variant, 'headline');
+    const body = plainValue(variant, 'body');
+    if (!headline || !body) return null;
+    const text = goString(headline.value);
+    if (text === null || goString(body.value) === null) return null;
+    headlines.push(text);
   }
   return headlines;
 }
@@ -59,17 +74,21 @@ function decodedHeadlines(value: unknown): string[] | null {
  * - then, variant by variant, a blank headline, or one longer than 300 characters once trimmed as Go trims, counted in
  *   code points as campaign-service counts runes.
  *
- * A config or variant list campaign-service could not decode (a non-string headline, say) is left to campaign-service,
- * which fails that create before any Reddit call. Only `headline` is checked: campaign-service never reads `body`.
+ * Left to campaign-service, never refused here: a `postUrl`, `imageUrl`, `imageAssetId`, `variants`, `headline` or
+ * `body` it could not decode (a non-string headline, say), or one sent under several spellings; and `imageUrl` together
+ * with `imageAssetId`, which campaign-service refuses first (`checkRedditAssetChoice`). Only `headline` is checked:
+ * campaign-service never reads `body`.
  */
 export function redditAdPerVariantRefusal(raw: unknown, enabled: boolean): RedditConfigRefusal | null {
   const config = plainRecord(raw);
   if (!enabled || !config) return null;
-  const postUrl = goString(goDecodedValue(config, 'postUrl'));
-  const imageUrl = goString(goDecodedValue(config, 'imageUrl'));
-  const imageAssetId = goString(goDecodedValue(config, 'imageAssetId'));
-  const headlines = decodedHeadlines(goDecodedValue(config, 'variants'));
+  const fields = (['postUrl', 'imageUrl', 'imageAssetId', 'variants'] as const).map((key) => plainValue(config, key));
+  if (fields.some((field) => field === null)) return null;
+  const [postUrl, imageUrl, imageAssetId] = fields.slice(0, 3).map((field) => goString(field?.value));
+  const headlines = decodedHeadlines(fields[3]?.value);
   if (postUrl === null || imageUrl === null || imageAssetId === null || headlines === null) return null;
+  // Both images: campaign-service refuses that pair before it reads the variants (`checkRedditAssetChoice`).
+  if (goTrimSpace(imageUrl) !== '' && goTrimSpace(imageAssetId) !== '') return null;
   // The one-ad create (`redditAdPerVariantApplies`): an existing post, no authored image, or fewer than 2 variants.
   const authorsPost = goTrimSpace(postUrl) === '' && (goTrimSpace(imageUrl) !== '' || goTrimSpace(imageAssetId) !== '');
   if (!authorsPost || headlines.length < 2) return null;
