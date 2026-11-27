@@ -20,6 +20,7 @@ import {
   linkedInConversionsFailure,
   linkedInConversionsMessage,
   linkedInObjectiveChoice,
+  linkedInManualBidDescription,
   linkedInObjectiveCreateRefusal,
   linkedInObjectiveDraftWithConversions,
   linkedInObjectiveFieldsForCreate,
@@ -120,6 +121,25 @@ describe('linkedInObjectiveCreateRefusal', () => {
     ['a malformed rule id', draft({ objective: 'conversions', ...rules(['0x']) }), true, undefined, expect.stringContaining('positive whole number')],
   ])('%s', (_label, value, available, bidding, expected) => {
     expect(linkedInObjectiveCreateRefusal({ draft: value, available, owner: OWNER, bidding })).toEqual(expected);
+  });
+});
+
+describe('website visits with a manual bid (campaign-service#676)', () => {
+  it.each([
+    ['held while the capability is not a yes', false, expect.stringContaining('automatic bidding only')],
+    ['sent once it is', true, null],
+  ])('%s', (_label, trafficManualBidAvailable, expected) => {
+    const input = { draft: draft({ objective: 'traffic' }), available: true, owner: OWNER, bidding: manual, trafficManualBidAvailable };
+    expect(linkedInObjectiveCreateRefusal(input)).toEqual(expected);
+  });
+
+  it.each([
+    ['traffic', true, 'Creates a website-visits campaign with a manual cost-per-click bid.'],
+    ['traffic', false, null],
+    ['conversions', true, null],
+    [null, true, null],
+  ] as const)('describes Manual under %s (capability %s) as %s', (objective, available, expected) => {
+    expect(linkedInManualBidDescription(objective, available)).toBe(expected);
   });
 });
 

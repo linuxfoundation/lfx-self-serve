@@ -62,6 +62,14 @@ describe('CampaignBiddingControlComponent', () => {
     expect(emitted.at(-1)).toEqual({ strategy: 'manual', bidAmount: 2.5 });
   });
 
+  it("shows the view's own Manual description over the platform's (campaign-service#676)", async () => {
+    const manualDescription = 'Creates a website-visits campaign with a manual cost-per-click bid.';
+    await render({ platform: 'linkedin-ads', value: { strategy: 'automatic', bidAmount: null }, error: null, manualDescription });
+
+    expect(query('implementation-bidding-linkedin-ads')?.textContent).toContain(manualDescription);
+    expect(query('implementation-bidding-linkedin-ads')?.textContent).not.toContain('website-conversion campaign');
+  });
+
   it('restores a manual choice without echoing it back as an edit', async () => {
     await render({ platform: 'microsoft-ads', value: { strategy: 'manual', bidAmount: 1.25 }, error: null });
 

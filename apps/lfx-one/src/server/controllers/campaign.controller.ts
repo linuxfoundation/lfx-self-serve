@@ -480,6 +480,7 @@ import {
   canSetLinkedInCarousel,
   canSetLinkedInBoost,
   canSetLinkedInDeliveryOptions,
+  canSetLinkedInTrafficManualBid,
   canSetLinkedInDocument,
   canSetLinkedInConversions,
   canSetLinkedInLeadGen,
@@ -1651,8 +1652,9 @@ export class CampaignController {
         await this.requireLinkedInAudienceAccess(req, projectSlug, 'campaign_create', 'the LinkedIn audience segments');
       }
       // LinkedIn objective and conversions (#5764 rows 2 and 4): refused, never dropped, while this deployment cannot send
-      // them, and held to campaign-service's rules. See `linkedInObjectiveRefusal`.
-      const linkedInObjectiveRefused = linkedInObjectiveRefusal(body?.linkedInConfig, canSetLinkedInConversions());
+      // them, and held to campaign-service's rules; traffic with a manual bid only while its own flag is on
+      // (campaign-service#676). See `linkedInObjectiveRefusal`.
+      const linkedInObjectiveRefused = linkedInObjectiveRefusal(body?.linkedInConfig, canSetLinkedInConversions(), canSetLinkedInTrafficManualBid());
       if (linkedInObjectiveRefused !== null) {
         throw ServiceValidationError.forField(linkedInObjectiveRefused.field, linkedInObjectiveRefused.message, {
           operation: 'campaign_create',

@@ -102,8 +102,21 @@ export function linkedInObjectiveCreateRefusal(input: LinkedInObjectiveCreateInp
   if (!available) return 'LinkedIn Ads: the campaign objective is not available right now. Choose "Set by bidding" as the objective.';
   const ownerRefusal = linkedInConversionsOwnerRefusal(draft, owner);
   if (ownerRefusal !== null) return `LinkedIn Ads: ${ownerRefusal}`;
-  const refused = linkedInObjectiveRefusal({ ...linkedInObjectiveFieldsForCreate(draft, true), ...(bidding ? { bidding } : {}) }, true);
+  const refused = linkedInObjectiveRefusal(
+    { ...linkedInObjectiveFieldsForCreate(draft, true), ...(bidding ? { bidding } : {}) },
+    true,
+    input.trafficManualBidAvailable === true
+  );
   return refused === null ? null : `LinkedIn Ads: ${refused.message}`;
+}
+
+/**
+ * What the LinkedIn bidding control says Manual creates, when it is not its usual Website conversions campaign: a
+ * Website visits campaign while the traffic objective is chosen and this deployment can send it with a manual bid
+ * (campaign-service#676). `null` keeps the usual text.
+ */
+export function linkedInManualBidDescription(objective: LinkedInObjectiveDraft['objective'], trafficManualBidAvailable: boolean): string | null {
+  return objective === 'traffic' && trafficManualBidAvailable ? 'Creates a website-visits campaign with a manual cost-per-click bid.' : null;
 }
 
 /** Whether another conversion rule may be picked: campaign-service tracks at most `LINKEDIN_MAX_CONVERSIONS`. */

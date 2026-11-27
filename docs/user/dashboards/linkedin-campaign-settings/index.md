@@ -13,6 +13,8 @@ tags:
     daily cap,
     target cost,
     automatic bidding,
+    manual bidding,
+    website visits,
     lifetime budget,
     targeting,
     locations,
@@ -61,6 +63,12 @@ With automatic bidding, you can set an optional **Target cost (USD)** under the 
 The target must be more than 0, no more than 1,000,000 and use at most two decimal places. Otherwise a message appears under it and **Create** stays disabled until you fix or clear it.
 
 The box is only there with automatic bidding, and only where your deployment supports a target cost. Switch to manual bidding and the target is not sent. If you typed a target and the campaign settings are still loading, **Create** waits until they load, so the campaign is never created without the target you entered. If they can't be loaded, clear the target cost to continue.
+
+## Website visits with a manual bid
+
+Where your deployment supports it, you can choose **Website visits** as the **Campaign objective** and **Manual max CPC bid** together. The campaign is created as a website visits campaign that pays your bid per click, for example $45. While website visits is chosen, the manual bidding option says "Creates a website-visits campaign with a manual cost-per-click bid."
+
+Leave the objective on **Set by bidding (default)** and a manual bid still creates a website conversions campaign, as before. Where your deployment doesn't support it, website visits with a manual bid keeps **Create** disabled with "The traffic objective takes automatic bidding only"; choose automatic bidding or the website conversions objective to continue.
 
 ## Delivery options
 

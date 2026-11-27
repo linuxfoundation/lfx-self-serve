@@ -1160,6 +1160,16 @@ export function canSetLinkedInDeliveryOptions(): boolean {
 }
 
 /**
+ * Whether a LinkedIn create may pair `objective: "traffic"` with a manual bid (campaign-service#676). Needs the
+ * campaign-service create path (`cutoverOwnsCreate`) AND `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_TRAFFIC_MANUAL_BID`, which
+ * follows campaign-service's own `LINKEDIN_ADS_TRAFFIC_MANUAL_BID_ENABLED`: campaign-service refuses the pair while that
+ * is off.
+ */
+export function canSetLinkedInTrafficManualBid(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceLinkedInTrafficManualBid);
+}
+
+/**
  * Whether a create may select X (`twitter-ads`) and carry a `twitterConfig`.
  *
  * Needs the campaign-service create path to serve the create AND the X-create flag. The cutover
@@ -1442,6 +1452,7 @@ export class CampaignServiceClient {
         linkedInDocumentEnabled: canSetLinkedInDocument(),
         linkedInBoostEnabled: canSetLinkedInBoost(),
         linkedInDeliveryOptionsEnabled: canSetLinkedInDeliveryOptions(),
+        linkedInTrafficManualBidEnabled: canSetLinkedInTrafficManualBid(),
         microsoftAssetUploadEnabled: canUseMicrosoftCreativeAssets(),
         biddingEnabled: canCreateWithBidding(),
         microsoftScheduleEnabled: canCreateMicrosoftSchedule(),
@@ -1549,6 +1560,7 @@ export class CampaignServiceClient {
       linkedInDocumentEnabled: canSetLinkedInDocument(),
       linkedInBoostEnabled: canSetLinkedInBoost(),
       linkedInDeliveryOptionsEnabled: canSetLinkedInDeliveryOptions(),
+      linkedInTrafficManualBidEnabled: canSetLinkedInTrafficManualBid(),
       microsoftAssetUploadEnabled: canUseMicrosoftCreativeAssets(),
       biddingEnabled: canCreateWithBidding(),
       microsoftScheduleEnabled: canCreateMicrosoftSchedule(),

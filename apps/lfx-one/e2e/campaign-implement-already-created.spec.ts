@@ -96,6 +96,7 @@ function listResult(campaigns: CampaignIndexDoc[]): CampaignListResult {
     linkedInDocumentEnabled: false,
     linkedInBoostEnabled: false,
     linkedInDeliveryOptionsEnabled: false,
+    linkedInTrafficManualBidEnabled: false,
     microsoftAssetUploadEnabled: false,
     biddingEnabled: false,
     microsoftScheduleEnabled: false,

@@ -68,17 +68,19 @@ function conversionsRefusal(conversions: string[]): LinkedInConfigKeyRefusal | n
  *   ignores both and campaign-service refuses `conversions` while `LINKEDIN_ADS_CONVERSIONS_ENABLED` is off;
  * - an empty `conversions`, more than twice `LINKEDIN_MAX_CONVERSIONS` entries, an id that is a URN or not a positive
  *   int64 without a leading zero, or more than `LINKEDIN_MAX_CONVERSIONS` distinct ids;
- * - an `objective` other than `LINKEDIN_OBJECTIVES`, spelled exactly; `traffic` with a manual bid (a manual bid is
- *   created under Website conversions); `conversions` on automatic bidding with no `conversions`, since LinkedIn will
- *   not activate a Maximum delivery conversions campaign until a conversion rule is associated.
+ * - an `objective` other than `LINKEDIN_OBJECTIVES`, spelled exactly; `traffic` with a manual bid while this deployment
+ *   cannot send it (`trafficManualBid`, campaign-service's `LINKEDIN_ADS_TRAFFIC_MANUAL_BID_ENABLED`,
+ *   linuxfoundation/lfx-v2-campaign-service#676), since campaign-service then refuses it rather than create a Website
+ *   conversions campaign; `conversions` on automatic bidding with no `conversions`, since LinkedIn will not activate a
+ *   Maximum delivery conversions campaign until a conversion rule is associated.
  *
  * Messages never echo a caller value.
  */
-export function linkedInObjectiveRefusal(raw: unknown, enabled: boolean): LinkedInConfigKeyRefusal | null {
+export function linkedInObjectiveRefusal(raw: unknown, enabled: boolean, trafficManualBid = false): LinkedInConfigKeyRefusal | null {
   const config = plainRecord(raw);
   if (!config) return null;
   // The lead generation objective has its own flag and rules (`linkedInLeadGenRefusal`), so it is read here as omitted.
-  if (config['objective'] === LINKEDIN_LEAD_GEN_OBJECTIVE) return linkedInObjectiveRefusal(withoutKey(config, 'objective'), enabled);
+  if (config['objective'] === LINKEDIN_LEAD_GEN_OBJECTIVE) return linkedInObjectiveRefusal(withoutKey(config, 'objective'), enabled, trafficManualBid);
   if (!('objective' in config || 'conversions' in config)) return null;
   const conversions = config['conversions'];
   const objective = config['objective'];
@@ -104,7 +106,8 @@ export function linkedInObjectiveRefusal(raw: unknown, enabled: boolean): Linked
     return { field: LINKEDIN_OBJECTIVE_FIELD, message: 'The objective must be "traffic" or "conversions".' };
   }
   const manual = plainRecord(config['bidding'])?.['strategy'] === 'manual';
-  if (objective === 'traffic' && manual) {
+  // Website visits with a manual CPC bid is campaign-service's only while its own flag is on (#676).
+  if (objective === 'traffic' && manual && !trafficManualBid) {
     return {
       field: LINKEDIN_OBJECTIVE_FIELD,
       message: 'The traffic objective takes automatic bidding only. Choose the conversions objective for a manual bid.',
