@@ -102,6 +102,7 @@ import {
 } from '@lfx-one/shared/utils/campaign-meta-ad-options.utils';
 import { hasMetaLeadFormKeyVariant, metaLeadFormId, metaLeadFormRefusal } from '@lfx-one/shared/utils/campaign-meta-lead-form.utils';
 import { metaAdFormatToSend, metaCarouselRefusal } from '@lfx-one/shared/utils/campaign-meta-carousel.utils';
+import { metaVariantsToSend, metaVideoRefusal } from '@lfx-one/shared/utils/campaign-meta-video.utils';
 import {
   compactMetaDeliveryOptions,
   metaAdScheduleRefusal,
@@ -508,6 +509,7 @@ import {
   canSetMetaAdSchedule,
   canSetMetaFrequencyCap,
   canSetMetaCarousel,
+  canSetMetaVideo,
   canSetMetaOptimizationGoal,
   canSetRedditConversionEvent,
   canSetRedditCustomAudiences,
@@ -1724,6 +1726,17 @@ export class CampaignController {
       // The Meta ad schedule and frequency cap (#5904 row 5), checked here, before the lead form's upstream reads,
       // so a bad one fails fast. See `metaDeliveryOptionsToForward`.
       const metaDelivery = this.metaDeliveryOptionsToForward(body);
+      // A Meta video ad (#6332): each variant's `videoAssetId` refused, never dropped, while this deployment cannot send
+      // one (`canSetMetaVideo`, which needs the Meta assets flag too), and held to campaign-service's rules
+      // (`checkMetaVideoVariants`), which it checks before the format. See `metaVideoRefusal`. Only when Meta is
+      // selected, as the Reddit refusals: a create that does not select Meta never forwards a video (`buildMetaConfig`).
+      const metaVideoRefused = platforms.includes('meta-ads') ? metaVideoRefusal(body?.metaConfig, canSetMetaVideo()) : null;
+      if (metaVideoRefused !== null) {
+        throw ServiceValidationError.forField(metaVideoRefused.field, metaVideoRefused.message, {
+          operation: 'campaign_create',
+          service: 'campaign_controller',
+        });
+      }
       // The Meta creative format and a carousel's cards (#6331), checked here for the same reason. See `metaFormatToForward`.
       const metaFormat = this.metaFormatToForward(body);
       // The Meta Instant Form of a `leads` create (#5940), or none. See `metaLeadFormToForward`.
@@ -3682,8 +3695,8 @@ export class CampaignController {
    * Refused before anything is sent upstream: EVERY capability off (`canUseRedditCreativeAssets`,
    * `canUseGoogleCreativeAssets`, `canUseMetaCreativeAssets`, `canUseLinkedInCreativeAssets`,
    * `canUseMicrosoftCreativeAssets` and `canCreateTwitter` (the tweet image) — nothing could use the asset; any one alone admits the upload), a missing `project` or `brief_id`, a type outside
-   * `CREATIVE_ASSET_UPLOAD_MIME_TYPES`, an MP4 while `canSetLinkedInVideoAds()` and `canSetRedditVideo()` are both off
-   * (only a LinkedIn video ad or a Reddit video post uses one), a PDF while `canSetLinkedInDocument()` is off (only a LinkedIn document ad uses one, campaign-service#665), or
+   * `CREATIVE_ASSET_UPLOAD_MIME_TYPES`, an MP4 while `canSetLinkedInVideoAds()`, `canSetRedditVideo()` and `canSetMetaVideo()` are
+   * all off (only a LinkedIn video ad, a Reddit video post or a Meta video ad uses one), a PDF while `canSetLinkedInDocument()` is off (only a LinkedIn document ad uses one, campaign-service#665), or
    * bytes that are not the type they claim (415), an empty body (400). Over the type's own limit
    * (`creativeAssetUploadMaxBytes`: 10 MiB for an image, 30 MiB for a video or a PDF) is a 413 from the route's raw parsers
    * before this runs; the length is re-checked here so a direct caller of this method gets the same answer.
@@ -3730,10 +3743,10 @@ export class CampaignController {
     // no Buffer — told apart from an empty file by the declared type, not by the body.
     const declaredType = (req.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase();
     const image: unknown = req.body;
-    // A video is stored only where something can use it: a LinkedIn video ad (#5764 row 18) or a Reddit video post
-    // (#6108 row 8). The route does not even read its body otherwise.
+    // A video is stored only where something can use it: a LinkedIn video ad (#5764 row 18), a Reddit video post
+    // (#6108 row 8) or a Meta video ad (#6332). The route does not even read its body otherwise.
     const video = declaredType === CREATIVE_ASSET_VIDEO_MIME_TYPE;
-    if (video && !canSetLinkedInVideoAds() && !canSetRedditVideo()) {
+    if (video && !canSetLinkedInVideoAds() && !canSetRedditVideo() && !canSetMetaVideo()) {
       next(this.unsupportedCreativeAsset(req, operation, declaredType));
       return;
     }
@@ -10697,7 +10710,9 @@ export class CampaignController {
    * optimization goal: only what `metaAdOptionsToForward` checked (#5934), and the lead form: only the id
    * `metaLeadFormToForward` checked (#5940), and the ad schedule and frequency cap: only what
    * `metaDeliveryOptionsToForward` checked (#5904 row 5), and the creative format: only the normalized one
-   * `metaFormatToForward` checked (#6331).
+   * `metaFormatToForward` checked (#6331). A variant's `videoAssetId` (#6332) is forwarded only while `canSetMetaVideo()`
+   * (`metaVariantsToSend`): the create route refuses it on a Meta create while off, and drops it from a `metaConfig`
+   * riding along on a create that does not select Meta.
    */
   private buildMetaConfig(
     body: CampaignCreateRequest,
@@ -10724,6 +10739,7 @@ export class CampaignController {
       ...(leadFormId !== null ? { leadFormId } : {}),
       ...delivery,
       ...(format !== null ? { format } : {}),
+      ...(rest.variants !== undefined ? { variants: metaVariantsToSend(rest.variants, canSetMetaVideo()) } : {}),
     };
   }
 

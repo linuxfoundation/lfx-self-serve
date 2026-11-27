@@ -2287,6 +2287,8 @@ export const META_OS_TARGETING_OFF_MESSAGE =
  * format, as campaign-service's own refusal, so it never advertises one the deployment cannot build.
  */
 export const META_CAROUSEL_OFF_MESSAGE = 'This Meta ad format is not available on this deployment. Reload the page, then create again with single-image ads.';
+/** The 400 a create gets for a Meta variant's `videoAssetId` while video ads are off on this deployment (#6332). */
+export const META_VIDEO_OFF_MESSAGE = 'Meta video ads are not available on this deployment. Reload the page, then create again with image ads.';
 /** The 400 a create gets for a Meta ad schedule while scheduling is off on this deployment. */
 export const META_AD_SCHEDULE_OFF_MESSAGE = 'Meta ad scheduling is not available on this deployment. Reload the page, then create again without it.';
 /** The 400 a create gets for a Meta frequency cap while it is off on this deployment. */
@@ -4497,9 +4499,9 @@ export const CREATIVE_ASSET_WRONG_TYPE_MESSAGE = 'Only PNG and JPEG images can b
 
 /**
  * The video type a creative-asset upload accepts (#5764 row 18): campaign-service's `MimeTypeMP4`, checked structurally
- * there (`validateMP4Upload`). Only a LinkedIn video ad or a Reddit video post (#6108 row 8) consumes one here, so the
- * BFF admits it only while `canSetLinkedInVideoAds() || canSetRedditVideo()`. Kept apart from `CREATIVE_ASSET_MIME_TYPES`,
- * which every image slot and the image library check against.
+ * there (`validateMP4Upload`). Only a LinkedIn video ad, a Reddit video post (#6108 row 8) or a Meta video ad (#6332)
+ * consumes one here, so the BFF admits it only while `canSetLinkedInVideoAds() || canSetRedditVideo() || canSetMetaVideo()`.
+ * Kept apart from `CREATIVE_ASSET_MIME_TYPES`, which every image slot and the image library check against.
  */
 export const CREATIVE_ASSET_VIDEO_MIME_TYPE = 'video/mp4';
 

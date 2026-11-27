@@ -5020,6 +5020,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       metaAdScheduleEnabled: false,
       metaFrequencyCapEnabled: false,
       metaCarouselEnabled: false,
+      metaVideoEnabled: false,
       googleAudienceSegmentsEnabled: false,
       googleGeoSearchEnabled: false,
       multiCampaignPlatforms: [],
@@ -5745,6 +5746,23 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
     }
   });
 
+  /** Meta video ads (#6332): the cutover, the Meta assets flag and its own flag, all three. */
+  it('reports metaVideoEnabled only with the cutover, the Meta assets flag and its own flag', async () => {
+    const read = async (off: ServerFeatureFlag | null): Promise<boolean | undefined> => {
+      isServerFeatureEnabled.mockImplementation((flag: unknown) => flag !== off);
+      proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+      return (await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1')).metaVideoEnabled;
+    };
+    try {
+      const offs = [null, ServerFeatureFlag.CampaignServiceMetaVideo, ServerFeatureFlag.CampaignServiceMetaAssets, ServerFeatureFlag.CampaignServiceCreate];
+      const results = [];
+      for (const off of offs) results.push(await read(off));
+      expect(results).toEqual([true, false, false, false]);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
   /** Reddit video posts (#6108 row 8): the cutover, the Reddit assets flag (URL signing) and its own flag, all three. */
   it('reports redditVideoEnabled only with the cutover, the Reddit assets flag and its own flag', async () => {
     const read = async (off: ServerFeatureFlag | null): Promise<boolean | undefined> => {
@@ -6056,6 +6074,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       metaAdScheduleEnabled: false,
       metaFrequencyCapEnabled: false,
       metaCarouselEnabled: false,
+      metaVideoEnabled: false,
       googleAudienceSegmentsEnabled: false,
       googleGeoSearchEnabled: false,
       multiCampaignPlatforms: [],

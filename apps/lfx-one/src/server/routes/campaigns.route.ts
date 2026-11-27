@@ -31,7 +31,7 @@ import {
   requireRedditCustomAudiencesAccess,
   requireRedditPixelsAccess,
 } from '../middleware/require-marketing-access.middleware';
-import { canSetLinkedInDocument, canSetLinkedInVideoAds, canSetRedditVideo } from '../services/campaign-service.service';
+import { canSetLinkedInDocument, canSetLinkedInVideoAds, canSetMetaVideo, canSetRedditVideo } from '../services/campaign-service.service';
 
 /**
  * Converts the raw body parser's size-limit error (`entity.too.large`) into a 413 before it
@@ -183,7 +183,7 @@ router.post('/create', (req, res, next) => campaignController.createCampaign(req
 // An image, video or PDF for the brief, stored by campaign-service and named by asset id in a platform's
 // creative config — `redditConfig.imageAssetId` (decision D3), the Google creative fields, a LinkedIn video
 // ad's `videoAssetId` (#5764 row 18), a Reddit video post's `videoAssetId` and `thumbnailAssetId` (#6108
-// row 8), and a LinkedIn document ad's PDF `documentAssetId`
+// row 8), a Meta video ad's `variants[].videoAssetId` (#6332), and a LinkedIn document ad's PDF `documentAssetId`
 // (campaign-service#665). The body is the raw bytes, buffered here so the upstream JSON body can be sent
 // with a declared Content-Length. One parser per kind, each with its own limit: a PNG/JPEG at most
 // CREATIVE_ASSET_MAX_BYTES, an MP4 at most CREATIVE_ASSET_VIDEO_MAX_BYTES, a PDF at most
@@ -192,10 +192,13 @@ router.post('/create', (req, res, next) => campaignController.createCampaign(req
 router.post(
   '/brief/creative-assets',
   express.raw({ type: [...CREATIVE_ASSET_MIME_TYPES], limit: CREATIVE_ASSET_MAX_BYTES }),
-  // Read only while a video can be used, by a LinkedIn video ad or a Reddit video post (`canSetLinkedInVideoAds`,
-  // `canSetRedditVideo`); otherwise the body is never buffered and the controller answers the 415.
+  // Read only while a video can be used, by a LinkedIn video ad, a Reddit video post or a Meta video ad
+  // (`canSetLinkedInVideoAds`, `canSetRedditVideo`, `canSetMetaVideo`); otherwise the body is never buffered and the
+  // controller answers the 415.
   express.raw({
-    type: (req) => (canSetLinkedInVideoAds() || canSetRedditVideo()) && (req as Request).is(CREATIVE_ASSET_VIDEO_MIME_TYPE) === CREATIVE_ASSET_VIDEO_MIME_TYPE,
+    type: (req) =>
+      (canSetLinkedInVideoAds() || canSetRedditVideo() || canSetMetaVideo()) &&
+      (req as Request).is(CREATIVE_ASSET_VIDEO_MIME_TYPE) === CREATIVE_ASSET_VIDEO_MIME_TYPE,
     limit: CREATIVE_ASSET_VIDEO_MAX_BYTES,
   }),
   // Read only while a document ad can be used (`canSetLinkedInDocument`); otherwise the body is never buffered and the

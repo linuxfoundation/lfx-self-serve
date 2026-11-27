@@ -2823,6 +2823,43 @@ describe('CampaignController.createCampaign cutover', () => {
   });
 
   /**
+   * Meta video ads (#6332): wiring only. Every rule is a row of `campaign-meta-video.utils.spec.ts`.
+   */
+  describe('meta video', () => {
+    const VIDEO = { primaryText: 'p', headline: 'h', videoAssetId: '3f2504e0-4f89-11d3-9a0c-0305e82c3301' };
+    async function sendOn(platforms: string[]): Promise<Record<string, unknown> | null> {
+      createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+      const metaConfig = { budgetUsd: 250, lifetimeBudget: false, startDate: '2026-01-01', endDate: '2026-02-01', geoTargets: ['US'], variants: [VIDEO] };
+      await controller.createCampaign(buildReq({ platforms, metaConfig }, { project: 'tlf', brief_id: 'b-1' }), res, next);
+      return createCampaigns.mock.calls.length > 0 ? (envelopeFor(createCampaigns)['metaConfig'] as Record<string, unknown>) : null;
+    }
+
+    it.each([ServerFeatureFlag.CampaignServiceMetaVideo, ServerFeatureFlag.CampaignServiceMetaAssets])(
+      'refuses a video with a 400 while %s is off, creating nothing',
+      async (off) => {
+        isServerFeatureEnabled.mockImplementation((flag: unknown) => flag !== off);
+
+        expect(await sendOn(['meta-ads'])).toBeNull();
+        const error = vi.mocked(next).mock.calls[0]?.[0] as unknown as ServiceValidationError;
+        expect(error.toResponse()['errors'][0].field).toBe('metaConfig.variants[0].videoAssetId');
+      }
+    );
+
+    it('forwards the video untouched while the flags are on', async () => {
+      isServerFeatureEnabled.mockImplementation(() => true);
+
+      expect(await sendOn(['meta-ads'])).toMatchObject({ variants: [VIDEO] });
+    });
+
+    it('drops the video from an unused metaConfig while off, creating the selected platform', async () => {
+      isServerFeatureEnabled.mockImplementation((flag: unknown) => flag !== ServerFeatureFlag.CampaignServiceMetaVideo);
+
+      expect(await sendOn(['google-ads'])).toMatchObject({ variants: [{ primaryText: 'p', headline: 'h' }] });
+      expect((envelopeFor(createCampaigns)['metaConfig'] as { variants: object[] }).variants[0]).not.toHaveProperty('videoAssetId');
+    });
+  });
+
+  /**
    * The Meta Instant Form of a `leads` create (#5940): refused with a 400 while its flag is off (never
    * dropped), checked by the tab's own rules, answered on `global_marketing_ops`, and sent trimmed.
    */
