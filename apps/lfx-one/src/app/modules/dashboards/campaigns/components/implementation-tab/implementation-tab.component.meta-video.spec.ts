@@ -30,6 +30,7 @@ describe('ImplementationTabComponent meta video', () => {
   let createCampaign: ReturnType<typeof vi.fn>;
   let upload$: Subject<{ id: string; mimeType: string }>;
   let cancelUpload: ReturnType<typeof vi.fn>;
+  let resumeUpload: ReturnType<typeof vi.fn>;
 
   const brief = {
     eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', countryCode: 'US', registrationUrl: 'https://example.com/kubecon' },
@@ -77,6 +78,7 @@ describe('ImplementationTabComponent meta video', () => {
     createCampaign = vi.fn().mockReturnValue(of({ result: { campaigns: [], errors: [] } }));
     upload$ = new Subject();
     cancelUpload = vi.fn();
+    resumeUpload = vi.fn().mockReturnValue(null);
     await TestBed.configureTestingModule({
       imports: [ImplementationTabComponent],
       providers: [
@@ -91,6 +93,7 @@ describe('ImplementationTabComponent meta video', () => {
             createCampaign,
             creativeVideoDeleting: signal(null),
             uploadCreativeAsset: () => upload$,
+            resumeCreativeAssetUpload: resumeUpload,
             forgetCreativeAssetUpload: vi.fn(),
             cancelCreativeAssetUpload: cancelUpload,
             getLinkedInAccounts: () => of([]),
@@ -148,6 +151,34 @@ describe('ImplementationTabComponent meta video', () => {
     expect(c(f)['creativeLibraryRevision']()).toBe(revision + 1);
     const videos: { assetId: string }[] = c(f)['metaVariantVideos']();
     expect(videos.map((video) => video.assetId)).toEqual(['', '']);
+  });
+
+  it('keeps a running upload and its Create hold when the capability is withdrawn mid-upload', STATE_ONLY, async () => {
+    const { f } = await mount(true);
+    c(f)['onMetaVariantVideoFileSelect'](0, mp4());
+    f.componentRef.setInput('metaVideoEnabled', null);
+    expect(c(f)['metaVideoShown']()).toBe(true);
+    expect(c(f)['metaVariantVideoViews']()[0].uploading).toBe(true);
+    expect(c(f)['createBlockedReason']()).toBe('Waiting for the Meta Ads video upload to finish.');
+  });
+
+  it('clears a picked video taken off the ads, and resumes or reports a draft upload on a remount', STATE_ONLY, async () => {
+    const first = await mount(true);
+    c(first.f)['onMetaVariantVideoPick'](0, A);
+    c(first.f)['onLibraryVideoGone'](A);
+    expect(c(first.f)['metaVariantVideos']()[0].assetId).toBe('');
+    const pending = { ...first.latest(), metaVideoUploadPending: { variant: 1, name: 'promo.mp4', briefId: 'b-1' } } as CampaignImplementationDraft;
+    first.f.destroy();
+    resumeUpload.mockReturnValueOnce(upload$);
+    const resumed = await mount(true, pending);
+    expect(resumeUpload).toHaveBeenCalledWith('meta-video', 'b-1');
+    expect(c(resumed.f)['metaVariantVideoViews']()[1]).toMatchObject({ uploading: true, status: 'Uploading promo.mp4…' });
+    upload$.next({ id: A, mimeType: 'video/mp4' });
+    expect(c(resumed.f)['metaVariantVideos']()[1].assetId).toBe(A);
+    resumed.f.destroy();
+
+    const { f } = await mount(true, pending);
+    expect(c(f)['metaVariantVideoViews']()[1].error).toContain('The upload of promo.mp4 was interrupted.');
   });
 
   it("lets go of an older brief's video upload on a brief switch, cancelling it", STATE_ONLY, async () => {

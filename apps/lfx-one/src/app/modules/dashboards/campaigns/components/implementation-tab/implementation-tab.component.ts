@@ -3087,11 +3087,16 @@ export class ImplementationTabComponent implements OnInit {
   private readonly metaVideosStored = signal<MetaVideoStoredAt[]>([]);
   /** The uploaded videos the library read on screen predates, so it is no evidence they are gone (#6332). */
   private readonly metaVideosFresh = computed<string[]>(() => metaVideosNewerThanRead(this.metaVideosStored(), this.googleCreativeLibrary()));
-  /** Whether the variants' video controls are shown (#6332): offered, or a video already chosen so it can be taken off; never on a carousel. */
+  /**
+   * Whether the variants' video controls are shown (#6332): offered, or a video already chosen (or still uploading for this
+   * brief) so it can be taken off or cancelled; never on a carousel.
+   */
   protected readonly metaVideoShown = computed<boolean>(
     () =>
       !this.metaCarouselSelected() &&
       (this.metaVideoAvailable() ||
+        // An upload for this brief still running when the capability is withdrawn keeps its Cancel and its Create hold.
+        (this.metaVideoUploadStatus() === 'uploading' && this.metaVideoUploadForThisBrief()) ||
         this.metaVariantVideos()
           .slice(0, this.metaVariants().length)
           .some((video) => video.assetId !== ''))
