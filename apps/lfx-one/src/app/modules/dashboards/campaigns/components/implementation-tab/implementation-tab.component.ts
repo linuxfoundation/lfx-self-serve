@@ -2449,6 +2449,7 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly redditTargetedLists = computed<RedditTargetedLists>(() => ({
     subreddits: this.redditEffectiveSubreddits(),
     geoTargets: this.redditSentGeoTargets(),
+    ...redditSubCountryGeoField(this.redditSubCountryGeoTargets(), this.redditSubCountryGeoEnabled()),
   }));
   /** Why Create is held for exclusions the capability has not confirmed, or `null` — held, never dropped. */
   protected readonly redditTargetingExclusionsBlock = computed<CampaignRedditTargetingExclusionsBlock | null>(() =>

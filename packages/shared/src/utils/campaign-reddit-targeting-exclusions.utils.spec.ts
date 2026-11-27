@@ -117,6 +117,15 @@ describe('redditTargetingExclusionsDraftRefusal', () => {
     if (message === null) expect(refusal).toBeNull();
     else expect(refusal).toContain(message);
   });
+
+  it.each<[string, string[] | undefined, string | null]>([
+    ['sent locations replace the US default', ['CA:6167865'], null],
+    ['no locations keep the US default', undefined, 'also targeted'],
+  ])('excluding US with no geo targets: %s', (_name, subCountryGeoTargets, message) => {
+    const refusal = redditTargetingExclusionsDraftRefusal({ ...NONE, excludedGeoTargets: ['US'] }, { subreddits: [], geoTargets: [], subCountryGeoTargets });
+    if (message === null) expect(refusal).toBeNull();
+    else expect(refusal).toContain(message);
+  });
 });
 
 describe('redditTargetingExclusionEntry and redditTargetingExclusionHeld', () => {
@@ -173,6 +182,10 @@ describe('redditTargetedGeoCodes', () => {
     [[], ['US']],
   ])('reads %j as %j', (geoTargets, expected) => {
     expect([...redditTargetedGeoCodes({ subreddits: [], geoTargets })]).toEqual(expected);
+  });
+
+  it('drops the US default while locations are sent', () => {
+    expect([...redditTargetedGeoCodes({ subreddits: [], geoTargets: [], subCountryGeoTargets: ['CA:6167865'] })]).toEqual([]);
   });
 });
 

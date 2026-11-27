@@ -4323,10 +4323,14 @@ export interface RedditTargetingExclusionListState extends RedditTargetingExclus
   chips: MetaCustomAudienceChipView[];
 }
 
-/** The targeting a create sends, which the exclusions must not overlap: the subreddits and the geo targets as sent. */
+/**
+ * The targeting a create sends, which the exclusions must not overlap: the subreddits and the geo targets as sent, and
+ * the sub-country locations when sent (#6108 row 7), which replace the US default an empty geo list would otherwise mean.
+ */
 export interface RedditTargetedLists {
   subreddits: string[];
   geoTargets: string[];
+  subCountryGeoTargets?: string[];
 }
 
 /**
