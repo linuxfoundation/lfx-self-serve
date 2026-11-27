@@ -8996,6 +8996,8 @@ export class ImplementationTabComponent implements OnInit {
     this.metaVideoUploadName.set(fileName);
     this.metaVideoUploadBriefId.set(briefId);
     this.metaVideoUploadError.set('');
+    // A same-brief re-seed resumes an upload this tab already follows: one follow only, so Cancel detaches it.
+    this.metaVideoUploadSub?.unsubscribe();
     this.metaVideoUploadSub = upload$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (asset) => {
         this.campaignService.forgetCreativeAssetUpload('meta-video', upload$);

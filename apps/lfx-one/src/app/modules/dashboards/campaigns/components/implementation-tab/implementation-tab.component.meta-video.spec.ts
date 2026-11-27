@@ -173,6 +173,10 @@ describe('ImplementationTabComponent meta video', () => {
     const resumed = await mount(true, pending);
     expect(resumeUpload).toHaveBeenCalledWith('meta-video', 'b-1');
     expect(c(resumed.f)['metaVariantVideoViews']()[1]).toMatchObject({ uploading: true, status: 'Uploading promo.mp4…' });
+    // A same-brief re-seed resumes it again: still one follow.
+    resumeUpload.mockReturnValueOnce(upload$);
+    c(resumed.f)['resumeMetaVideoUpload'](pending.metaVideoUploadPending);
+    expect(upload$.observers.length).toBe(1);
     upload$.next({ id: A, mimeType: 'video/mp4' });
     expect(c(resumed.f)['metaVariantVideos']()[1].assetId).toBe(A);
     resumed.f.destroy();
