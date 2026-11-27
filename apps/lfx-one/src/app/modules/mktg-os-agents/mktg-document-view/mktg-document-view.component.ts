@@ -2094,6 +2094,17 @@ export class MktgDocumentViewComponent {
       return (Number.isFinite(anchor) ? anchor : Date.now()) + MKTG_RUN_POLL.timeoutMs;
     };
     let denied = false;
+    // This browser's capability belongs on the run page until the audit is writing: research and a questions turn are
+    // resumed there from the same capability. No storage wait starts here, so the wait's anchor is never set early.
+    const runPageUnopened = new Error('The audit run page could not be opened.');
+    const resumeOnRunPage = (): Observable<never> =>
+      defer(() => {
+        const commands = this.runAgainLink();
+        return commands ? this.router.navigate(commands, { queryParams: this.runAgainParams(), replaceUrl: true }) : of(false);
+      }).pipe(
+        catchError(() => of(false)),
+        switchMap((opened) => (opened ? EMPTY : throwError(() => runPageUnopened)))
+      );
     const attempt = (): Observable<MktgRevisionResponse | null> => {
       // A refused read is latched for this report (RFC 9110 §15.5.4): no wake sends the same credentials again.
       if (denied) return EMPTY;
@@ -2110,6 +2121,9 @@ export class MktgDocumentViewComponent {
             return timer(MKTG_RUN_POLL.intervalMs).pipe(switchMap(() => attempt()));
           }
           if (error.status !== 404 || !canResume || !pending || !intake) throw error;
+          // The report is not stored and the audit is not writing yet (still researching, or the server records it as
+          // waiting for answers): the run page shows it, and the questions when they arrive.
+          if (pending.phase !== 'writing' || tracked?.state === 'questions') return resumeOnRunPage();
           // The server answered (the report is not stored yet): nothing is retrying while the storage wait runs.
           this.refreshWarning.set('');
           this.generating.set(true);
@@ -2128,6 +2142,7 @@ export class MktgDocumentViewComponent {
           if (!refused && !(error instanceof TimeoutError) && isTransientHttpError(error)) throw error;
           denied = status === 401 || status === 403;
           if (refused) this.errorText.set(error.message);
+          else if (error === runPageUnopened) this.errorText.set('This audit is not finished. Open AEO/GEO from the kit to continue it.');
           else if (error instanceof TimeoutError) this.errorText.set(AEO_GEO_TIMEOUT_MESSAGE);
           else if (status === 404 && !canResume && tracked?.state === 'questions')
             this.errorText.set('This audit is waiting for answers. Answer them in the browser where it was started, or run a new audit.');

@@ -1361,7 +1361,7 @@ describe('MktgDocumentViewComponent', () => {
 
     it.each([true, false])('handles empty revisions without a TypeError (resumable=%s)', async (resumable) => {
       store.getDocument.mockReturnValueOnce(of({ ...detail, current: null, revisions: [] }));
-      pending.load.mockReturnValue(resumable ? { agentId: 'aeo-geo', documentId: 'run-012345678901234567890123' } : null);
+      pending.load.mockReturnValue(resumable ? { agentId: 'aeo-geo', documentId: 'run-012345678901234567890123', phase: 'writing' } : null);
       pending.waitForStorage.mockReturnValue(NEVER);
       await render('/documents/aeo-geo/run-012345678901234567890123');
       expect(store.getRevision).not.toHaveBeenCalled();
@@ -1432,10 +1432,57 @@ describe('MktgDocumentViewComponent', () => {
       expect(query('mktg-document-view-generating')).toBeNull();
       expect(store.getDocument).toHaveBeenCalledTimes(1);
     });
+    it.each([
+      ['is waiting for answers', 'questions', undefined],
+      ['is still researching (recorded as writing) and may ask later', 'writing', 'research'],
+      ['is recorded as waiting for answers behind a stale writing phase', 'questions', 'writing'],
+      ['is not listed by the server', null, undefined],
+    ] as const)('sends this browser to the run page when its audit %s: no storage wait and no wait anchor', async (_label, state, phase) => {
+      const documentId = 'run-012345678901234567890123';
+      const navigate = vi.mocked(TestBed.inject(Router).navigate);
+      pending.load.mockReturnValue({ agentId: 'aeo-geo', projectUid: PROJECT.uid, documentId, ...(phase && { phase }) });
+      store.getDocument.mockReturnValue(
+        state
+          ? of({ ...detail, documentId, current: null, revisions: [], runs: [{ ...started(state), agentKey: 'aeo-geo' as const, documentId }] })
+          : throwError(() => new HttpErrorResponse({ status: 404 }))
+      );
+      await render(`/documents/aeo-geo/${documentId}?run=${'b'.repeat(64)}`);
+      // The run page resumes research or the questions from the capability; `run` is a Document-page parameter and is dropped.
+      expect(navigate).toHaveBeenCalledExactlyOnceWith(['/mktg-os-agents', 'aeo-geo'], {
+        replaceUrl: true,
+        queryParams: expect.objectContaining({ project: PROJECT.slug, run: null }),
+      });
+      expect(pending.waitForStorage).not.toHaveBeenCalled();
+      expect(pending.markWaitStarted).not.toHaveBeenCalled();
+      expect(pending.clear).not.toHaveBeenCalled();
+      expect(query('mktg-document-view-generating')).toBeNull();
+      expect(query('mktg-document-view-error')).toBeNull();
+      expect(store.getDocument).toHaveBeenCalledTimes(1);
+    });
+    it('says where to continue when the run page cannot be opened, and keeps the capability', async () => {
+      vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(false);
+      pending.load.mockReturnValue({ agentId: 'aeo-geo', projectUid: PROJECT.uid, documentId: 'run-012345678901234567890123' });
+      store.getDocument.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
+      await render('/documents/aeo-geo/run-012345678901234567890123');
+      expect(query('mktg-document-view-error')?.textContent).toContain('This audit is not finished. Open AEO/GEO from the kit to continue it.');
+      expect(query('mktg-document-view-generating')).toBeNull();
+      expect(pending.waitForStorage).not.toHaveBeenCalled();
+      expect(pending.markWaitStarted).not.toHaveBeenCalled();
+      expect(pending.clear).not.toHaveBeenCalled();
+      expect(store.getDocument).toHaveBeenCalledTimes(1);
+    });
+    it('opens a stored report for a capability that never reached writing, without leaving the Document page', async () => {
+      const navigate = vi.mocked(TestBed.inject(Router).navigate);
+      pending.load.mockReturnValue({ agentId: 'aeo-geo', projectUid: PROJECT.uid, documentId: 'run-012345678901234567890123' });
+      await render('/documents/aeo-geo/run-012345678901234567890123');
+      expect(query('mktg-document-view-document')).not.toBeNull();
+      expect(navigate).not.toHaveBeenCalled();
+      expect(pending.clear).toHaveBeenCalledWith(PROJECT.uid, 'run-012345678901234567890123');
+    });
     it('keeps a new document generating until storage, then reopens the stored revision', async () => {
       const completed = new Subject<void>();
       store.getDocument.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 404 })));
-      pending.load.mockReturnValue({ agentId: 'aeo-geo', documentId: 'run-012345678901234567890123' });
+      pending.load.mockReturnValue({ agentId: 'aeo-geo', documentId: 'run-012345678901234567890123', phase: 'writing' });
       pending.waitForStorage.mockReturnValue(completed);
       await render('/documents/aeo-geo/run-012345678901234567890123');
       // The generating block, with its copy, and not the ACK's run skeleton (pre-existing since #4594).
@@ -1459,7 +1506,12 @@ describe('MktgDocumentViewComponent', () => {
         { id: 'step-1', kind: 'reading', label: 'Reading project.example', status: 'running', startedAt: new Date().toISOString() },
       ];
       store.getDocument.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
-      pending.load.mockReturnValue({ agentId: 'aeo-geo', documentId: 'run-012345678901234567890123', savedAt: new Date(Date.now() - 60_000).toISOString() });
+      pending.load.mockReturnValue({
+        agentId: 'aeo-geo',
+        documentId: 'run-012345678901234567890123',
+        phase: 'writing',
+        savedAt: new Date(Date.now() - 60_000).toISOString(),
+      });
       pending.waitForStorage.mockImplementation((_run, _intake, onActivity) => {
         onActivity(activity);
         return completed;
@@ -1481,7 +1533,7 @@ describe('MktgDocumentViewComponent', () => {
     it('cancels an audit poll immediately when the active project is cleared', async () => {
       const completed = new Subject<void>();
       store.getDocument.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 404 })));
-      pending.load.mockReturnValue({ agentId: 'aeo-geo', documentId: 'run-012345678901234567890123' });
+      pending.load.mockReturnValue({ agentId: 'aeo-geo', documentId: 'run-012345678901234567890123', phase: 'writing' });
       pending.waitForStorage.mockReturnValue(completed);
       await render('/documents/aeo-geo/run-012345678901234567890123');
       expect(completed.observed).toBe(true);
@@ -1563,7 +1615,7 @@ describe('MktgDocumentViewComponent', () => {
 
     it('Run again explicitly clears the timed-out capability before leaving the document', async () => {
       store.getDocument.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
-      pending.load.mockReturnValue({ agentId: 'aeo-geo', documentId: 'run-012345678901234567890123' });
+      pending.load.mockReturnValue({ agentId: 'aeo-geo', documentId: 'run-012345678901234567890123', phase: 'writing' });
       pending.waitForStorage.mockReturnValue(throwError(() => new TimeoutError()));
       await render('/documents/aeo-geo/run-012345678901234567890123');
       expect(pending.clear).not.toHaveBeenCalled();
@@ -1670,7 +1722,7 @@ describe('MktgDocumentViewComponent', () => {
     it('keeps the loading state through a transiently failed first read, and shows the audit as generating once the retry is answered', async () => {
       vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
       vi.spyOn(Math, 'random').mockReturnValue(0);
-      pending.load.mockReturnValue({ agentId: 'aeo-geo', documentId: 'run-012345678901234567890123' });
+      pending.load.mockReturnValue({ agentId: 'aeo-geo', documentId: 'run-012345678901234567890123', phase: 'writing' });
       pending.waitForStorage.mockReturnValue(NEVER);
       store.getDocument
         .mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 503 })))

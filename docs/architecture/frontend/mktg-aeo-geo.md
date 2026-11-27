@@ -34,9 +34,12 @@ closes that run and starts the new one. The accepted session is recorded with
 `MktgActiveRunGuardService` dialog ("Your AEO/GEO report run is in progress",
 "Started …"): "Open it" opens the run's document, "Discard and start over"
 re-sends the same audit with `discard`. A refused start leaves a capability this
-browser already holds in place, so "Open it" resumes that audit here; an earlier
-capability is cleared only once a start is accepted, and a confirmed discard
-clears the capability of the run it closes.
+browser already holds in place; an earlier capability is cleared only once a
+start is accepted, and a confirmed discard clears the capability of the run it
+closes. "Open it" opens the run's Document page; in the browser that holds the
+capability, that page shows an audit in its writing phase as generating and
+sends one that is still researching or waiting for answers back to the run page
+(see the Document component below), so the person can answer here.
 The response includes a stable run-document id, the public `runId` and a creator-bound owner token.
 `MktgPendingDocumentService` retains that capability under the effective user,
 project and document, with the existing run TTL; it never travels in a URL.
@@ -46,8 +49,20 @@ After the answers are acknowledged (or a no-questions report is ready), the
 page opens `documents/:agentKey/:documentId` and waits for storage there.
 
 The one Document component handles both pending and stored reports. If a
-not-yet-stored document has a matching pending capability, it polls the result
-endpoint and displays a generating state until the persistence receipt arrives.
+not-yet-stored document has a matching pending capability in its writing phase
+(`phase: 'writing'`, set by the run page before it opens the Document route), it
+polls the result endpoint and displays a generating state until the persistence
+receipt arrives. A capability that has not reached that phase (research, or a
+questions turn), or whose run the server records as waiting for answers, is not
+waited on here: the storage wait drops a `questions` result and would only time
+out. The page navigates to the run page instead (`replaceUrl`, without `run`),
+which resumes research or the questions from the same capability, and the
+wait's anchor (`waitStartedAt`) is not set until the audit is writing, so the
+600 s storage budget is never spent on research or answering. This covers the
+409 dialog's "Open it", a Started runs "Open" link during research and a typed
+URL. If that navigation fails the page says "This audit is not finished. Open
+AEO/GEO from the kit to continue it." and keeps the capability. A stored report
+always opens, whatever the capability's phase.
 A ready Markdown result without that receipt is not a stored document. Polling
 is bounded, retries transient failures and cancels on destruction or scope
 change. A refresh can resume the pending run; another user cannot load it.
@@ -61,7 +76,9 @@ the plain not-found line, and the loop ends at `MKTG_RUN_POLL.timeoutMs` from th
 running ("The audit is taking longer than expected."), the server's writing budget, which a tab return never restarts.
 On the Documents page a Started runs row of an audit waiting for answers reads "Answer the questions" and opens the
 run page only in the browser that holds its capability; anywhere else the row reads "Open" and opens the run's
-Document page (`?run=`), where that waiting line explains it, never a blank intake form.
+Document page (`?run=`), where that waiting line explains it, never a blank intake form. A `writing` row always reads
+"Open" and opens the Document page; research is recorded as `writing`, so in the capability's browser that page
+forwards a run still in research to the run page, where questions that arrive later are shown.
 Document reads preserve the shared client's poll/refresh arguments and use its trailing expected-404 flag only for the matching pending audit.
 
 While generating, the existing result endpoint projects Guild session events
