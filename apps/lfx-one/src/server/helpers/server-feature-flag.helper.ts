@@ -832,8 +832,8 @@ export enum ServerFeatureFlag {
    * Meta video ads (#6332): a create's `metaConfig.variants[].videoAssetId` (a stored video/mp4), and the creative-asset
    * upload takes an MP4 for it.
    *
-   * CAPABILITY flag of the Bidding kind: REQUIRES campaign-service v1.0.44 DEPLOYED with `META_VIDEO_ENABLED` on
-   * (linuxfoundation/lfx-v2-campaign-service#550 gap 9, #653), since campaign-service refuses the field with a 400
+   * CAPABILITY flag of the Bidding kind: REQUIRES campaign-service v1.0.38 or later (#653; staging and prod run
+   * v1.0.44) DEPLOYED with `META_VIDEO_ENABLED` on (linuxfoundation/lfx-v2-campaign-service#550 gap 9), since campaign-service refuses the field with a 400
    * otherwise. The video is a stored asset whose bytes campaign-service uploads to the ad account, so it is only
    * meaningful together with `CampaignServiceMetaAssets` on the campaign-service create path; `canSetMetaVideo` needs all
    * three. Off (the default), the create route refuses the field, never drops it, and a create that does not select Meta

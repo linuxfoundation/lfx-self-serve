@@ -1175,10 +1175,11 @@ environment:
   # Meta video ads (#6332): accepts `metaConfig.variants[].videoAssetId` (a stored MP4), and lets the creative-asset
   # upload take an MP4 for it. Meta uses one of the video's own thumbnails, so a video variant carries no image.
   #
-  # CAPABILITY flag of the Bidding kind: REQUIRES campaign-service v1.0.44 DEPLOYED with `META_VIDEO_ENABLED` on
-  # (linuxfoundation/lfx-v2-campaign-service#550 gap 9), the create pipeline on, and
-  # LFX_CUTOVER_CAMPAIGN_SERVICE_META_ASSETS on, since the video is a stored asset campaign-service uploads to the ad
-  # account. Off (the default), the create route refuses the field with a 400, never dropping it. On, it also refuses
+  # CAPABILITY flag of the Bidding kind: REQUIRES campaign-service v1.0.38 or later (staging and prod run v1.0.44)
+  # DEPLOYED with `META_VIDEO_ENABLED` on (linuxfoundation/lfx-v2-campaign-service#550 gap 9, #653), the create
+  # pipeline on, and LFX_CUTOVER_CAMPAIGN_SERVICE_META_ASSETS on, since the video is a stored asset campaign-service
+  # uploads to the ad account. Off (the default), a create that selects Meta is refused with a 400, never dropping the
+  # field, and a create that does not select Meta never forwards it. On, it also refuses
   # what campaign-service would: an id that is not a UUID, a video beside `imageUrl` or `imageAssetId` on its variant,
   # and a video on a create with a `leadFormId`. campaign-service waits at most 60 s for Meta to process the video
   # during the create (`defaultVideoReadyWait`): its paused staging probe must time a real 20 to 30 MiB MP4 first. A
