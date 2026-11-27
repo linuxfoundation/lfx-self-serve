@@ -24,12 +24,12 @@ import { linkedInTargetingDraftFromStored } from './campaign-linkedin-targeting-
  * The component reads its signals and the form, and runs the writes and upload steps these return.
  */
 
-/** A LinkedIn variant for the editor from a brief's copy, keyed by `key`, with no upload. */
 /** A LinkedIn ad format the picker offers, read from an untyped value (a picker event, a stored draft), or `undefined`. */
 export function linkedInAdFormatChoiceFrom(value: unknown): LinkedInAdFormatChoice | undefined {
   return LINKEDIN_AD_FORMAT_CHOICES.find((format) => format === value);
 }
 
+/** A LinkedIn variant for the editor from a brief's copy, keyed by `key`, with no upload. */
 export function newLinkedInVariantDraft(copy: LinkedInCreativeVariant, key: string): LinkedInVariantDraft {
   return {
     key,
