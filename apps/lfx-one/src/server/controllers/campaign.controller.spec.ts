@@ -13103,6 +13103,28 @@ describe('CampaignController.createCampaign Reddit conversion pixel', () => {
       | undefined;
     expect(refusal?.toResponse()['errors']).not.toEqual(expect.arrayContaining([expect.objectContaining({ field: 'redditConfig.conversionPixelId' })]));
   });
+
+  it('never judges a leftover redditConfig bidding, image or pixel on a create that does not select Reddit', async () => {
+    isServerFeatureEnabled.mockImplementation(() => false);
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq(
+        {
+          platforms: ['meta-ads'],
+          metaConfig: { budgetUsd: 250 },
+          redditConfig: { budgetUsd: 50, bidding: null, imageAssetId: '3f2504e0-4f89-11d3-9a0c-0305e82c3301', conversionPixelId: 7 },
+        },
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    expect(next).not.toHaveBeenCalled();
+    expect(legacyCreate).toHaveBeenCalled();
+  });
 });
 
 /**
