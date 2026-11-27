@@ -5106,8 +5106,9 @@
           } @else {
             <!-- Ad image (one image on every variant). Offered only on an explicit yes from
                `metaCreativeAvailable()`: the legacy creator reads no Meta image. The upload, like
-               Reddit's, needs its own capability and wins over a pasted URL when both are set. -->
-            @if (metaCreativeAvailable()) {
+               Reddit's, needs its own capability and wins over a pasted URL when both are set. Hidden once every
+               variant is a video ad (#6332), when the image goes on none of them. -->
+            @if (metaCreativeAvailable() && metaImageWanted()) {
               <div class="mb-4 flex flex-col gap-3" data-testid="implementation-meta-image">
                 <div class="flex flex-col gap-1">
                   <label class="text-xs font-medium text-gray-700" for="meta-image-url">Ad image URL</label>
@@ -5212,6 +5213,9 @@
               </div>
             }
 
+            <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-meta-video-status-live">
+              {{ metaVideoUploadLiveMessage() }}
+            </div>
             <!-- Variant Preview -->
             @if (metaVariants().length > 0) {
               <div>
@@ -5220,15 +5224,69 @@
                   @for (variant of metaVariants(); track $index; let i = $index) {
                     <div class="rounded-md border border-gray-200 bg-gray-50 p-3" [attr.data-testid]="'implementation-meta-variant-' + i">
                       <p class="mb-1 text-xs font-medium text-gray-500">Variant {{ i + 1 }}</p>
-                      @if (metaPreviewImageLabel(); as imageLabel) {
-                        <p class="mb-1 text-xs text-gray-500" [attr.data-testid]="'implementation-meta-variant-image-' + i">
-                          <i class="fa-light fa-image mr-1" aria-hidden="true"></i>{{ imageLabel }}
-                        </p>
+                      <!-- A video variant (#6332) carries no image: Meta uses one of the video's own thumbnails. -->
+                      @if (!(metaVideoShown() && metaVariantVideoViews()[i]?.assetId)) {
+                        @if (metaPreviewImageLabel(); as imageLabel) {
+                          <p class="mb-1 text-xs text-gray-500" [attr.data-testid]="'implementation-meta-variant-image-' + i">
+                            <i class="fa-light fa-image mr-1" aria-hidden="true"></i>{{ imageLabel }}
+                          </p>
+                        }
                       }
                       <p class="text-sm text-gray-800">{{ variant.primaryText | slice: 0 : metaCharLimits.primaryText }}</p>
                       <p class="mt-1 text-xs font-medium text-gray-600">{{ variant.headline | slice: 0 : metaCharLimits.headline }}</p>
                       @if (variant.description) {
                         <p class="text-xs text-gray-500">{{ variant.description | slice: 0 : metaCharLimits.description }}</p>
+                      }
+                      <!-- The variant's video (#6332): a stored MP4 picked from the brief's library, or one uploaded here. Shown
+                           on an explicit yes from `metaVideoAvailable()`, and kept while a video is chosen so it can be taken off. -->
+                      @if (metaVideoShown() && metaVariantVideoViews()[i]; as video) {
+                        <div class="mt-3 flex flex-col gap-1" [attr.data-testid]="'implementation-meta-variant-video-' + i">
+                          <lfx-ui-select
+                            label="Video"
+                            size="small"
+                            [value]="video.assetId"
+                            (valueChange)="onMetaVariantVideoPick(i, $event)"
+                            [error]="video.problem"
+                            hint="A video ad plays the MP4 in place of the image. Meta picks its thumbnail from the video."
+                            [attr.data-testid]="'implementation-meta-variant-video-pick-' + i">
+                            @for (option of video.options; track option.value) {
+                              <lfx-ui-option [value]="option.value" [label]="option.label" />
+                            }
+                          </lfx-ui-select>
+                          @if (metaVideoAvailable() && briefPersistence().briefId) {
+                            <label class="mt-1 text-xs font-medium text-gray-700" [attr.for]="'meta-variant-video-file-' + i">Or upload a video</label>
+                            <!-- A raw file input, as the Meta image and LinkedIn video pickers are: there is no LFX file wrapper bound to the creative-asset upload. -->
+                            <input
+                              [id]="'meta-variant-video-file-' + i"
+                              type="file"
+                              [attr.accept]="metaVideoAccept"
+                              (change)="onMetaVariantVideoFileChange(i, $event)"
+                              [attr.aria-describedby]="'meta-variant-video-hint-' + i"
+                              [attr.aria-invalid]="video.error ? 'true' : null"
+                              class="text-sm text-gray-900 file:mr-3 file:rounded-md file:border file:border-gray-300 file:bg-white file:px-3 file:py-1.5 file:text-sm file:text-gray-700 hover:file:bg-gray-50"
+                              [attr.data-testid]="'implementation-meta-variant-video-file-' + i" />
+                            <p [id]="'meta-variant-video-hint-' + i" class="text-xs text-gray-500">MP4, up to 30 MB. Stored in the brief's library.</p>
+                          }
+                          @if (video.status) {
+                            <p class="text-xs text-gray-700" [attr.data-testid]="'implementation-meta-variant-video-status-' + i">{{ video.status }}</p>
+                          }
+                          @if (video.uploading || video.error) {
+                            <div>
+                              <lfx-button
+                                [label]="video.uploading ? 'Cancel upload' : 'Dismiss'"
+                                size="small"
+                                severity="secondary"
+                                [text]="true"
+                                (onClick)="onMetaVariantVideoUploadCancel()"
+                                [attr.data-testid]="'implementation-meta-variant-video-cancel-' + i" />
+                            </div>
+                          }
+                          @if (video.error) {
+                            <p role="alert" class="text-xs text-red-600" [attr.data-testid]="'implementation-meta-variant-video-error-' + i">
+                              {{ video.error }}
+                            </p>
+                          }
+                        </div>
                       }
                     </div>
                   }
@@ -6402,10 +6460,10 @@
             [briefId]="briefPersistence().briefId ?? ''"
             [available]="libraryUploadAvailable()"
             [reloadToken]="creativeLibraryRevision()"
-            [videoIdsInUse]="linkedInVideoIdsInUse()"
-            [videoUploadRunning]="linkedInImageUploadStatus() === 'uploading'"
-            (videoDeleted)="onLibraryVideoDeleted($event)"
-            (videoRelease)="onLibraryVideoDeleted($event)"
+            [videoIdsInUse]="videoIdsInUse()"
+            [videoUploadRunning]="linkedInImageUploadStatus() === 'uploading' || metaVideoUploadStatus() === 'uploading'"
+            (videoDeleted)="onLibraryVideoGone($event)"
+            (videoRelease)="onLibraryVideoGone($event)"
             [documentIdsInUse]="linkedInDocumentIdsInUse()"
             (documentDeleted)="onLibraryDocumentDeleted($event)"
             (documentRelease)="onLibraryDocumentReleased($event)"

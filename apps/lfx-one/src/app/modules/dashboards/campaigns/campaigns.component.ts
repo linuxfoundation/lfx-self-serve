@@ -1235,6 +1235,8 @@ export class CampaignsComponent {
   protected readonly briefCampaignsMetaLeadFormsEnabled = signal<boolean | null>(null);
   /** Whether the Meta section offers carousel ads (`CampaignListResult.metaCarouselEnabled`, #6331). */
   protected readonly briefCampaignsMetaCarouselEnabled = signal<boolean | null>(null);
+  /** Whether the Meta section offers video ads (`CampaignListResult.metaVideoEnabled`, #6332). */
+  protected readonly briefCampaignsMetaVideoEnabled = signal<boolean | null>(null);
   /** Meta interests, behaviors with job titles, languages (#5904 row 4), and regions with cities (row 6): deployment-wide answers, read and cleared like the capabilities above. */
   protected readonly briefCampaignsMetaInterestTargetingEnabled = signal<boolean | null>(null);
   protected readonly briefCampaignsMetaBehaviorTargetingEnabled = signal<boolean | null>(null);
@@ -3456,6 +3458,7 @@ export class CampaignsComponent {
         this.briefCampaignsMetaCallToActionEnabled.set(null);
         this.briefCampaignsMetaLeadFormsEnabled.set(null);
         this.briefCampaignsMetaCarouselEnabled.set(null);
+        this.briefCampaignsMetaVideoEnabled.set(null);
         this.briefCampaignsMetaInterestTargetingEnabled.set(null);
         this.briefCampaignsMetaBehaviorTargetingEnabled.set(null);
         this.briefCampaignsMetaLocaleTargetingEnabled.set(null);
@@ -6569,6 +6572,7 @@ export class CampaignsComponent {
           this.briefCampaignsMetaCallToActionEnabled.set(result.metaCallToActionEnabled ?? null);
           this.briefCampaignsMetaLeadFormsEnabled.set(result.metaLeadFormsEnabled ?? null);
           this.briefCampaignsMetaCarouselEnabled.set(result.metaCarouselEnabled ?? null);
+          this.briefCampaignsMetaVideoEnabled.set(result.metaVideoEnabled ?? null);
           this.briefCampaignsMetaInterestTargetingEnabled.set(result.metaInterestTargetingEnabled ?? null);
           this.briefCampaignsMetaBehaviorTargetingEnabled.set(result.metaBehaviorTargetingEnabled ?? null);
           this.briefCampaignsMetaLocaleTargetingEnabled.set(result.metaLocaleTargetingEnabled ?? null);
@@ -6644,6 +6648,7 @@ export class CampaignsComponent {
           this.briefCampaignsMetaCallToActionEnabled.set(null);
           this.briefCampaignsMetaLeadFormsEnabled.set(null);
           this.briefCampaignsMetaCarouselEnabled.set(null);
+          this.briefCampaignsMetaVideoEnabled.set(null);
           this.briefCampaignsMetaInterestTargetingEnabled.set(null);
           this.briefCampaignsMetaBehaviorTargetingEnabled.set(null);
           this.briefCampaignsMetaLocaleTargetingEnabled.set(null);
@@ -6764,6 +6769,7 @@ export class CampaignsComponent {
       this.briefCampaignsMetaCallToActionEnabled.set(null);
       this.briefCampaignsMetaLeadFormsEnabled.set(null);
       this.briefCampaignsMetaCarouselEnabled.set(null);
+      this.briefCampaignsMetaVideoEnabled.set(null);
       this.briefCampaignsMetaInterestTargetingEnabled.set(null);
       this.briefCampaignsMetaBehaviorTargetingEnabled.set(null);
       this.briefCampaignsMetaLocaleTargetingEnabled.set(null);
@@ -6854,6 +6860,7 @@ export class CampaignsComponent {
             this.briefCampaignsMetaCallToActionEnabled.set(result.metaCallToActionEnabled ?? null);
             this.briefCampaignsMetaLeadFormsEnabled.set(result.metaLeadFormsEnabled ?? null);
             this.briefCampaignsMetaCarouselEnabled.set(result.metaCarouselEnabled ?? null);
+            this.briefCampaignsMetaVideoEnabled.set(result.metaVideoEnabled ?? null);
             this.briefCampaignsMetaInterestTargetingEnabled.set(result.metaInterestTargetingEnabled ?? null);
             this.briefCampaignsMetaBehaviorTargetingEnabled.set(result.metaBehaviorTargetingEnabled ?? null);
             this.briefCampaignsMetaLocaleTargetingEnabled.set(result.metaLocaleTargetingEnabled ?? null);
@@ -6927,6 +6934,7 @@ export class CampaignsComponent {
             this.briefCampaignsMetaCallToActionEnabled.set(null);
             this.briefCampaignsMetaLeadFormsEnabled.set(null);
             this.briefCampaignsMetaCarouselEnabled.set(null);
+            this.briefCampaignsMetaVideoEnabled.set(null);
             this.briefCampaignsMetaInterestTargetingEnabled.set(null);
             this.briefCampaignsMetaBehaviorTargetingEnabled.set(null);
             this.briefCampaignsMetaLocaleTargetingEnabled.set(null);

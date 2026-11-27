@@ -426,6 +426,9 @@ import type {
   MetaAdOptions,
   MetaAdOptionView,
   MetaImageField,
+  MetaVariantVideoDraft,
+  MetaVariantVideoView,
+  MetaVideoUploadPending,
 } from '@lfx-one/shared/interfaces';
 import {
   campaignBiddingError,
@@ -684,7 +687,16 @@ import {
   metaPreviewImageLabel,
   metaRequiresPixel,
   metaUsesInstagram,
-  metaVariantsWithImage,
+  metaImageWanted,
+  metaVariantsWithMedia,
+  metaVariantVideosWith,
+  metaVariantVideosWithout,
+  metaVariantVideoViews,
+  metaVideoCreateRefusal,
+  metaVideoDraftFields,
+  metaVideoDraftRestore,
+  metaVideoFileRefusal,
+  metaVideoIdsInUse,
   metaCarouselChosen,
   metaCarouselOffered,
   metaCarouselCreateRefusal,
@@ -1455,6 +1467,13 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly metaCarouselOfferedState = computed<boolean | null>(() => metaCarouselOffered(this.metaCarouselEnabled(), this.metaCreativeEnabled()));
   /** Whether a carousel is offered: an explicit yes from {@link metaCarouselOfferedState}, never a `null`. */
   protected readonly metaCarouselAvailable = computed<boolean>(() => this.metaCarouselOfferedState() === true);
+
+  /** Whether the Meta section offers video ads (`CampaignListResult.metaVideoEnabled`, #6332). */
+  public readonly metaVideoEnabled = input<boolean | null>(null);
+  /** @see metaVideoEnabled — an explicit yes, never a `null`. */
+  protected readonly metaVideoAvailable = computed<boolean>(() => this.metaVideoEnabled() === true);
+  /** The `accept` list of a Meta video picker (#6332). */
+  protected readonly metaVideoAccept = CREATIVE_ASSET_VIDEO_MIME_TYPE;
 
   /**
    * Whether this deployment sends Meta interests (#5904 row 4) — `CampaignListResult.metaInterestTargetingEnabled`,
@@ -2262,6 +2281,10 @@ export class ImplementationTabComponent implements OnInit {
       .map((variant) => variant.videoAssetId ?? '')
       .filter((id) => id !== '')
   );
+  /** The stored videos any ad on this tab names: LinkedIn's above and the Meta variants' (#6332). The library will not delete them. */
+  protected readonly videoIdsInUse = computed<string[]>(() => [
+    ...new Set([...this.linkedInVideoIdsInUse(), ...metaVideoIdsInUse(this.metaVariantVideos(), this.metaVariants().length)]),
+  ]);
   /** The stored asset whose delete is running, `''` for none: the PDF picker does not offer it, and Create waits while the document ad names it. */
   protected readonly linkedInDocumentDeletingId = computed<string>(() => this.campaignService.creativeVideoDeleting()?.id ?? '');
   /**
@@ -3043,6 +3066,45 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly metaCarouselMessage = signal('');
   /** Whether this create is a carousel (#6331): chosen, and offered on an explicit yes. */
   protected readonly metaCarouselSelected = computed<boolean>(() => metaCarouselChosen(this.metaFormat(), this.metaCarouselOfferedState()));
+  /**
+   * Each Meta variant's video as chosen (#6332), by the variant's position in the brief's copy, carried in the draft. Sent
+   * only while `metaVideoAvailable()` and no carousel is chosen; see `metaVariantsWithMedia`.
+   */
+  protected readonly metaVariantVideos = signal<MetaVariantVideoDraft[]>([]);
+  /** The one Meta video upload (#6332): its state, the variant it is for, the file's name, the brief, and why it failed. */
+  protected readonly metaVideoUploadStatus = signal<CreativeAssetUploadStatus>('idle');
+  private readonly metaVideoUploadVariant = signal(-1);
+  private readonly metaVideoUploadName = signal('');
+  private readonly metaVideoUploadBriefId = signal('');
+  private readonly metaVideoUploadError = signal('');
+  private metaVideoUploadSub: Subscription | null = null;
+  /** Whether the variants' video controls are shown (#6332): offered, or a video already chosen so it can be taken off; never on a carousel. */
+  protected readonly metaVideoShown = computed<boolean>(
+    () =>
+      !this.metaCarouselSelected() &&
+      (this.metaVideoAvailable() ||
+        this.metaVariantVideos()
+          .slice(0, this.metaVariants().length)
+          .some((video) => video.assetId !== ''))
+  );
+  /** Whether the one Meta image goes on any variant (#6332): not once every variant is a video ad, which hides its input. */
+  protected readonly metaImageWanted = computed<boolean>(() =>
+    metaImageWanted(this.metaVariants().length, this.metaVariantVideos(), this.metaVideoAvailable() && !this.metaCarouselSelected())
+  );
+  /** Each variant's video control (#6332); see `metaVariantVideoViews`. */
+  protected readonly metaVariantVideoViews = computed<MetaVariantVideoView[]>(() =>
+    metaVariantVideoViews(this.metaVariants().length, this.metaVariantVideos(), this.googleCreativeLibrary(), this.briefPersistence().briefId ?? '', {
+      status: this.metaVideoUploadStatus(),
+      variant: this.metaVideoUploadVariant(),
+      name: this.metaVideoUploadName(),
+      error: this.metaVideoUploadError(),
+    })
+  );
+  /** The Meta video upload's status, announced with the variant it is for (#6332). */
+  protected readonly metaVideoUploadLiveMessage = computed<string>(() => {
+    const view = this.metaVariantVideoViews()[this.metaVideoUploadVariant()];
+    return view?.status ? `Variant ${this.metaVideoUploadVariant() + 1}: ${view.status}` : '';
+  });
   protected readonly metaGeoTargets = signal<string[]>([]);
   protected readonly metaBudgetUsd = signal(DEFAULT_META_BUDGET_USD);
   protected readonly metaLifetimeBudget = signal(false);
@@ -4772,6 +4834,20 @@ export class ImplementationTabComponent implements OnInit {
           leadFormError: this.metaLeadFormError(),
           // A carousel chosen but not offered is held, never sent (#6331); while chosen, its cards replace the variant check.
           carouselUnavailable: metaCarouselUnavailable(this.metaFormat(), this.metaCarouselOfferedState()),
+          // The variants' videos (#6332), checked on the variants and lead form the request would carry.
+          video: this.metaCarouselSelected()
+            ? null
+            : metaVideoCreateRefusal({
+                available: this.metaVideoAvailable(),
+                count: this.metaVariants().length,
+                videos: this.metaVariantVideos(),
+                library: this.googleCreativeLibrary(),
+                briefId: this.briefPersistence().briefId ?? '',
+                config: {
+                  variants: this.metaVariantsForCreate(),
+                  ...(this.metaLeadFormRequested() ? { leadFormId: this.metaLeadFormId().trim() } : {}),
+                },
+              }),
           ...(this.metaCarouselSelected()
             ? {
                 carousel: {
@@ -4905,11 +4981,15 @@ export class ImplementationTabComponent implements OnInit {
       metaImageUploadHoldsCreate({
         showMetaSection: this.showMetaSection(),
         uploadAvailable: this.metaAssetUploadAvailable(),
-        carouselSelected: this.metaCarouselSelected(),
+        // Nor once every variant is a video ad (#6332), which hides the one image's upload too.
+        carouselSelected: this.metaCarouselSelected() || !this.metaImageWanted(),
         uploadStatus: this.metaImageUploadStatus(),
       })
     )
       return 'Waiting for the Meta Ads image upload to finish.';
+    // A variant's video upload (#6332), while its control, with its Cancel, is on screen.
+    if (this.showMetaSection() && this.metaVideoShown() && this.metaVideoUploadStatus() === 'uploading')
+      return 'Waiting for the Meta Ads video upload to finish.';
     // And Google's, for an upload into an image slot of a section still on screen — an upload for a
     // section the operator un-ticked would not be sent, and its Cancel has gone with the section.
     if (this.googleAssetUploadAvailable() && this.googleImageUploadStatus() === 'uploading' && this.googleImageUploadInReach())
@@ -6391,6 +6471,59 @@ export class ImplementationTabComponent implements OnInit {
    * A stored video the library deleted, or the operator took off the ads there (#5764 row 18): cleared from any ad that
    * names it. Delete is off while an ad uses a video, so after a delete this only catches an upload that came back with it.
    */
+  /**
+   * A stored video the library deleted, or the operator took off the ads there: cleared from any Meta variant that names
+   * it (#6332), then from the LinkedIn ads (`onLibraryVideoDeleted`).
+   */
+  protected onLibraryVideoGone(assetId: string): void {
+    if (this.metaVariantVideos().some((video) => video.assetId === assetId)) {
+      this.metaVariantVideos.update((videos) => metaVariantVideosWithout(videos, assetId));
+      this.emitDraft();
+    }
+    this.onLibraryVideoDeleted(assetId);
+  }
+
+  /** A Meta variant's picked video (#6332): a stored MP4 of this brief, or `''` (no video) for an image ad. */
+  protected onMetaVariantVideoPick(index: number, value: string | null): void {
+    const assetId = value ?? '';
+    const briefId = assetId === '' ? '' : (this.briefPersistence().briefId ?? '');
+    if (this.metaVideoUploadVariant() === index) this.clearMetaVideoUpload();
+    this.metaVariantVideos.update((videos) => metaVariantVideosWith(videos, index, { assetId, assetName: '', assetBriefId: briefId }));
+    this.emitDraft();
+  }
+
+  /**
+   * Upload the chosen MP4 for one Meta variant of this brief (#6332), in the one Meta video upload slot: a new pick
+   * replaces an upload still running for any variant. A file that cannot be uploaded is refused before anything
+   * changes, and the reason shows under that variant's picker.
+   */
+  protected onMetaVariantVideoFileChange(index: number, event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0] ?? null;
+    input.value = '';
+    if (!file || this.campaignService.creativeVideoDeleting() !== null) return;
+
+    this.clearMetaVideoUpload();
+    this.metaVideoUploadVariant.set(index);
+    const briefId = this.briefPersistence().briefId ?? '';
+    const projectSlug = this.activeFoundationSlug();
+    const refusal = metaVideoFileRefusal(file, briefId, projectSlug);
+    if (refusal !== null) {
+      this.metaVideoUploadStatus.set('error');
+      this.metaVideoUploadError.set(refusal);
+      this.emitDraft();
+      return;
+    }
+    this.followMetaVideoUpload(this.campaignService.uploadCreativeAsset(file, projectSlug, briefId, 'meta-video'), index, briefId, file.name);
+    this.emitDraft();
+  }
+
+  /** Cancel a Meta variant's video upload in flight, or dismiss its failure (#6332); the variant keeps the video it had. */
+  protected onMetaVariantVideoUploadCancel(): void {
+    this.clearMetaVideoUpload();
+    this.emitDraft();
+  }
+
   protected onLibraryVideoDeleted(assetId: string): void {
     if (!this.linkedInVariants().some((variant) => variant.videoAssetId === assetId)) return;
     this.linkedInVariants.update((variants) =>
@@ -8589,7 +8722,11 @@ export class ImplementationTabComponent implements OnInit {
    * `metaCreativeAvailable()`. Never both on a variant, which campaign-service refuses.
    */
   private metaVariantsForCreate(): MetaAdVariant[] {
-    return metaVariantsWithImage(this.metaVariants(), this.metaImageField());
+    // A variant with a video stored for this brief carries it in place of the image while video ads are offered (#6332).
+    return metaVariantsWithMedia(this.metaVariants(), this.metaImageField(), this.metaVariantVideos(), {
+      available: this.metaVideoAvailable(),
+      briefId: this.briefPersistence().briefId ?? '',
+    });
   }
 
   /** The Meta creatives for the request: a carousel's cards and `format: 'carousel'` while chosen and offered (#6331), else the variants. */
@@ -8635,7 +8772,8 @@ export class ImplementationTabComponent implements OnInit {
     return computed(() =>
       metaImageAssetBlock({
         // Not while a carousel is chosen (#6331): its cards carry their own images, and the one image is not sent.
-        showMetaSection: this.showMetaSection() && !this.metaCarouselSelected(),
+        // Nor once every variant is a video ad (#6332): the one image is then not sent either.
+        showMetaSection: this.showMetaSection() && !this.metaCarouselSelected() && this.metaImageWanted(),
         briefId: this.briefPersistence().briefId,
         assetId: this.metaImageAssetId(),
         assetBriefId: this.metaImageAssetBriefId(),
@@ -8721,6 +8859,82 @@ export class ImplementationTabComponent implements OnInit {
     this.metaImageUploadStatus.set('error');
     this.metaImageUploadError.set(message);
     this.metaImageUploadFailedBriefId.set(briefId);
+  }
+
+  /** The Meta video upload in flight as the draft keeps it (#6332), or `null`. */
+  private metaVideoUploadPending(): MetaVideoUploadPending | null {
+    if (this.metaVideoUploadStatus() !== 'uploading') return null;
+    return { variant: this.metaVideoUploadVariant(), name: this.metaVideoUploadName(), briefId: this.metaVideoUploadBriefId() };
+  }
+
+  /**
+   * Follow one Meta variant's video upload (#6332), `followMetaImageUpload`'s sibling: on success the video lands on the
+   * variant it was chosen for, if the brief is still the one it was stored for, and the library is read again.
+   */
+  private followMetaVideoUpload(upload$: Observable<CreativeAssetUploadResult>, index: number, briefId: string, fileName: string): void {
+    this.metaVideoUploadStatus.set('uploading');
+    this.metaVideoUploadVariant.set(index);
+    this.metaVideoUploadName.set(fileName);
+    this.metaVideoUploadBriefId.set(briefId);
+    this.metaVideoUploadError.set('');
+    this.metaVideoUploadSub = upload$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: (asset) => {
+        this.campaignService.forgetCreativeAssetUpload('meta-video', upload$);
+        this.metaVideoUploadSub = null;
+        if ((this.briefPersistence().briefId ?? '') !== briefId) {
+          this.failMetaVideoUpload('The brief changed during the upload. Choose the video again.');
+        } else {
+          this.metaVariantVideos.update((videos) => metaVariantVideosWith(videos, index, { assetId: asset.id, assetName: fileName, assetBriefId: briefId }));
+          this.metaVideoUploadStatus.set('idle');
+          this.creativeLibraryRevision.update((revision) => revision + 1);
+        }
+        this.emitDraft();
+      },
+      error: (err: unknown) => {
+        this.campaignService.forgetCreativeAssetUpload('meta-video', upload$);
+        this.metaVideoUploadSub = null;
+        this.failMetaVideoUpload(this.metaVideoUploadErrorMessage(err));
+        this.emitDraft();
+      },
+    });
+  }
+
+  /** Pick up a Meta video upload the draft recorded as running (#6332), if the service still holds it for the open brief. */
+  private resumeMetaVideoUpload(pending: MetaVideoUploadPending): void {
+    const briefId = this.briefPersistence().briefId ?? '';
+    const upload$ = pending.briefId !== '' && pending.briefId === briefId ? this.campaignService.resumeCreativeAssetUpload('meta-video', briefId) : null;
+    if (!upload$) {
+      // Gone: if it finished, the video is in the brief's library to pick.
+      this.metaVideoUploadVariant.set(pending.variant);
+      this.failMetaVideoUpload(`The upload of ${pending.name} was interrupted. Choose the video again, or pick it from the brief's library.`);
+      return;
+    }
+    this.followMetaVideoUpload(upload$, pending.variant, briefId, pending.name);
+  }
+
+  /** End the Meta video upload: cancelled if still running, its failure dismissed. */
+  private clearMetaVideoUpload(): void {
+    this.metaVideoUploadSub?.unsubscribe();
+    this.metaVideoUploadSub = null;
+    if (this.metaVideoUploadStatus() === 'uploading') this.campaignService.cancelCreativeAssetUpload('meta-video');
+    this.metaVideoUploadStatus.set('idle');
+    this.metaVideoUploadVariant.set(-1);
+    this.metaVideoUploadName.set('');
+    this.metaVideoUploadBriefId.set('');
+    this.metaVideoUploadError.set('');
+  }
+
+  private failMetaVideoUpload(message: string): void {
+    this.metaVideoUploadStatus.set('error');
+    this.metaVideoUploadError.set(message);
+  }
+
+  /** `linkedInVideoUploadErrorMessage`'s Meta sibling (#6332): the BFF's 413 and 415 already name the video's limit and type. */
+  private metaVideoUploadErrorMessage(err: unknown): string {
+    const status = err instanceof HttpErrorResponse ? err.status : 0;
+    if (status === 0 || status === 503) return 'The video service is unavailable right now. Try again in a moment.';
+    if (status === 409) return "This brief's asset library is full. Delete images or videos it no longer needs, then try again.";
+    return serverAuthoredMessage(err, 'The video could not be uploaded. Try again, or leave this ad as an image ad.');
   }
   /**
    * The LinkedIn variants as sent: each variant's copy as edited, carrying its OWN uploaded image
@@ -10203,6 +10417,10 @@ export class ImplementationTabComponent implements OnInit {
     }
     if (metaImageRestore.failedUpload) this.failMetaImageUpload(metaImageRestore.failedUpload.message, metaImageRestore.failedUpload.briefId);
     if (metaImageRestore.pendingUpload) this.resumeMetaImageUpload(metaImageRestore.pendingUpload.name, metaImageRestore.pendingUpload.briefId);
+    // The Meta variants' videos (#6332), present-only, and their upload in flight.
+    const metaVideoRestore = metaVideoDraftRestore(draft);
+    if (metaVideoRestore.videos !== undefined) this.metaVariantVideos.set(metaVideoRestore.videos);
+    if (metaVideoRestore.pendingUpload) this.resumeMetaVideoUpload(metaVideoRestore.pendingUpload);
     // The LinkedIn variants as edited, each with its own image, over the brief's seed (#5547). Each
     // entry copied, so the parent's draft is never reachable from the editor.
     if (linkedInRestore.variants) this.linkedInVariants.set(linkedInRestore.variants);
@@ -10785,6 +11003,8 @@ export class ImplementationTabComponent implements OnInit {
         delivery: this.redditDelivery(),
         editedVariants: this.redditEditedVariants(),
       }),
+      // The variants' videos and the one video upload in flight (#6332), whatever the capability says.
+      ...metaVideoDraftFields(this.metaVariantVideos(), this.metaVideoUploadPending()),
       ...metaImageDraftFields({
         imageUrl: this.metaImageUrl(),
         assetId: this.metaImageAssetId(),
@@ -11099,6 +11319,8 @@ export class ImplementationTabComponent implements OnInit {
     this.metaFormat.set('single');
     this.metaCarouselCards.set([]);
     this.metaCarouselMessage.set('');
+    // Held by the previous brief's variant positions (#6332), which mean nothing for this one.
+    this.metaVariantVideos.set([]);
   }
 
   /**
@@ -11772,7 +11994,9 @@ export class ImplementationTabComponent implements OnInit {
           this.linkedInCarouselSelected() ||
           this.linkedInDocumentSelected() ||
           // And a Meta carousel's cards (#6331), while stored images are offered.
-          (this.metaCarouselSelected() && this.metaAssetUploadAvailable()),
+          (this.metaCarouselSelected() && this.metaAssetUploadAvailable()) ||
+          // And the Meta variants' video pickers (#6332).
+          (this.showMetaSection() && this.metaVideoShown()),
       }),
       {
         equal: (a, b) => a.projectSlug === b.projectSlug && a.briefId === b.briefId && a.revision === b.revision && a.wanted === b.wanted,
@@ -11783,7 +12007,7 @@ export class ImplementationTabComponent implements OnInit {
         switchMap((target) => {
           if (!target.wanted || target.projectSlug === '' || target.briefId === '') return of(idle);
           return this.campaignService.listCreativeAssets(target.projectSlug, target.briefId).pipe(
-            map((library): CreativeAssetLibraryState => ({ status: 'ready', assets: library.assets, documents: library.documents })),
+            map((library): CreativeAssetLibraryState => ({ status: 'ready', assets: library.assets, documents: library.documents, videos: library.videos })),
             catchError(() => of<CreativeAssetLibraryState>({ status: 'error', assets: [] })),
             startWith<CreativeAssetLibraryState>({ status: 'loading', assets: [] })
           );
