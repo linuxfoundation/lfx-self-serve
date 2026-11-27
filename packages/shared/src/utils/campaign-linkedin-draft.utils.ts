@@ -3,6 +3,7 @@
 
 import type {
   CampaignImplementationDraft,
+  LinkedInAdFormatChoice,
   LinkedInBriefCopy,
   LinkedInBriefSeed,
   LinkedInCreativeVariant,
@@ -11,6 +12,7 @@ import type {
   LinkedInDraftState,
   LinkedInVariantDraft,
 } from '../interfaces/campaign.interface';
+import { LINKEDIN_AD_FORMAT_CHOICES } from '../constants/campaign.constants';
 import { linkedInCarouselCardsFromStored } from './campaign-linkedin-carousel-form.utils';
 import { linkedInDeliveryOptionsDraftFromStored } from './campaign-linkedin-delivery-options-form.utils';
 import { linkedInDocumentDraftFromStored } from './campaign-linkedin-document-form.utils';
@@ -21,6 +23,11 @@ import { linkedInTargetingDraftFromStored } from './campaign-linkedin-targeting-
  * The Implement tab's LinkedIn draft rules (#5980): what the draft carries, what a restore sets, and what a brief seeds.
  * The component reads its signals and the form, and runs the writes and upload steps these return.
  */
+
+/** A LinkedIn ad format the picker offers, read from an untyped value (a picker event, a stored draft), or `undefined`. */
+export function linkedInAdFormatChoiceFrom(value: unknown): LinkedInAdFormatChoice | undefined {
+  return LINKEDIN_AD_FORMAT_CHOICES.find((format) => format === value);
+}
 
 /** A LinkedIn variant for the editor from a brief's copy, keyed by `key`, with no upload. */
 export function newLinkedInVariantDraft(copy: LinkedInCreativeVariant, key: string): LinkedInVariantDraft {
@@ -108,10 +115,8 @@ export function linkedInDraftRestore(draft: LinkedInDraftSnapshot): LinkedInDraf
   }
   // Text Ads (#5764 row 19), video ads (row 18), carousels, documents (campaign-service#665) and boosts (#673): present-only, so an older draft keeps the single-image default. An
   // unknown format restores nothing.
-  const format = draft.linkedInFormat;
-  if (format === 'single_image' || format === 'text' || format === 'video' || format === 'carousel' || format === 'document' || format === 'boost') {
-    restore.format = format;
-  }
+  const format = linkedInAdFormatChoiceFrom(draft.linkedInFormat);
+  if (format !== undefined) restore.format = format;
   // The boost's post as typed (campaign-service#673): present-only, as text. Sent only while the boost is offered.
   if (typeof draft.linkedInBoostPost === 'string') restore.boostPost = draft.linkedInBoostPost;
   // The document ad (campaign-service#665): present-only, with every field as text.

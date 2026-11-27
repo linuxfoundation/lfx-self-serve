@@ -498,6 +498,7 @@ import {
   isReversedCampaignFlight,
   joinAsSentenceList,
   linkedInAccountFields,
+  linkedInAdFormatChoiceFrom,
   linkedInCreateRefusal,
   linkedInDailyCapError,
   linkedInDailyCapField,
@@ -6037,9 +6038,7 @@ export class ImplementationTabComponent implements OnInit {
 
   /** The Ad format picker's value as a format: anything else reads as single image ads. */
   protected onLinkedInFormatSelect(value: unknown): void {
-    this.onLinkedInFormatChange(
-      value === 'text' || value === 'video' || value === 'carousel' || value === 'document' || value === 'boost' ? value : 'single_image'
-    );
+    this.onLinkedInFormatChange(linkedInAdFormatChoiceFrom(value) ?? 'single_image');
   }
 
   /**
