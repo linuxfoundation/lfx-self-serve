@@ -120,10 +120,13 @@ export class CreativeLibraryUploadComponent {
   protected readonly videoDeleteError = computed(() => this.deleteErrorFor('video'));
   /** Why the last PDF delete on the brief on screen failed, `''` for none. */
   protected readonly documentDeleteError = computed(() => this.deleteErrorFor('document'));
-  /** The stored videos, listed apart from the images so their space can be freed (#5764 row 18). */
+  /**
+   * The stored videos, listed apart from the images so their space can be freed (#5764 row 18). A Reddit video post's MP4
+   * is uploaded through this queue (#6108 row 8), so a run here holds their Delete as the LinkedIn upload does.
+   */
   protected readonly videoRows: Signal<LinkedInStoredVideoRow[]> = computed(() => {
     const videos = (this.quota().library?.videos ?? []).filter((video) => !this.deletedAssetIds().includes(video.id));
-    return linkedInStoredVideoRows(videos, this.videoIdsInUse(), this.videoUploadRunning(), this.deletingAssetId());
+    return linkedInStoredVideoRows(videos, this.videoIdsInUse(), this.videoUploadRunning() || this.running(), this.deletingAssetId());
   });
   /**
    * The stored PDFs, listed apart from the images so their space can be freed (campaign-service#665). PDFs are uploaded

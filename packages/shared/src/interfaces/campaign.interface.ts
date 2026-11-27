@@ -173,6 +173,12 @@ export type CreativeAssetUploadStatus = 'idle' | 'uploading' | 'error';
 export type CreativeAssetUploadOwner = 'reddit' | 'meta' | 'linkedin' | 'google' | 'microsoft' | 'twitter';
 
 /**
+ * The one non-image type a library upload pick takes (`enqueueCreativeAssetUploads`): a PDF for a LinkedIn document ad
+ * (campaign-service#665) or an MP4 for a Reddit video post (#6108 row 8). `null` where it is used means images only.
+ */
+export type CreativeAssetQueueKind = Exclude<CreativeAssetUploadMimeType, CreativeAssetMimeType>;
+
+/**
  * A creative asset campaign-service stored for a brief (`upload-creative-asset`), as the BFF
  * returns it to the browser.
  *
@@ -507,6 +513,8 @@ export interface RedditCreateRefusalInput {
   geoTargetCount: number;
   videoGoalError: string | null;
   videoPostError: string | null;
+  /** Why the stored video post cannot be sent (`redditVideoPostCreateRefusal`, #6108 row 8), or `null`. */
+  videoAssetRefusal: string | null;
   /** Why the conversion event cannot be sent yet (`redditConversionEventBlock`), or `null`. */
   conversionEventBlock: string | null;
   /** Why the custom audiences cannot be sent yet (`redditCustomAudiencesBlock`), or `null`. */
@@ -1536,6 +1544,11 @@ export interface CampaignImplementationDraft {
    * REQUEST is gated on the objective. `''` is "not chosen yet", which blocks a Video Views create.
    */
   redditVideoGoal?: RedditVideoGoal | '';
+  /**
+   * The Reddit video post from stored assets (#6108 row 8): the MP4 and its thumbnail, each with the brief it was picked
+   * for. Carried only once either is picked, and kept whatever the capability says; only the REQUEST is gated on it.
+   */
+  redditVideoPost?: RedditVideoPostDraft;
   /**
    * The Reddit conversion event (#6108 row 2), kept whatever the objective and the capability say, as the video goal is;
    * only the REQUEST is gated on them. A non-default event the capability no longer confirms holds Create, never dropped.
@@ -3090,6 +3103,33 @@ export interface RedditAdVariantView {
   error: string;
 }
 
+/**
+ * The Reddit video post as the Implement tab edits it (#6108 row 8): a stored MP4 and a stored PNG or JPEG thumbnail
+ * picked from the brief's library, `''` for none, each with the brief it was picked for.
+ */
+export interface RedditVideoPostDraft {
+  videoAssetId: string;
+  videoBriefId: string;
+  thumbnailAssetId: string;
+  thumbnailBriefId: string;
+}
+
+/** One stored asset a Reddit video post picker offers (#6108 row 8): its id, `''` for the "none" option, and its label. */
+export interface RedditVideoPostOption {
+  value: string;
+  label: string;
+}
+
+/** The Reddit video post editor's state (#6108 row 8, `redditVideoPostView`): both pickers, and what is wrong with each pick (`''` for nothing). */
+export interface RedditVideoPostView {
+  videoOptions: RedditVideoPostOption[];
+  thumbnailOptions: RedditVideoPostOption[];
+  videoProblem: string;
+  thumbnailProblem: string;
+  /** Why the pickers offer nothing yet (the brief unsaved, the library loading or empty), `''` otherwise. */
+  libraryNote: string;
+}
+
 export interface RedditBriefCopy {
   variants: RedditAdVariant[];
   recommendedSubreddits: string[];
@@ -4020,6 +4060,7 @@ export type RedditDraftSnapshot = Pick<
   | 'redditImageUploadFailedMessage'
   | 'redditImageUploadFailedBriefId'
   | 'redditVideoGoal'
+  | 'redditVideoPost'
   | 'redditConversionEvent'
   | 'redditCustomAudienceIds'
   | 'redditExcludedCustomAudienceIds'
@@ -4051,6 +4092,8 @@ export interface RedditDraftState {
   uploadError: string;
   uploadFailedBriefId: string;
   videoGoal: RedditVideoGoal | '';
+  /** The stored video post (#6108 row 8), kept whatever the capability says. */
+  videoPost: RedditVideoPostDraft;
   conversionEvent: RedditConversionEvent;
   customAudiences: RedditCustomAudiencesDraft;
   targetingExclusions: RedditTargetingExclusionsDraft;
@@ -4077,6 +4120,8 @@ export interface RedditDraftRestore {
   /** Resume an upload the draft recorded as still running. */
   pendingUpload?: { name: string; briefId: string };
   videoGoal?: RedditVideoGoal | '';
+  /** The stored video post (#6108 row 8); absent when the draft carries none. */
+  videoPost?: RedditVideoPostDraft;
   conversionEvent?: RedditConversionEvent;
   customAudiences?: RedditCustomAudiencesDraft;
   targetingExclusions?: RedditTargetingExclusionsDraft;
@@ -4106,6 +4151,8 @@ export interface RedditBriefReset extends RedditBriefSeed {
   callToAction: '';
   objective: RedditObjective;
   videoGoal: '';
+  /** The video post with nothing picked (#6108 row 8). */
+  videoPost: RedditVideoPostDraft;
   conversionEvent: RedditConversionEvent;
   customAudiences: RedditCustomAudiencesDraft;
   targetingExclusions: RedditTargetingExclusionsDraft;
@@ -5240,6 +5287,8 @@ export interface CreativeAssetLibraryState {
   assets: StoredCreativeAsset[];
   /** The stored PDFs (campaign-service#665), carried by a `ready` read only; a LinkedIn document ad picks one. */
   documents?: StoredCreativeDocument[];
+  /** The stored videos, carried by a `ready` read only; a Reddit video post picks one (#6108 row 8). */
+  videos?: StoredCreativeVideo[];
 }
 
 /**

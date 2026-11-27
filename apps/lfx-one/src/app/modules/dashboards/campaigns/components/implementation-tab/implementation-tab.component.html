@@ -5985,6 +5985,21 @@
                 </div>
               </div>
             }
+
+            <!-- A video post from stored assets (#6108 row 8): only while this deployment sends one
+                 (LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_VIDEO); picked from, and uploaded into, the brief's library. -->
+            @if (redditVideoAvailable()) {
+              <lfx-reddit-video-post
+                [videoPost]="redditVideoPost()"
+                (videoPostChange)="onRedditVideoPostChange($event)"
+                [library]="googleCreativeLibrary()"
+                [briefId]="briefPersistence().briefId ?? ''"
+                [deletingAssetId]="redditVideoDeletingId()"
+                [variantCount]="redditAdVariants().length"
+                [uploadAvailable]="!!briefPersistence().briefId"
+                (upload)="onRedditVideoUpload($event)"
+                data-testid="implementation-reddit-video-post" />
+            }
           </div>
 
           <!-- Targeting, all AI-recommended from the brief. Rendered read-only so the operator can
@@ -6402,10 +6417,10 @@
             [briefId]="briefPersistence().briefId ?? ''"
             [available]="libraryUploadAvailable()"
             [reloadToken]="creativeLibraryRevision()"
-            [videoIdsInUse]="linkedInVideoIdsInUse()"
+            [videoIdsInUse]="videoIdsInUse()"
             [videoUploadRunning]="linkedInImageUploadStatus() === 'uploading'"
-            (videoDeleted)="onLibraryVideoDeleted($event)"
-            (videoRelease)="onLibraryVideoDeleted($event)"
+            (videoDeleted)="onStoredVideoDeleted($event)"
+            (videoRelease)="onLibraryVideoGone($event)"
             [documentIdsInUse]="linkedInDocumentIdsInUse()"
             (documentDeleted)="onLibraryDocumentDeleted($event)"
             (documentRelease)="onLibraryDocumentReleased($event)"

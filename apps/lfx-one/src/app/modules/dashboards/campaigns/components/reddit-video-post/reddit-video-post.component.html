@@ -1,0 +1,62 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<fieldset class="flex flex-col gap-3" aria-describedby="reddit-video-post-hint" data-testid="reddit-video-post">
+  <legend class="float-left text-xs font-medium text-gray-700">Video post (optional)</legend>
+  <p id="reddit-video-post-hint" class="text-xs text-gray-500">
+    Author the post from an MP4 in the brief's library instead of an image. Reddit needs a PNG or JPEG thumbnail for it. Leave the post URL and image empty;
+    variant 1 heads the post, and it is one Reddit ad. It also stands in for the post URL under Video Views.
+  </p>
+  @if (view().libraryNote) {
+    <p class="text-xs text-gray-500" data-testid="reddit-video-post-library-note">{{ view().libraryNote }}</p>
+  }
+
+  @if (variantsNote()) {
+    <p role="note" class="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="reddit-video-post-variants-note">
+      {{ variantsNote() }}
+    </p>
+  }
+
+  <lfx-ui-select
+    label="Video"
+    size="small"
+    placeholder="Choose a stored MP4"
+    [value]="videoPost().videoAssetId"
+    (valueChange)="onVideoPick($event)"
+    [error]="view().videoProblem"
+    data-testid="reddit-video-post-video">
+    @for (option of view().videoOptions; track option.value) {
+      <lfx-ui-option [value]="option.value" [label]="option.label" />
+    }
+  </lfx-ui-select>
+  <lfx-ui-select
+    label="Thumbnail"
+    size="small"
+    placeholder="Choose a stored PNG or JPEG"
+    [value]="videoPost().thumbnailAssetId"
+    (valueChange)="onThumbnailPick($event)"
+    [error]="view().thumbnailProblem"
+    data-testid="reddit-video-post-thumbnail">
+    @for (option of view().thumbnailOptions; track option.value) {
+      <lfx-ui-option [value]="option.value" [label]="option.label" />
+    }
+  </lfx-ui-select>
+
+  <!-- Held while a stored asset's delete runs: an upload of identical bytes would answer with the asset being deleted. -->
+  @if (uploadAvailable() && deletingAssetId()) {
+    <p class="text-xs text-gray-500" data-testid="reddit-video-post-upload-held">Wait for the library delete to finish to upload a video.</p>
+  } @else if (uploadAvailable()) {
+    <div class="flex flex-col gap-1" data-testid="reddit-video-post-upload">
+      <lfx-file-upload
+        mode="basic"
+        [accept]="videoAccept"
+        [auto]="true"
+        [customUpload]="true"
+        chooseLabel="Upload an MP4"
+        chooseIcon="fa-light fa-cloud-arrow-up"
+        dataTest="reddit-video-post-upload-file"
+        (onSelect)="onFileSelect($event)" />
+      <p class="text-xs text-gray-500">MP4, up to 30 MB, into the brief's library. Uploads are listed with the library below and offered here once stored.</p>
+    </div>
+  }
+</fieldset>

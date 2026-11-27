@@ -93,6 +93,10 @@ describe('the Video Views goal and post', () => {
   ] as const)('%s with post %j errs: %s', (objective, postUrl, errs) => {
     expect(redditVideoPostError(objective, postUrl) !== null).toBe(errs);
   });
+
+  it('takes a stored video post in place of the Post URL (#6108 row 8)', () => {
+    expect(redditVideoPostError('video_views', '', true)).toBeNull();
+  });
 });
 
 describe('stale objective and call to action', () => {
@@ -119,6 +123,7 @@ describe('redditCreateRefusal', () => {
     geoTargetCount: 1,
     videoGoalError: null,
     videoPostError: null,
+    videoAssetRefusal: null,
     conversionEventBlock: null,
     customAudiencesBlock: null,
     customAudiencesRefusal: null,
@@ -135,6 +140,8 @@ describe('redditCreateRefusal', () => {
     ['no geo', { geoTargetCount: 0 }, 'Reddit Ads: add a location, or a country code.'],
     ['a goal error', { videoGoalError: 'x' }, 'Reddit Ads: fix the Video Views goal.'],
     ['a post error', { videoPostError: 'x' }, 'Reddit Ads: Video Views needs a video post.'],
+    ['a refused stored video post', { videoAssetRefusal: 'Add the thumbnail.' }, 'Reddit Ads: Add the thumbnail.'],
+    ['a refused stored video post, after the post error', { videoPostError: 'x', videoAssetRefusal: 'Video.' }, 'Reddit Ads: Video Views needs a video post.'],
     ['a held conversion event', { conversionEventBlock: 'Use Purchase.' }, 'Reddit Ads: Use Purchase.'],
     ['held custom audiences', { customAudiencesBlock: 'Remove them.' }, 'Reddit Ads: Remove them.'],
     ['refused custom audiences', { customAudiencesRefusal: 'Entry 2 repeats.' }, 'Reddit Ads: Entry 2 repeats.'],
