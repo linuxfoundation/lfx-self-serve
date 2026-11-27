@@ -11,9 +11,10 @@ import type {
   CreativeAssetLibraryQuotaState,
   CreativeAssetQueueItem,
   CreativeAssetQueueRow,
+  LinkedInStoredDocumentRow,
   LinkedInStoredVideoRow,
 } from '@lfx-one/shared/interfaces';
-import { formatFileSize, linkedInStoredVideoRows } from '@lfx-one/shared/utils';
+import { formatFileSize, linkedInStoredDocumentRows, linkedInStoredVideoRows } from '@lfx-one/shared/utils';
 import { FileSizePipe } from '@pipes/file-size.pipe';
 import { CampaignService } from '@services/campaign.service';
 import { serverAuthoredMessage } from '@shared/utils/http-error.utils';
@@ -55,12 +56,14 @@ export class CreativeLibraryUploadComponent {
   public readonly videoIdsInUse = input<readonly string[]>([]);
   /** Whether a LinkedIn upload is running, which holds every video Delete (an identical upload answers with a stored id). */
   public readonly videoUploadRunning = input(false);
+  /** The stored PDF the LinkedIn document ad on the tab uses (campaign-service#665): not deletable, since the create would name it. */
+  public readonly documentIdsInUse = input<readonly string[]>([]);
 
   // === Writable Signals ===
-  /** Why the last video delete failed, and on which brief; shown only on that brief. */
-  private readonly deleteFailure = signal<{ briefId: string; message: string } | null>(null);
-  /** Videos deleted on this page, kept off the list while the library is read again (ids are unique across briefs). */
-  private readonly deletedVideoIds = signal<readonly string[]>([]);
+  /** Why the last delete failed, of which kind and on which brief; shown only under that kind, on that brief. */
+  private readonly deleteFailure = signal<{ briefId: string; kind: 'video' | 'document'; message: string } | null>(null);
+  /** Videos and PDFs deleted on this page, kept off the list while the library is read again (ids are unique across briefs). */
+  private readonly deletedAssetIds = signal<readonly string[]>([]);
   /** Bumped by a finished delete, so the library and quota are read again. */
   private readonly deleteRevision = signal(0);
 
@@ -103,17 +106,24 @@ export class CreativeLibraryUploadComponent {
   protected readonly summary: Signal<string> = this.initSummary();
   protected readonly liveMessage: Signal<string> = this.initLiveMessage();
   protected readonly canClear = computed(() => this.items().length > 0 && !this.running());
-  /** The stored video being deleted, `''` for none. Any running delete holds every Delete: one runs at a time. */
-  private readonly deletingVideoId = computed(() => this.campaignService.creativeVideoDeleting()?.id ?? '');
+  /** The stored video or PDF being deleted, `''` for none. Any running delete holds every Delete: one runs at a time. */
+  private readonly deletingAssetId = computed(() => this.campaignService.creativeVideoDeleting()?.id ?? '');
   /** Why the last video delete on the brief on screen failed, `''` for none. */
-  protected readonly videoDeleteError = computed(() => {
-    const failure = this.deleteFailure();
-    return failure && failure.briefId === this.briefId() ? failure.message : '';
-  });
+  protected readonly videoDeleteError = computed(() => this.deleteErrorFor('video'));
+  /** Why the last PDF delete on the brief on screen failed, `''` for none. */
+  protected readonly documentDeleteError = computed(() => this.deleteErrorFor('document'));
   /** The stored videos, listed apart from the images so their space can be freed (#5764 row 18). */
   protected readonly videoRows: Signal<LinkedInStoredVideoRow[]> = computed(() => {
-    const videos = (this.quota().library?.videos ?? []).filter((video) => !this.deletedVideoIds().includes(video.id));
-    return linkedInStoredVideoRows(videos, this.videoIdsInUse(), this.videoUploadRunning(), this.deletingVideoId());
+    const videos = (this.quota().library?.videos ?? []).filter((video) => !this.deletedAssetIds().includes(video.id));
+    return linkedInStoredVideoRows(videos, this.videoIdsInUse(), this.videoUploadRunning(), this.deletingAssetId());
+  });
+  /**
+   * The stored PDFs, listed apart from the images so their space can be freed (campaign-service#665). PDFs are uploaded
+   * through this queue, so a run here holds their Delete as the LinkedIn upload holds the videos'.
+   */
+  protected readonly documentRows: Signal<LinkedInStoredDocumentRow[]> = computed(() => {
+    const documents = (this.quota().library?.documents ?? []).filter((document) => !this.deletedAssetIds().includes(document.id));
+    return linkedInStoredDocumentRows(documents, this.documentIdsInUse(), this.running(), this.deletingAssetId());
   });
 
   // === Outputs ===
@@ -126,6 +136,10 @@ export class CreativeLibraryUploadComponent {
    * video in use even when the ads' own video controls are hidden (another ad format chosen, or video withdrawn).
    */
   public readonly videoRelease = output<string>();
+  /** A stored PDF was deleted (campaign-service#665), so the host clears it from the document ad if it names it. */
+  public readonly documentDeleted = output<string>();
+  /** The operator asked to take a stored PDF off the document ad on the tab (campaign-service#665), so it can be deleted. */
+  public readonly documentRelease = output<string>();
 
   // === Protected Methods ===
   protected onFilesPicked(event: Event, folder: boolean): void {
@@ -156,34 +170,22 @@ export class CreativeLibraryUploadComponent {
     if (row.inUse) this.videoRelease.emit(row.id);
   }
 
+  /** Take a stored PDF off the document ad on the tab (campaign-service#665), which then lets it be deleted. */
+  protected releaseDocument(row: LinkedInStoredDocumentRow): void {
+    if (row.inUse) this.documentRelease.emit(row.id);
+  }
+
   /**
    * Delete one stored video the operator chose (#5764 row 18), then read the library again. campaign-service keeps a video
    * a live campaign may still need (409) and says so; that message is shown as it came.
    */
   protected deleteVideo(row: LinkedInStoredVideoRow): void {
-    const briefId = this.briefId();
-    if (row.deleteDisabled || briefId === '' || this.projectSlug() === '') return;
-    this.deleteFailure.set(null);
-    this.campaignService
-      .deleteCreativeAsset(this.projectSlug(), briefId, row.id)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: () => {
-          this.deletedVideoIds.update((ids) => [...ids, row.id]);
-          this.videoDeleted.emit(row.id);
-          this.deleteRevision.update((revision) => revision + 1);
-        },
-        error: (err: unknown) => {
-          // Already gone (deleted elsewhere): read the library again rather than offer a Delete that can only 404.
-          if (err instanceof HttpErrorResponse && err.status === 404) {
-            this.deletedVideoIds.update((ids) => [...ids, row.id]);
-            this.videoDeleted.emit(row.id);
-            this.deleteRevision.update((revision) => revision + 1);
-            return;
-          }
-          this.deleteFailure.set({ briefId, message: serverAuthoredMessage(err, `${row.label} could not be deleted. Try again.`) });
-        },
-      });
+    this.deleteStored(row, 'video');
+  }
+
+  /** Delete one stored PDF the operator chose (campaign-service#665), as `deleteVideo` deletes a video. */
+  protected deleteDocument(row: LinkedInStoredDocumentRow): void {
+    this.deleteStored(row, 'document');
   }
 
   // === Private Initializers ===
@@ -291,5 +293,38 @@ export class CreativeLibraryUploadComponent {
       }
       return this.summary();
     });
+  }
+
+  // === Private Helpers ===
+  private deleteErrorFor(kind: 'video' | 'document'): string {
+    const failure = this.deleteFailure();
+    return failure && failure.kind === kind && failure.briefId === this.briefId() ? failure.message : '';
+  }
+
+  /** The shared delete of `deleteVideo` and `deleteDocument`: the outcome is told to the host through the kind's output. */
+  private deleteStored(row: LinkedInStoredVideoRow | LinkedInStoredDocumentRow, kind: 'video' | 'document'): void {
+    const briefId = this.briefId();
+    if (row.deleteDisabled || briefId === '' || this.projectSlug() === '') return;
+    this.deleteFailure.set(null);
+    const gone = (): void => {
+      this.deletedAssetIds.update((ids) => [...ids, row.id]);
+      if (kind === 'video') this.videoDeleted.emit(row.id);
+      else this.documentDeleted.emit(row.id);
+      this.deleteRevision.update((revision) => revision + 1);
+    };
+    this.campaignService
+      .deleteCreativeAsset(this.projectSlug(), briefId, row.id)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: gone,
+        error: (err: unknown) => {
+          // Already gone (deleted elsewhere): read the library again rather than offer a Delete that can only 404.
+          if (err instanceof HttpErrorResponse && err.status === 404) {
+            gone();
+            return;
+          }
+          this.deleteFailure.set({ briefId, kind, message: serverAuthoredMessage(err, `${row.label} could not be deleted. Try again.`) });
+        },
+      });
   }
 }

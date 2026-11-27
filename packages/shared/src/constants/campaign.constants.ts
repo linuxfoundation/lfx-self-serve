@@ -4492,8 +4492,15 @@ export const CREATIVE_ASSET_DOCUMENT_MAX_BYTES = 30 * 1024 * 1024;
 /** Shown, and answered by the BFF, when a PDF exceeds `CREATIVE_ASSET_DOCUMENT_MAX_BYTES`. */
 export const CREATIVE_ASSET_DOCUMENT_TOO_LARGE_MESSAGE = 'The PDF is larger than 30 MB. Choose a smaller PDF.';
 
-/** Shown, and answered by the BFF, when a file is not a complete PDF, or is one while this deployment takes no document. */
+/** Shown, and answered by the BFF, when a file declared as a PDF is not a complete one. */
 export const CREATIVE_ASSET_DOCUMENT_WRONG_TYPE_MESSAGE = 'Only complete PDF documents can be uploaded.';
+
+/**
+ * Answered by the BFF with its 415 when a PDF is uploaded while LinkedIn document ads are off on this deployment
+ * (`LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_DOCUMENT`), so a sound PDF is not reported as a broken one.
+ */
+export const CREATIVE_ASSET_DOCUMENT_DISABLED_MESSAGE =
+  'PDF uploads are turned off on this deployment because LinkedIn document ads are not enabled. Reload the page, or choose another ad format.';
 
 /**
  * campaign-service's structural PDF check (`pdfStructurally`, `internal/service/creative_asset_document.go`): the

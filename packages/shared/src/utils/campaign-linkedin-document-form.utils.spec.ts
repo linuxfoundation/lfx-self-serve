@@ -12,6 +12,7 @@ import {
   linkedInDocumentGatedWarning,
   linkedInDocumentPdfOptions,
   linkedInDocumentView,
+  linkedInStoredDocumentRows,
 } from './campaign-linkedin-document-form.utils';
 
 const PDF = '3f2b8c1e-5d4a-4e6f-9a7b-1c2d3e4f5a6b';
@@ -27,6 +28,27 @@ const draft = (fields: Partial<LinkedInDocumentDraft> = {}): LinkedInDocumentDra
   title: 'Sponsor prospectus',
   introText: 'Sponsor the conference',
   ...fields,
+});
+
+describe('linkedInStoredDocumentRows', () => {
+  const stored = [
+    { id: PDF, byteSize: 10, checksum: 'aaaaaaaaff' },
+    { id: OTHER, byteSize: 20, checksum: 'bbbbbbbbff' },
+  ];
+  const used = 'Used by the LinkedIn document ad on this tab. Remove it from the ad to delete it.';
+  const waiting = 'Wait for the uploads to finish.';
+  it.each([
+    ['neither in use', [], false, '', [false, false], ['', '']],
+    ['the first in use by the document ad', [PDF], false, '', [true, false], [used, '']],
+    ['an upload running', [], true, '', [true, true], [waiting, waiting]],
+    ['the second being deleted', [], false, OTHER, [true, true], ['', 'Deleting…']],
+  ])('%s', (_label, inUse, uploading, deletingId, disabled, notes) => {
+    const rows = linkedInStoredDocumentRows(stored, inUse, uploading, deletingId);
+    expect(rows.map((row) => row.label)).toEqual(['PDF 1 (aaaaaaaa)', 'PDF 2 (bbbbbbbb)']);
+    expect(rows.map((row) => row.deleteDisabled)).toEqual(disabled);
+    expect(rows.map((row) => row.note)).toEqual(notes);
+    expect(rows.map((row) => row.inUse)).toEqual(stored.map((document) => inUse.includes(document.id)));
+  });
 });
 
 describe('linkedInDocumentPdfOptions', () => {

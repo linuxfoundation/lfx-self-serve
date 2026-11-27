@@ -324,4 +324,52 @@ describe('CreativeLibraryUploadComponent', () => {
       expect(service['listCreativeAssets']).toHaveBeenCalledTimes(1);
     });
   });
+
+  // Stored PDFs (campaign-service#665): `deleteVideo`'s sibling. The Delete rules are rows in
+  // `campaign-linkedin-document-form.utils.spec.ts`; these keep the wiring.
+  describe('stored PDFs', () => {
+    const PDF = { id: 'd-1', byteSize: 2 * 1024 * 1024, checksum: 'cd'.repeat(32) };
+    const withPdf = (): ReturnType<typeof vi.fn> => vi.fn(() => of({ ...LIBRARY, documents: [PDF] }));
+    const deleteButton = (): HTMLButtonElement => q('creative-library-document-delete-d-1')?.querySelector('button') as HTMLButtonElement;
+
+    it('lists a stored PDF, deletes it on Delete, takes it off the list and tells the host', async () => {
+      await build(withPdf());
+      expect(text('creative-library-document-d-1')).toContain('PDF 1 (cdcdcdcd)');
+      const deleted: string[] = [];
+      fixture.componentInstance.documentDeleted.subscribe((id) => deleted.push(id));
+
+      deleteButton().click();
+      fixture.detectChanges();
+
+      expect(service['deleteCreativeAsset']).toHaveBeenCalledWith('tlf', BRIEF_ID, 'd-1');
+      expect(deleted).toEqual(['d-1']);
+      expect(q('creative-library-document-d-1')).toBeNull();
+      expect(service['listCreativeAssets']).toHaveBeenCalledTimes(2);
+    });
+
+    it('offers no Delete for the PDF the document ad uses, only Remove from ad', async () => {
+      await build(withPdf());
+      fixture.componentRef.setInput('documentIdsInUse', ['d-1']);
+      fixture.detectChanges();
+
+      expect(deleteButton().disabled).toBe(true);
+      const released: string[] = [];
+      fixture.componentInstance.documentRelease.subscribe((id) => released.push(id));
+      (q('creative-library-document-release-d-1')?.querySelector('button') as HTMLButtonElement).click();
+      expect(released).toEqual(['d-1']);
+    });
+
+    it("shows campaign-service's reason under the PDFs, not the videos", async () => {
+      await build(withPdf());
+      (service['deleteCreativeAsset'] as ReturnType<typeof vi.fn>).mockReturnValueOnce(
+        throwError(() => new HttpErrorResponse({ status: 409, error: { error: 'A live campaign on this brief still uses this asset.' } }))
+      );
+
+      deleteButton().click();
+      fixture.detectChanges();
+
+      expect(text('creative-library-document-delete-error')).toContain('A live campaign on this brief still uses this asset.');
+      expect(q('creative-library-video-delete-error')).toBeNull();
+    });
+  });
 });

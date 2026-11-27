@@ -235,6 +235,7 @@ import {
   CAMPAIGN_METRICS_WINDOWS,
   CAMPAIGN_PLATFORMS,
   CAMPAIGN_SERVICE_BUDGET_UNWRITABLE_MESSAGE_PREFIX,
+  CREATIVE_ASSET_DOCUMENT_DISABLED_MESSAGE,
   CREATIVE_ASSET_DOCUMENT_MIME_TYPE,
   CREATIVE_ASSET_VIDEO_MIME_TYPE,
   DEFAULT_CAMPAIGN_BID_TYPE,
@@ -3659,10 +3660,11 @@ export class CampaignController {
       next(this.unsupportedCreativeAsset(req, operation, declaredType));
       return;
     }
-    // Likewise a PDF: only a LinkedIn document ad uses one (campaign-service#665).
+    // Likewise a PDF: only a LinkedIn document ad uses one (campaign-service#665). Its 415 says the feature is off, not
+    // that the PDF is broken: the page offered the upload, so the flag changed after it loaded.
     const document = declaredType === CREATIVE_ASSET_DOCUMENT_MIME_TYPE;
     if (document && !canSetLinkedInDocument()) {
-      next(this.unsupportedCreativeAsset(req, operation, declaredType));
+      next(this.unsupportedCreativeAsset(req, operation, declaredType, CREATIVE_ASSET_DOCUMENT_DISABLED_MESSAGE));
       return;
     }
     // Narrowed where it enters: only a raw parser's Buffer is a body, never a parsed array or string.
@@ -7420,10 +7422,11 @@ export class CampaignController {
   /**
    * 415 for an upload that is not a PNG, JPEG, MP4 or PDF, or whose bytes are not the type declared. The message names
    * the declared kind (`creativeAssetWrongTypeMessage`): a video or PDF while this deployment takes none, or one whose
-   * bytes are not that type.
+   * bytes are not that type. `message` replaces it where the refusal is not about the bytes (a PDF while document ads
+   * are off).
    */
-  private unsupportedCreativeAsset(req: Request, operation: string, declaredType: string): MicroserviceError {
-    return new MicroserviceError(creativeAssetWrongTypeMessage(declaredType), 415, 'UNSUPPORTED_MEDIA_TYPE', {
+  private unsupportedCreativeAsset(req: Request, operation: string, declaredType: string, message?: string): MicroserviceError {
+    return new MicroserviceError(message ?? creativeAssetWrongTypeMessage(declaredType), 415, 'UNSUPPORTED_MEDIA_TYPE', {
       operation,
       service: 'campaign_controller',
       path: req.path,

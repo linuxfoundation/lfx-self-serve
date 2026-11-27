@@ -5,6 +5,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting, TestRequest } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
 import {
+  CREATIVE_ASSET_DOCUMENT_DISABLED_MESSAGE,
   CREATIVE_ASSET_DOCUMENT_TOO_LARGE_MESSAGE,
   CREATIVE_ASSET_DOCUMENT_WRONG_TYPE_MESSAGE,
   CREATIVE_ASSET_EMPTY_MESSAGE,
@@ -114,6 +115,17 @@ describe('CampaignService library upload queue', () => {
     // A 413 from the route names the PDF limit, not the image one.
     open()[0].flush({ message: 'too large' }, { status: 413, statusText: 'Payload Too Large' });
     expect(items()[1]).toMatchObject({ status: 'refused', refusal: 'size', message: CREATIVE_ASSET_DOCUMENT_TOO_LARGE_MESSAGE });
+  });
+
+  // A PDF's 415 shows the BFF's reason, so document ads turned off is not reported as a broken PDF.
+  it.each([
+    ['the BFF reason', { error: CREATIVE_ASSET_DOCUMENT_DISABLED_MESSAGE, code: 'UNSUPPORTED_MEDIA_TYPE' }, CREATIVE_ASSET_DOCUMENT_DISABLED_MESSAGE],
+    ['the PDF message without one', {}, CREATIVE_ASSET_DOCUMENT_WRONG_TYPE_MESSAGE],
+  ])("reports a PDF's 415 with %s", (_label, body, message) => {
+    service.enqueueCreativeAssetUploads([new File([new Uint8Array(16)], 'deck.pdf', { type: 'application/pdf' })], 'tlf', BRIEF_ID, { documents: true });
+    open()[0].flush(body, { status: 415, statusText: 'Unsupported Media Type' });
+
+    expect(items()[0]).toMatchObject({ status: 'refused', refusal: 'type', message });
   });
 
   it('reports a 409 as refused over quota and carries on with the next file', () => {

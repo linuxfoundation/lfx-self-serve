@@ -8,6 +8,8 @@ import type {
   LinkedInDocumentDraft,
   LinkedInDocumentPdfOption,
   LinkedInDocumentView,
+  LinkedInStoredDocumentRow,
+  StoredCreativeDocument,
 } from '../interfaces/campaign.interface';
 import { linkedInDocumentRefusal } from './campaign-linkedin-document.utils';
 import { linkedInCreativeTextLength } from './campaign-linkedin.utils';
@@ -27,6 +29,35 @@ export function emptyLinkedInDocumentDraft(): LinkedInDocumentDraft {
 function pdfLabel(position: number, checksum: string, byteSize: number): string {
   const kb = Math.max(1, Math.round(byteSize / 1024));
   return `PDF ${position} (${checksum.slice(0, 8)}, ${kb.toLocaleString('en-US')} KB)`;
+}
+
+/**
+ * The library's stored PDFs with whether each may be deleted (campaign-service#665), `linkedInStoredVideoRows`' sibling.
+ * Delete is the operator's, never automatic: it is off while the document ad on the tab names the PDF (the create would
+ * name a deleted asset), while the library's upload queue runs (identical bytes come back as the asset already stored),
+ * and while another delete runs.
+ */
+export function linkedInStoredDocumentRows(
+  documents: readonly StoredCreativeDocument[],
+  inUse: readonly string[],
+  uploading: boolean,
+  deletingId: string
+): LinkedInStoredDocumentRow[] {
+  return documents.map((document, index) => {
+    let note = '';
+    const used = inUse.includes(document.id);
+    if (used) note = 'Used by the LinkedIn document ad on this tab. Remove it from the ad to delete it.';
+    else if (uploading) note = 'Wait for the uploads to finish.';
+    else if (deletingId === document.id) note = 'Deleting…';
+    return {
+      id: document.id,
+      label: `PDF ${index + 1} (${document.checksum.slice(0, 8)})`,
+      byteSize: document.byteSize,
+      inUse: used,
+      deleteDisabled: note !== '' || deletingId !== '',
+      note,
+    };
+  });
 }
 
 /**

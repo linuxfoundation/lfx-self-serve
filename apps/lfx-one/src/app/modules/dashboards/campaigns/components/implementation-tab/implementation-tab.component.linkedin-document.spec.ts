@@ -172,6 +172,38 @@ describe('ImplementationTabComponent linkedin document', () => {
     expect(c(f)['linkedInDocumentGatedWarning']()).toContain('one-page PDF');
   });
 
+  it('needs no registration URL for a document-only create, and still does beside another format or platform', STATE_ONLY, async () => {
+    const f = await mount();
+    c(f)['campaignForm'].controls['registrationUrl'].setValue('');
+    c(f)['onLinkedInFormatSelect']('document');
+    c(f)['onLinkedInDocumentChange'](document());
+
+    expect(c(f)['createBlockedReason']()).toBeNull();
+    c(f)['onLinkedInFormatSelect']('single_image');
+    expect(c(f)['createBlockedReason']()).toContain('Registration URL is empty');
+    c(f)['onLinkedInFormatSelect']('document');
+    c(f)['selectedPlatforms'].set(['linkedin-ads', 'reddit-ads']);
+    expect(c(f)['createBlockedReason']()).toContain('Registration URL is empty');
+  });
+
+  it('clears a PDF the library deleted or took off the ad, and reads the library again after a delete', STATE_ONLY, async () => {
+    const f = await mount();
+    c(f)['onLinkedInDocumentChange'](document());
+    expect(c(f)['linkedInDocumentIdsInUse']()).toEqual([PDF]);
+    const revision = c(f)['creativeLibraryRevision']();
+
+    // Another PDF deleted: the ad keeps its own, and the picker's library is read again.
+    c(f)['onLibraryDocumentDeleted']('9a7b1c2d-3e4f-4a6b-8c1e-5d4a3f2b4e6f');
+    expect(c(f)['linkedInDocument']().assetId).toBe(PDF);
+    expect(c(f)['creativeLibraryRevision']()).toBe(revision + 1);
+
+    // Taken off the ad: cleared, with nothing re-read.
+    c(f)['onLibraryDocumentReleased'](PDF);
+    expect(c(f)['linkedInDocument']()).toMatchObject({ assetId: '', assetBriefId: '', title: 'Sponsor prospectus' });
+    expect(c(f)['linkedInDocumentIdsInUse']()).toEqual([]);
+    expect(c(f)['creativeLibraryRevision']()).toBe(revision + 1);
+  });
+
   it('offers the document and its editor in place of the variants, and only engagement or lead generation beside it', async () => {
     const f = await mount();
     const query = (testId: string): HTMLElement | null => f.nativeElement.querySelector(`[data-testid="${testId}"]`);

@@ -162,7 +162,7 @@ import type {
   RedditKeywordsWindow,
 } from '@lfx-one/shared/interfaces';
 import { redditPixelsQueryParams } from '@lfx-one/shared/utils';
-import { extractErrorMessage, isTransientHttpError, retryTransientHttpError } from '@shared/utils/http-error.utils';
+import { extractErrorMessage, isTransientHttpError, retryTransientHttpError, serverAuthoredMessage } from '@shared/utils/http-error.utils';
 import { strictHttpParams } from '@shared/utils/http-params.utils';
 import {
   catchError,
@@ -584,7 +584,8 @@ export class CampaignService {
   }
 
   /**
-   * Permanently delete one stored creative asset of the brief: a video the library lists (#5764 row 18). campaign-service
+   * Permanently delete one stored creative asset of the brief: a video (#5764 row 18) or a PDF (campaign-service#665) the
+   * library lists. campaign-service
    * answers 409 `creative_asset_in_use` while a live campaign could still need it, with its own remedy text.
    *
    * While the request runs, `creativeVideoDeleting` names it, and it is cleared however the request ends, including a
@@ -1710,8 +1711,10 @@ export class CampaignService {
       return { status: 'refused', refusal: 'quota', message: CREATIVE_ASSET_QUOTA_MESSAGE };
     }
     if (status === 415) {
-      // Each kind names its own: a PDF refused is not an image refused (campaign-service#665).
-      return { status: 'refused', refusal: 'type', message: creativeAssetWrongTypeMessage(type) };
+      // Each kind names its own: a PDF refused is not an image refused (campaign-service#665). A PDF's 415 also carries the
+      // BFF's own reason, which tells a broken PDF apart from document ads being turned off since the page loaded.
+      const wrongType = creativeAssetWrongTypeMessage(type);
+      return { status: 'refused', refusal: 'type', message: type === CREATIVE_ASSET_DOCUMENT_MIME_TYPE ? serverAuthoredMessage(error, wrongType) : wrongType };
     }
     if (status === 413) {
       return { status: 'refused', refusal: 'size', message: creativeAssetTooLargeMessage(type) };
