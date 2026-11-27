@@ -1123,6 +1123,16 @@ export function canSetLinkedInBoost(): boolean {
 }
 
 /**
+ * Whether a LinkedIn create may choose Audience Expansion and the LinkedIn Audience Network: `audienceExpansionEnabled`
+ * and `offsiteDeliveryEnabled` (campaign-service#667). Needs the campaign-service create path (`cutoverOwnsCreate`), since
+ * the legacy creator ignores the fields, AND `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_DELIVERY_OPTIONS`, which follows
+ * campaign-service's own `LINKEDIN_ADS_DELIVERY_OPTIONS_ENABLED`: campaign-service refuses the fields while that is off.
+ */
+export function canSetLinkedInDeliveryOptions(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceLinkedInDeliveryOptions);
+}
+
+/**
  * Whether a create may select X (`twitter-ads`) and carry a `twitterConfig`.
  *
  * Needs the campaign-service create path to serve the create AND the X-create flag. The cutover
@@ -1402,6 +1412,7 @@ export class CampaignServiceClient {
         linkedInCarouselEnabled: canSetLinkedInCarousel(),
         linkedInDocumentEnabled: canSetLinkedInDocument(),
         linkedInBoostEnabled: canSetLinkedInBoost(),
+        linkedInDeliveryOptionsEnabled: canSetLinkedInDeliveryOptions(),
         microsoftAssetUploadEnabled: canUseMicrosoftCreativeAssets(),
         biddingEnabled: canCreateWithBidding(),
         microsoftScheduleEnabled: canCreateMicrosoftSchedule(),
@@ -1505,6 +1516,7 @@ export class CampaignServiceClient {
       linkedInCarouselEnabled: canSetLinkedInCarousel(),
       linkedInDocumentEnabled: canSetLinkedInDocument(),
       linkedInBoostEnabled: canSetLinkedInBoost(),
+      linkedInDeliveryOptionsEnabled: canSetLinkedInDeliveryOptions(),
       microsoftAssetUploadEnabled: canUseMicrosoftCreativeAssets(),
       biddingEnabled: canCreateWithBidding(),
       microsoftScheduleEnabled: canCreateMicrosoftSchedule(),
