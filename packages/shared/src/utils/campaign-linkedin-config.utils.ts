@@ -52,6 +52,22 @@ export function foldKey(key: string): string {
   return key.toUpperCase().toLowerCase();
 }
 
+/**
+ * The value campaign-service decodes for `key` in `config`. Its create path re-marshals the config (`marshalAny` in
+ * `internal/service/brief.go`), so the keys reach the decoder sorted by byte order. Go's `encoding/json` then assigns
+ * every key equal to `key` ignoring case (Unicode folds included: `foldKey`), exact spelling or not, in that order, so
+ * the last such key in byte order wins. Reading a key this way means a case variant of it cannot make a check here differ
+ * from campaign-service's. JavaScript's `<` compares UTF-16 code units, which orders BMP keys as their UTF-8 bytes do, and
+ * every fold variant of an ASCII name (`ſ`, the Kelvin sign) is in the BMP.
+ */
+export function goDecodedValue(config: Record<string, unknown>, key: string): unknown {
+  let last: string | undefined;
+  for (const k of Object.keys(config)) {
+    if (foldKey(k) === foldKey(key) && (last === undefined || k > last)) last = k;
+  }
+  return last === undefined ? undefined : config[last];
+}
+
 function plainRecord(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
 }

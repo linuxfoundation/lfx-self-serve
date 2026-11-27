@@ -4961,6 +4961,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       redditTargetingResolutionEnabled: false,
       redditPlacementsEnabled: false,
       redditBudgetTypeEnabled: false,
+      redditAdPerVariantEnabled: false,
       redditPixelListEnabled: false,
       googleAssetUploadEnabled: false,
       metaCreativeEnabled: false,
@@ -5700,11 +5701,12 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
     }
   });
 
-  /** Reddit placements, budget type and pixel list (#6108 row 5): the cutover and each one's own flag. */
+  /** Reddit placements, budget type and pixel list (#6108 row 5) and one ad per variant (row 6): the cutover and each one's own flag. */
   it.each([
     ['redditPlacementsEnabled', ServerFeatureFlag.CampaignServiceRedditPlacements],
     ['redditBudgetTypeEnabled', ServerFeatureFlag.CampaignServiceRedditDailyBudget],
     ['redditPixelListEnabled', ServerFeatureFlag.CampaignServiceRedditPixelList],
+    ['redditAdPerVariantEnabled', ServerFeatureFlag.CampaignServiceRedditAdPerVariant],
   ] as const)('reports %s from the cutover and %s', async (field, own) => {
     const read = async (cutover: boolean, enabled: boolean): Promise<boolean | undefined> => {
       isServerFeatureEnabled.mockImplementation((flag: unknown) => (flag === own ? enabled : cutover));
@@ -5932,6 +5934,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       redditTargetingResolutionEnabled: false,
       redditPlacementsEnabled: false,
       redditBudgetTypeEnabled: false,
+      redditAdPerVariantEnabled: false,
       redditPixelListEnabled: false,
       googleAssetUploadEnabled: false,
       metaCreativeEnabled: false,

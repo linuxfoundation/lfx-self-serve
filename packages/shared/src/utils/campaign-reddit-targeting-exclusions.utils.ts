@@ -17,7 +17,7 @@ import type {
 } from '../interfaces/campaign.interface';
 import { googleAdsToUpperCode } from './campaign-google-assets.utils';
 import { redditTargetingListFromDraft } from './campaign-reddit-targeting-lists.utils';
-import { foldKey } from './campaign-linkedin-config.utils';
+import { foldKey, goDecodedValue } from './campaign-linkedin-config.utils';
 import { goTrimSpace } from './campaign-linkedin.utils';
 
 /**
@@ -30,23 +30,6 @@ import { goTrimSpace } from './campaign-linkedin.utils';
 
 function plainRecord(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
-}
-
-/**
- * The value campaign-service decodes for `key`. Its create path re-marshals the config (`marshalAny` in
- * `internal/service/brief.go`), so the keys reach the decoder sorted by byte order. Go's `encoding/json` then assigns
- * every key equal to `key` ignoring case (Unicode folds included: `foldKey`), exact spelling or not, in that order, so
- * the last such key in byte order wins. The keys the exclusions are compared against (`subreddits`, `geoTargets`,
- * `subCountryGeoTargets`) are read this way, so a case variant of one cannot make the comparison differ from
- * campaign-service's. JavaScript's `<` compares UTF-16 code units, which orders BMP keys as their UTF-8 bytes do, and
- * every fold variant of these ASCII names (`ſ`, the Kelvin sign) is in the BMP.
- */
-function decodedValue(config: Record<string, unknown>, key: string): unknown {
-  let last: string | undefined;
-  for (const k of Object.keys(config)) {
-    if (foldKey(k) === foldKey(key) && (last === undefined || k > last)) last = k;
-  }
-  return last === undefined ? undefined : config[last];
 }
 
 function fieldOf(key: RedditTargetingExclusionKey): string {
@@ -74,8 +57,8 @@ function subredditName(raw: string): string {
  * sub-country locations replace the default.
  */
 function effectiveGeoSet(config: Record<string, unknown>): Set<string> {
-  const targeted = new Set((stringList(decodedValue(config, 'geoTargets')) ?? []).map((g) => googleAdsToUpperCode(goTrimSpace(g))).filter((g) => g !== ''));
-  const subCountry = stringList(decodedValue(config, 'subCountryGeoTargets')) ?? [];
+  const targeted = new Set((stringList(goDecodedValue(config, 'geoTargets')) ?? []).map((g) => googleAdsToUpperCode(goTrimSpace(g))).filter((g) => g !== ''));
+  const subCountry = stringList(goDecodedValue(config, 'subCountryGeoTargets')) ?? [];
   if (targeted.size === 0 && subCountry.length === 0) targeted.add('US');
   return targeted;
 }
@@ -85,7 +68,7 @@ function subredditRefusal(excluded: string[], config: Record<string, unknown>): 
   const max = REDDIT_TARGETING_EXCLUSION_LIMITS.excludedSubreddits;
   if (excluded.length > max) return { field, message: `Exclude at most ${max} subreddits.` };
   const targeted = new Set(
-    (stringList(decodedValue(config, 'subreddits')) ?? [])
+    (stringList(goDecodedValue(config, 'subreddits')) ?? [])
       .map(subredditName)
       .filter((name) => name !== '')
       .map((name) => name.toLowerCase())

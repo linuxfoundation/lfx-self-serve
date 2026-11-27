@@ -4929,6 +4929,13 @@ export const REDDIT_BUDGET_TYPES = ['lifetime', 'daily'] as const;
 /** The three `redditConfig` keys of the Reddit placement choices (#6108 row 5), as campaign-service spells them. */
 export const REDDIT_PLACEMENT_KEYS = ['placements', 'platforms', 'expandTargeting'] as const;
 
+/**
+ * The most variants a Reddit create that authors its post may carry while one ad per variant is on (#6108 row 6):
+ * campaign-service's `MaxAdVariants` (`internal/platform/reddit/ad_variants.go`, #549). Each headline is held to
+ * `MAX_REDDIT_HEADLINE_LENGTH`.
+ */
+export const MAX_REDDIT_AD_VARIANTS = 5;
+
 /** A Reddit pixel id campaign-service offers (`ValidPixelID`): 1 to 64 letters, digits or underscores. */
 export const REDDIT_PIXEL_ID_PATTERN = /^[A-Za-z0-9_]{1,64}$/;
 
