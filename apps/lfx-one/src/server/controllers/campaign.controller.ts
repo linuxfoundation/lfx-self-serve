@@ -1519,9 +1519,11 @@ export class CampaignController {
         });
       }
       // Reddit placements, devices and expansion, gender, languages and dayparting, and the budget type (#6108 rows 5
-      // and 9): refused, never dropped, while this deployment cannot send them, and held to campaign-service's rules in
-      // its PreflightCreate order (`checkRedditPlacementTargeting`, `checkRedditDemographicTargeting`,
-      // `checkRedditBudgetType`). See `redditPlacementsRefusal`, `redditDemographicsRefusal` and `redditBudgetTypeRefusal`.
+      // and 9): refused, never dropped, while this deployment cannot send them, and held to campaign-service's rules
+      // (`checkRedditPlacementTargeting`, `checkRedditDemographicTargeting`, `checkRedditBudgetType`), feature by feature
+      // in its PreflightCreate order. campaign-service runs every shape check first, so when two features are both wrong
+      // it may name the other field; either way the create is refused. See `redditPlacementsRefusal`,
+      // `redditDemographicsRefusal` and `redditBudgetTypeRefusal`.
       const redditDeliveryRefused =
         redditPlacementsRefusal(body?.redditConfig, canSetRedditPlacements()) ??
         redditDemographicsRefusal(body?.redditConfig, canSetRedditDemographics()) ??

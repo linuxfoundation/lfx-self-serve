@@ -39,6 +39,8 @@ describe('redditDemographicsRefusal', () => {
     ['a gender that is not a string', { gender: 1 }, false, GENDER, '"FEMALE" or "MALE"'],
     ['languages that are not an array', { languages: 'EN' }, false, LANGUAGES, 'list of text'],
     ['languages with a non-text entry', { languages: ['EN', 2] }, false, LANGUAGES, 'list of text'],
+    // campaign-service decodes a null entry as "" and refuses it as blank; refused here at the shape check instead.
+    ['languages with a null entry', { languages: ['EN', null] }, true, LANGUAGES, 'list of text'],
     ['a schedule that is not an array', { schedule: monday }, false, SCHEDULE, 'whole-number values'],
     ['a schedule entry that is not an object', { schedule: [[1, 9, 1, 17]] }, false, SCHEDULE, 'whole-number values'],
     ['a schedule field that is text', { schedule: [{ ...monday, startDay: '1' }] }, false, SCHEDULE, 'whole-number values'],

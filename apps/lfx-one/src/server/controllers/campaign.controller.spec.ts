@@ -13343,7 +13343,7 @@ describe('CampaignController.createCampaign Reddit one ad per variant', () => {
 
 /**
  * `redditConfig.gender` / `languages` / `schedule` (#6108 row 9): refused, never dropped, while this deployment cannot
- * send them, checked after the placements and before the budget type (campaign-service's PreflightCreate order), and
+ * send them, checked after the placements and before the budget type (campaign-service's per-feature order), and
  * forwarded as typed once it can. The rules are table rows in `campaign-reddit-demographics.utils.spec.ts`.
  */
 describe('CampaignController.createCampaign Reddit gender, languages and dayparting', () => {
