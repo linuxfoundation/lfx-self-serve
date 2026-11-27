@@ -101,5 +101,7 @@ export function redditCreateRefusal(input: RedditCreateRefusalInput): string | n
   if (input.targetingExclusionsRefusal !== null) return `Reddit Ads: ${input.targetingExclusionsRefusal}`;
   // At least one placement and one device (`redditDeliveryRefusal`, #6108 row 5).
   if (input.deliveryRefusal !== null) return `Reddit Ads: ${input.deliveryRefusal}`;
+  // Variants campaign-service would refuse while each becomes its own ad (`redditAdPerVariantRefusal`, #6108 row 6).
+  if (input.variantsRefusal !== null) return `Reddit Ads: ${input.variantsRefusal}`;
   return null;
 }

@@ -18,6 +18,7 @@ import type {
   RedditDraftSnapshot,
   RedditDraftState,
 } from '../interfaces/campaign.interface';
+import { redditAdVariantsFromDraft } from './campaign-reddit-ad-variants.utils';
 import { redditConversionEventFromDraft } from './campaign-reddit-conversion-event.utils';
 import { redditCustomAudienceIdsFromDraft } from './campaign-reddit-custom-audiences.utils';
 import { redditDeliveryDraftFields, redditDeliveryFromDraft } from './campaign-reddit-delivery.utils';
@@ -62,6 +63,7 @@ export function redditDraftFields(state: RedditDraftState): RedditDraftSnapshot 
         }
       : {}),
     ...redditDeliveryDraftFields(state.delivery),
+    ...(state.editedVariants ? { redditEditedVariants: state.editedVariants.map((variant) => ({ ...variant })) } : {}),
   };
 }
 
@@ -74,7 +76,8 @@ export function redditDraftFields(state: RedditDraftState): RedditDraftSnapshot 
  * when either is an array, keeping only its strings (a list the create would refuse stays visible, and holds Create); the
  * targeting exclusion lists the same way. The edited subreddits and interests (#6108 row 4) when either is an array, to
  * set over the brief's seed; the draft carries them only once edited. The delivery choices (#6108 row 5) when any of
- * their four keys is present, each unreadable one at its default (`redditDeliveryFromDraft`).
+ * their four keys is present, each unreadable one at its default (`redditDeliveryFromDraft`). The edited ad variants
+ * (#6108 row 6) when they are an array, to set over the brief's seed (`redditAdVariantsFromDraft`).
  */
 export function redditDraftRestore(draft: RedditDraftSnapshot): RedditDraftRestore {
   const restore: RedditDraftRestore = {};
@@ -113,6 +116,8 @@ export function redditDraftRestore(draft: RedditDraftSnapshot): RedditDraftResto
   }
   const delivery = redditDeliveryFromDraft(draft);
   if (delivery !== undefined) restore.delivery = delivery;
+  const editedVariants = redditAdVariantsFromDraft(draft.redditEditedVariants);
+  if (editedVariants !== undefined) restore.editedVariants = editedVariants;
   return restore;
 }
 
