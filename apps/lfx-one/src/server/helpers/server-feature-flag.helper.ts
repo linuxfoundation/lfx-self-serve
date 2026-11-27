@@ -593,6 +593,18 @@ export enum ServerFeatureFlag {
   CampaignServiceLinkedInBoost = 'LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_BOOST',
 
   /**
+   * LinkedIn Audience Expansion and the LinkedIn Audience Network (linuxfoundation/lfx-v2-campaign-service#667): accept
+   * `linkedInConfig.audienceExpansionEnabled` and `linkedInConfig.offsiteDeliveryEnabled`, each a boolean.
+   *
+   * A CAPABILITY flag of the Bidding kind: REQUIRES campaign-service v1.0.44 DEPLOYED with
+   * `LINKEDIN_ADS_DELIVERY_OPTIONS_ENABLED` on, since campaign-service refuses either field (false included) with a 400
+   * otherwise, and is only meaningful on the campaign-service create path (`cutoverOwnsCreate`): the legacy creator ignores
+   * them. Off (the default), the create route refuses the fields with a 400, never dropping them. Request fields only, so
+   * flipping it back strands nothing. Same accepted values as the flags above.
+   */
+  CampaignServiceLinkedInDeliveryOptions = 'LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_DELIVERY_OPTIONS',
+
+  /**
    * Offers Meta ad set audience targeting on the Implement tab (#5905), sent as `metaConfig.targeting`:
    * age range, gender and Advantage+ audience to every campaign manager, and included/excluded custom
    * audiences (picked from `GET /api/campaigns/meta/custom-audiences`) only to a caller holding

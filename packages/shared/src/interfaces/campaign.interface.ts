@@ -2698,6 +2698,16 @@ export interface LinkedInCampaignCreateRequest {
    */
   boostPost?: string;
   /**
+   * LinkedIn Audience Expansion (campaign-service#667): widens some targeting criteria to similar members. Omitted is
+   * LinkedIn's default, off. Only while `linkedInDeliveryOptionsEnabled`.
+   */
+  audienceExpansionEnabled?: boolean;
+  /**
+   * The LinkedIn Audience Network (campaign-service#667): also serves the ads on third-party apps and sites. Omitted is
+   * off. Not with `format: 'text'` or the `lead_generation` objective. Only while `linkedInDeliveryOptionsEnabled`.
+   */
+  offsiteDeliveryEnabled?: boolean;
+  /**
    * The campaign's own LinkedIn targeting (#5764 rows 8–11, campaign-service #552). Set, it REPLACES `targetingProfile`,
    * so it is refused with `targetingProfileEdit`. Only while `linkedInTargetingEnabled`.
    */
@@ -8773,6 +8783,13 @@ export interface CampaignListResult {
    * follows campaign-service's own `LINKEDIN_ADS_BOOST_POST_ENABLED`.
    */
   linkedInBoostEnabled: boolean;
+  /**
+   * Whether a LinkedIn create may choose Audience Expansion and the LinkedIn Audience Network (`audienceExpansionEnabled`,
+   * `offsiteDeliveryEnabled`, campaign-service#667). Needs the campaign-service create path AND
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_DELIVERY_OPTIONS`, which follows campaign-service's own
+   * `LINKEDIN_ADS_DELIVERY_OPTIONS_ENABLED`.
+   */
+  linkedInDeliveryOptionsEnabled: boolean;
   /**
    * Whether the Microsoft section may offer an image UPLOAD, sent as
    * `MicrosoftCampaignCreateRequest.imageAssetId` and attached as an image ad extension.

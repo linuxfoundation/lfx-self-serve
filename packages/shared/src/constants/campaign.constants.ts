@@ -887,6 +887,12 @@ export const LINKEDIN_BOOST_POST_FIELD = 'linkedInConfig.boostPost';
  */
 export const LINKEDIN_BOOST_POST_URN_PATTERN = /^urn:li:(share|ugcPost):[0-9]+$/;
 
+/** The field a LinkedIn Audience Expansion refusal names (linuxfoundation/lfx-v2-campaign-service#667). */
+export const LINKEDIN_AUDIENCE_EXPANSION_FIELD = 'linkedInConfig.audienceExpansionEnabled';
+
+/** The field a LinkedIn Audience Network refusal names (linuxfoundation/lfx-v2-campaign-service#667). */
+export const LINKEDIN_OFFSITE_DELIVERY_FIELD = 'linkedInConfig.offsiteDeliveryEnabled';
+
 /**
  * LinkedIn Text Ads limits (#5764 row 19), campaign-service's `TextAdHeadlineMaxChars`, `TextAdDescriptionMaxChars`
  * and `maxTextAds`: characters after the creative normalization, and text ads per campaign.
