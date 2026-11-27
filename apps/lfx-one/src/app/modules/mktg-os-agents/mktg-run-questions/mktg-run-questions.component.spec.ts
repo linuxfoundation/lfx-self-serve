@@ -7,7 +7,7 @@ import { FOUNDATION_MESSAGE_ANSWER_MAX_CHARS } from '@lfx-one/shared/constants';
 import { describe, expect, it, vi } from 'vitest';
 import { MktgRunQuestionsComponent } from './mktg-run-questions.component';
 
-async function render(allowNoneFor: readonly string[] = [], allowNonAnswers = false, inputs: Record<string, unknown> = {}) {
+async function render(allowNoneFor: readonly string[] = [], inputs: Record<string, unknown> = {}) {
   await TestBed.configureTestingModule({ imports: [MktgRunQuestionsComponent], providers: [provideNoopAnimations()] }).compileComponents();
   const fixture = TestBed.createComponent(MktgRunQuestionsComponent);
   fixture.componentRef.setInput(
@@ -16,7 +16,6 @@ async function render(allowNoneFor: readonly string[] = [], allowNonAnswers = fa
   );
   fixture.componentRef.setInput('projectName', 'Synthetic project');
   fixture.componentRef.setInput('allowNoneFor', allowNoneFor);
-  fixture.componentRef.setInput('allowNonAnswers', allowNonAnswers);
   for (const [key, value] of Object.entries(inputs)) fixture.componentRef.setInput(key, value);
   await fixture.whenStable();
   fixture.detectChanges();
@@ -83,7 +82,7 @@ describe('MktgRunQuestionsComponent answer validation', () => {
 
   it('locks a kept draft: every box disabled with its text, no Send, no draft emitted, the questions still browsable', async () => {
     // A kept block is a fresh instance opened with the typed draft and locked, as both hosts render it.
-    const { fixture, component } = await render(['avoid'], false, {
+    const { fixture, component } = await render(['avoid'], {
       initialDraft: { index: 1, answers: { avoid: 'None', other: 'Use synthetic project facts.' }, dirty: true },
       locked: true,
     });
@@ -105,14 +104,6 @@ describe('MktgRunQuestionsComponent answer validation', () => {
     await fixture.whenStable();
     expect(drafts).not.toHaveBeenCalled();
     expect(component['answersForm'].getRawValue()).toEqual({ avoid: 'None', other: 'Use synthetic project facts.' });
-  });
-
-  it('retains the explicit AEO/GEO compatibility opt-in without changing the default', async () => {
-    const { fixture, component, emitted } = await render([], true);
-    component['onNext']();
-    fixture.detectChanges();
-    component['onNext']();
-    expect(emitted).toHaveBeenCalledOnce();
   });
 
   it('still rejects None by default for other agents', async () => {

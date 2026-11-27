@@ -33,6 +33,12 @@ const validators = [
     empty: () => validLinkedinAnswers([]),
     max: 4000,
   },
+  {
+    name: 'aeo-geo',
+    valid: (text: string) => isAeoGeoSubmittedAnswers([{ id: 'audience', text, origin: 'requester' }]),
+    empty: () => isAeoGeoSubmittedAnswers([]),
+    max: 10_000,
+  },
 ];
 
 describe.each(validators)('$name substantive answers', ({ valid, empty, max }) => {
@@ -47,34 +53,37 @@ describe.each(validators)('$name substantive answers', ({ valid, empty, max }) =
   it('accepts a substantive answer', () => expect(valid('Use synthetic project facts.')).toBe(true));
 });
 
-describe('AEO/GEO HTTP temporary compatibility policy', () => {
-  it.each(['', '   '])('refuses empty text %j', (text) => expect(isAeoGeoSubmittedAnswers([{ id: 'audience', text, origin: 'requester' }])).toBe(false));
-  it.each(['none', 'skip', 'TBD', 'n/a', '-', '?'])('retains explicit non-empty compatibility for %j', (text) =>
-    expect(isAeoGeoSubmittedAnswers([{ id: 'exclude', text, origin: 'requester' }])).toBe(true)
-  );
-  it('still rejects empty arrays and oversized answers', () => {
-    expect(isAeoGeoSubmittedAnswers([])).toBe(false);
-    expect(isAeoGeoSubmittedAnswers([{ id: 'audience', text: 'x'.repeat(10001), origin: 'requester' }])).toBe(false);
-  });
-});
-
 describe('question-scoped none policy', () => {
-  it('exports the plain transport message and only the stable LinkedIn avoid id', () => {
+  it('exports the plain transport message and one stable id per agent: LinkedIn avoid, AEO/GEO exclude', () => {
     expect(MKTG_ANSWERS_INCOMPLETE_MESSAGE).toBe('Every question needs an answer before the agent can continue.');
-    expect(MKTG_NONE_ALLOWED_QUESTION_IDS).toEqual(['avoid']);
+    expect(MKTG_NONE_ALLOWED_QUESTION_IDS).toEqual({ 'linkedin-post': ['avoid'], 'aeo-geo': ['exclude'] });
   });
-  it.each(['none', 'None', ' NONE '])('accepts literal %j only for LinkedIn avoid', (text) => {
+  it.each(['none', 'None', ' NONE '])('accepts literal %j only for LinkedIn avoid and AEO/GEO exclude', (text) => {
     expect(validLinkedinAnswers([{ key: 'avoid', text, origin: 'requester' }])).toBe(true);
     expect(validLinkedinAnswers([{ key: 'role', text, origin: 'requester' }])).toBe(false);
-    // AEO/GEO retains its explicitly ruled legacy opt-in until question ids are stable.
     expect(isAeoGeoSubmittedAnswers([{ id: 'exclude', text, origin: 'requester' }])).toBe(true);
-    expect(isAeoGeoSubmittedAnswers([{ id: 'avoid', text, origin: 'requester' }])).toBe(true);
+    // Each agent's id is its own: LinkedIn's avoid is no exemption in an audit, and the rest of a turn still has to say something.
+    expect(isAeoGeoSubmittedAnswers([{ id: 'avoid', text, origin: 'requester' }])).toBe(false);
+    expect(
+      isAeoGeoSubmittedAnswers([
+        { id: 'exclude', text, origin: 'requester' },
+        { id: 'audience', text, origin: 'requester' },
+      ])
+    ).toBe(false);
+    expect(
+      isAeoGeoSubmittedAnswers([
+        { id: 'audience', text: 'Platform engineers.', origin: 'edited' },
+        { id: 'exclude', text, origin: 'requester' },
+      ])
+    ).toBe(true);
   });
   it.each(['', ' ', 'skip', 'TBD', 'n/a', '-', '?', 'none.'])('does not widen the exemption to %j', (text) => {
     expect(mktgAnswerProblem(text, { allowNone: true })).toBe(MKTG_ANSWERS_INCOMPLETE_MESSAGE);
     expect(validLinkedinAnswers([{ key: 'avoid', text, origin: 'requester' }])).toBe(false);
+    expect(isAeoGeoSubmittedAnswers([{ id: 'exclude', text, origin: 'requester' }])).toBe(false);
   });
-  it('does not let none bypass the LinkedIn length cap', () => {
+  it('does not let none bypass the length caps', () => {
     expect(validLinkedinAnswers([{ key: 'avoid', text: ' '.repeat(4000) + 'None', origin: 'requester' }])).toBe(false);
+    expect(isAeoGeoSubmittedAnswers([{ id: 'exclude', text: ' '.repeat(10_000) + 'None', origin: 'requester' }])).toBe(false);
   });
 });

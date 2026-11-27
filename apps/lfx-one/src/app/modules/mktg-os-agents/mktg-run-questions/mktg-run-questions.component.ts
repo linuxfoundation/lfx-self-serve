@@ -31,7 +31,7 @@ interface QuestionView extends MktgRunQuestion {
 // top, then a card with the question, why the agent asks, where its
 // suggestion comes from, and one box already holding the suggested answer to
 // keep or edit. The last question's button sends every answer back on the
-// same run. By default, no skip or TBD: every answer has to say something.
+// same run. No skip or TBD: every answer has to say something.
 @Component({
   selector: 'lfx-mktg-run-questions',
   imports: [NgClass, ReactiveFormsModule, ButtonComponent, TextareaComponent],
@@ -49,8 +49,6 @@ export class MktgRunQuestionsComponent {
   public readonly busy = input(false);
   /** Saved answers and index restored after reload, taking precedence over previousAnswers. */
   public readonly initialDraft = input<MktgRunQuestionDraft | null>(null);
-  /** Temporary AEO/GEO compatibility until its exclusion question has a stable id. */
-  public readonly allowNonAnswers = input(false);
   /** Only these stable question ids may use literal none on otherwise substantive-only surfaces. */
   public readonly allowNoneFor = input<readonly string[]>([]);
   /** A kept draft, read-only: every box disabled, nothing to send, the questions still browsable. */
@@ -206,9 +204,9 @@ export class MktgRunQuestionsComponent {
   }
 
   // === Private helpers ===
-  /** Shared per-question policy, except the explicit legacy AEO/GEO route opt-in. */
+  /** Shared per-question policy: a literal none stands only for a question the host lists. */
   private answerError(text: string, questionId: string): string {
-    if (!text.trim() || (!this.allowNonAnswers() && mktgAnswerProblem(text, { allowNone: this.allowNoneFor().includes(questionId) }))) {
+    if (mktgAnswerProblem(text, { allowNone: this.allowNoneFor().includes(questionId) })) {
       return MKTG_ANSWER_NOT_SUBSTANTIVE_ERROR;
     }
     if (text.trim().length > FOUNDATION_MESSAGE_ANSWER_MAX_CHARS) {

@@ -368,7 +368,8 @@ describe('AeoGeoRunComponent', () => {
     fixture.detectChanges();
     expect(navigate).not.toHaveBeenCalled();
     expect(query('mktg-run-questions')).not.toBeNull();
-    expect(fixture.debugElement.query(By.directive(MktgRunQuestionsComponent)).componentInstance.allowNonAnswers()).toBe(true);
+    // The exemption is the exclude question's alone, under the key the stepper gives it; no run-wide opt-out.
+    expect(fixture.debugElement.query(By.directive(MktgRunQuestionsComponent)).componentInstance.allowNoneFor()).toEqual(['aeo-exclude']);
     fixture.componentInstance['onAnswers']([{ key: questions[0].key, text: questions[0].suggestedAnswer, origin: 'accepted' }]);
     expect(answerQuestions).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'session-1' }), AEO_GEO_INTAKE, 'questions-1', [
       { id: 'audience', text: questions[0].suggestedAnswer, origin: 'accepted' },

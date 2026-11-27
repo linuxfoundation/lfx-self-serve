@@ -163,16 +163,23 @@ describe('AeoGeoController', () => {
     }
     expect(mocks.startGeneration).not.toHaveBeenCalled();
   });
-  it('refuses empty answers with the plain 400 before sending', async () => {
-    for (const text of ['', '   ']) {
-      const result = await call('answers', {
-        project: 'project-1',
-        sessionId: 'session-a',
-        ownerToken: 'owner-proof',
-        documentId: 'run-012345678901234567890123',
-        questionsId,
-        answers: [{ id: 'exclude', text, origin: 'requester' }],
-      });
+  it('refuses empty answers and non-answers with the plain 400 before sending; only the exclude question takes a literal none', async () => {
+    const payload = (id: string, text: string) => ({
+      project: 'project-1',
+      sessionId: 'session-a',
+      ownerToken: 'owner-proof',
+      documentId: 'run-012345678901234567890123',
+      questionsId,
+      answers: [{ id, text, origin: 'requester' }],
+    });
+    for (const [id, text] of [
+      ['exclude', ''],
+      ['exclude', '   '],
+      ['exclude', 'skip'],
+      ['exclude', 'TBD'],
+      ['audience', 'none'],
+    ]) {
+      const result = await call('answers', payload(id, text));
       expect(result.next).toHaveBeenCalledWith(
         expect.objectContaining({
           statusCode: 400,
@@ -183,6 +190,13 @@ describe('AeoGeoController', () => {
     }
     expect(mocks.prepareAnswers).not.toHaveBeenCalled();
     expect(mocks.claimSessionAnswers).not.toHaveBeenCalled();
+    const accepted = await call('answers', payload('exclude', 'none'));
+    expect(accepted.next).not.toHaveBeenCalled();
+    expect(accepted.json).toHaveBeenCalledWith({ success: true, status: 'pending' });
+    expect(mocks.claimSessionAnswers).toHaveBeenCalledExactlyOnceWith(expect.anything(), 'resolved-project', 'session-a', questionsId, 'aeo-geo', [
+      { key: 'aeo-exclude', text: 'none', origin: 'requester' },
+    ]);
+    expect(mocks.deliverAnswers).toHaveBeenCalledExactlyOnceWith(expect.anything(), 'session-a', 'rendered answers turn', 1);
   });
   it('reports intake errors without misleading revision instructions', async () => {
     const invalid = await call('generate', { ...body(), answers: { domain: 'invalid' } });

@@ -98,7 +98,10 @@ continues to the Document route. Reloading that route resumes storage polling.
 Only a final-answer `aeo-geo-questions/v1` turn becomes questions, never a
 progress message or fetched tool text. A shared guard validates the one fenced
 JSON block. `MktgRunQuestionsComponent` presents it one question at a time,
-with Back/Continue, suggestion acceptance or editing, and no skip. The new
+with Back/Continue, suggestion acceptance or editing, and no skip: every answer
+has to say something, and only the question about what to leave out of the
+audit (always the id `exclude`, listed in `MKTG_NONE_ALLOWED_QUESTION_IDS`) may
+be answered with a literal `none`. The BFF applies the same rule. The new
 `POST /api/mktg-agents/aeo-geo/answers` checks creator proof, project writer
 rights, the session's document id and the actual questions, then claims the
 questions turn named by `questionsId` on the run tracker (`claimSessionAnswers`,

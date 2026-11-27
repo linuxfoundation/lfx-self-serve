@@ -391,11 +391,13 @@ There is no historical backfill, new source-file store or attachment-reuse claim
 ## Answers validation
 
 The shared `mktgAnswerProblem` guard rejects blank text and the existing non-answer tokens for
-kit and LinkedIn answer transports. Only LinkedIn's stable `avoid` question accepts literal
-`none`; its client applies the exemption to that question, not the whole route. Validators
+kit, LinkedIn and AEO/GEO answer transports. One stable question id per agent accepts literal
+`none`, listed in `MKTG_NONE_ALLOWED_QUESTION_IDS`: LinkedIn's `avoid` and AEO/GEO's `exclude`
+(since aeo-geo 2.1.2 the question about what to leave out of the audit always has that id, and
+no other question does). Each client applies the exemption to that question, not the whole
+route; the AEO/GEO run page passes it under the stepper's key, `aeo-exclude`. Validators
 retain their origin/id/uniqueness and length limits; invalid answers return a plain 400 before
-sending or resuming a session. AEO/GEO retains its explicitly approved non-empty compatibility
-policy until the agent supplies a stable exclusion-question id; empty/whitespace HTTP submissions fail.
+sending or resuming a session.
 The HTTP guard `isAeoGeoSubmittedAnswers` is separate from the agent-protocol shape guard
 `isAeoGeoAnswers`: empty frames/text remain valid for byte-exact rendering and internal retry handling.
 Member 360's questions branch carries a companion schema patch and retains its exact-key coverage.

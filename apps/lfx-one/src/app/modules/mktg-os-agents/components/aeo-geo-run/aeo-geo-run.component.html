@@ -45,7 +45,7 @@
         [projectName]="projectName()"
         [previousAnswers]="answerValues()"
         [initialDraft]="questionDraft()"
-        [allowNonAnswers]="true"
+        [allowNoneFor]="noneAllowedQuestionKeys"
         (draftChanged)="onQuestionDraft($event)"
         [busy]="busy()"
         (answered)="onAnswers($event)" />
