@@ -230,6 +230,9 @@ describe('linkedInCreateRefusal', () => {
     // The target cost (campaign-service#674) arrives as a whole message too.
     ['a target cost refused', { targetCostRefusal: 'LinkedIn Ads: fix it.' }, 'LinkedIn Ads: fix it.'],
     ['a target cost that can be sent', { targetCostRefusal: null }, null],
+    // The delivery options (campaign-service#667) arrive as a whole message too.
+    ['delivery options held', { deliveryOptionsRefusal: 'LinkedIn Ads: wait.' }, 'LinkedIn Ads: wait.'],
+    ['delivery options that can be sent', { deliveryOptionsRefusal: null }, null],
     ['an account the catalog does not list', { accountInCatalog: false }, 'LinkedIn Ads: choose an ad account.'],
     ['an unlisted account the connection decides', { accountInCatalog: false, accountSetByConnection: true }, null],
     [

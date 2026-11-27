@@ -247,6 +247,7 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
                 { accountId: 'urn:li:sponsoredAccount:2', name: 'LF Events Account', status: 'ACTIVE' },
               ]),
             getLinkedInTargetingProfiles: () => of([]),
+            getRedditPixels: () => of({ accountId: '', pixels: [], pixelCount: 0, truncated: false }),
           },
         },
       ],
@@ -738,6 +739,32 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
 
     expect(fixture.nativeElement.querySelector('lfx-reddit-targeting-lists')).toBeNull();
     expect(latest()).not.toHaveProperty('redditEditedSubreddits');
+  });
+
+  // Reddit delivery choices and the pixel picker (#6108 row 5): the rules are in `campaign-reddit-delivery.utils.spec.ts`
+  // and `campaign-reddit-pixels.utils.spec.ts`; this tests the wiring.
+  it('carries delivery choices and a picked pixel through a tab round-trip and into the request', async () => {
+    const mountWithDelivery = async (
+      draft: CampaignImplementationDraft | null
+    ): Promise<{ fixture: ComponentFixture<ImplementationTabComponent>; latest: () => CampaignImplementationDraft | null }> => {
+      const mounted = await mountWithPixel(draft, true);
+      for (const name of ['redditPlacementsEnabled', 'redditBudgetTypeEnabled', 'redditPixelListEnabled']) mounted.fixture.componentRef.setInput(name, true);
+      at(mounted.fixture).selectedPlatforms.set(['reddit-ads']);
+      mounted.fixture.detectChanges();
+      await mounted.fixture.whenStable();
+      return mounted;
+    };
+    const delivery = { budgetType: 'daily', placements: ['FEED'], platforms: ['DESKTOP'], expandTargeting: false };
+    const first = await mountWithDelivery(null);
+    first.fixture.debugElement.query(By.css('lfx-reddit-delivery')).triggerEventHandler('deliveryChange', delivery);
+    first.fixture.debugElement.query(By.css('lfx-reddit-pixel-picker')).triggerEventHandler('pixelIdChange', 't2_sitepixel');
+    first.fixture.detectChanges();
+    expect(first.fixture.nativeElement.querySelector('label[for="reddit-budget"]')?.textContent).toContain('daily');
+    const draft = first.latest();
+    first.fixture.destroy();
+
+    const second = await mountWithDelivery(draft);
+    expect(submitReddit(second.fixture)).toMatchObject({ ...delivery, conversionPixelId: 't2_sitepixel' });
   });
 
   // === The other platforms on the same live brief switch (#4624) ===

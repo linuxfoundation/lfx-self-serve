@@ -4184,6 +4184,40 @@
               data-testid="implementation-linkedin-objective" />
           }
 
+          <!-- Delivery options (campaign-service#667), offered on an explicit yes, and kept on screen while one that is on
+               waits on the capability, so it can be turned off. Both off sends nothing. -->
+          @if (linkedInDeliveryOptionsShown()) {
+            <fieldset class="mb-4" data-testid="implementation-linkedin-delivery-options">
+              <legend class="mb-2 block text-xs font-medium text-gray-700">Delivery options</legend>
+              <div class="flex flex-col gap-3">
+                <div class="flex flex-col gap-1">
+                  <lfx-ui-checkbox
+                    label="Audience Expansion"
+                    [checked]="linkedInDeliveryOptions().audienceExpansion"
+                    [disabled]="linkedInAudienceExpansionDisabled()"
+                    (checkedChange)="onLinkedInDeliveryOptionChange('audienceExpansion', $event)"
+                    data-testid="implementation-linkedin-audience-expansion" />
+                  <span class="text-xs text-gray-500">Also reach members similar to the targeting. Off by default.</span>
+                </div>
+                <div class="flex flex-col gap-1">
+                  <lfx-ui-checkbox
+                    label="LinkedIn Audience Network"
+                    [checked]="linkedInDeliveryOptions().audienceNetwork"
+                    [disabled]="linkedInAudienceNetworkDisabled()"
+                    (checkedChange)="onLinkedInDeliveryOptionChange('audienceNetwork', $event)"
+                    data-testid="implementation-linkedin-audience-network" />
+                  <span class="text-xs text-gray-500">
+                    @if (linkedInAudienceNetworkOffered()) {
+                      Also show the ads on partner apps and sites outside LinkedIn. Off by default.
+                    } @else {
+                      Not available with text ads or lead generation, so it is not sent. Turn it off to clear it.
+                    }
+                  </span>
+                </div>
+              </div>
+            </fieldset>
+          }
+
           <!-- The upload's status and any image notice, announced. Always mounted; only their text changes. -->
           <div role="status" aria-live="polite" aria-atomic="true" class="sr-only" data-testid="implementation-linkedin-image-status-live">
             {{ linkedInImageUploadLiveMessage() }}
@@ -5496,6 +5530,7 @@
                DAILY and expose a checkbox to switch, so an operator carrying that model across
                would read this number as per-day — a 30x misread of committed spend on a
                month-long flight. Hence the label says so rather than relying on the default.
+               Once the budget type is offered (#6108 row 5) and set to daily, the label and hint follow it.
 
                Both bounds mirror the client's contract (client.go): finite, and within (0, 1e9].
                The 1 USD floor is STRICTER than upstream, which accepts anything above one
@@ -5504,7 +5539,7 @@
                neither bound; LFXV2-3315 covers bringing them into line. -->
           <div class="mb-4 grid grid-cols-1 gap-4 md:grid-cols-2">
             <div class="flex flex-col gap-1">
-              <label for="reddit-budget" class="text-xs font-medium text-gray-700">Reddit Budget (USD, lifetime)</label>
+              <label for="reddit-budget" class="text-xs font-medium text-gray-700">{{ redditBudgetCopy().label }}</label>
               <input
                 id="reddit-budget"
                 type="number"
@@ -5514,10 +5549,15 @@
                 [max]="redditMaxBudget"
                 class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
                 data-testid="implementation-reddit-budget" />
-              <p class="text-xs text-gray-500">
-                A lifetime cap for the whole flight, not a daily spend — unlike the Meta and LinkedIn budgets above, which default to daily. Reddit campaigns
-                are created paused.
-              </p>
+              <p class="text-xs text-gray-500" data-testid="implementation-reddit-budget-hint">{{ redditBudgetCopy().hint }}</p>
+              <!-- Budget type, placements, devices and expansion (#6108 row 5), each only on its explicit yes;
+                   every control starts on campaign-service's default, which the request leaves out. -->
+              <lfx-reddit-delivery
+                class="mt-2"
+                [placementsEnabled]="redditDeliveryCapabilities().placements === true"
+                [budgetTypeEnabled]="redditDeliveryCapabilities().budgetType === true"
+                [delivery]="redditDelivery()"
+                (deliveryChange)="onRedditDeliveryChange($event)" />
             </div>
 
             <!-- Objective. Until now the field was declared on the request and never sent, so both
@@ -5671,7 +5711,14 @@
                  and would drop a typed pixel without saying so. Nothing typed is cleared when it is
                  withheld — the draft keeps it. Not validated here: upstream trims it and Reddit
                  judges it, so a check on this side could only refuse a pixel that would work. -->
-            @if (redditConversionPixelAvailable()) {
+            <!-- With the pixel list on (#6108 row 5) the id is a pick from the ad account's pixels, falling back
+                 to a typed id when the list cannot be read; otherwise the typed box as before. -->
+            @if (redditConversionPixelAvailable() && redditPixelListAvailable()) {
+              <lfx-reddit-pixel-picker
+                [projectSlug]="activeFoundationSlug()"
+                [pixelId]="redditConversionPixelDraft().conversionPixelId"
+                (pixelIdChange)="onRedditConversionPixelPick($event)" />
+            } @else if (redditConversionPixelAvailable()) {
               <div class="flex flex-col gap-1">
                 <label class="text-xs font-medium text-gray-700" for="reddit-conversion-pixel">Conversion Pixel ID (optional)</label>
                 <lfx-input-text

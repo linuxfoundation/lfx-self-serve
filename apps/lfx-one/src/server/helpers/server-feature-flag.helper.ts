@@ -390,6 +390,20 @@ export enum ServerFeatureFlag {
   CampaignServiceRedditDailyBudget = 'LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_DAILY_BUDGET',
 
   /**
+   * Reddit one ad per variant (#6108 row 6, linuxfoundation/lfx-v2-campaign-service#549): a create that authors its post
+   * (`redditConfig.imageUrl` or `imageAssetId`, no `postUrl`) with 2 to 5 `redditConfig.variants` makes one promoted post
+   * and one ad per variant, so the variants' headlines become editable.
+   *
+   * A CAPABILITY flag of the Bidding kind: REQUIRES campaign-service DEPLOYED with `REDDIT_AD_PER_VARIANT_ENABLED` on, and
+   * is only meaningful on the campaign-service create path (`cutoverOwnsCreate`). Unlike the flags above it gates no new
+   * field: creates already carry the brief's variants, so off (the default) changes nothing and refuses nothing. On, the
+   * create route refuses, never trims, a create campaign-service would refuse: more than 5 variants, or a blank or
+   * over-300-character headline. Keep it off until campaign-service's flag is on and probed. Request rules only, so
+   * flipping it back strands nothing. Same accepted values as the flags above.
+   */
+  CampaignServiceRedditAdPerVariant = 'LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_AD_PER_VARIANT',
+
+  /**
    * Reddit pixel list (#6108 row 5, linuxfoundation/lfx-v2-campaign-service#549): answer
    * `GET /api/campaigns/reddit/pixels` (404 while off), the conversion pixels on the Reddit ad account a create uses, so a
    * picker can fill the existing `redditConfig.conversionPixelId`. Choosing a pixel stays gated by
@@ -630,6 +644,18 @@ export enum ServerFeatureFlag {
    * accepted values as the flags above.
    */
   CampaignServiceLinkedInBoost = 'LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_BOOST',
+
+  /**
+   * LinkedIn Audience Expansion and the LinkedIn Audience Network (linuxfoundation/lfx-v2-campaign-service#667): accept
+   * `linkedInConfig.audienceExpansionEnabled` and `linkedInConfig.offsiteDeliveryEnabled`, each a boolean.
+   *
+   * A CAPABILITY flag of the Bidding kind: REQUIRES campaign-service v1.0.44 DEPLOYED with
+   * `LINKEDIN_ADS_DELIVERY_OPTIONS_ENABLED` on, since campaign-service refuses either field (false included) with a 400
+   * otherwise, and is only meaningful on the campaign-service create path (`cutoverOwnsCreate`): the legacy creator ignores
+   * them. Off (the default), the create route refuses the fields with a 400, never dropping them. Request fields only, so
+   * flipping it back strands nothing. Same accepted values as the flags above.
+   */
+  CampaignServiceLinkedInDeliveryOptions = 'LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_DELIVERY_OPTIONS',
 
   /**
    * Offers Meta ad set audience targeting on the Implement tab (#5905), sent as `metaConfig.targeting`:

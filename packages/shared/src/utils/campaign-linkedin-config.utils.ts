@@ -42,6 +42,8 @@ const LINKEDIN_CONFIG_REQUEST_KEYS = [
   'documentTitle',
   'documentIntroText',
   'boostPost',
+  'audienceExpansionEnabled',
+  'offsiteDeliveryEnabled',
 ] as const;
 
 /** The `linkedInConfig.variants[i]` keys a create may carry, spelled exactly (`LinkedInCreativeVariant`). */

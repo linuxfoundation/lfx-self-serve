@@ -87,8 +87,13 @@ import type {
   MonitorTabPlatform,
   NegativeKeywordCampaignPlatform,
   ParsedCampaignName,
+  RedditBudgetCopy,
+  RedditBudgetType,
   RedditConversionEvent,
   RedditCustomAudienceListView,
+  RedditDeliveryDraft,
+  RedditDevicePlatform,
+  RedditPlacement,
   RedditCustomAudiencesDraft,
   RedditTargetingExclusionListView,
   RedditTargetingExclusionsDraft,
@@ -886,6 +891,12 @@ export const LINKEDIN_BOOST_POST_FIELD = 'linkedInConfig.boostPost';
  * `urn:li:share:<digits>` or `urn:li:ugcPost:<digits>`, the two references a creative accepts. Go's `\d` is ASCII only.
  */
 export const LINKEDIN_BOOST_POST_URN_PATTERN = /^urn:li:(share|ugcPost):[0-9]+$/;
+
+/** The field a LinkedIn Audience Expansion refusal names (linuxfoundation/lfx-v2-campaign-service#667). */
+export const LINKEDIN_AUDIENCE_EXPANSION_FIELD = 'linkedInConfig.audienceExpansionEnabled';
+
+/** The field a LinkedIn Audience Network refusal names (linuxfoundation/lfx-v2-campaign-service#667). */
+export const LINKEDIN_OFFSITE_DELIVERY_FIELD = 'linkedInConfig.offsiteDeliveryEnabled';
 
 /**
  * LinkedIn Text Ads limits (#5764 row 19), campaign-service's `TextAdHeadlineMaxChars`, `TextAdDescriptionMaxChars`
@@ -4935,6 +4946,13 @@ export const REDDIT_BUDGET_TYPES = ['lifetime', 'daily'] as const;
 /** The three `redditConfig` keys of the Reddit placement choices (#6108 row 5), as campaign-service spells them. */
 export const REDDIT_PLACEMENT_KEYS = ['placements', 'platforms', 'expandTargeting'] as const;
 
+/**
+ * The most variants a Reddit create that authors its post may carry while one ad per variant is on (#6108 row 6):
+ * campaign-service's `MaxAdVariants` (`internal/platform/reddit/ad_variants.go`, #549). Each headline is held to
+ * `MAX_REDDIT_HEADLINE_LENGTH`.
+ */
+export const MAX_REDDIT_AD_VARIANTS = 5;
+
 /** A Reddit pixel id campaign-service offers (`ValidPixelID`): 1 to 64 letters, digits or underscores. */
 export const REDDIT_PIXEL_ID_PATTERN = /^[A-Za-z0-9_]{1,64}$/;
 
@@ -4953,6 +4971,46 @@ export const REDDIT_PIXELS_ACCESS_UNAVAILABLE_MESSAGE = 'Your access to Reddit p
 export const REDDIT_PIXELS_ACCESS_ERRORS = {
   restricted: { code: REDDIT_PIXELS_RESTRICTED_CODE, message: REDDIT_PIXELS_RESTRICTED_MESSAGE },
   unavailable: { code: REDDIT_PIXELS_ACCESS_UNAVAILABLE_CODE, message: REDDIT_PIXELS_ACCESS_UNAVAILABLE_MESSAGE },
+} as const;
+
+/** What the Implement tab calls each Reddit placement (#6108 row 5). */
+export const REDDIT_PLACEMENT_LABELS: Readonly<Record<RedditPlacement, string>> = { FEED: 'Feed', COMMENTS_PAGE: 'Conversation pages' };
+/** What the Implement tab calls each Reddit device platform (#6108 row 5). */
+export const REDDIT_DEVICE_PLATFORM_LABELS: Readonly<Record<RedditDevicePlatform, string>> = {
+  DESKTOP: 'Desktop',
+  MOBILE_NATIVE: 'Mobile app',
+  MOBILE_WEB: 'Mobile web',
+};
+/** What the Implement tab calls each Reddit budget type (#6108 row 5). */
+export const REDDIT_BUDGET_TYPE_LABELS: Readonly<Record<RedditBudgetType, string>> = { lifetime: 'Lifetime (whole flight)', daily: 'Daily' };
+/**
+ * The Reddit delivery choices a fresh form starts from (#6108 row 5): every placement, every device, expansion on and a
+ * lifetime budget, campaign-service's defaults, so a create that sends none of them builds the same campaign.
+ */
+export const DEFAULT_REDDIT_DELIVERY: Readonly<RedditDeliveryDraft> = {
+  budgetType: 'lifetime',
+  placements: [...REDDIT_PLACEMENTS],
+  platforms: [...REDDIT_DEVICE_PLATFORMS],
+  expandTargeting: true,
+};
+/** The Reddit budget box's label and hint for each budget type (#6108 row 5); `lifetime` is what the box always said. */
+export const REDDIT_BUDGET_COPY: Readonly<Record<RedditBudgetType, RedditBudgetCopy>> = {
+  lifetime: {
+    label: 'Reddit Budget (USD, lifetime)',
+    hint: 'A lifetime cap for the whole flight, not a daily spend — unlike the Meta and LinkedIn budgets above, which default to daily. Reddit campaigns are created paused.',
+  },
+  daily: {
+    label: 'Reddit Budget (USD, daily)',
+    hint: 'Spent each day of the flight, like the Meta and LinkedIn daily budgets above. Reddit campaigns are created paused.',
+  },
+};
+/** What the Reddit pixel picker says while it loads, lists only part, or falls back to a typed pixel id (#6108 row 5). */
+export const REDDIT_PIXEL_PICKER_LOADING = "Loading the Reddit ad account's pixels…";
+export const REDDIT_PIXEL_PICKER_TRUNCATED = 'The Reddit ad account has more pixels than this list shows.';
+export const REDDIT_PIXEL_PICKER_REASONS = {
+  restricted: "Only the LF marketing team can list the Reddit ad account's pixels. Enter a pixel id instead, or leave it blank.",
+  failed: "Couldn't load the Reddit ad account's pixels. Enter a pixel id instead, or leave it blank.",
+  empty: 'The Reddit ad account has no pixels to pick from. Enter a pixel id instead, or leave it blank.',
 } as const;
 
 /**

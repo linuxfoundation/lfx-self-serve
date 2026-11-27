@@ -189,6 +189,8 @@ export function linkedInCreateRefusal(input: LinkedInCreateRefusalInput): string
   if (input.objectiveRefusal) return input.objectiveRefusal;
   // The target cost (campaign-service#674): already a whole message (`linkedInTargetCostCreateRefusal`).
   if (input.targetCostRefusal) return input.targetCostRefusal;
+  // The delivery options (campaign-service#667): already a whole message (`linkedInDeliveryOptionsCreateRefusal`).
+  if (input.deliveryOptionsRefusal) return input.deliveryOptionsRefusal;
   // The legacy account must be one the CATALOG confirms, not merely a non-empty string: before the catalog read
   // returns, and for good if it fails, the restored id is still on the form while the selector shows nothing.
   // Membership also covers the blank id. Skipped when the connection decides the account (#5809), since the create

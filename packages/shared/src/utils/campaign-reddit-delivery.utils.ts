@@ -1,8 +1,24 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { REDDIT_BUDGET_TYPES, REDDIT_DEVICE_PLATFORMS, REDDIT_PLACEMENT_KEYS, REDDIT_PLACEMENTS } from '../constants/campaign.constants';
-import type { RedditBudgetType, RedditConfigRefusal } from '../interfaces/campaign.interface';
+import {
+  DEFAULT_REDDIT_DELIVERY,
+  REDDIT_BUDGET_COPY,
+  REDDIT_BUDGET_TYPES,
+  REDDIT_DEVICE_PLATFORMS,
+  REDDIT_PLACEMENT_KEYS,
+  REDDIT_PLACEMENTS,
+} from '../constants/campaign.constants';
+import type {
+  RedditBudgetCopy,
+  RedditBudgetType,
+  RedditConfigRefusal,
+  RedditDeliveryCapabilities,
+  RedditDeliveryDraft,
+  RedditDeliveryField,
+  RedditDeliveryOptionView,
+  RedditDraftSnapshot,
+} from '../interfaces/campaign.interface';
 import { googleAdsToUpperCode } from './campaign-google-assets.utils';
 import { foldKey } from './campaign-linkedin-config.utils';
 import { goTrimSpace } from './campaign-linkedin.utils';
@@ -150,4 +166,112 @@ export function redditBudgetTypeRefusal(raw: unknown, enabled: boolean): RedditC
   if (!enabled) return { field, message: 'Reddit daily budgets are not enabled on this deployment. Remove the budget type and create again.' };
   if (normalizeRedditBudgetType(value) === null) return { field, message: 'Send the budget type as "lifetime" or "daily".' };
   return null;
+}
+
+// === The Implement tab's delivery choices (#6108 row 5) ===
+
+/**
+ * The delivery choices a create acts on: each part whose capability is not an explicit yes is back at its default, so a
+ * choice remembered from when it was on (a restored draft) is dropped, never sent, and the screen shows the default.
+ */
+export function redditDeliveryInEffect(delivery: RedditDeliveryDraft, capabilities: RedditDeliveryCapabilities): RedditDeliveryDraft {
+  const placementsOn = capabilities.placements === true;
+  return {
+    budgetType: capabilities.budgetType === true ? delivery.budgetType : DEFAULT_REDDIT_DELIVERY.budgetType,
+    placements: placementsOn ? delivery.placements : [...DEFAULT_REDDIT_DELIVERY.placements],
+    platforms: placementsOn ? delivery.platforms : [...DEFAULT_REDDIT_DELIVERY.platforms],
+    expandTargeting: placementsOn ? delivery.expandTargeting : DEFAULT_REDDIT_DELIVERY.expandTargeting,
+  };
+}
+
+/**
+ * The `redditConfig` keys for the delivery choices: only what differs from campaign-service's default, and nothing for a
+ * capability that is not an explicit yes (the create route refuses any of them then). Every placement or every device is
+ * the default and is omitted; so is an empty list, which `redditDeliveryRefusal` holds Create for instead.
+ */
+export function redditDeliveryField(delivery: RedditDeliveryDraft, capabilities: RedditDeliveryCapabilities): RedditDeliveryField {
+  const { budgetType, placements, platforms, expandTargeting } = redditDeliveryInEffect(delivery, capabilities);
+  const field: RedditDeliveryField = {};
+  const some = <T extends string>(list: T[], all: readonly T[]): T[] | null => {
+    const picked = all.filter((value) => list.includes(value));
+    return picked.length > 0 && picked.length < all.length ? picked : null;
+  };
+  const pickedPlacements = some(placements, REDDIT_PLACEMENTS);
+  if (pickedPlacements) field.placements = pickedPlacements;
+  const pickedPlatforms = some(platforms, REDDIT_DEVICE_PLATFORMS);
+  if (pickedPlatforms) field.platforms = pickedPlatforms;
+  if (!expandTargeting) field.expandTargeting = false;
+  if (budgetType !== DEFAULT_REDDIT_DELIVERY.budgetType) field.budgetType = budgetType;
+  return field;
+}
+
+/** Why the delivery choices cannot be sent, or `null`: at least one placement and one device must stay chosen. */
+export function redditDeliveryRefusal(delivery: RedditDeliveryDraft, capabilities: RedditDeliveryCapabilities): string | null {
+  const { placements, platforms } = redditDeliveryInEffect(delivery, capabilities);
+  if (!REDDIT_PLACEMENTS.some((value) => placements.includes(value))) return 'Choose at least one placement.';
+  if (!REDDIT_DEVICE_PLATFORMS.some((value) => platforms.includes(value))) return 'Choose at least one device.';
+  return null;
+}
+
+/**
+ * `list` with `value` ticked or unticked, in `all`'s order. Unticking the last ticked value is refused (the list comes back
+ * unchanged), so at least one placement and one device always stays chosen.
+ */
+export function redditDeliveryWithOption<T extends string>(list: readonly T[], value: T, on: boolean, all: readonly T[]): T[] {
+  const next = all.filter((entry) => (entry === value ? on : list.includes(entry)));
+  return next.length === 0 ? all.filter((entry) => list.includes(entry)) : next;
+}
+
+/** One checkbox per value of `all`, the last ticked one locked so it cannot be unticked. */
+export function redditDeliveryOptions<T extends string>(
+  list: readonly T[],
+  all: readonly T[],
+  labels: Readonly<Record<T, string>>
+): RedditDeliveryOptionView<T>[] {
+  const ticked = all.filter((value) => list.includes(value)).length;
+  return all.map((value) => {
+    const on = list.includes(value);
+    return { value, label: labels[value], on, locked: on && ticked === 1 };
+  });
+}
+
+/** The budget box's label and hint: daily only once the budget type is offered and chosen; otherwise what it always said. */
+export function redditBudgetCopy(delivery: RedditDeliveryDraft, capabilities: RedditDeliveryCapabilities): RedditBudgetCopy {
+  return REDDIT_BUDGET_COPY[redditDeliveryInEffect(delivery, capabilities).budgetType];
+}
+
+/** The `redditDraftFields` keys for the delivery choices, as held. */
+export function redditDeliveryDraftFields(
+  delivery: RedditDeliveryDraft
+): Pick<RedditDraftSnapshot, 'redditBudgetType' | 'redditPlacements' | 'redditPlatforms' | 'redditExpandTargeting'> {
+  return {
+    redditBudgetType: delivery.budgetType,
+    redditPlacements: [...delivery.placements],
+    redditPlatforms: [...delivery.platforms],
+    redditExpandTargeting: delivery.expandTargeting,
+  };
+}
+
+/** The known values of a stored list, in `all`'s order, or `null` when it holds none (the default then stands). */
+function storedList<T extends string>(value: unknown, all: readonly T[]): T[] | null {
+  if (!Array.isArray(value)) return null;
+  const picked = all.filter((entry) => value.includes(entry));
+  return picked.length > 0 ? picked : null;
+}
+
+/**
+ * The delivery choices a stored draft holds, or `undefined` when it carries none of the four keys (an older draft). Each
+ * key is read on its own, and one that is missing or unreadable (an unknown budget type, a list with no known value, an
+ * `expandTargeting` that is not a boolean) leaves its default standing. Not gated on the capabilities, which may not be
+ * answered yet: `redditDeliveryInEffect` drops what they do not confirm.
+ */
+export function redditDeliveryFromDraft(draft: RedditDraftSnapshot): RedditDeliveryDraft | undefined {
+  const { redditBudgetType, redditPlacements, redditPlatforms, redditExpandTargeting } = draft;
+  if ([redditBudgetType, redditPlacements, redditPlatforms, redditExpandTargeting].every((value) => value === undefined)) return undefined;
+  return {
+    budgetType: REDDIT_BUDGET_TYPES.find((type) => type === redditBudgetType) ?? DEFAULT_REDDIT_DELIVERY.budgetType,
+    placements: storedList(redditPlacements, REDDIT_PLACEMENTS) ?? [...DEFAULT_REDDIT_DELIVERY.placements],
+    platforms: storedList(redditPlatforms, REDDIT_DEVICE_PLATFORMS) ?? [...DEFAULT_REDDIT_DELIVERY.platforms],
+    expandTargeting: typeof redditExpandTargeting === 'boolean' ? redditExpandTargeting : DEFAULT_REDDIT_DELIVERY.expandTargeting,
+  };
 }

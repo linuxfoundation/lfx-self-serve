@@ -792,6 +792,16 @@ export function canSetRedditBudgetType(): boolean {
 }
 
 /**
+ * Whether a Reddit create that authors its post makes one ad per variant (#6108 row 6, campaign-service #549). Needs the
+ * campaign-service create path AND `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_AD_PER_VARIANT`, which follows campaign-service's
+ * own `REDDIT_AD_PER_VARIANT_ENABLED`: only then does campaign-service read more than the first variant, and refuse more
+ * than 5 or a blank or over-long headline.
+ */
+export function canSetRedditAdPerVariant(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceRedditAdPerVariant);
+}
+
+/**
  * Whether the Reddit pixel picker's read is served (#6108 row 5, campaign-service #549). Needs the campaign-service create
  * path AND `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_PIXEL_LIST`, which follows campaign-service's own
  * `REDDIT_PIXEL_LIST_ENABLED`: campaign-service refuses the read while that is off. The caller also needs
@@ -1124,6 +1134,16 @@ export function canSetLinkedInBoost(): boolean {
 }
 
 /**
+ * Whether a LinkedIn create may choose Audience Expansion and the LinkedIn Audience Network: `audienceExpansionEnabled`
+ * and `offsiteDeliveryEnabled` (campaign-service#667). Needs the campaign-service create path (`cutoverOwnsCreate`), since
+ * the legacy creator ignores the fields, AND `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_DELIVERY_OPTIONS`, which follows
+ * campaign-service's own `LINKEDIN_ADS_DELIVERY_OPTIONS_ENABLED`: campaign-service refuses the fields while that is off.
+ */
+export function canSetLinkedInDeliveryOptions(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceLinkedInDeliveryOptions);
+}
+
+/**
  * Whether a create may select X (`twitter-ads`) and carry a `twitterConfig`.
  *
  * Needs the campaign-service create path to serve the create AND the X-create flag. The cutover
@@ -1384,6 +1404,7 @@ export class CampaignServiceClient {
         redditTargetingResolutionEnabled: canResolveRedditTargeting(),
         redditPlacementsEnabled: canSetRedditPlacements(),
         redditBudgetTypeEnabled: canSetRedditBudgetType(),
+        redditAdPerVariantEnabled: canSetRedditAdPerVariant(),
         redditPixelListEnabled: canListRedditPixels(),
         googleAssetUploadEnabled: canUseGoogleCreativeAssets(),
         metaCreativeEnabled: cutoverOwnsCreate(),
@@ -1403,6 +1424,7 @@ export class CampaignServiceClient {
         linkedInCarouselEnabled: canSetLinkedInCarousel(),
         linkedInDocumentEnabled: canSetLinkedInDocument(),
         linkedInBoostEnabled: canSetLinkedInBoost(),
+        linkedInDeliveryOptionsEnabled: canSetLinkedInDeliveryOptions(),
         microsoftAssetUploadEnabled: canUseMicrosoftCreativeAssets(),
         biddingEnabled: canCreateWithBidding(),
         microsoftScheduleEnabled: canCreateMicrosoftSchedule(),
@@ -1487,6 +1509,7 @@ export class CampaignServiceClient {
       redditTargetingResolutionEnabled: canResolveRedditTargeting(),
       redditPlacementsEnabled: canSetRedditPlacements(),
       redditBudgetTypeEnabled: canSetRedditBudgetType(),
+      redditAdPerVariantEnabled: canSetRedditAdPerVariant(),
       redditPixelListEnabled: canListRedditPixels(),
       googleAssetUploadEnabled: canUseGoogleCreativeAssets(),
       metaCreativeEnabled: cutoverOwnsCreate(),
@@ -1506,6 +1529,7 @@ export class CampaignServiceClient {
       linkedInCarouselEnabled: canSetLinkedInCarousel(),
       linkedInDocumentEnabled: canSetLinkedInDocument(),
       linkedInBoostEnabled: canSetLinkedInBoost(),
+      linkedInDeliveryOptionsEnabled: canSetLinkedInDeliveryOptions(),
       microsoftAssetUploadEnabled: canUseMicrosoftCreativeAssets(),
       biddingEnabled: canCreateWithBidding(),
       microsoftScheduleEnabled: canCreateMicrosoftSchedule(),
