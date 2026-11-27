@@ -599,6 +599,12 @@ describe.each(['linkedin', 'reddit', 'meta'] as const)('MonitoringTabComponent â
     expect(text(`${platform}-kpi-conversions`)).toBe('14');
     expect(el(`${platform}-campaign-fetch-failed`)).toBeNull();
     expect(el(`${platform}-totals-note`)).toBeNull();
+    expect(el(`${platform}-campaign-provenance`)).toBeNull();
+  });
+
+  it("tags an account-wide read's row with the project that recorded it, or as created outside LFX (#6209)", () => {
+    render([campaign({ campaignId: '1', recordedProjectId: null })]);
+    expect(text(`${platform}-campaign-provenance`)).toBe('Created outside LFX');
   });
 
   it.runIf(platform === 'linkedin')('shows the creative count as "Not read" when campaign-service did not read creatives', () => {

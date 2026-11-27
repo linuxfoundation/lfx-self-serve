@@ -1421,6 +1421,15 @@ environment:
   LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR:
     value: "false"
 
+  # Asks campaign-service's Google Ads, LinkedIn, Meta, Reddit and X monitors for EVERY campaign on
+  # the shared account, labeled by the project that recorded it or as created outside LFX (#6209,
+  # campaign-service#672 scope=account). Sent only for callers holding global_marketing_ops on the
+  # project; everyone else keeps the project-scoped read. Needs LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR on,
+  # and campaign-service's ACCOUNT_MONITOR_ACCOUNT_SCOPE_ENABLED on first (it answers 400 until then).
+  # Reads only, so turning it back off strands nothing.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR_ACCOUNT_SCOPE:
+    value: "false"
+
   # Set to 'live' to proxy WG Weekly Brief endpoints to committee-service (LFXV2-2175/2176).
   # The BFF refuses to serve mock brief data when NODE_ENV=production and this
   # isn't 'live' — leaving it unset here would 500 on every weekly-brief request.

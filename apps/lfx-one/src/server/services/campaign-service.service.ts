@@ -88,6 +88,7 @@ import type {
   CampaignTactic,
   CampaignProgramType,
   CampaignServiceAccountMonitor,
+  CampaignServiceMonitorScope,
   CampaignServiceAudience,
   CampaignServiceCampaign,
   CampaignServiceCampaignMetrics,
@@ -3843,9 +3844,10 @@ export class CampaignServiceClient {
     req: Request,
     projectSlug: string,
     accountId: string | undefined,
-    days: number
+    days: number,
+    scope?: CampaignServiceMonitorScope
   ): Promise<CampaignServiceAccountMonitor> {
-    return this.getAccountMonitor(req, 'google-ads', projectSlug, accountId, days);
+    return this.getAccountMonitor(req, 'google-ads', projectSlug, accountId, days, scope);
   }
 
   /**
@@ -3865,9 +3867,10 @@ export class CampaignServiceClient {
     req: Request,
     projectSlug: string,
     accountId: string | undefined,
-    days: number
+    days: number,
+    scope?: CampaignServiceMonitorScope
   ): Promise<CampaignServiceAccountMonitor> {
-    return this.getAccountMonitor(req, 'meta-ads', projectSlug, accountId, days);
+    return this.getAccountMonitor(req, 'meta-ads', projectSlug, accountId, days, scope);
   }
 
   /**
@@ -3884,9 +3887,10 @@ export class CampaignServiceClient {
     req: Request,
     projectSlug: string,
     accountId: string | undefined,
-    days: number
+    days: number,
+    scope?: CampaignServiceMonitorScope
   ): Promise<CampaignServiceAccountMonitor> {
-    return this.getAccountMonitor(req, 'linkedin-ads', projectSlug, accountId, days);
+    return this.getAccountMonitor(req, 'linkedin-ads', projectSlug, accountId, days, scope);
   }
 
   /** The Reddit Ads account monitor (`monitor-reddit-ads-account`). Same scoping and account rules as `getMetaAdsAccountMonitor`. */
@@ -3894,9 +3898,10 @@ export class CampaignServiceClient {
     req: Request,
     projectSlug: string,
     accountId: string | undefined,
-    days: number
+    days: number,
+    scope?: CampaignServiceMonitorScope
   ): Promise<CampaignServiceAccountMonitor> {
-    return this.getAccountMonitor(req, 'reddit-ads', projectSlug, accountId, days);
+    return this.getAccountMonitor(req, 'reddit-ads', projectSlug, accountId, days, scope);
   }
 
   /**
@@ -3916,8 +3921,14 @@ export class CampaignServiceClient {
    * the one monitor with a 409: more than 200 campaigns active in the window, or an account timezone
    * off the whole UTC hour (`reason` says which).
    */
-  public async getTwitterAdsAccountMonitor(req: Request, projectSlug: string, accountId: string, days: number): Promise<CampaignServiceAccountMonitor> {
-    return this.getAccountMonitor(req, 'twitter-ads', projectSlug, accountId, days);
+  public async getTwitterAdsAccountMonitor(
+    req: Request,
+    projectSlug: string,
+    accountId: string,
+    days: number,
+    scope?: CampaignServiceMonitorScope
+  ): Promise<CampaignServiceAccountMonitor> {
+    return this.getAccountMonitor(req, 'twitter-ads', projectSlug, accountId, days, scope);
   }
 
   /**
@@ -4356,13 +4367,18 @@ export class CampaignServiceClient {
     );
   }
 
-  /** The shared account-monitor GET. The provider segment comes from the calling method, never the request. */
+  /**
+   * The shared account-monitor GET. The provider segment comes from the calling method, never the request.
+   * `scope: 'account'` asks for every campaign on the account (linuxfoundation/lfx-v2-campaign-service#672,
+   * `global_marketing_ops` only); absent, the read is project-scoped as before.
+   */
   private async getAccountMonitor(
     req: Request,
     provider: CampaignServiceMonitorProvider,
     projectSlug: string,
     accountId: string | undefined,
-    days: number
+    days: number,
+    scope?: CampaignServiceMonitorScope
   ): Promise<CampaignServiceAccountMonitor> {
     // Only Google Ads (#5622) and LinkedIn (#5889) may omit the account; every other monitor reads a named account.
     if (projectSlug === '' || accountId === '' || (accountId === undefined && provider !== 'google-ads' && provider !== 'linkedin-ads')) {
@@ -4378,7 +4394,10 @@ export class CampaignServiceClient {
       'LFX_V2_CAMPAIGN_SERVICE',
       `/projects/${encodePathSegment(projectSlug)}/connection-${provider}/account-monitor`,
       'GET',
-      accountId === undefined ? { days } : { account_id: accountId, days }
+      {
+        ...(accountId === undefined ? { days } : { account_id: accountId, days }),
+        ...(scope === undefined ? {} : { scope }),
+      }
     );
   }
 

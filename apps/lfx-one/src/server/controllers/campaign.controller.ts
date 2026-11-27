@@ -8,6 +8,7 @@
 import { emailLinkDestinations, emailLinkMatchKey, hasVisibleHtmlText, sanitizeDisplayText, stripResourceLoadingHtml } from '@lfx-one/shared/utils/html-utils';
 import { canonicalHttpUrl } from '@lfx-one/shared/utils/url.utils';
 import { campaignSurveySourceTextTooLong, deriveNewsletterSlug, normalizeSponsors } from '@lfx-one/shared/utils/campaign.utils';
+import { campaignMonitorScope, withRecordedProjects } from '@lfx-one/shared/utils/campaign-monitor-scope.utils';
 import { twitterTweetTextError } from '@lfx-one/shared/utils/campaign-twitter.utils';
 import { resolveLinkedInTargetingProfileId, roundUsdToCentsLikeGo } from '@lfx-one/shared/utils/campaign-linkedin.utils';
 import { correctLinkedInGeoTargets, linkedInConfigKeyRefusal } from '@lfx-one/shared/utils/campaign-linkedin-config.utils';
@@ -162,6 +163,8 @@ import type {
   CampaignSSEEventType,
   CampaignMonitorConnections,
   CampaignServiceAccountMonitor,
+  CampaignServiceMonitorScope,
+  MonitorResponseWithCampaigns,
   CampaignServiceMonitorProvider,
   CampaignStatusUpdateRequest,
   CampaignStatusUpdateResult,
@@ -4483,7 +4486,7 @@ export class CampaignController {
           platformLabel: 'LinkedIn Ads',
           provider: 'linkedin-ads',
           days,
-          read: (projectSlug, accountId) => this.campaignServiceClient.getLinkedInAdsAccountMonitor(req, projectSlug, accountId, days),
+          read: (projectSlug, accountId, scope) => this.campaignServiceClient.getLinkedInAdsAccountMonitor(req, projectSlug, accountId, days, scope),
           toResponse: (payload) =>
             toLinkedInMonitorResponse(
               payload,
@@ -4503,7 +4506,7 @@ export class CampaignController {
         platformLabel: 'LinkedIn Ads',
         days,
         accountId,
-        read: (projectSlug) => this.campaignServiceClient.getLinkedInAdsAccountMonitor(req, projectSlug, accountId, days),
+        read: (projectSlug, scope) => this.campaignServiceClient.getLinkedInAdsAccountMonitor(req, projectSlug, accountId, days, scope),
         toResponse: (payload) => toLinkedInMonitorResponse(payload, label, new Date().toISOString()),
       });
       return;
@@ -4754,7 +4757,7 @@ export class CampaignController {
           platformLabel: 'Reddit Ads',
           provider: 'reddit-ads',
           days,
-          read: (projectSlug, accountId) => this.campaignServiceClient.getRedditAdsAccountMonitor(req, projectSlug, accountId, days),
+          read: (projectSlug, accountId, scope) => this.campaignServiceClient.getRedditAdsAccountMonitor(req, projectSlug, accountId, days, scope),
           toResponse: (payload) =>
             toRedditMonitorResponse(
               payload,
@@ -4774,7 +4777,7 @@ export class CampaignController {
         platformLabel: 'Reddit Ads',
         days,
         accountId,
-        read: (projectSlug) => this.campaignServiceClient.getRedditAdsAccountMonitor(req, projectSlug, accountId, days),
+        read: (projectSlug, scope) => this.campaignServiceClient.getRedditAdsAccountMonitor(req, projectSlug, accountId, days, scope),
         toResponse: (payload) => toRedditMonitorResponse(payload, label, new Date().toISOString()),
       });
       return;
@@ -5943,7 +5946,7 @@ export class CampaignController {
           platformLabel: 'Meta Ads',
           provider: 'meta-ads',
           days,
-          read: (projectSlug, accountId) => this.campaignServiceClient.getMetaAdsAccountMonitor(req, projectSlug, accountId, days),
+          read: (projectSlug, accountId, scope) => this.campaignServiceClient.getMetaAdsAccountMonitor(req, projectSlug, accountId, days, scope),
           toResponse: (payload) =>
             toMetaMonitorResponse(
               payload,
@@ -5963,7 +5966,7 @@ export class CampaignController {
         platformLabel: 'Meta Ads',
         days,
         accountId,
-        read: (projectSlug) => this.campaignServiceClient.getMetaAdsAccountMonitor(req, projectSlug, accountId, days),
+        read: (projectSlug, scope) => this.campaignServiceClient.getMetaAdsAccountMonitor(req, projectSlug, accountId, days, scope),
         toResponse: (payload) => toMetaMonitorResponse(payload, label, new Date().toISOString()),
       });
       return;
@@ -6075,7 +6078,8 @@ export class CampaignController {
       operation: 'twitter_monitor',
       platformLabel: 'X Ads',
       accountIdPattern: TWITTER_ADS_MONITOR_ACCOUNT_ID_PATTERN,
-      read: (projectSlug, accountId, days) => this.campaignServiceClient.getTwitterAdsAccountMonitor(req, projectSlug, accountId, days),
+      scoped: true,
+      read: (projectSlug, accountId, days, scope) => this.campaignServiceClient.getTwitterAdsAccountMonitor(req, projectSlug, accountId, days, scope),
     });
   }
 
@@ -6820,7 +6824,7 @@ export class CampaignController {
    * The campaign-service arm of the Google Ads, LinkedIn, Meta and Reddit monitor routes: read the account monitor and
    * answer in the legacy shape the Monitor and Optimize panels already render.
    */
-  private async serveLegacyShapedMonitor<T>(
+  private async serveLegacyShapedMonitor<T extends MonitorResponseWithCampaigns>(
     req: Request,
     res: Response,
     next: NextFunction,
@@ -6830,7 +6834,7 @@ export class CampaignController {
       days: number;
       /** The account asked for, for the log; NULL when campaign-service picks it (#5622). */
       accountId: string | null;
-      read: (projectSlug: string) => Promise<CampaignServiceAccountMonitor>;
+      read: (projectSlug: string, scope: CampaignServiceMonitorScope) => Promise<CampaignServiceAccountMonitor>;
       toResponse: (payload: CampaignServiceAccountMonitor) => T;
       /** A failure this caller answers itself; return undefined to use the shared mapping. */
       mapError?: (error: unknown) => unknown;
@@ -6840,11 +6844,13 @@ export class CampaignController {
     if (projectSlug === null) {
       return;
     }
-    const startTime = logger.startOperation(req, opts.operation, { days: opts.days, accountId: opts.accountId, viaCampaignService: true });
+    const scope = await this.accountMonitorScope(req, projectSlug, opts.operation);
+    const startTime = logger.startOperation(req, opts.operation, { days: opts.days, accountId: opts.accountId, viaCampaignService: true, scope });
 
     try {
-      const payload = await opts.read(projectSlug);
-      const data = opts.toResponse(payload);
+      const payload = await opts.read(projectSlug, scope);
+      const mapped = opts.toResponse(payload);
+      const data = scope === 'account' ? withRecordedProjects(mapped, payload) : mapped;
       logger.success(req, opts.operation, startTime, {
         viaCampaignService: true,
         campaigns: payload.campaigns?.length ?? 0,
@@ -6888,7 +6894,7 @@ export class CampaignController {
         platformLabel: 'Google Ads',
         days,
         accountId: ownAccountId,
-        read: (slug) => this.campaignServiceClient.getGoogleAdsAccountMonitor(req, slug, ownAccountId, days),
+        read: (slug, scope) => this.campaignServiceClient.getGoogleAdsAccountMonitor(req, slug, ownAccountId, days, scope),
         toResponse: (payload) => ({
           ...toGoogleMonitorResponse(payload, new Date().toISOString()),
           accountId: ownAccountId,
@@ -6903,7 +6909,7 @@ export class CampaignController {
       platformLabel: 'Google Ads',
       days,
       accountId: null,
-      read: (slug) => this.campaignServiceClient.getGoogleAdsAccountMonitor(req, slug, undefined, days),
+      read: (slug, scope) => this.campaignServiceClient.getGoogleAdsAccountMonitor(req, slug, undefined, days, scope),
       toResponse: (payload) => toRecordedCampaignsGoogleMonitorResponse(payload, new Date().toISOString()),
       mapError: (error) => (isAccountIdRequiredByUpstream(error) ? toMonitorConnectionError(priorState, 'Google Ads', operation) : undefined),
     });
@@ -6964,7 +6970,7 @@ export class CampaignController {
    * campaign-service that still requires LinkedIn's account, is `toSystemAccountRefusedError`: the tab
    * then shows the notice for the project's own state behind the fallback, as it did before.
    */
-  private async serveSystemAccountMonitor<T>(
+  private async serveSystemAccountMonitor<T extends MonitorResponseWithCampaigns>(
     req: Request,
     res: Response,
     next: NextFunction,
@@ -6973,7 +6979,7 @@ export class CampaignController {
       platformLabel: string;
       provider: CampaignServiceMonitorProvider;
       days: number;
-      read: (projectSlug: string, accountId: string | undefined) => Promise<CampaignServiceAccountMonitor>;
+      read: (projectSlug: string, accountId: string | undefined, scope: CampaignServiceMonitorScope) => Promise<CampaignServiceAccountMonitor>;
       toResponse: (payload: CampaignServiceAccountMonitor) => T;
     }
   ): Promise<void> {
@@ -6993,7 +6999,7 @@ export class CampaignController {
         platformLabel: opts.platformLabel,
         days: opts.days,
         accountId: ownAccountId,
-        read: (slug) => opts.read(slug, ownAccountId),
+        read: (slug, scope) => opts.read(slug, ownAccountId, scope),
         toResponse: opts.toResponse,
       });
       return;
@@ -7009,7 +7015,7 @@ export class CampaignController {
       platformLabel: opts.platformLabel,
       days: opts.days,
       accountId: fallback.accountId ?? null,
-      read: (slug) => opts.read(slug, fallback.accountId),
+      read: (slug, scope) => opts.read(slug, fallback.accountId, scope),
       toResponse: (payload) => ({ ...opts.toResponse(payload), systemAccountRead: toSystemAccountRead(payload, opts.platformLabel) }),
       mapError: (error) => (isSystemAccountRefusal(error) ? toSystemAccountRefusedError(error, opts.platformLabel, opts.operation) : undefined),
     });
@@ -7024,7 +7030,9 @@ export class CampaignController {
       operation: string;
       platformLabel: string;
       accountIdPattern: RegExp;
-      read: (projectSlug: string, accountId: string, days: number) => Promise<CampaignServiceAccountMonitor>;
+      /** True on X, whose monitor takes `scope` (#672); Microsoft's is account-wide already. */
+      scoped?: boolean;
+      read: (projectSlug: string, accountId: string, days: number, scope: CampaignServiceMonitorScope) => Promise<CampaignServiceAccountMonitor>;
     }
   ): Promise<void> {
     if (!isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMonitor)) {
@@ -7042,10 +7050,13 @@ export class CampaignController {
       return;
     }
     const days = this.parseMonitorDays(req);
-    const startTime = logger.startOperation(req, opts.operation, { days, accountId, viaCampaignService: true });
+    const scope = opts.scoped ? await this.accountMonitorScope(req, projectSlug, opts.operation) : undefined;
+    const startTime = logger.startOperation(req, opts.operation, { days, accountId, viaCampaignService: true, scope });
 
     try {
-      const data = toReportBackedMonitorResponse(await opts.read(projectSlug, accountId, days), new Date().toISOString());
+      const payload = await opts.read(projectSlug, accountId, days, scope);
+      const mapped = toReportBackedMonitorResponse(payload, new Date().toISOString());
+      const data = scope === 'account' ? withRecordedProjects(mapped, payload) : mapped;
       logger.success(req, opts.operation, startTime, {
         campaigns: data.campaigns.length,
         metricsAsOf: data.metricsAsOf,
@@ -7205,6 +7216,21 @@ export class CampaignController {
     kind: keyof typeof LINKEDIN_MARKETING_OPS_ACCESS_ERRORS = 'audiences'
   ): Promise<void> {
     await this.requireMarketingOpsAccess(req, projectSlug, operation, subject, LINKEDIN_MARKETING_OPS_ACCESS_ERRORS[kind]);
+  }
+
+  /**
+   * The scope of a campaign-service account-monitor read (#6209): `account` — every campaign on the shared ad
+   * account, whoever created it (linuxfoundation/lfx-v2-campaign-service#672) — only while
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR_ACCOUNT_SCOPE` is on and the caller holds `global_marketing_ops` on the
+   * project, the relation campaign-service admits it on. Anything else, a check that could not be made
+   * included, keeps the project-scoped read: the narrower view, never an error.
+   */
+  private async accountMonitorScope(req: Request, projectSlug: string, operation: string): Promise<CampaignServiceMonitorScope> {
+    const flagOn = isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMonitorAccountScope);
+    if (!flagOn) {
+      return undefined;
+    }
+    return campaignMonitorScope(flagOn, await this.googleMarketingOpsAccess(req, projectSlug, operation, 'the account-wide monitor read'));
   }
 
   /**

@@ -4321,6 +4321,11 @@ export type MetaPacingLabel = 'underspending' | 'normal' | 'constrained' | 'over
 export type MetaActionPriority = 'HIGH' | 'MED' | 'LOW';
 
 export interface MetaCampaignMetrics {
+  /**
+   * Account-wide reads only (#6209): the project campaign-service records the campaign for, or `null`
+   * when it was created outside LFX. ABSENT on a project-scoped read, whose rows are all the project's.
+   */
+  recordedProjectId?: string | null;
   campaignId: string;
   campaignName: string;
   status: string;
@@ -6461,6 +6466,11 @@ export type PacingLabel = 'underspending' | 'normal' | 'constrained' | 'overspen
 export type ActionPriority = 'HIGH' | 'MED' | 'LOW';
 
 export interface CampaignMetrics {
+  /**
+   * Account-wide reads only (#6209): the project campaign-service records the campaign for, or `null`
+   * when it was created outside LFX. ABSENT on a project-scoped read, whose rows are all the project's.
+   */
+  recordedProjectId?: string | null;
   name: string;
   shortName: string;
   eventName: string;
@@ -6890,6 +6900,18 @@ export type CampaignServiceMonitorPriority = 'HIGH' | 'MED' | 'LOW';
 export type AccountMonitorConflictReason = (typeof ACCOUNT_MONITOR_CONFLICT_REASONS)[number];
 
 /** campaign-service `account-monitor-campaign`. */
+/**
+ * The account-monitor scope campaign-service is asked for (linuxfoundation/lfx-v2-campaign-service#672).
+ * `account` returns every campaign on the shared ad account, whoever created it, and only
+ * `global_marketing_ops` on the project may ask for it; `undefined` is the project-scoped read.
+ */
+export type CampaignServiceMonitorScope = 'account' | undefined;
+
+/** Any mapped account-monitor response: its rows carry the platform campaign id an account-wide read labels by. */
+export interface MonitorResponseWithCampaigns {
+  campaigns: { campaignId: string; recordedProjectId?: string | null }[];
+}
+
 export interface CampaignServiceAccountMonitorCampaign {
   platform_campaign_id: string;
   name: string;
@@ -6916,6 +6938,11 @@ export interface CampaignServiceAccountMonitorCampaign {
   /** A placeholder `normal` when `pacing_unknown` or `fetch_failed` is true. */
   pacing_label: CampaignServiceMonitorPacingLabel;
   campaign_url?: string;
+  /**
+   * `scope=account` reads only (linuxfoundation/lfx-v2-campaign-service#672): the project campaign-service
+   * records this campaign for; absent when none does (created outside LFX).
+   */
+  recorded_project_id?: string;
 }
 
 /** campaign-service `account-monitor-action-item`, shared by the ad monitors and the HubSpot one. */
@@ -7457,6 +7484,8 @@ export interface AccountMonitorPanelReadState {
 
 /** One campaign row of an ad-platform panel. Every metric cell is a dash when `fetchFailed`. */
 export interface AccountMonitorCampaignRowView {
+  /** The account-wide read's provenance tag ("Created outside LFX", or the recording project); null otherwise. */
+  provenance: string | null;
   campaignId: string;
   /** The row's heading: the event name on LinkedIn, the campaign name elsewhere. */
   title: string;
@@ -7496,6 +7525,8 @@ export interface GoogleMonitorKpisView {
 
 /** One row of the Google Ads campaign table. */
 export interface GoogleMonitorCampaignRowView {
+  /** The account-wide read's provenance tag ("Created outside LFX", or the recording project); null otherwise. */
+  provenance: string | null;
   campaignId: string;
   title: string;
   /** The full campaign name, copied by the row's copy button. */
@@ -7748,6 +7779,11 @@ export interface LinkedInCreativeMetrics {
 }
 
 export interface LinkedInCampaignMetrics {
+  /**
+   * Account-wide reads only (#6209): the project campaign-service records the campaign for, or `null`
+   * when it was created outside LFX. ABSENT on a project-scoped read, whose rows are all the project's.
+   */
+  recordedProjectId?: string | null;
   campaignId: string;
   campaignName: string;
   eventName: string;
@@ -7821,6 +7857,11 @@ export type RedditPacingLabel = 'underspending' | 'normal' | 'constrained' | 'ov
 export type RedditActionPriority = 'HIGH' | 'MED' | 'LOW';
 
 export interface RedditCampaignMetrics {
+  /**
+   * Account-wide reads only (#6209): the project campaign-service records the campaign for, or `null`
+   * when it was created outside LFX. ABSENT on a project-scoped read, whose rows are all the project's.
+   */
+  recordedProjectId?: string | null;
   campaignId: string;
   campaignName: string;
   status: string;

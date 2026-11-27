@@ -1003,6 +1003,22 @@ export enum ServerFeatureFlag {
   CampaignServiceMonitor = 'LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR',
 
   /**
+   * Asks campaign-service's account monitors for EVERY campaign on the shared ad account (#6209), not only
+   * the ones recorded for the project, with each row saying which project recorded it or that it was
+   * created outside LFX (linuxfoundation/lfx-v2-campaign-service#672, `scope=account`). Google Ads,
+   * LinkedIn, Meta, Reddit and X; Microsoft is account-wide already. Only meaningful with
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR` on, since only that arm reads campaign-service.
+   *
+   * Sent only for a caller holding `global_marketing_ops` on the project (the LF marketing team), the
+   * relation campaign-service admits it on; everyone else, and a check that cannot be made, keeps the
+   * project-scoped read. Turn it on only once campaign-service has ACCOUNT_MONITOR_ACCOUNT_SCOPE_ENABLED
+   * on in the same environment: until then campaign-service answers `scope=account` with a 400 and the
+   * panel shows an error. That flag stays off until the #897 scope change is agreed. A read, so turning
+   * it back off strands nothing. Same accepted values as the flags above.
+   */
+  CampaignServiceMonitorAccountScope = 'LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR_ACCOUNT_SCOPE',
+
+  /**
    * Gates `committee.service.ts`'s `updateCommittee` (the `chat_webhook_url` write) and
    * `weekly-brief.service.ts`'s `shareToSlack` (the Slack send) server-side. `WG_WEEKLY_BRIEF_SLACK_FLAG`
    * (`wg-weekly-brief-slack`, an OpenFeature/GrowthBook flag) only gates the Angular UI — the

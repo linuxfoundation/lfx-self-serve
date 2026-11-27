@@ -25,7 +25,7 @@ import {
   MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE,
   parseCampaignName,
 } from '@lfx-one/shared/constants';
-import { formatPercent } from '@lfx-one/shared/utils';
+import { campaignMonitorProvenance, formatPercent } from '@lfx-one/shared/utils';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 
@@ -1149,6 +1149,7 @@ export class MonitoringTabComponent implements OnInit {
           pacingBarClass: pacingKnown ? this.pacingClass(campaign) : 'bg-gray-300',
           pacingBarWidth: pacingKnown ? Math.min(campaign.pacingPct, 100) : 0,
           pacingText,
+          provenance: campaignMonitorProvenance(campaign.recordedProjectId),
         };
       });
     });
@@ -1253,6 +1254,8 @@ export class MonitoringTabComponent implements OnInit {
         // A failed row's budget was not read either (it arrives as 0), so it is a dash, not 0.00.
         budget: camp.fetchFailed ? '—' : formats.currency(camp.totalBudget || camp.dailyBudget),
         creatives: null,
+        // Account-wide reads only (#6209): which project recorded it, or that it was created outside LFX.
+        provenance: campaignMonitorProvenance(camp.recordedProjectId),
       };
       // Metrics that could not be read are not zeros: every metric cell is a dash.
       const extension = extendRow?.(camp) ?? {};

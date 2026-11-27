@@ -296,6 +296,13 @@
                         aria-label="Copy campaign name to find in Google Ads">
                         <i [class]="copiedName() === row.name ? 'fa-light fa-check text-xs text-green-500' : 'fa-light fa-copy text-xs'" aria-hidden="true"></i>
                       </button>
+                      @if (row.provenance) {
+                        <span
+                          class="inline-flex shrink-0 items-center rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700"
+                          data-testid="monitoring-campaign-provenance">
+                          {{ row.provenance }}
+                        </span>
+                      }
                     </div>
                     <p class="text-xs text-gray-400">{{ row.shortName }}</p>
                   </td>
@@ -915,6 +922,13 @@
                         title="This campaign's metrics could not be read"
                         [attr.data-testid]="panel + '-campaign-fetch-failed'">
                         Couldn't read
+                      </span>
+                    }
+                    @if (row.provenance) {
+                      <span
+                        class="inline-flex shrink-0 items-center rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700"
+                        [attr.data-testid]="panel + '-campaign-provenance'">
+                        {{ row.provenance }}
                       </span>
                     }
                   </div>

@@ -209,7 +209,7 @@ describe('Google monitor campaign-service arm through the real route, authorizat
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ campaigns: [], dateRange: { mode: 'last_30_days' } });
     expect(checkSingleAccess).toHaveBeenCalledWith(expect.anything(), { resource: 'project', id: 'acme-foundation-uid', access: 'campaign_manager' });
-    expect(getGoogleAdsAccountMonitor).toHaveBeenCalledWith(expect.anything(), 'acme-foundation', ACCOUNT, 30);
+    expect(getGoogleAdsAccountMonitor).toHaveBeenCalledWith(expect.anything(), 'acme-foundation', ACCOUNT, 30, undefined);
     expect(readMonitor).not.toHaveBeenCalled();
   });
 
