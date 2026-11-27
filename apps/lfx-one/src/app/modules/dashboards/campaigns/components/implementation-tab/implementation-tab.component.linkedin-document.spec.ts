@@ -204,6 +204,9 @@ describe('ImplementationTabComponent linkedin document', () => {
     c(f)['onLinkedInFormatSelect']('document');
     deleting.set({ briefId: 'b-1', id: PDF });
     expect(c(f)['createBlockedReason']()).toContain('is being deleted');
+    // A PDF picked after the delete started is refused, not queued.
+    c(f)['onLinkedInDocumentUpload']([new File([new Uint8Array(16)], 'deck.pdf', { type: 'application/pdf' })]);
+    expect(enqueueCreativeAssetUploads).not.toHaveBeenCalled();
     deleting.set(null);
 
     // Taken off the ad: cleared, with nothing re-read.

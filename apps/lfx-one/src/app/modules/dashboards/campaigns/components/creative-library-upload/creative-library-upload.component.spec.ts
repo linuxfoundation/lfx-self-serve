@@ -127,7 +127,6 @@ describe('CreativeLibraryUploadComponent', () => {
   // rows in `campaign-creative-asset-queue.utils.spec.ts`.
   it('holds Retry, the pickers and their change while a stored asset is being deleted', () => {
     setQueue([item('d', 'failed')]);
-    const retryButton = q('creative-library-upload-retry-d')?.querySelector('button') as HTMLButtonElement;
     deleting.set({ briefId: BRIEF_ID, id: 'd-1' });
     fixture.detectChanges();
 
@@ -135,8 +134,12 @@ describe('CreativeLibraryUploadComponent', () => {
     expect((q('creative-library-upload-files') as HTMLInputElement).disabled).toBe(true);
     expect((q('creative-library-upload-folder') as HTMLInputElement).disabled).toBe(true);
     expect(q('creative-library-upload-held')).not.toBeNull();
-    retryButton.click();
-    pick('creative-library-upload-files', [new File([new Uint8Array(4)], 'a.png', { type: 'image/png' })]);
+    // A click or a change that lands after the delete started reaches the handlers directly, and they refuse it.
+    const component = fixture.componentInstance as unknown as Record<string, (...args: unknown[]) => void>;
+    component['retry'](item('d', 'failed'));
+    const input = document.createElement('input');
+    Object.defineProperty(input, 'files', { value: [new File([new Uint8Array(4)], 'a.png', { type: 'image/png' })] });
+    component['onFilesPicked']({ target: input }, false);
     expect(service['retryCreativeAssetUpload']).not.toHaveBeenCalled();
     expect(service['enqueueCreativeAssetUploads']).not.toHaveBeenCalled();
   });
