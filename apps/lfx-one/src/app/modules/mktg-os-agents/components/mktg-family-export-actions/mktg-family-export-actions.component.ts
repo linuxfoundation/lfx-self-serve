@@ -9,6 +9,9 @@ import { ButtonComponent } from '@components/button/button.component';
 import { MessageComponent } from '@components/message/message.component';
 import {
   MKTG_FAMILY_APPROVAL_REQUIRED_MESSAGE,
+  MKTG_FAMILY_EXPORT_ACTIVE,
+  MKTG_FAMILY_EXPORT_ACTIVE_TTL_MS,
+  MKTG_FAMILY_EXPORT_FOLLOWED_MESSAGES,
   MKTG_FAMILY_EXPORT_HIGHLIGHT_MS,
   MKTG_FAMILY_EXPORT_FORMAT_HINT,
   MKTG_DOCUMENT_TYPES,
@@ -21,9 +24,11 @@ import {
   MKTG_POLL_RETRYING_TEXT,
   MKTG_RUN_POLL,
   MKTG_SLIDES_EXPORT_FAILURE_MESSAGES,
+  MKTG_SLIDES_EXPORT_POLL,
   MKTG_SLIDES_EXPORT_START_MESSAGES,
 } from '@lfx-one/shared/constants';
 import {
+  MktgFamilyExportFollowState,
   MktgFamilyExportLastResponse,
   MktgFamilyExportRecord,
   MktgFamilyExportRunUpdate,
@@ -32,7 +37,13 @@ import {
   MktgSlidesExportMode,
   MktgSlidesExportPhase,
 } from '@lfx-one/shared/interfaces';
-import { mktgFamilyExportAgentKeys, mktgPrintDocumentTitle } from '@lfx-one/shared/utils';
+import {
+  describeMktgFamilyExportRunning,
+  mktgFamilyExportAgentKeys,
+  mktgFamilyExportIdentity,
+  mktgPrintDocumentTitle,
+  readMktgFamilyExportActiveConflict,
+} from '@lfx-one/shared/utils';
 import { MktgFamilyExportService } from '@services/mktg-family-export.service';
 import { MktgPrintService } from '@services/mktg-print.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -92,7 +103,10 @@ export class MktgFamilyExportActionsComponent {
   protected readonly lookupRetrying = signal(false);
   protected readonly retryingText = MKTG_POLL_RETRYING_TEXT;
   protected readonly phase = signal<MktgSlidesExportPhase>('idle');
+  /** What this card's own Slides run said when it failed. The run sets it; a new start or another project or family clears it. */
   protected readonly message = signal('');
+  /** Why the PDF could not be prepared. Only the PDF's preparation and its retry click write it, so no Slides read erases it or the retry. */
+  protected readonly pdfError = signal('');
   protected readonly partialLink = signal<string | null>(null);
   protected readonly completed = signal<MktgFamilyExportRecord | null>(null);
   protected readonly printing = signal(false);
@@ -105,12 +119,32 @@ export class MktgFamilyExportActionsComponent {
   /** True from the lookup's end until the PDF is prepared and mounted (or failed): the card's checking line stays and Download PDF stays disabled meanwhile. */
   protected readonly pdfPending = signal(false);
   private pdfScope = '';
+  /** What the card says once an export it followed is over; '' otherwise. */
+  protected readonly followedNote = signal('');
+  /** The export this card follows (one it did not start here), or null. */
+  private followed: MktgFamilyExportFollowState | null = null;
+  /**
+   * True from a refused start whose body named nobody until the lookup answers: an export holds the family and the
+   * card cannot say which, so Slides and its chooser wait for the server. Follow state, written where `followed` is.
+   */
+  protected readonly conflictPending = signal(false);
 
   protected readonly writer = computed(() => this.context.canWrite());
   protected readonly target = this.initTarget();
   protected readonly busy = computed(() => this.phase() === 'running' || this.printing());
   protected readonly canExport = this.initCanExport();
   protected readonly canPrint = this.initCanPrint();
+  /** The export in flight that this card did not start, as the server last said; this card's own run reports itself. */
+  protected readonly following = computed(() => (this.phase() === 'running' ? null : (this.lookup()?.running ?? null)));
+  protected readonly followingLead = this.initFollowingLead();
+  /** One export of a family at a time: while another holds it, a start would only be refused. The PDF is unaffected. */
+  protected readonly canExportSlides = computed(() => this.canExport() && !this.following() && !this.conflictPending());
+  /**
+   * This card's own run's outcome (the chooser, its ready line, its failure and incomplete deck) gives way to an
+   * export it follows and to that export's end. It is derived, never erased: the run's signals stay the run's.
+   */
+  protected readonly superseded = computed(() => !!this.following() || !!this.followedNote());
+  protected readonly shownPhase = computed<MktgSlidesExportPhase>(() => (this.superseded() ? 'idle' : this.phase()));
   protected readonly last = computed(() => this.lookup()?.last ?? this.completed());
   protected readonly memberVersions = this.initMemberVersions();
   protected readonly skipped = this.initSkipped();
@@ -163,14 +197,16 @@ export class MktgFamilyExportActionsComponent {
   }
 
   protected export(): void {
-    if (!this.canExport()) return;
+    if (!this.canExportSlides()) return;
+    this.endFollow();
     if (this.last()) this.phase.set('choosing');
     else this.choose('create');
   }
 
   protected choose(mode: MktgSlidesExportMode): void {
     const target = this.target();
-    if (!target || !this.canExport()) return;
+    if (!target || !this.canExportSlides()) return;
+    this.endFollow();
     this.message.set('');
     this.partialLink.set(null);
     this.watch(this.api.run(target, mode));
@@ -189,13 +225,18 @@ export class MktgFamilyExportActionsComponent {
       return;
     }
     this.printing.set(true);
-    this.message.set('');
+    this.pdfError.set('');
     this.pdfRetry.next();
   }
 
   /** Prepare independently of busy(): finishing a fetch must never trigger another fetch or print. */
   private initPdf(): void {
-    const scope = computed(() => ({ target: this.target(), writer: this.writer(), lookup: this.lookup(), checking: this.checking() }));
+    // Who is exporting (`running`) is not part of the PDF's scope, so following an export does not prepare the PDF
+    // again. The rest of the lookup is: a new last export still does, when the followed export ends with a deck.
+    const scope = computed(() => {
+      const lookup = this.lookup();
+      return { target: this.target(), writer: this.writer(), lookup: lookup && { ...lookup, running: null }, checking: this.checking() };
+    });
     toObservable(scope)
       .pipe(
         distinctUntilChanged((a, b) => JSON.stringify(a) === JSON.stringify(b)),
@@ -206,6 +247,7 @@ export class MktgFamilyExportActionsComponent {
           this.pdfScope = '';
           this.pdfPreparedScope.set('');
           this.printing.set(false);
+          this.pdfError.set('');
           if (!target || !writer || checking || !lookup?.currentMembers.length) return of(null);
           const key = JSON.stringify([target, lookup.currentMembers]);
           return this.pdfRetry.pipe(
@@ -223,7 +265,7 @@ export class MktgFamilyExportActionsComponent {
                 }),
                 catchError((error: unknown) => {
                   console.error('[mktg-family-export] PDF could not be prepared', error);
-                  this.message.set('The approved family could not be prepared for PDF. Check the current approvals and try again.');
+                  this.pdfError.set('The approved family could not be prepared for PDF. Check the current approvals and try again.');
                   return of(null);
                 })
               );
@@ -273,7 +315,14 @@ export class MktgFamilyExportActionsComponent {
   }
 
   private initCanPrint(): Signal<boolean> {
-    return computed(() => this.canExport() && !this.pdfPending() && (this.pdfReady() || !!this.message()));
+    return computed(() => this.canExport() && !this.pdfPending() && (this.pdfReady() || !!this.pdfError()));
+  }
+
+  private initFollowingLead(): Signal<string> {
+    return computed(() => {
+      const running = this.following();
+      return running ? describeMktgFamilyExportRunning(running) : '';
+    });
   }
 
   private initMemberVersions(): Signal<string> {
@@ -313,6 +362,7 @@ export class MktgFamilyExportActionsComponent {
           this.message.set('');
           this.lookupError.set('');
           this.lookupRetrying.set(false);
+          this.endFollow();
           if (!target || !writer) {
             this.checking.set(false);
             return of(null);
@@ -326,10 +376,13 @@ export class MktgFamilyExportActionsComponent {
               // reconnect) behind one plain line; a final failure keeps its message. No button re-reads.
               let first = true;
               let denied = false;
-              const read = () => {
+              const read = (poll: boolean) => {
                 // A refused lookup is latched for this target (RFC 9110 §15.5.2 (401) and §15.5.4 (403); latching a 401
                 // too is the operator's choice, since a session-expiry 401 needs a sign-in, not a poll): no wake re-reads it.
                 if (denied) return EMPTY;
+                // The poller asks `shouldContinue` after a good read only, so a follow whose reads keep failing ends its
+                // scheduled reads here, at the same deadline. The plain line stays; a first read and a wake still read.
+                if (poll && this.followed && Date.now() >= this.followed.until) return EMPTY;
                 // Only a first read with nothing loaded shows the checking line: a retry keeps the plain line until it
                 // succeeds (no flicker), and a re-read after an export keeps the loaded lookup usable (law 5) instead of
                 // entering a checking state that a filtered transient failure could never leave.
@@ -340,24 +393,28 @@ export class MktgFamilyExportActionsComponent {
                 const fresh = refresh || !first;
                 first = false;
                 return this.api.last(target, fresh).pipe(
-                  tap(() => {
+                  tap((value) => {
                     this.lookupError.set('');
                     this.lookupRetrying.set(false);
+                    this.trackFollow(value);
                   }),
                   catchError((error: unknown) => {
                     if (isTransientHttpError(error)) return throwError(() => error);
                     denied = error instanceof HttpErrorResponse && (error.status === 401 || error.status === 403);
                     this.lookupRetrying.set(false);
                     this.lookupError.set('Could not check for an earlier deck. Export is unavailable here, so no second deck is made by mistake.');
+                    this.trackFollow(null);
                     return of(null);
                   })
                 );
               };
               return createVisibilityPoll(this.document, read, {
-                intervalMs: 0,
+                intervalMs: MKTG_SLIDES_EXPORT_POLL.intervalMs,
                 backoffBaseMs: MKTG_RUN_POLL.intervalMs,
                 backoffMaxMs: MKTG_POLL_MAX_BACKOFF_MS,
-                shouldContinue: () => false,
+                // One read, unless it reports an export this card did not start: that one is read again on the export's
+                // own cadence until the server says it is over, and never past the longest a marker can hold the family.
+                shouldContinue: (value) => !!value?.running && this.phase() !== 'running' && !!this.followed && Date.now() < this.followed.until,
               }).pipe(
                 tap((event) => {
                   if (event.kind === 'error') this.lookupRetrying.set(true);
@@ -413,6 +470,47 @@ export class MktgFamilyExportActionsComponent {
     return true;
   }
 
+  /**
+   * Follow an export this card did not start (another writer's, or this writer's from another tab or before a
+   * reload), by the server's answer alone. While the answer names one the card shows who and since when, and the
+   * lookup is read again until it names none. Then the card says how it ended: its deck is the family's last export
+   * (a different export than when following began, or one made after that start), or nothing was kept. This card's
+   * own run is never followed: it reports itself.
+   *
+   * It runs on every read of the lookup, the follow poll's included, so it writes follow state only (`followed`,
+   * `followedNote`, `conflictPending`). What the run and the PDF preparation set (`phase`, `message`, `partialLink`,
+   * `pdfError`) is theirs alone; the card hides the run's outcome while it is `superseded`.
+   */
+  private trackFollow(next: MktgFamilyExportLastResponse | null): void {
+    // The lookup answered (an export, none, or a final refusal that holds Export by itself): nothing is pending.
+    this.conflictPending.set(false);
+    const running = this.phase() === 'running' ? null : (next?.running ?? null);
+    if (running) {
+      if (this.followed?.startedAt !== running.startedAt) {
+        this.followed = {
+          startedAt: running.startedAt,
+          baseline: mktgFamilyExportIdentity(next?.last ?? null),
+          until: Date.now() + MKTG_FAMILY_EXPORT_ACTIVE_TTL_MS,
+        };
+      }
+      this.followedNote.set('');
+      return;
+    }
+    const followed = this.followed;
+    this.followed = null;
+    if (!followed || !next) return;
+    const last = next.last;
+    const finished = !!last && (mktgFamilyExportIdentity(last) !== followed.baseline || Date.parse(last.exportedAt) >= Date.parse(followed.startedAt));
+    this.followedNote.set(MKTG_FAMILY_EXPORT_FOLLOWED_MESSAGES[finished ? 'done' : 'ended']);
+  }
+
+  /** This card moves on (its own export, another project or family): nothing is followed and no outcome is shown. */
+  private endFollow(): void {
+    this.followed = null;
+    this.followedNote.set('');
+    this.conflictPending.set(false);
+  }
+
   private watch(run: ReturnType<MktgFamilyExportService['run']>): void {
     this.run?.unsubscribe();
     this.run = run.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
@@ -423,19 +521,45 @@ export class MktgFamilyExportActionsComponent {
         if (result.status === 'ready') {
           this.completed.set(result.record);
           this.phase.set('done');
-          this.lookup.update((value) => (value ? { ...value, last: result.record, stale: false } : value));
+          // The server released the family before it answered: this card's own export is over.
+          this.lookup.update((value) => (value ? { ...value, last: result.record, stale: false, running: null } : value));
           this.retry.next(true);
         } else if (result.status === 'failed') {
           this.phase.set('failed');
           this.message.set(result.message);
           this.partialLink.set(result.deckLink);
+          this.lookup.update((value) => (value ? { ...value, running: null } : value));
+          // As on `ready`: a read that left while this export still held the family is dropped, and `last` is read again.
+          this.retry.next(true);
         }
       },
       error: (error: unknown) => {
-        console.error('[mktg-family-export] Export could not be completed', error);
+        const body: unknown = error instanceof HttpErrorResponse ? error.error : null;
         const code = error instanceof HttpErrorResponse ? error.error?.code : '';
+        if (code === MKTG_FAMILY_EXPORT_ACTIVE) {
+          // An answer, not a failure: another start won and nothing was sent. The card follows that export.
+          this.phase.set('idle');
+          const conflict = readMktgFamilyExportActiveConflict(body);
+          if (conflict) {
+            const running = { startedBy: conflict.startedBy, startedByViewer: conflict.startedByViewer, startedAt: conflict.startedAt };
+            this.lookup.update((value) => (value ? { ...value, running } : value));
+            this.trackFollow(this.lookup());
+          } else {
+            // A body that does not validate names nobody: one plain line, Slides and its chooser held (the family is
+            // taken, whoever took it), and the read below says who holds the family, or how that export ended if it
+            // is already over.
+            this.followed = { startedAt: '', baseline: mktgFamilyExportIdentity(this.last()), until: Date.now() + MKTG_FAMILY_EXPORT_ACTIVE_TTL_MS };
+            this.followedNote.set(MKTG_SLIDES_EXPORT_START_MESSAGES[MKTG_FAMILY_EXPORT_ACTIVE]);
+            this.conflictPending.set(true);
+          }
+          this.retry.next(true);
+          return;
+        }
+        console.error('[mktg-family-export] Export could not be completed', error);
         this.message.set(MKTG_SLIDES_EXPORT_START_MESSAGES[code] ?? MKTG_SLIDES_EXPORT_FAILURE_MESSAGES.start);
         this.phase.set('failed');
+        // The server is the only truth about what holds the family now: an export this card lost track of may still be running.
+        this.retry.next(true);
       },
     });
   }

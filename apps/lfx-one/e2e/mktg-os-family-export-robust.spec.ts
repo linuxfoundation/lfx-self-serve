@@ -39,6 +39,32 @@ for (const width of [1440, 1280, 390]) {
   });
 }
 
+for (const width of [1440, 390]) {
+  test(`Family export structure while another export holds the family at ${width}px`, async ({ page, isMobile }, info) => {
+    await openFamilyExports(page, { existing: true, running: { startedBy: 'Dana Example', startedByViewer: false, startedAt: '2026-11-27T10:00:00.000Z' } });
+    await page.setViewportSize({ width, height: 1000 });
+    // #4443: the shell settles before any geometry is read, as in the structure test above.
+    if (width === 390) await expect(page.getByTestId('main-content')).toHaveCSS('margin-left', isMobile ? '0px' : '56px');
+    const slot = page.getByTestId('family-export-actions');
+    // One live region, with the one status line of the export this card follows inside it.
+    await expect(slot.locator('[aria-live="polite"]')).toHaveCount(1);
+    await expect(slot.locator('[aria-live="polite"]').getByTestId('family-export-following')).toHaveCount(1);
+    await expect(slot.getByTestId('family-export-following')).toHaveAttribute('role', 'status');
+    // Both actions stay in place: Slides held, PDF usable; no chooser, no error, and the last export still linked.
+    await expect(slot.getByTestId('family-export-slides').getByRole('button')).toBeDisabled();
+    await expect(slot.getByTestId('family-export-pdf').getByRole('button')).toBeEnabled();
+    for (const absent of ['update', 'create', 'cancel', 'error', 'followed']) await expect(slot.getByTestId(`family-export-${absent}`)).toHaveCount(0);
+    await expect(slot.getByTestId('family-export-last-link')).toHaveCount(1);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    const line = await slot.getByTestId('family-export-following').boundingBox();
+    const card = await slot.boundingBox();
+    expect(line).not.toBeNull();
+    expect(card).not.toBeNull();
+    if (line && card) expect(line.x + line.width).toBeLessThanOrEqual(card.x + card.width + 0.5);
+    await page.screenshot({ path: info.outputPath(`family-export-following-${width}.png`), fullPage: true });
+  });
+}
+
 test('Family PDF book structure: the portrait grammar’s frames with the family’s testid contract', async ({ page }, info) => {
   await stubMktgPrintFrame(page);
   const controls = await openFamilyExports(page, { allAssets: true, holdPrint: true });

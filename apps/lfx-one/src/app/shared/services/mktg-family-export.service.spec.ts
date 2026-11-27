@@ -43,6 +43,31 @@ describe('Family export client', () => {
     expect(error).toHaveBeenCalled();
   });
 
+  it('passes on who is exporting only as validated display facts, and reads an answer without them as nothing running', () => {
+    const read = (body: Record<string, unknown>) => {
+      let running: unknown = 'unread';
+      service.last(target, true).subscribe((value) => (running = value.running));
+      http.expectOne((request) => request.url.endsWith('/family/last')).flush({ last: null, currentMembers: [], skippedMembers: [], stale: false, ...body });
+      return running;
+    };
+    const startedAt = '2026-11-27T10:00:00.000Z';
+    expect(read({})).toBeNull();
+    expect(read({ running: null })).toBeNull();
+    expect(read({ running: { startedBy: 'Dana Example', startedByViewer: false, startedAt } })).toEqual({
+      startedBy: 'Dana Example',
+      startedByViewer: false,
+      startedAt,
+    });
+    // A name that is an email is dropped, the export is still reported; facts that are not facts report nothing.
+    expect(read({ running: { startedBy: 'dana@example.com', startedByViewer: false, startedAt, sessionId: 'never-shown' } })).toEqual({
+      startedBy: null,
+      startedByViewer: false,
+      startedAt,
+    });
+    expect(read({ running: { startedBy: 'Dana Example', startedByViewer: 'no', startedAt } })).toBeNull();
+    expect(read({ running: { startedBy: 'Dana Example', startedByViewer: false, startedAt: 'yesterday' } })).toBeNull();
+  });
+
   it('keeps one run per family after the page leaves and polls the exact signed snapshot to ready', async () => {
     vi.useFakeTimers();
     const run = service.run(target, 'create');
