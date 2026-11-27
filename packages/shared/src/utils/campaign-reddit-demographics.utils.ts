@@ -10,7 +10,9 @@ import {
   REDDIT_SCHEDULE_WINDOW_KEYS,
 } from '../constants/campaign.constants';
 import type {
+  CampaignRedditDemographicsBlock,
   RedditConfigRefusal,
+  RedditDemographicsBlockInput,
   RedditDemographicsDraft,
   RedditDemographicsField,
   RedditGender,
@@ -176,7 +178,8 @@ export function redditDemographicsHeld(draft: RedditDemographicsDraft): boolean 
 
 /**
  * The `redditConfig` keys a create carries: nothing unless the capability is an explicit yes, and then only the choices
- * that differ from their default, so nothing changes for a create until one is set.
+ * that differ from their default, so nothing changes for a create until one is set. Choices the capability does not
+ * confirm are held by {@link redditDemographicsBlock} instead, never dropped here unseen.
  */
 export function redditDemographicsField(draft: RedditDemographicsDraft, enabled: boolean | null): RedditDemographicsField {
   if (!redditDemographicsCapability(enabled)) return {};
@@ -196,6 +199,36 @@ export function redditDemographicsDraftRefusal(draft: RedditDemographicsDraft, e
   const field = redditDemographicsField(draft, enabled);
   if (Object.keys(field).length === 0) return null;
   return redditDemographicsRefusal(field, true)?.message ?? null;
+}
+
+/**
+ * Why Create is held for gender, language or dayparting choices the draft holds but the request cannot carry, or
+ * `null`. Held rather than dropped, because they change who the campaign reaches and when. An explicit no
+ * (`restricted`: the deployment) offers Remove, since the editor is hidden; while the answer is out or failed, Create
+ * waits or offers Retry, as `redditTargetingExclusionsBlock` does. Choices at their defaults hold nothing.
+ */
+export function redditDemographicsBlock(input: RedditDemographicsBlockInput): CampaignRedditDemographicsBlock | null {
+  if (!redditDemographicsHeld(input.demographics) || redditDemographicsCapability(input.enabled)) return null;
+  if (input.enabled === false) {
+    return {
+      kind: 'restricted',
+      message: 'Gender, language and dayparting targeting is not on for Reddit on this deployment. Remove the choices to create the campaign.',
+    };
+  }
+  if (input.createCapabilityRead === 'pending') {
+    return { kind: 'pending', message: 'Checking whether Reddit gender, language and dayparting choices can be sent. Create waits so they are not dropped.' };
+  }
+  if (!input.briefId) {
+    return {
+      kind: 'unsaved',
+      message: "Reddit gender, language and dayparting choices can't be checked until this brief is saved. Save the brief, or remove them.",
+    };
+  }
+  return {
+    kind: 'failed',
+    message:
+      'Could not confirm that Reddit gender, language and dayparting choices can be sent, so Create waits rather than dropping them. Retry the check, or remove them.',
+  };
 }
 
 /** The gender a select value picks: `FEMALE` or `MALE`, else `''` (every gender). */
