@@ -228,10 +228,11 @@
         <div class="flex flex-col gap-2 rounded-lg border border-gray-200 p-3 sm:p-4" [attr.data-testid]="'member-360-team-' + team.key">
           <!-- The row wraps before the heading does: when the two do not fit, Copy list drops under the heading. -->
           <div class="flex flex-wrap items-center gap-2">
+            <!-- A heading too long for its row breaks before the count, never inside the team name. -->
             <h4 class="font-semibold">
-              {{ team.owner
-              }}<span class="whitespace-nowrap font-normal text-gray-500">
-                · {{ team.actions.length }} {{ team.actions.length === 1 ? 'action' : 'actions' }}</span
+              <span class="whitespace-nowrap" data-testid="member-360-team-name">{{ team.owner }}</span
+              >&ngsp;<span class="whitespace-nowrap font-normal text-gray-500"
+                >· {{ team.actions.length }} {{ team.actions.length === 1 ? 'action' : 'actions' }}</span
               >
             </h4>
             <lfx-button
