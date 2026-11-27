@@ -54,6 +54,17 @@ describe('linkedInObjectiveRefusal', () => {
     expect(linkedInObjectiveRefusal(raw, enabled)?.field).toBe(field);
   });
 
+  // Website visits with a manual CPC bid (linuxfoundation/lfx-v2-campaign-service#676): only while its own flag is on.
+  it.each([
+    ['traffic, manual, flag on', cfg({ objective: 'traffic', bidding: manual }), true, true, null],
+    ['traffic, manual, flag off', cfg({ objective: 'traffic', bidding: manual }), true, false, O],
+    ['traffic, manual, flag on but objectives off', cfg({ objective: 'traffic', bidding: manual }), false, true, O],
+    ['traffic, automatic, flag on', cfg({ objective: 'traffic' }), true, true, null],
+    ['conversions, automatic, no rule, flag on', cfg({ objective: 'conversions' }), true, true, O],
+  ])('%s', (_label, raw, enabled, trafficManualBid, field) => {
+    expect(linkedInObjectiveRefusal(raw, enabled, trafficManualBid)?.field ?? null).toBe(field);
+  });
+
   it('never echoes a caller value', () => {
     for (const raw of [cfg({ conversions: ['urn:secret'] }), cfg({ conversions: ['secret'] }), cfg({ objective: 'secret' })]) {
       expect(linkedInObjectiveRefusal(raw, true)?.message).not.toContain('secret');

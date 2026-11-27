@@ -58,6 +58,7 @@ vi.mock('../middleware/require-marketing-access.middleware', async () => {
     requireLinkedInConversionsAccess: (_req: express.Request, _res: express.Response, next: express.NextFunction) => next(),
     requireLinkedInLeadFormsAccess: (_req: express.Request, _res: express.Response, next: express.NextFunction) => next(),
     requireRedditCustomAudiencesAccess: (_req: express.Request, _res: express.Response, next: express.NextFunction) => next(),
+    requireRedditPixelsAccess: (_req: express.Request, _res: express.Response, next: express.NextFunction) => next(),
   };
 });
 vi.mock('../services/campaign-service.service', async (importOriginal) => {

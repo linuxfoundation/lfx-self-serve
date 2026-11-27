@@ -104,8 +104,7 @@ export function linkedInLeadGenRefusal(raw: unknown, enabled: boolean): LinkedIn
   if (LEAD_GEN_REFUSED_FORMATS.includes(config['format'])) {
     return { field: 'linkedInConfig.format', message: 'Lead gen form campaigns run single image or video ads. Choose one of those formats.' };
   }
-  // Unreachable on the create route until `offsiteDeliveryEnabled` joins `LINKEDIN_CONFIG_REQUEST_KEYS` (campaign-service
-  // #667): mirrored now so lead gen is already refused beside it then.
+  // campaign-service's `ValidateLeadGen` (#667): LinkedIn serves no lead gen on the Audience Network.
   if (config['offsiteDeliveryEnabled'] === true) {
     return { field: 'linkedInConfig.offsiteDeliveryEnabled', message: 'LinkedIn does not serve lead gen form ads on the Audience Network. Turn it off.' };
   }

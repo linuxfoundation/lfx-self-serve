@@ -526,6 +526,9 @@ describe('Member360ResultComponent', () => {
     expect(rows()[0]).toContain('Org 2');
     expect(rows()[0]).toContain('Due 22 Nov');
     expect(rows()[0]).toContain('Invite org 2 to speak.');
+    // A deadline is free text in the contract; e2e proves the phone layout of the Due cell and the team header.
+    const due = team.querySelector('[data-testid="member-360-action-due"]') as HTMLElement;
+    expect(due.textContent?.trim()).toBe('Due 22 Nov');
     expect(team.textContent).not.toContain('Marketing: invite');
     const toggle = view.query('member-360-show-all-marketing');
     expect(toggle.textContent?.trim()).toBe('Show all 5 actions');

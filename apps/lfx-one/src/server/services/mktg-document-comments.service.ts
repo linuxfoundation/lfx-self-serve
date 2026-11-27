@@ -16,6 +16,7 @@ import {
   MKTG_DOCUMENT_WRITE_ATTEMPTS,
   MKTG_REVISION_ID_REGEX,
   MKTG_STARTED_RUN_ID_REGEX,
+  MKTG_REDRAFT_COMMENTS_BUSY,
   MKTG_REDRAFT_SUBMISSION_KEYS,
   MKTG_RUN_POLL,
 } from '@lfx-one/shared/constants';
@@ -30,6 +31,7 @@ import type {
   MktgRevisionResponse,
   MktgStoredDocumentComment,
   MktgDocumentCommentsMutation,
+  MktgRedraftBusyConflict,
   MktgRedraftReservation,
   MktgDocumentCommentSubmission,
   MktgDocumentRedraftContext,
@@ -39,7 +41,9 @@ import type {
 import {
   readMktgRedraftRequest,
   validateMktgRedraftResult,
+  isMktgDisplayName,
   isMktgRedraftSubmissionBusy,
+  mktgRedraftSentElsewhereNotice,
   findMktgDocumentType,
   mktgDocumentLocationOfReceipt,
   isMktgDocumentCommentAnchor,
@@ -152,6 +156,23 @@ export class MktgDocumentCommentsService {
     return this.project(req, stored, input.revisionId);
   }
 
+  /**
+   * Read-only admission of a send, before the active-run check and the reservation. True when this request ID is
+   * already in the ledger: a replay re-observes its own run and can never create a session, so it skips that check.
+   * A new send whose comments another live send holds gets the named 409; `reserve` repeats both checks in its CAS.
+   */
+  public async admit(req: Request, project: string, type: MktgDocumentType, documentId: string, raw: unknown): Promise<boolean> {
+    const agent = this.commentAgent(type);
+    const actor = this.creator(req);
+    const input = readMktgRedraftRequest(raw);
+    if (!input) throw this.invalid('redraft', 'A revision, unique comment IDs and opaque request ID are required.');
+    const { record } = await this.read(req, project, agent, documentId);
+    if (record.submissions.some((entry) => entry.id === input.clientRequestId)) return true;
+    const holder = this.holder(record, input.commentIds);
+    if (holder) throw await this.busyConflict(req, holder, actor);
+    return false;
+  }
+
   /** Only a fresh committed reservation may invoke Guild. Preflight may read/render, NEVER mutate or send; CAS can repeat it. */
   public async reserve(
     req: Request,
@@ -183,9 +204,8 @@ export class MktgDocumentCommentsService {
         }
         return { record: null, result: { submission: existing, comments: this.frozen(record, existing), fresh: false } };
       }
-      if (record.submissions.some((entry) => this.busy(entry) && entry.commentIds.some((id) => input.commentIds.includes(id)))) {
-        throw new ConflictError('Some comments are already reserved for another send.', 'MKTG_REDRAFT_COMMENTS_BUSY');
-      }
+      const holder = this.holder(record, input.commentIds);
+      if (holder) throw await this.busyConflict(req, holder, actor);
       const selected = input.commentIds.map((id) => record.threads.find((entry) => entry.id === id));
       if (
         selected.some(
@@ -299,7 +319,7 @@ export class MktgDocumentCommentsService {
         submission.state !== 'failed' &&
         !(submission.state === 'reserved' && Date.now() - Date.parse(submission.createdAt) > MKTG_RUN_POLL.timeoutMs)
       )
-        throw new ConflictError('This send is still active.', 'MKTG_REDRAFT_COMMENTS_BUSY');
+        throw new ConflictError('This send is still active.', MKTG_REDRAFT_COMMENTS_BUSY);
       if (uncertain && submission.state === 'started') return { record: null, result: submission };
       if (submission.state === 'completed' || submission.state === 'failed') return { record: null, result: submission };
       const updated: MktgDocumentCommentSubmission = { ...submission, state: uncertain ? 'uncertain' : 'failed' };
@@ -378,6 +398,34 @@ export class MktgDocumentCommentsService {
 
   private busy(submission: MktgDocumentCommentSubmission): boolean {
     return isMktgRedraftSubmissionBusy(submission);
+  }
+  /** The live send that already holds any of these comments: first answer wins. */
+  private holder(record: MktgDocumentCommentsRecord, commentIds: string[]): MktgDocumentCommentSubmission | undefined {
+    return record.submissions.find((entry) => this.busy(entry) && entry.commentIds.some((id) => commentIds.includes(id)));
+  }
+  /** Who and when, resolved only on conflict and response-only: the ledger and the log line keep the opaque subject. */
+  private async busyConflict(req: Request, holder: MktgDocumentCommentSubmission, actor: string): Promise<ConflictError> {
+    const sentByViewer = holder.requestedBy === actor;
+    const author = sentByViewer
+      ? null
+      : await this.authors.resolveAuthor(req, holder.requestedBy, 'mktg_document_redraft_sender', 'Comment sender lookup unavailable');
+    const name = author?.name?.trim();
+    const conflict: MktgRedraftBusyConflict = {
+      code: MKTG_REDRAFT_COMMENTS_BUSY,
+      // Never an identifier in place of a display name: the shared policy the client applies, plus the stored subject only the server knows.
+      sentBy: isMktgDisplayName(name) && name !== holder.requestedBy ? name : null,
+      sentByViewer,
+      sentAt: holder.createdAt,
+      // Bound is not published: the run record exists only once the send is started, and a run page opened before it reads as landed.
+      runId: holder.state === 'started' ? holder.runId : null,
+    };
+    const { code, ...details } = conflict;
+    return new ConflictError('Some comments are already reserved for another send.', code, {
+      operation: 'mktg_document_redraft',
+      service: 'object_store',
+      clientMessage: mktgRedraftSentElsewhereNotice(conflict),
+      details,
+    });
   }
   private owns(record: MktgDocumentCommentsRecord, submission: MktgDocumentCommentSubmission, row: MktgStoredDocumentComment): boolean {
     const index = record.submissions.findIndex((entry) => entry.id === submission.id);

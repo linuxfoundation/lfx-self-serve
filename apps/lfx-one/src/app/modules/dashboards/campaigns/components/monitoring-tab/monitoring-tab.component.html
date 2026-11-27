@@ -296,6 +296,13 @@
                         aria-label="Copy campaign name to find in Google Ads">
                         <i [class]="copiedName() === row.name ? 'fa-light fa-check text-xs text-green-500' : 'fa-light fa-copy text-xs'" aria-hidden="true"></i>
                       </button>
+                      @if (row.provenance) {
+                        <span
+                          class="inline-flex shrink-0 items-center rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700"
+                          data-testid="monitoring-campaign-provenance">
+                          {{ row.provenance }}
+                        </span>
+                      }
                     </div>
                     <p class="text-xs text-gray-400">{{ row.shortName }}</p>
                   </td>
@@ -917,6 +924,13 @@
                         Couldn't read
                       </span>
                     }
+                    @if (row.provenance) {
+                      <span
+                        class="inline-flex shrink-0 items-center rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700"
+                        [attr.data-testid]="panel + '-campaign-provenance'">
+                        {{ row.provenance }}
+                      </span>
+                    }
                   </div>
                   @if (row.subtitle) {
                     <p class="max-w-xs truncate text-xs text-gray-400" [title]="row.subtitle">{{ row.subtitle }}</p>
@@ -942,7 +956,13 @@
                 }
                 @if (actPlatform) {
                   <td class="px-4 py-3">
-                    <ng-container *ngTemplateOutlet="actCell; context: { platform: actPlatform, id: row.campaignId, name: row.campaignName }" />
+                    @if (row.managedUnder) {
+                      <p class="text-right text-xs text-gray-500" [attr.data-testid]="panel + '-campaign-managed-under'">
+                        Managed under {{ row.managedUnder }}
+                      </p>
+                    } @else {
+                      <ng-container *ngTemplateOutlet="actCell; context: { platform: actPlatform, id: row.campaignId, name: row.campaignName }" />
+                    }
                   </td>
                 }
               </tr>

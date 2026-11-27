@@ -26,15 +26,22 @@ import type {
   GOOGLE_BIDDING_STRATEGIES,
   GOOGLE_CAMPAIGN_CHANNELS,
   GOOGLE_CHANNELS_WITH_CREATIVE,
+  LINKEDIN_AD_FORMAT_CHOICES,
   LINKEDIN_AD_FORMATS,
   LINKEDIN_LEAD_GEN_CALL_TO_ACTION_LABELS,
   LINKEDIN_LEAD_GEN_OBJECTIVE,
   LINKEDIN_OBJECTIVES,
   LINKEDIN_TARGETING_SEARCH_FACETS,
+  META_AD_FORMATS,
   MICROSOFT_KEYWORDS_WINDOWS,
   MONITOR_DATE_RANGE_OPTIONS,
+  REDDIT_BUDGET_TYPES,
   REDDIT_CALL_TO_ACTIONS,
   REDDIT_CONVERSION_EVENTS,
+  REDDIT_DEVICE_PLATFORMS,
+  REDDIT_GENDERS,
+  REDDIT_LANGUAGES,
+  REDDIT_PLACEMENTS,
   REDDIT_SELECTABLE_OBJECTIVES,
   REDDIT_VIDEO_GOALS,
 } from '../constants/campaign.constants';
@@ -297,6 +304,19 @@ export interface LinkedInStoredVideoRow {
   note: string;
 }
 
+/** One stored PDF as the library lists it (campaign-service#665), and whether it may be deleted now. */
+export interface LinkedInStoredDocumentRow {
+  id: string;
+  /** "PDF 1 (ab12cd34)": the library's order and the checksum's start, since campaign-service records no file name. */
+  label: string;
+  byteSize: number;
+  /** Whether the LinkedIn document ad on the tab names it, which offers "Remove from ad" and holds Delete. */
+  inUse: boolean;
+  deleteDisabled: boolean;
+  /** Why Delete is off, or `''`. */
+  note: string;
+}
+
 /**
  * A brief's creative-asset library plus its quota.
  *
@@ -497,6 +517,8 @@ export interface RedditCreateRefusalInput {
   targetingExclusionsBlock: string | null;
   /** Why the exclusion lists break campaign-service's rules (`redditTargetingExclusionsDraftRefusal`), or `null`. */
   targetingExclusionsRefusal: string | null;
+  /** Why the placements or devices cannot be sent (`redditDeliveryRefusal`), or `null`. */
+  deliveryRefusal: string | null;
 }
 
 /** The three inputs needed to author a promoted post, once a creator has decided to author one. */
@@ -1385,6 +1407,13 @@ export interface CampaignImplementationDraft {
   /** The foundation slug {@link metaLeadFormId} was picked under: a form belongs to that foundation's Page, so restored only under the same one. */
   metaLeadFormProject?: string;
   /**
+   * The Meta ad format, carousel cards and the carousel's one message as edited (#6331). Restored only when present;
+   * the tab sends a carousel only while `metaCarouselEnabled` is on and the carousel format is chosen.
+   */
+  metaFormat?: MetaAdFormat;
+  metaCarouselCards?: MetaCarouselCardDraft[];
+  metaCarouselMessage?: string;
+  /**
    * The Meta budget and its mode, which `submit()` sends as `budgetUsd`/`lifetimeBudget`.
    *
    * Here for the same reason as the four above — signal-backed, so `campaignForm.valueChanges`
@@ -1521,6 +1550,23 @@ export interface CampaignImplementationDraft {
   redditExcludedSubreddits?: string[];
   redditExcludedGeoTargets?: string[];
   /**
+   * The Reddit subreddits and interests as the operator edited them (#6108 row 4). Carried once they gained an editor,
+   * as `linkedInVariants` is: restored over the brief's seed. Absent (an older draft), the brief's seed stands. Not the
+   * `redditSubreddits` / `redditInterests` keys an older build wrote: those were stale copies of the brief's seed, which
+   * a restore deliberately ignores.
+   */
+  redditEditedSubreddits?: string[];
+  redditEditedInterests?: string[];
+  /**
+   * The Reddit budget type, placements, devices and audience expansion (#6108 row 5), kept whatever the capabilities say;
+   * only the REQUEST is gated on them. A choice the capability no longer confirms is not sent: the create then runs on
+   * campaign-service's defaults, which is what the screen shows with the controls withheld.
+   */
+  redditBudgetType?: RedditBudgetType;
+  redditPlacements?: RedditPlacement[];
+  redditPlatforms?: RedditDevicePlatform[];
+  redditExpandTargeting?: boolean;
+  /**
    * The Meta ad image, on the same terms as the Reddit image fields above: a pasted URL, or an
    * upload made for ONE brief (its asset id, file name and brief), plus an upload still in flight
    * and a failed upload's reason, so a tab switch neither loses the image nor lifts the block a
@@ -1564,6 +1610,17 @@ export interface CampaignImplementationDraft {
   linkedInCarouselCards?: LinkedInCarouselCardDraft[];
   linkedInCarouselIntroText?: string;
   /**
+   * The LinkedIn document ad as edited (campaign-service#665): the PDF picked from the brief's library, its title and
+   * intro text. Restored only when present; the tab sends it only while `linkedInDocumentEnabled` is on and the document
+   * format is chosen.
+   */
+  linkedInDocument?: LinkedInDocumentDraft;
+  /**
+   * The post URN a LinkedIn boost sponsors, as typed (campaign-service#673). Restored only when present; the tab sends it
+   * only while `linkedInBoostEnabled` is on and the boost format is chosen.
+   */
+  linkedInBoostPost?: string;
+  /**
    * Whether custom targeting replaces the targeting profile (#5764 rows 8–11), and the clauses as edited. Restored only
    * when present; the tab sends `targeting` only while `linkedInTargetingEnabled` is on.
    */
@@ -1575,6 +1632,11 @@ export interface CampaignImplementationDraft {
    * target cost (campaign-service#674) is sent only while offered, and otherwise kept but neither sent nor held.
    */
   linkedInObjectiveDraft?: LinkedInObjectiveDraft;
+  /**
+   * The LinkedIn Audience Expansion and Audience Network toggles as set (campaign-service#667). Restored only when
+   * present; sent only while `linkedInDeliveryOptionsEnabled` is on, and otherwise kept but neither sent nor held.
+   */
+  linkedInDeliveryOptions?: LinkedInDeliveryOptionsDraft;
   /**
    * The X section as edited: the daily budget and the authored tweet's copy as RAW text, so a
    * blank budget stays blank rather than turning into 0, and the tweet image upload on the LinkedIn
@@ -2204,6 +2266,36 @@ export interface LinkedInCarouselCardDraft {
   destinationUrl: string;
 }
 
+/** The LinkedIn document ad as the Implement tab edits it (campaign-service#665). */
+export interface LinkedInDocumentDraft {
+  /** A stored PDF picked from the brief's library, `''` for none, and the brief it was picked for. */
+  assetId: string;
+  assetBriefId: string;
+  title: string;
+  introText: string;
+}
+
+/** The LinkedIn document editor's state: counters, the error or hint under each field (`''` for none), and the PDF picker. */
+export interface LinkedInDocumentView {
+  titleLength: number;
+  titleError: string;
+  introLength: number;
+  introError: string;
+  /** LinkedIn's recommended intro length, suggested and never refused (decision 2026-11-25), or `''` while within it. */
+  introHint: string;
+  /** Why the picked PDF cannot be used (another brief, no longer stored), or `''`. */
+  assetProblem: string;
+  /** Why the picker offers nothing (unsaved brief, loading, failed, no PDF stored), or `''`. */
+  pdfNote: string;
+  pdfOptions: LinkedInDocumentPdfOption[];
+}
+
+/** One stored PDF the LinkedIn document picker offers. */
+export interface LinkedInDocumentPdfOption {
+  value: string;
+  label: string;
+}
+
 /** One stored image a carousel card's picker offers. */
 export interface LinkedInCarouselImageOption {
   value: string;
@@ -2611,6 +2703,14 @@ export interface LinkedInCreateRefusalInput {
   carouselWithLeadGen?: boolean;
   /** Present only while a carousel is chosen (campaign-service#665): why its cards cannot be sent, or `null`. They replace the variant checks. */
   carousel?: { refusal: string | null };
+  /** A document is chosen but this deployment no longer offers it (campaign-service#665). */
+  documentUnavailable?: boolean;
+  /** Present only while a document is chosen (campaign-service#665): why it cannot be sent, or `null`. It replaces the variant checks. */
+  document?: { refusal: string | null };
+  /** A boost is chosen but this deployment no longer offers it (campaign-service#673). */
+  boostUnavailable?: boolean;
+  /** Present only while a boost is chosen (campaign-service#673): why its post cannot be sent, or `null`. It replaces the variant checks. */
+  boost?: { refusal: string | null };
   /** Present only while video ads are chosen (#5764 row 18): an ad with no video for the open brief. */
   videoMissing?: boolean;
   /**
@@ -2624,6 +2724,8 @@ export interface LinkedInCreateRefusalInput {
   objectiveRefusal?: string | null;
   /** Why the target cost entered cannot be sent (campaign-service#674), or `null`; see `linkedInTargetCostCreateRefusal`. */
   targetCostRefusal?: string | null;
+  /** Why the delivery options set cannot be sent yet (campaign-service#667), or `null`; see `linkedInDeliveryOptionsCreateRefusal`. */
+  deliveryOptionsRefusal?: string | null;
 }
 
 export interface LinkedInCampaignCreateRequest {
@@ -2690,13 +2792,24 @@ export interface LinkedInCampaignCreateRequest {
    */
   boostPost?: string;
   /**
+   * LinkedIn Audience Expansion (campaign-service#667): widens some targeting criteria to similar members. Omitted is
+   * LinkedIn's default, off. Only while `linkedInDeliveryOptionsEnabled`.
+   */
+  audienceExpansionEnabled?: boolean;
+  /**
+   * The LinkedIn Audience Network (campaign-service#667): also serves the ads on third-party apps and sites. Omitted is
+   * off. Not with `format: 'text'` or the `lead_generation` objective. Only while `linkedInDeliveryOptionsEnabled`.
+   */
+  offsiteDeliveryEnabled?: boolean;
+  /**
    * The campaign's own LinkedIn targeting (#5764 rows 8–11, campaign-service #552). Set, it REPLACES `targetingProfile`,
    * so it is refused with `targetingProfileEdit`. Only while `linkedInTargetingEnabled`.
    */
   targeting?: LinkedInTargeting;
   /**
    * The campaign's goal (#5764 row 2, campaign-service #582). Omitted lets `bidding` decide. `'conversions'` on automatic
-   * bidding needs `conversions`; `'traffic'` takes automatic bidding only. Only while `linkedInConversionsEnabled`.
+   * bidding needs `conversions`; `'traffic'` takes automatic bidding, or a manual CPC bid only while
+   * `linkedInTrafficManualBidEnabled` (campaign-service#676). Only while `linkedInConversionsEnabled`.
    */
   objective?: LinkedInObjective | LinkedInLeadGenObjective;
   /**
@@ -2805,6 +2918,17 @@ export interface LinkedInConfigKeyRefusal {
   message: string;
 }
 
+/** The Implement tab's LinkedIn delivery options as set (linuxfoundation/lfx-v2-campaign-service#667), carried in the draft. */
+export interface LinkedInDeliveryOptionsDraft {
+  /** Audience Expansion on: sent as `audienceExpansionEnabled: true`. Off sends nothing (LinkedIn's default). */
+  audienceExpansion: boolean;
+  /**
+   * The LinkedIn Audience Network on: sent as `offsiteDeliveryEnabled: true`, but only while offered (not with Text Ads
+   * or lead generation). Off sends nothing (campaign-service sends it off).
+   */
+  audienceNetwork: boolean;
+}
+
 /**
  * The Implement tab's LinkedIn objective and conversion rules as edited (#5764 rows 2 and 4), and the automatic-bidding
  * target cost beside them (linuxfoundation/lfx-v2-campaign-service#674), carried in the draft.
@@ -2878,6 +3002,8 @@ export interface LinkedInObjectiveCreateInput {
   leadGenAvailable?: boolean;
   /** The `format` the create sends, if any: a lead gen create cannot be Text Ads. */
   format?: string;
+  /** `linkedInTrafficManualBidEnabled` is an explicit yes (campaign-service#676): traffic may take a manual bid. */
+  trafficManualBidAvailable?: boolean;
 }
 
 /** Which of a LinkedIn variant's optional fields this deployment sends (#5764 rows 16–17). */
@@ -2909,7 +3035,7 @@ export type LinkedInAdFormat = (typeof LINKEDIN_AD_FORMATS)[number];
  * a request `format`: it is the single-image request with a `videoAssetId` on every variant, which campaign-service
  * creates as SINGLE_VIDEO.
  */
-export type LinkedInAdFormatChoice = LinkedInAdFormat | 'video';
+export type LinkedInAdFormatChoice = (typeof LINKEDIN_AD_FORMAT_CHOICES)[number];
 
 export interface LinkedInCampaignCreateResult {
   platform: 'linkedin-ads';
@@ -2972,6 +3098,13 @@ export interface RedditCampaignCreateRequest {
   subreddits: string[];
   interests: string[];
   keywords: string[];
+  /**
+   * The ad copy. Only `headline` reaches Reddit; campaign-service never reads `body`. One ad is made from `variants[0]`,
+   * unless campaign-service's `REDDIT_AD_PER_VARIANT_ENABLED` is on: then a create that authors its post (`imageUrl` or
+   * `imageAssetId`, no `postUrl`) with 2 to 5 variants makes one promoted post and one ad per variant (#6108 row 6). With
+   * `CampaignListResult.redditAdPerVariantEnabled`, the create route refuses such a create with more than 5 variants or a
+   * blank or over-300-character headline (`redditAdPerVariantRefusal`).
+   */
   variants: RedditAdVariant[];
   project?: string;
   objective?: RedditObjective;
@@ -2997,6 +3130,23 @@ export interface RedditCampaignCreateRequest {
    * the create route refuses this field while that capability is off rather than dropping it.
    */
   imageAssetId?: string;
+  /**
+   * A video post instead (#6108 row 8): the id of an MP4 uploaded to THIS brief through
+   * `POST /api/campaigns/brief/creative-assets`, served to Reddit at a short-lived signed URL like `imageAssetId`. Needs
+   * `thumbnailAssetId`, and is never sent with `postUrl`, `imageUrl` or `imageAssetId`, nor with 2 or more `variants`
+   * while one ad per variant is on: a video post is one post and one ad.
+   *
+   * campaign-service only, while its `REDDIT_VIDEO_ENABLED` is on and its URL signing configured. Hence
+   * `CampaignListResult.redditVideoEnabled`; the create route refuses this field while that is off, never dropping it
+   * (`redditVideoRefusal`).
+   */
+  videoAssetId?: string;
+  /**
+   * The video post's thumbnail (#6108 row 8): the id of a PNG or JPEG uploaded to THIS brief, never the video's own id.
+   * Reddit requires one for a video post, and campaign-service cannot cut a frame, so it is never derived. Only with
+   * `videoAssetId`.
+   */
+  thumbnailAssetId?: string;
   /**
    * Button label on an authored post, matched case-insensitively against `REDDIT_CALL_TO_ACTIONS`.
    * Empty resolves on either arm to `DEFAULT_REDDIT_CALL_TO_ACTION`.
@@ -3046,6 +3196,39 @@ export interface RedditCampaignCreateRequest {
    */
   excludedSubreddits?: string[];
   excludedGeoTargets?: string[];
+  /**
+   * Regions, cities and DMAs the ad group targets beside its countries (#6108 row 7, campaign-service #549): Reddit
+   * geolocation ids such as `US-CA` (region), `CA:6167865` (city) and `662` (DMA). None may lie inside a country
+   * `geoTargets` targets or `excludedGeoTargets` excludes. Only while `CampaignListResult.redditSubCountryGeoEnabled`: the
+   * create route refuses it otherwise, never dropping it.
+   */
+  subCountryGeoTargets?: string[];
+  /**
+   * Where the ads run, on which devices, and whether Reddit may widen the audience (#6108 row 5, campaign-service #549).
+   * An omitted or empty list means every placement (`FEED` and `COMMENTS_PAGE`) or every device; `ALL` is not a device
+   * value, omit the list for it. `expandTargeting` omitted means `true`. Only while
+   * `CampaignListResult.redditPlacementsEnabled`: the create route refuses all three otherwise, never dropping them
+   * (`redditPlacementsRefusal`).
+   */
+  placements?: RedditPlacement[];
+  platforms?: RedditDevicePlatform[];
+  expandTargeting?: boolean;
+  /**
+   * Whether `budgetUsd` is spent over the flight (`lifetime`, the default when omitted) or per day (`daily`) (#6108 row 5,
+   * campaign-service #549). Only while `CampaignListResult.redditBudgetTypeEnabled`: the create route refuses it otherwise,
+   * `lifetime` included, never dropping it (`redditBudgetTypeRefusal`).
+   */
+  budgetType?: RedditBudgetType;
+  /**
+   * Gender, language and dayparting targeting (#6108 row 9, campaign-service #549). `gender` omitted is every gender;
+   * `languages` omitted or empty is every language; `schedule` omitted or empty is any time, and otherwise replaces every
+   * ad group's schedule (at most `REDDIT_MAX_SCHEDULE_WINDOWS` windows, in the campaign's time zone). Only while
+   * `CampaignListResult.redditDemographicsEnabled`: the create route refuses all three otherwise, never dropping them
+   * (`redditDemographicsRefusal`).
+   */
+  gender?: RedditGender;
+  languages?: RedditLanguage[];
+  schedule?: RedditScheduleWindow[];
   /** Optional bidding choice (#3299) — see {@link CampaignBiddingConfig}. Omitted means automatic. */
   bidding?: CampaignBiddingConfig;
 }
@@ -3066,6 +3249,14 @@ export interface RedditCampaignCreateResult {
 // Meta Ads — Campaign Creation
 // ---------------------------------------------------------------------------
 
+/** A Meta creative format (`metaConfig.format`, #6331): one ad per variant, or one carousel ad whose cards are the variants. */
+export type MetaAdFormat = (typeof META_AD_FORMATS)[number];
+
+/**
+ * One Meta ad, or one card of a carousel (`format: 'carousel'`, #6331; campaign-service#550 gap 10). As a card, it shows
+ * its own image, `headline` (the card's name), `description` and UTM-tagged link, and it carries no video. A carousel
+ * has ONE message, variant 1's `primaryText`: every later card leaves `primaryText` empty or repeats it verbatim.
+ */
 export interface MetaAdVariant {
   primaryText: string;
   headline: string;
@@ -3078,6 +3269,34 @@ export interface MetaAdVariant {
    */
   imageUrl?: string;
   imageAssetId?: string;
+}
+
+/** One Meta carousel card as the Implement tab edits it (#6331). `key` is the tab's own and is never sent. */
+export interface MetaCarouselCardDraft {
+  key: string;
+  /** A stored image picked from the brief's library, `''` for none, and the brief it was picked for. */
+  imageAssetId: string;
+  imageAssetBriefId: string;
+  /** A pasted public image URL, `''` for none; a picked stored image wins over it. */
+  imageUrl: string;
+  /** The card's name on Meta. */
+  headline: string;
+  /** Optional; `''` sends none. */
+  description: string;
+}
+
+/** One Meta carousel card as the editor shows it: its 1-based position, why its picked image cannot be used, and its picker. */
+export interface MetaCarouselCardView extends MetaCarouselCardDraft {
+  position: number;
+  imageProblem: string;
+  imageOptions: LinkedInCarouselImageOption[];
+}
+
+/** What the Meta carousel request reads: the capabilities and the brief its stored images must belong to. */
+export interface MetaCarouselImageContext {
+  uploadAvailable: boolean;
+  creativeAvailable: boolean;
+  briefId: string;
 }
 
 export interface MetaBriefCopy {
@@ -3116,6 +3335,10 @@ export interface MetaCreateRefusalInput {
   adOptionsBlock: string | null;
   adOptionsError: string | null;
   leadFormError: string | null;
+  /** A carousel is chosen but this deployment no longer offers it (#6331). */
+  carouselUnavailable?: boolean;
+  /** Present only while a carousel is chosen (#6331): why its cards cannot be sent, or `null`. It replaces the variant check. */
+  carousel?: { refusal: string | null };
 }
 
 export type MetaObjective = 'awareness' | 'traffic' | 'engagement' | 'leads' | 'conversions';
@@ -3161,6 +3384,14 @@ export interface MetaCampaignCreateRequest {
   endDate: string;
   geoTargets: string[];
   variants: MetaAdVariant[];
+  /**
+   * The creative format (#6331; campaign-service#550 gap 10). Absent, blank or `single` is one ad per variant;
+   * `carousel` is ONE ad whose 2 to 10 cards are `variants`, in order, each with an image (`imageUrl` or
+   * `imageAssetId`) and no video, with variant 1's `primaryText` as the one message, never with `leadFormId`. Sent as
+   * anything but single ONLY when `CampaignListResult.metaCarouselEnabled` is a yes; the create route refuses it with a
+   * 400 otherwise.
+   */
+  format?: MetaAdFormat;
   project?: string;
   objective?: MetaObjective;
   /**
@@ -3567,6 +3798,9 @@ export type MetaDraftSnapshot = Pick<
   | 'metaAdOptionsProject'
   | 'metaLeadFormId'
   | 'metaLeadFormProject'
+  | 'metaFormat'
+  | 'metaCarouselCards'
+  | 'metaCarouselMessage'
   | 'metaBudgetUsd'
   | 'metaLifetimeBudget'
   | 'metaImageUrl'
@@ -3596,6 +3830,10 @@ export interface MetaDraftState {
   leadFormId: string;
   /** The foundation the choices were made under; targeting, ad options and the lead form restore only under it. */
   foundation: string;
+  /** The ad format, the carousel cards and the carousel's one message (#6331). */
+  format: MetaAdFormat;
+  carouselCards: readonly MetaCarouselCardDraft[];
+  carouselMessage: string;
   budgetUsd: number;
   lifetimeBudget: boolean;
 }
@@ -3630,6 +3868,9 @@ export interface MetaDraftRestore {
   adOptions?: MetaAdOptions;
   /** `null` keeps the current form; `''` clears it. */
   leadFormId: string | null;
+  format?: MetaAdFormat;
+  carouselCards?: MetaCarouselCardDraft[];
+  carouselMessage?: string;
   geoTargets?: string[];
   budgetUsd?: number;
   lifetimeBudget?: boolean;
@@ -3652,9 +3893,12 @@ export type LinkedInDraftSnapshot = Pick<
   | 'linkedInTextAds'
   | 'linkedInCarouselCards'
   | 'linkedInCarouselIntroText'
+  | 'linkedInDocument'
+  | 'linkedInBoostPost'
   | 'linkedInCustomTargeting'
   | 'linkedInTargetingDraft'
   | 'linkedInObjectiveDraft'
+  | 'linkedInDeliveryOptions'
 >;
 
 /** The LinkedIn signals `linkedInDraftFields` snapshots into the draft (#5980): budget, cap, variants and the upload slot. */
@@ -3674,11 +3918,17 @@ export interface LinkedInDraftState {
   /** The carousel cards and intro text as edited (campaign-service#665). */
   carouselCards: readonly LinkedInCarouselCardDraft[];
   carouselIntroText: string;
+  /** The document ad as edited (campaign-service#665). */
+  document: LinkedInDocumentDraft;
+  /** The post URN a boost sponsors, as typed (campaign-service#673). */
+  boostPost: string;
   /** Whether custom targeting is on, and its clauses as edited (#5764 rows 8–11). */
   customTargeting: boolean;
   targetingDraft: LinkedInTargetingDraft;
   /** The objective and conversion rules as edited (#5764 rows 2 and 4). */
   objectiveDraft: LinkedInObjectiveDraft;
+  /** The Audience Expansion and Audience Network toggles as set (campaign-service#667). */
+  deliveryOptions: LinkedInDeliveryOptionsDraft;
 }
 
 /** What a restored draft does to the LinkedIn section (#5980): values to set, and at most one upload step for the component to run. */
@@ -3696,9 +3946,12 @@ export interface LinkedInDraftRestore {
   textAds?: LinkedInTextAdDraft[];
   carouselCards?: LinkedInCarouselCardDraft[];
   carouselIntroText?: string;
+  document?: LinkedInDocumentDraft;
+  boostPost?: string;
   customTargeting?: boolean;
   targetingDraft?: LinkedInTargetingDraft;
   objectiveDraft?: LinkedInObjectiveDraft;
+  deliveryOptions?: LinkedInDeliveryOptionsDraft;
 }
 
 /** What a brief's LinkedIn copy seeds (#5980): variants, geos and profile, and a lifetime budget when the strategy names one. */
@@ -3731,6 +3984,12 @@ export type RedditDraftSnapshot = Pick<
   | 'redditExcludedCustomAudienceIds'
   | 'redditExcludedSubreddits'
   | 'redditExcludedGeoTargets'
+  | 'redditEditedSubreddits'
+  | 'redditEditedInterests'
+  | 'redditBudgetType'
+  | 'redditPlacements'
+  | 'redditPlatforms'
+  | 'redditExpandTargeting'
 >;
 
 /** The Reddit values `redditDraftFields` snapshots into the draft (#5980): the typed fields, the pixel and the image upload slot. */
@@ -3752,6 +4011,9 @@ export interface RedditDraftState {
   conversionEvent: RedditConversionEvent;
   customAudiences: RedditCustomAudiencesDraft;
   targetingExclusions: RedditTargetingExclusionsDraft;
+  /** The subreddits and interests once the operator edited them, else `null`: an unedited list stays the brief's, out of the draft. */
+  editedTargetingLists: RedditTargetingListsDraft | null;
+  delivery: RedditDeliveryDraft;
 }
 
 /** What a restored draft does to the Reddit section (#5980): values to set, and at most one upload step for the component to run. */
@@ -3771,6 +4033,10 @@ export interface RedditDraftRestore {
   conversionEvent?: RedditConversionEvent;
   customAudiences?: RedditCustomAudiencesDraft;
   targetingExclusions?: RedditTargetingExclusionsDraft;
+  /** Both lists as edited, set over the brief's seed; absent when the draft carries neither. */
+  editedTargetingLists?: RedditTargetingListsDraft;
+  /** The budget type, placements, devices and expansion; absent when the draft carries none of them. */
+  delivery?: RedditDeliveryDraft;
 }
 
 /** The Reddit lists a brief seeds (#5980): the variants and the four targeting lists. */
@@ -3792,6 +4058,7 @@ export interface RedditBriefReset extends RedditBriefSeed {
   conversionEvent: RedditConversionEvent;
   customAudiences: RedditCustomAudiencesDraft;
   targetingExclusions: RedditTargetingExclusionsDraft;
+  delivery: RedditDeliveryDraft;
   budgetUsd: number;
 }
 
@@ -3871,11 +4138,129 @@ export interface RedditCustomAudiencesResult {
   truncated: boolean;
 }
 
+/** A Reddit ad placement (`REDDIT_PLACEMENTS`, #6108 row 5). */
+export type RedditPlacement = (typeof REDDIT_PLACEMENTS)[number];
+
+/** A Reddit device platform (`REDDIT_DEVICE_PLATFORMS`, #6108 row 5). `ALL` is not one: omit the list for every device. */
+export type RedditDevicePlatform = (typeof REDDIT_DEVICE_PLATFORMS)[number];
+
+/** How a Reddit budget is spent (`REDDIT_BUDGET_TYPES`, #6108 row 5): over the flight or per day. */
+export type RedditBudgetType = (typeof REDDIT_BUDGET_TYPES)[number];
+
+/** A Reddit gender target (`REDDIT_GENDERS`, #6108 row 9). Omit `redditConfig.gender` for every gender. */
+export type RedditGender = (typeof REDDIT_GENDERS)[number];
+
+/** A Reddit language target, an upper-case ISO 639-1 code (`REDDIT_LANGUAGES`, #6108 row 9). */
+export type RedditLanguage = (typeof REDDIT_LANGUAGES)[number];
+
+/**
+ * One recurring weekly delivery window of `redditConfig.schedule` (#6108 row 9): days 0 (Sunday) to 6 (Saturday), hours
+ * 0 to 23, every field required. A window may wrap the week and may overlap another, but may not start where it ends or
+ * repeat another exactly.
+ */
+export interface RedditScheduleWindow {
+  startDay: number;
+  startHour: number;
+  endDay: number;
+  endHour: number;
+}
+
+/** One conversion pixel on the Reddit ad account, for the `conversionPixelId` picker (#6108 row 5). */
+export interface RedditPixelOption {
+  id: string;
+  /** Reddit's display name; may be empty. Not an identifier. */
+  name: string;
+  /** The Reddit business that owns the pixel, when Reddit sent one. */
+  businessId?: string;
+}
+
+/** The Reddit pixel read (#6108 row 5): the ad account, its pixels, how many, and whether Reddit had more pages. */
+export interface RedditPixelsResult {
+  accountId: string;
+  pixels: RedditPixelOption[];
+  pixelCount: number;
+  truncated: boolean;
+}
+
+/**
+ * The Reddit delivery choices as the Implement tab holds them (#6108 row 5): how the budget is spent, where and on which
+ * devices the ads run, and whether Reddit may widen the audience. Every value is campaign-service's default until changed.
+ */
+export interface RedditDeliveryDraft {
+  budgetType: RedditBudgetType;
+  placements: RedditPlacement[];
+  platforms: RedditDevicePlatform[];
+  expandTargeting: boolean;
+}
+
+/** The two capabilities the Reddit delivery choices answer to (#6108 row 5); `null` is unanswered, read as no. */
+export interface RedditDeliveryCapabilities {
+  /** `CampaignListResult.redditPlacementsEnabled`: placements, devices and expansion. */
+  placements: boolean | null;
+  /** `CampaignListResult.redditBudgetTypeEnabled`: the budget type. */
+  budgetType: boolean | null;
+}
+
+/** The `redditConfig` keys a Reddit create carries for the delivery choices (#6108 row 5); each omitted at its default. */
+export type RedditDeliveryField = Pick<RedditCampaignCreateRequest, 'placements' | 'platforms' | 'expandTargeting' | 'budgetType'>;
+
+/** One placement or device checkbox (#6108 row 5); `locked` when it is the last one ticked, which must stay ticked. */
+export interface RedditDeliveryOptionView<T extends string> {
+  value: T;
+  label: string;
+  on: boolean;
+  locked: boolean;
+}
+
+/** The Reddit budget box's label and hint (#6108 row 5). */
+export interface RedditBudgetCopy {
+  label: string;
+  hint: string;
+}
+
+/** The Reddit pixel read as the picker holds it (#6108 row 5). */
+export interface RedditPixelPickerState {
+  status: 'idle' | 'loading' | 'loaded' | 'unavailable';
+  pixels: RedditPixelOption[];
+  truncated: boolean;
+  /** Why the list cannot be offered, shown with the typed-id box; `null` once read. */
+  reason: string | null;
+}
+
+/** What the Reddit pixel picker shows (#6108 row 5): a select over the read list, or the typed-id box with why. */
+export interface RedditPixelPickerView {
+  mode: 'loading' | 'select' | 'text';
+  choices: { value: string; label: string }[];
+  /** A held id the list does not hold (typed earlier, or restored), kept as its own option so it stays visible. */
+  heldIdUnlisted: boolean;
+  /** The line under the control, or `null`. */
+  note: string | null;
+}
+
 /** The two Reddit custom-audience lists, keyed as `redditConfig` spells them (`REDDIT_CUSTOM_AUDIENCE_KEYS`). */
 export type RedditCustomAudienceListKey = 'customAudienceIds' | 'excludedCustomAudienceIds';
 
 /** The two Reddit targeting exclusion lists, keyed as `redditConfig` spells them (`REDDIT_TARGETING_EXCLUSION_KEYS`, #6108 row 3). */
 export type RedditTargetingExclusionKey = 'excludedSubreddits' | 'excludedGeoTargets';
+
+/** The two Reddit targeting lists the Implement tab can edit once campaign-service resolves them (#6108 row 4). */
+export type RedditTargetingListKey = 'subreddits' | 'interests';
+
+/** The Reddit subreddits and interests as the Implement tab holds them once edited (#6108 row 4). */
+export type RedditTargetingListsDraft = Record<RedditTargetingListKey, string[]>;
+
+/** One editable Reddit targeting list as the Implement tab renders it (#6108 row 4). */
+export interface RedditTargetingListView {
+  key: RedditTargetingListKey;
+  label: string;
+  placeholder: string;
+}
+
+/** One editable Reddit targeting list with its entries: the box's label with the count against the cap, and the chips (`id` is the entry as held). */
+export interface RedditTargetingListState extends RedditTargetingListView {
+  heading: string;
+  chips: MetaCustomAudienceChipView[];
+}
 
 /** The Reddit targeting exclusions the Implement tab holds (#6108 row 3): subreddit names without `r/`, and country codes. */
 export type RedditTargetingExclusionsDraft = Record<RedditTargetingExclusionKey, string[]>;
@@ -4199,6 +4584,11 @@ export type MetaPacingLabel = 'underspending' | 'normal' | 'constrained' | 'over
 export type MetaActionPriority = 'HIGH' | 'MED' | 'LOW';
 
 export interface MetaCampaignMetrics {
+  /**
+   * Account-wide reads only (#6209): the project campaign-service records the campaign for, or `null`
+   * when it was created outside LFX. ABSENT on a project-scoped read, whose rows are all the project's.
+   */
+  recordedProjectId?: string | null;
   campaignId: string;
   campaignName: string;
   status: string;
@@ -4792,6 +5182,8 @@ export interface GoogleCreativeImageSlotView {
 export interface CreativeAssetLibraryState {
   status: 'idle' | 'loading' | 'ready' | 'error';
   assets: StoredCreativeAsset[];
+  /** The stored PDFs (campaign-service#665), carried by a `ready` read only; a LinkedIn document ad picks one. */
+  documents?: StoredCreativeDocument[];
 }
 
 /**
@@ -6337,6 +6729,11 @@ export type PacingLabel = 'underspending' | 'normal' | 'constrained' | 'overspen
 export type ActionPriority = 'HIGH' | 'MED' | 'LOW';
 
 export interface CampaignMetrics {
+  /**
+   * Account-wide reads only (#6209): the project campaign-service records the campaign for, or `null`
+   * when it was created outside LFX. ABSENT on a project-scoped read, whose rows are all the project's.
+   */
+  recordedProjectId?: string | null;
   name: string;
   shortName: string;
   eventName: string;
@@ -6423,11 +6820,15 @@ export interface CampaignMonitorResponse {
    * the project's own Google Ads connection; `recorded_campaigns` means the project has no connection
    * with an account bound of its own and campaign-service read the customer its campaigns were
    * created under, through the LF system account when needed (#5622, campaign-service #592).
+   * `shared_account` means an account-wide read (#6209) of the LF shared account, named because the
+   * project has neither an account of its own nor campaigns recorded to take one from.
    *
    * Unrelated to the `MonitorAccountSource` request marker (`accountSource`), which says where a
    * client's account picker got its account; that marker is never set from this field.
    */
-  googleAccountOrigin?: 'connection' | 'recorded_campaigns';
+  googleAccountOrigin?: 'connection' | 'recorded_campaigns' | 'shared_account';
+  /** True on an account-wide read (#6209): every campaign on the account is listed, not only the project's. */
+  accountWide?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -6765,6 +7166,18 @@ export type CampaignServiceMonitorPriority = 'HIGH' | 'MED' | 'LOW';
 /** The X monitor's 409 `reason`, forwarded to the client as `upstreamCode`. */
 export type AccountMonitorConflictReason = (typeof ACCOUNT_MONITOR_CONFLICT_REASONS)[number];
 
+/**
+ * The account-monitor scope campaign-service is asked for (linuxfoundation/lfx-v2-campaign-service#672).
+ * `account` returns every campaign on the shared ad account, whoever created it, and only
+ * `global_marketing_ops` on the project may ask for it; `undefined` is the project-scoped read.
+ */
+export type CampaignServiceMonitorScope = 'account' | undefined;
+
+/** Any mapped account-monitor response: its rows carry the platform campaign id an account-wide read labels by. */
+export interface MonitorResponseWithCampaigns {
+  campaigns: { campaignId: string; recordedProjectId?: string | null }[];
+}
+
 /** campaign-service `account-monitor-campaign`. */
 export interface CampaignServiceAccountMonitorCampaign {
   platform_campaign_id: string;
@@ -6792,6 +7205,11 @@ export interface CampaignServiceAccountMonitorCampaign {
   /** A placeholder `normal` when `pacing_unknown` or `fetch_failed` is true. */
   pacing_label: CampaignServiceMonitorPacingLabel;
   campaign_url?: string;
+  /**
+   * `scope=account` reads only (linuxfoundation/lfx-v2-campaign-service#672): the project campaign-service
+   * records this campaign for; absent when none does (created outside LFX).
+   */
+  recorded_project_id?: string;
 }
 
 /** campaign-service `account-monitor-action-item`, shared by the ad monitors and the HubSpot one. */
@@ -7047,6 +7465,24 @@ export interface CampaignServiceRedditCustomAudiences {
   truncated: boolean;
 }
 
+/** One element of campaign-service's `reddit-ads/pixels` read. */
+export interface CampaignServiceRedditPixel {
+  id: string;
+  name: string;
+  business_id?: string;
+}
+
+/**
+ * campaign-service `GET /projects/{project_id}/reddit-ads/pixels` (`global_marketing_ops` on the project, #549): the
+ * conversion pixels on the shared ad account, `truncated` when Reddit had more than 10 pages.
+ */
+export interface CampaignServiceRedditPixels {
+  account_id: string;
+  pixels: CampaignServiceRedditPixel[];
+  pixel_count: number;
+  truncated: boolean;
+}
+
 /** One element of campaign-service's `meta-lead-forms` read. */
 export interface CampaignServiceMetaLeadForm {
   id: string;
@@ -7144,6 +7580,8 @@ export interface MonitorSystemAccountRead {
   accountId: string | null;
   /** The panel's empty state when no campaign came back: no campaigns are recorded for the project yet. */
   emptyMessage: string;
+  /** True when the read was account-wide (#6209): every campaign on the account, not only the project's. */
+  accountWide?: boolean;
 }
 
 /**
@@ -7315,6 +7753,10 @@ export interface AccountMonitorPanelReadState {
 
 /** One campaign row of an ad-platform panel. Every metric cell is a dash when `fetchFailed`. */
 export interface AccountMonitorCampaignRowView {
+  /** Account-wide reads only: the other project this row is managed under, whose levers the tab withholds; null otherwise. */
+  managedUnder: string | null;
+  /** The account-wide read's provenance tag ("Created outside LFX", or the recording project); null otherwise. */
+  provenance: string | null;
   campaignId: string;
   /** The row's heading: the event name on LinkedIn, the campaign name elsewhere. */
   title: string;
@@ -7354,6 +7796,8 @@ export interface GoogleMonitorKpisView {
 
 /** One row of the Google Ads campaign table. */
 export interface GoogleMonitorCampaignRowView {
+  /** The account-wide read's provenance tag ("Created outside LFX", or the recording project); null otherwise. */
+  provenance: string | null;
   campaignId: string;
   title: string;
   /** The full campaign name, copied by the row's copy button. */
@@ -7606,6 +8050,11 @@ export interface LinkedInCreativeMetrics {
 }
 
 export interface LinkedInCampaignMetrics {
+  /**
+   * Account-wide reads only (#6209): the project campaign-service records the campaign for, or `null`
+   * when it was created outside LFX. ABSENT on a project-scoped read, whose rows are all the project's.
+   */
+  recordedProjectId?: string | null;
   campaignId: string;
   campaignName: string;
   eventName: string;
@@ -7679,6 +8128,11 @@ export type RedditPacingLabel = 'underspending' | 'normal' | 'constrained' | 'ov
 export type RedditActionPriority = 'HIGH' | 'MED' | 'LOW';
 
 export interface RedditCampaignMetrics {
+  /**
+   * Account-wide reads only (#6209): the project campaign-service records the campaign for, or `null`
+   * when it was created outside LFX. ABSENT on a project-scoped read, whose rows are all the project's.
+   */
+  recordedProjectId?: string | null;
   campaignId: string;
   campaignName: string;
   status: string;
@@ -8741,6 +9195,20 @@ export interface CampaignListResult {
    */
   linkedInBoostEnabled: boolean;
   /**
+   * Whether a LinkedIn create may choose Audience Expansion and the LinkedIn Audience Network (`audienceExpansionEnabled`,
+   * `offsiteDeliveryEnabled`, campaign-service#667). Needs the campaign-service create path AND
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_DELIVERY_OPTIONS`, which follows campaign-service's own
+   * `LINKEDIN_ADS_DELIVERY_OPTIONS_ENABLED`.
+   */
+  linkedInDeliveryOptionsEnabled: boolean;
+  /**
+   * Whether a LinkedIn create may pair the `traffic` objective with a manual bid: a Website visits campaign with a manual
+   * CPC (linuxfoundation/lfx-v2-campaign-service#676). Needs the campaign-service create path AND
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_TRAFFIC_MANUAL_BID`, which follows campaign-service's own
+   * `LINKEDIN_ADS_TRAFFIC_MANUAL_BID_ENABLED`.
+   */
+  linkedInTrafficManualBidEnabled: boolean;
+  /**
    * Whether the Microsoft section may offer an image UPLOAD, sent as
    * `MicrosoftCampaignCreateRequest.imageAssetId` and attached as an image ad extension.
    *
@@ -8822,12 +9290,58 @@ export interface CampaignListResult {
    */
   redditTargetingExclusionsEnabled?: boolean;
   /**
+   * Whether a Reddit create may carry `redditConfig.subCountryGeoTargets` (#6108 row 7): the campaign-service create path
+   * AND `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_SUBCOUNTRY_GEO`, which follows campaign-service's own
+   * `REDDIT_SUBCOUNTRY_GEO_ENABLED`. Optional, so a BFF that predates it reads as unanswered.
+   */
+  redditSubCountryGeoEnabled?: boolean;
+  /**
    * Whether campaign-service resolves a Reddit create's `subreddits` and `interests` before creating anything (#6108 row 4):
    * the campaign-service create path AND `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_TARGETING_RESOLUTION`, which follows
-   * campaign-service's own `REDDIT_TARGETING_RESOLUTION_ENABLED`. Nothing reads it yet: the Implement tab's row 4 screen
-   * (a follow-up) will offer the two lists for editing only on a yes. Optional, so a BFF that predates it reads as unanswered.
+   * campaign-service's own `REDDIT_TARGETING_RESOLUTION_ENABLED`. The Implement tab offers the subreddits and interests for
+   * editing, and sends the edits, only on an explicit yes. Optional, so a BFF that predates it reads as unanswered.
    */
   redditTargetingResolutionEnabled?: boolean;
+  /**
+   * Whether a Reddit create may carry `redditConfig.placements`, `platforms` and `expandTargeting` (#6108 row 5): the
+   * campaign-service create path AND `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_PLACEMENTS`, which follows campaign-service's
+   * own `REDDIT_PLACEMENT_TARGETING_ENABLED`. Optional, so a BFF that predates it reads as unanswered.
+   */
+  redditPlacementsEnabled?: boolean;
+  /**
+   * Whether a Reddit create may carry `redditConfig.budgetType` (#6108 row 5): the campaign-service create path AND
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_DAILY_BUDGET`, which follows campaign-service's own `REDDIT_DAILY_BUDGET_ENABLED`.
+   * Optional, so a BFF that predates it reads as unanswered.
+   */
+  redditBudgetTypeEnabled?: boolean;
+  /**
+   * Whether a Reddit create may carry `redditConfig.gender`, `languages` and `schedule` (#6108 row 9): the
+   * campaign-service create path AND `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_GENDER_LANGUAGE_DAYPARTING`, which follows
+   * campaign-service's own `REDDIT_GENDER_LANGUAGE_DAYPARTING_ENABLED`. Optional, so a BFF that predates it reads as
+   * unanswered.
+   */
+  redditDemographicsEnabled?: boolean;
+  /**
+   * Whether `GET /api/campaigns/reddit/pixels` is served (#6108 row 5): the campaign-service create path AND
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_PIXEL_LIST`, which follows campaign-service's own `REDDIT_PIXEL_LIST_ENABLED`.
+   * The read also needs `global_marketing_ops` on the project, and sending the chosen pixel needs
+   * `redditConversionPixelEnabled`. Optional, so a BFF that predates it reads as unanswered.
+   */
+  redditPixelListEnabled?: boolean;
+  /**
+   * Whether a Reddit create that authors its post makes one ad per variant (#6108 row 6): the campaign-service create path
+   * AND `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_AD_PER_VARIANT`, which follows campaign-service's own
+   * `REDDIT_AD_PER_VARIANT_ENABLED`. On, the variants' headlines may be edited and the create route holds them to
+   * campaign-service's rules. Optional, so a BFF that predates it reads as unanswered.
+   */
+  redditAdPerVariantEnabled?: boolean;
+  /**
+   * Whether a Reddit create may carry `redditConfig.videoAssetId` and `thumbnailAssetId`, a video post from stored assets
+   * (#6108 row 8): `redditAssetUploadEnabled` AND `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_VIDEO`, which follows
+   * campaign-service's own `REDDIT_VIDEO_ENABLED`. On, the creative-asset upload also takes an MP4. Off, the create route
+   * refuses either field. Optional, so a BFF that predates it reads as unanswered.
+   */
+  redditVideoEnabled?: boolean;
   /**
    * Whether a Meta create may carry `metaConfig.callToAction`, `conversionEvent` and `optimizationGoal`
    * (#5934), one flag each: `cutoverOwnsCreate()` AND `LFX_CUTOVER_CAMPAIGN_SERVICE_META_CALL_TO_ACTION`,
@@ -8862,6 +9376,11 @@ export interface CampaignListResult {
    */
   metaAdScheduleEnabled?: boolean;
   metaFrequencyCapEnabled?: boolean;
+  /**
+   * Whether a Meta create may carry `metaConfig.format: 'carousel'` (#6331; campaign-service#550 gap 10):
+   * `cutoverOwnsCreate()` AND `LFX_CUTOVER_CAMPAIGN_SERVICE_META_CAROUSEL`. Deployment-wide.
+   */
+  metaCarouselEnabled?: boolean;
   /**
    * Whether THIS caller may offer the `leads` objective with an Instant Form, through
    * `GET /api/campaigns/meta/lead-forms`, and send `metaConfig.leadFormId` (#5940): `cutoverOwnsCreate()` AND
@@ -9324,6 +9843,18 @@ export interface CampaignMetaImageAssetBlock {
 /** The image a Meta create puts on every variant: an uploaded asset, a pasted URL, or none. Never both. */
 export type MetaImageField = { imageAssetId: string } | { imageUrl: string } | Record<string, never>;
 
+/** What `metaImageUploadHoldsCreate` (`campaign-meta-image.utils.ts`) reads, as plain values. */
+export interface MetaImageUploadHoldInput {
+  /** Whether the Meta section is shown (Meta is a selected platform). */
+  showMetaSection: boolean;
+  /** Whether Meta image uploads are offered: an explicit yes from the upload capability. */
+  uploadAvailable: boolean;
+  /** Whether a carousel is chosen (#6331): it hides the one image's upload control and does not send it. */
+  carouselSelected: boolean;
+  /** The one image's upload status. */
+  uploadStatus: CreativeAssetUploadStatus;
+}
+
 /** The Meta image state `metaImageAssetBlock` (`campaign-meta-image.utils.ts`) reads, as plain values. */
 export interface MetaImageBlockInput {
   /** Whether the Meta section is shown (Meta is a selected platform). */
@@ -9528,6 +10059,8 @@ export interface CampaignBiddingControlView {
   value: CampaignBiddingDraft;
   /** Why the choice cannot be sent, or `null` when it can. Blocks the create. */
   error: string | null;
+  /** What Manual creates, when the platform's other choices change it from `CampaignBiddingPlatformRule.manualDescription`. */
+  manualDescription?: string;
 }
 
 // ---------------------------------------------------------------------------

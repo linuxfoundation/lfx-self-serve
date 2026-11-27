@@ -99,5 +99,7 @@ export function redditCreateRefusal(input: RedditCreateRefusalInput): string | n
   if (input.targetingExclusionsBlock !== null) return `Reddit Ads: ${input.targetingExclusionsBlock}`;
   // Exclusions campaign-service would refuse, including one the targeting now overlaps (`redditTargetingExclusionsDraftRefusal`).
   if (input.targetingExclusionsRefusal !== null) return `Reddit Ads: ${input.targetingExclusionsRefusal}`;
+  // At least one placement and one device (`redditDeliveryRefusal`, #6108 row 5).
+  if (input.deliveryRefusal !== null) return `Reddit Ads: ${input.deliveryRefusal}`;
   return null;
 }

@@ -5,6 +5,7 @@ import {
   DEFAULT_REDDIT_BUDGET_USD,
   DEFAULT_REDDIT_CONVERSION_EVENT,
   DEFAULT_REDDIT_CUSTOM_AUDIENCES,
+  DEFAULT_REDDIT_DELIVERY,
   DEFAULT_REDDIT_OBJECTIVE,
   DEFAULT_REDDIT_TARGETING_EXCLUSIONS,
 } from '../constants/campaign.constants';
@@ -19,7 +20,9 @@ import type {
 } from '../interfaces/campaign.interface';
 import { redditConversionEventFromDraft } from './campaign-reddit-conversion-event.utils';
 import { redditCustomAudienceIdsFromDraft } from './campaign-reddit-custom-audiences.utils';
+import { redditDeliveryDraftFields, redditDeliveryFromDraft } from './campaign-reddit-delivery.utils';
 import { redditTargetingExclusionsFromDraft } from './campaign-reddit-targeting-exclusions.utils';
+import { redditTargetingListFromDraft } from './campaign-reddit-targeting-lists.utils';
 
 /**
  * The Implement tab's Reddit draft rules (#5980): what the draft carries, what a restore sets, what a brief switch resets
@@ -52,6 +55,13 @@ export function redditDraftFields(state: RedditDraftState): RedditDraftSnapshot 
     redditExcludedCustomAudienceIds: [...state.customAudiences.excludedCustomAudienceIds],
     redditExcludedSubreddits: [...state.targetingExclusions.excludedSubreddits],
     redditExcludedGeoTargets: [...state.targetingExclusions.excludedGeoTargets],
+    ...(state.editedTargetingLists
+      ? {
+          redditEditedSubreddits: [...state.editedTargetingLists.subreddits],
+          redditEditedInterests: [...state.editedTargetingLists.interests],
+        }
+      : {}),
+    ...redditDeliveryDraftFields(state.delivery),
   };
 }
 
@@ -62,7 +72,9 @@ export function redditDraftFields(state: RedditDraftState): RedditDraftSnapshot 
  * uploaded image whole, keyed on its id. A failed upload only with the brief it failed for; a running one is resumed.
  * The conversion event only when it is one Reddit takes; any other leaves the default standing. The custom audience lists
  * when either is an array, keeping only its strings (a list the create would refuse stays visible, and holds Create); the
- * targeting exclusion lists the same way.
+ * targeting exclusion lists the same way. The edited subreddits and interests (#6108 row 4) when either is an array, to
+ * set over the brief's seed; the draft carries them only once edited. The delivery choices (#6108 row 5) when any of
+ * their four keys is present, each unreadable one at its default (`redditDeliveryFromDraft`).
  */
 export function redditDraftRestore(draft: RedditDraftSnapshot): RedditDraftRestore {
   const restore: RedditDraftRestore = {};
@@ -94,6 +106,13 @@ export function redditDraftRestore(draft: RedditDraftSnapshot): RedditDraftResto
   if (excludedSubreddits !== undefined || excludedGeoTargets !== undefined) {
     restore.targetingExclusions = { excludedSubreddits: excludedSubreddits ?? [], excludedGeoTargets: excludedGeoTargets ?? [] };
   }
+  const subreddits = redditTargetingListFromDraft(draft.redditEditedSubreddits);
+  const interests = redditTargetingListFromDraft(draft.redditEditedInterests);
+  if (subreddits !== undefined || interests !== undefined) {
+    restore.editedTargetingLists = { subreddits: subreddits ?? [], interests: interests ?? [] };
+  }
+  const delivery = redditDeliveryFromDraft(draft);
+  if (delivery !== undefined) restore.delivery = delivery;
   return restore;
 }
 
@@ -117,6 +136,11 @@ export function redditBriefReset(): RedditBriefReset {
     targetingExclusions: {
       excludedSubreddits: [...DEFAULT_REDDIT_TARGETING_EXCLUSIONS.excludedSubreddits],
       excludedGeoTargets: [...DEFAULT_REDDIT_TARGETING_EXCLUSIONS.excludedGeoTargets],
+    },
+    delivery: {
+      ...DEFAULT_REDDIT_DELIVERY,
+      placements: [...DEFAULT_REDDIT_DELIVERY.placements],
+      platforms: [...DEFAULT_REDDIT_DELIVERY.platforms],
     },
     budgetUsd: DEFAULT_REDDIT_BUDGET_USD,
     variants: [],

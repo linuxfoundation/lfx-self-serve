@@ -3,7 +3,14 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { linkedInBoostRefusal } from './campaign-linkedin-boost.utils';
+import {
+  linkedInBoostChosen,
+  linkedInBoostCreateRefusal,
+  linkedInBoostFieldsForCreate,
+  linkedInBoostPostError,
+  linkedInBoostRefusal,
+  linkedInBoostUnavailable,
+} from './campaign-linkedin-boost.utils';
 import { linkedInConfigKeyRefusal } from './campaign-linkedin-config.utils';
 import { linkedInTextAdsRefusal } from './campaign-linkedin-text-ads.utils';
 
@@ -57,5 +64,41 @@ describe('a boost and the other LinkedIn checks', () => {
 
   it('lets format "boost" through the format check', () => {
     expect(linkedInTextAdsRefusal(boost(), true)).toBeNull();
+  });
+});
+
+describe('the Implement tab boost', () => {
+  it.each([
+    ['boost', true, true, false],
+    ['boost', false, false, true],
+    // Not read yet: held, never sent.
+    ['boost', null, false, true],
+    ['single_image', true, false, false],
+    ['document', false, false, false],
+  ] as const)('format %s with the capability %s: chosen %s, unavailable %s', (format, enabled, chosen, unavailable) => {
+    expect(linkedInBoostChosen(format, enabled)).toBe(chosen);
+    expect(linkedInBoostUnavailable(format, enabled)).toBe(unavailable);
+  });
+
+  it('sends the format, the post without the spaces a paste carries, and no variants', () => {
+    expect(linkedInBoostFieldsForCreate(`  ${SHARE}\n`)).toEqual({ format: 'boost', boostPost: SHARE, variants: [] });
+  });
+
+  it.each([
+    ['empty', '', '', null],
+    ['a share', SHARE, '', null],
+    ['a ugcPost with spaces around it', ' urn:li:ugcPost:74 ', '', null],
+    ['an activity URN', 'urn:li:activity:7518402035831111680', 'activity URN', 'post URN'],
+    ['a post link', `https://www.linkedin.com/feed/update/${SHARE}/`, 'not its link', 'post URN'],
+    ['anything else', 'my post', 'Enter a LinkedIn post URN', 'post URN'],
+  ])('the post field, %s', (_name, post, error, refusal) => {
+    expect(linkedInBoostPostError(post)).toContain(error);
+    if (error === '') expect(linkedInBoostPostError(post)).toBe('');
+    if (refusal !== null) expect(linkedInBoostCreateRefusal(post)).toContain(refusal);
+  });
+
+  it('holds Create on an empty post, and not on a post URN', () => {
+    expect(linkedInBoostCreateRefusal('')).toBe('LinkedIn Ads: Choose the LinkedIn post to boost.');
+    expect(linkedInBoostCreateRefusal(SHARE)).toBeNull();
   });
 });

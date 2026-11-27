@@ -29,8 +29,9 @@ import {
   requireLinkedInLeadFormsAccess,
   requireMetaLeadFormsAccess,
   requireRedditCustomAudiencesAccess,
+  requireRedditPixelsAccess,
 } from '../middleware/require-marketing-access.middleware';
-import { canSetLinkedInDocument, canSetLinkedInVideoAds } from '../services/campaign-service.service';
+import { canSetLinkedInDocument, canSetLinkedInVideoAds, canSetRedditVideo } from '../services/campaign-service.service';
 
 /**
  * Converts the raw body parser's size-limit error (`entity.too.large`) into a 413 before it
@@ -123,6 +124,12 @@ router.get('/meta/custom-audiences', requireMetaCustomAudiencesAccess, (req, res
 // custom audiences are off. Ahead of `router.use(requireCampaignManager)` for the same reason as the lists above.
 router.get('/reddit/custom-audiences', requireRedditCustomAudiencesAccess, (req, res, next) => campaignController.getRedditCustomAudiences(req, res, next));
 
+// The conversion pixels on the Reddit ad account a create uses, for the `conversionPixelId` picker (#6108 row 5). The ad
+// account is shared, so the list names every foundation's pixels: answered only to `global_marketing_ops` on the project,
+// as campaign-service answers (lfx-v2-campaign-service#549). 404 while the pixel list is off. Ahead of
+// `router.use(requireCampaignManager)` for the same reason as the lists above.
+router.get('/reddit/pixels', requireRedditPixelsAccess, (req, res, next) => campaignController.getRedditPixels(req, res, next));
+
 // The Instant Forms of the Facebook Page a Meta create uses, for the Implement tab's lead form picker (#5940).
 // A project without its own connection uses the shared LF Page, which holds every foundation's forms: answered
 // only to `global_marketing_ops` on the project, as campaign-service answers. 404 while Meta lead forms are off.
@@ -174,8 +181,9 @@ router.post('/brief/:briefId/approve', (req, res, next) => campaignController.ap
 router.get('/brief/metrics', (req, res, next) => campaignController.getBriefMetrics(req, res, next));
 router.post('/create', (req, res, next) => campaignController.createCampaign(req, res, next));
 // An image, video or PDF for the brief, stored by campaign-service and named by asset id in a platform's
-// creative config — `redditConfig.imageAssetId` (decision D3), the Google creative fields, and a
-// LinkedIn video ad's `videoAssetId` (#5764 row 18), and a LinkedIn document ad's PDF `documentAssetId`
+// creative config — `redditConfig.imageAssetId` (decision D3), the Google creative fields, a LinkedIn video
+// ad's `videoAssetId` (#5764 row 18), a Reddit video post's `videoAssetId` and `thumbnailAssetId` (#6108
+// row 8), and a LinkedIn document ad's PDF `documentAssetId`
 // (campaign-service#665). The body is the raw bytes, buffered here so the upstream JSON body can be sent
 // with a declared Content-Length. One parser per kind, each with its own limit: a PNG/JPEG at most
 // CREATIVE_ASSET_MAX_BYTES, an MP4 at most CREATIVE_ASSET_VIDEO_MAX_BYTES, a PDF at most
@@ -184,10 +192,10 @@ router.post('/create', (req, res, next) => campaignController.createCampaign(req
 router.post(
   '/brief/creative-assets',
   express.raw({ type: [...CREATIVE_ASSET_MIME_TYPES], limit: CREATIVE_ASSET_MAX_BYTES }),
-  // Read only while a video can be used (`canSetLinkedInVideoAds`); otherwise the body is never buffered and the
-  // controller answers the 415.
+  // Read only while a video can be used, by a LinkedIn video ad or a Reddit video post (`canSetLinkedInVideoAds`,
+  // `canSetRedditVideo`); otherwise the body is never buffered and the controller answers the 415.
   express.raw({
-    type: (req) => canSetLinkedInVideoAds() && (req as Request).is(CREATIVE_ASSET_VIDEO_MIME_TYPE) === CREATIVE_ASSET_VIDEO_MIME_TYPE,
+    type: (req) => (canSetLinkedInVideoAds() || canSetRedditVideo()) && (req as Request).is(CREATIVE_ASSET_VIDEO_MIME_TYPE) === CREATIVE_ASSET_VIDEO_MIME_TYPE,
     limit: CREATIVE_ASSET_VIDEO_MAX_BYTES,
   }),
   // Read only while a document ad can be used (`canSetLinkedInDocument`); otherwise the body is never buffered and the

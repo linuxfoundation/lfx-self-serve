@@ -732,15 +732,99 @@ environment:
   LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_TARGETING_EXCLUSIONS:
     value:
 
-  # Reddit community and interest resolution (#6108 row 4, linuxfoundation/lfx-v2-campaign-service#573): reported to the
-  # Implement tab, whose row 4 screen (a follow-up) will offer the Reddit section's subreddits and interests for editing;
-  # campaign-service resolves them to Reddit's names and ids, refusing an unknown one before anything is created.
+  # Reddit regions, cities and DMAs (#6108 row 7, linuxfoundation/lfx-v2-campaign-service#549): accepts
+  # `redditConfig.subCountryGeoTargets`, at most 50 Reddit geolocation ids: a region (`US-CA`), a city (`CA:6167865`) or
+  # a DMA (`662`). A bare country belongs in `geoTargets`, and no id may lie inside a country `geoTargets` targets or
+  # `excludedGeoTargets` excludes. campaign-service confirms each id with Reddit before anything is created.
+  #
+  # A CAPABILITY flag of the Bidding kind: REQUIRES campaign-service DEPLOYED with `REDDIT_SUBCOUNTRY_GEO_ENABLED` on, and
+  # the create pipeline on. Off (the default), the create route refuses the field with a 400, never dropping it. A field
+  # only, so turning it back off strands nothing. Order: set campaign-service's flag and pass its live probe, THEN this.
+  # Same accepted values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_SUBCOUNTRY_GEO:
+    value:
+
+  # Reddit community and interest resolution (#6108 row 4, linuxfoundation/lfx-v2-campaign-service#573): offers the
+  # Reddit section's subreddits and interests for editing on the Implement tab; campaign-service resolves them to Reddit's
+  # names and ids, refusing an unknown one before anything is created.
   # Changes no request field.
   #
   # A CAPABILITY flag: REQUIRES campaign-service DEPLOYED with `REDDIT_TARGETING_RESOLUTION_ENABLED` on, and the create
   # pipeline on. Off (the default), the lists stay the brief's, read-only. Order: set campaign-service's flag and pass its
   # live probe, THEN this. Same accepted values as the flags above.
   LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_TARGETING_RESOLUTION:
+    value:
+
+  # Reddit placements, devices and expansion (#6108 row 5, linuxfoundation/lfx-v2-campaign-service#549): accepts
+  # `redditConfig.placements` (FEED, COMMENTS_PAGE), `redditConfig.platforms` (DESKTOP, MOBILE_NATIVE, MOBILE_WEB; not
+  # ALL, omit the list for every device) and `redditConfig.expandTargeting`.
+  #
+  # A CAPABILITY flag of the Bidding kind: REQUIRES campaign-service DEPLOYED with `REDDIT_PLACEMENT_TARGETING_ENABLED`
+  # on, and the create pipeline on. Off (the default), the create route refuses the fields with a 400 (`expandTargeting`
+  # even when true), never dropping them. Fields only, so turning it back off strands nothing. Order: set
+  # campaign-service's flag and pass its live probe, THEN this. Same accepted values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_PLACEMENTS:
+    value:
+
+  # Reddit daily budgets (#6108 row 5, linuxfoundation/lfx-v2-campaign-service#549): accepts `redditConfig.budgetType`
+  # (`lifetime` or `daily`; omitted is lifetime).
+  #
+  # A CAPABILITY flag of the Bidding kind: REQUIRES campaign-service DEPLOYED with `REDDIT_DAILY_BUDGET_ENABLED` on, and
+  # the create pipeline on. Off (the default), the create route refuses the field with a 400 (`lifetime` included), never
+  # dropping it. A field only, so turning it back off strands nothing. Order: set campaign-service's flag and pass its
+  # live probe, THEN this. Same accepted values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_DAILY_BUDGET:
+    value:
+
+  # Reddit one ad per variant (#6108 row 6, linuxfoundation/lfx-v2-campaign-service#549): a create that authors its post
+  # (`redditConfig.imageUrl` or `imageAssetId`, no `postUrl`) with 2 to 5 `redditConfig.variants` makes one promoted post
+  # and one ad per variant, so the variants' headlines become editable.
+  #
+  # A CAPABILITY flag of the Bidding kind: REQUIRES campaign-service DEPLOYED with `REDDIT_AD_PER_VARIANT_ENABLED` on, and
+  # the create pipeline on. It gates no new field: creates already carry the brief's variants, so off (the default)
+  # changes nothing and refuses nothing. On, the create route refuses more than 5 variants or a blank or
+  # over-300-character headline with a 400, never trimming them. Rules only, so turning it back off strands nothing.
+  # Order: set campaign-service's flag and pass its live probe, THEN this. NOTE: campaign-service's flag alone already
+  # makes one ad per variant on every authored-post create with 2 to 5 variants, whatever this flag says. Same accepted
+  # values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_AD_PER_VARIANT:
+    value:
+
+  # Reddit gender, language and dayparting (#6108 row 9, linuxfoundation/lfx-v2-campaign-service#549): accepts
+  # `redditConfig.gender` (FEMALE, MALE), `redditConfig.languages` (ISO 639-1 codes from Reddit's list) and
+  # `redditConfig.schedule` (weekly {startDay, startHour, endDay, endHour} windows, at most 50).
+  #
+  # A CAPABILITY flag of the Bidding kind: REQUIRES campaign-service DEPLOYED with
+  # `REDDIT_GENDER_LANGUAGE_DAYPARTING_ENABLED` on, and the create pipeline on. Off (the default), the create route
+  # refuses the fields with a 400, never dropping them. Fields only, so turning it back off strands nothing. Order: set
+  # campaign-service's flag and pass its live probe, THEN this. Same accepted values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_GENDER_LANGUAGE_DAYPARTING:
+    value:
+
+  # Reddit video posts (#6108 row 8, linuxfoundation/lfx-v2-campaign-service#549): accepts `redditConfig.videoAssetId`
+  # (a stored MP4) and `thumbnailAssetId` (a stored PNG or JPEG), and lets the creative-asset upload take an MP4 for it.
+  #
+  # A CAPABILITY flag of the Bidding kind: REQUIRES campaign-service DEPLOYED with `REDDIT_VIDEO_ENABLED` on, the create
+  # pipeline on, and LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_ASSETS on, since Reddit fetches the video and thumbnail from the
+  # same signed URLs as a stored image (CREATIVE_ASSET_URL_SIGNING_KEY and CREATIVE_ASSET_PUBLIC_BASE_URL set). Off (the
+  # default), the create route refuses either field with a 400, never dropping it. On, it also refuses what
+  # campaign-service would: a thumbnail without a video or a video without one, a video beside `postUrl`, `imageUrl` or
+  # `imageAssetId`, a video with 2 or more variants while REDDIT_AD_PER_VARIANT is on, an id that is not a UUID, or the
+  # same id twice. Fields only, so turning it back off strands nothing. Order: campaign-service's signing settings, then
+  # REDDIT_ASSETS, then campaign-service's REDDIT_VIDEO_ENABLED and its paused video probe, THEN this. Same accepted values
+  # as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_VIDEO:
+    value:
+
+  # Reddit pixel list (#6108 row 5, linuxfoundation/lfx-v2-campaign-service#549): serves `GET /api/campaigns/reddit/pixels`,
+  # the conversion pixels on the shared Reddit ad account, for a picker that fills the existing
+  # `redditConfig.conversionPixelId` (still gated by LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_CONVERSION_PIXEL's create path).
+  # Answered only to `global_marketing_ops` on the project.
+  #
+  # A CAPABILITY flag of the Bidding kind: REQUIRES campaign-service DEPLOYED with `REDDIT_PIXEL_LIST_ENABLED` on, and the
+  # create pipeline on. Off (the default), the read answers 404. A read only, so turning it back off strands nothing.
+  # Order: set campaign-service's flag and pass its live probe, THEN this. Same accepted values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_PIXEL_LIST:
     value:
 
   # Offers a stored-image LIBRARY in each Google creative image slot (Demand Gen, Performance Max
@@ -939,6 +1023,30 @@ environment:
   LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_BOOST:
     value:
 
+  # LinkedIn Audience Expansion and the LinkedIn Audience Network (linuxfoundation/lfx-v2-campaign-service#667): accepts
+  # `linkedInConfig.audienceExpansionEnabled` and `linkedInConfig.offsiteDeliveryEnabled`, each a boolean. Omitted, a
+  # create sends what it always did: no Audience Expansion and the Audience Network off. The Audience Network is refused
+  # with Text Ads and with the lead generation objective.
+  #
+  # A CAPABILITY flag of the Bidding kind: REQUIRES campaign-service v1.0.44 DEPLOYED with
+  # `LINKEDIN_ADS_DELIVERY_OPTIONS_ENABLED` on, and the create pipeline on. Off (the default), the create route refuses
+  # either field (false included) with a 400, never dropping it. Fields only, so turning it back off strands nothing.
+  # Order: set campaign-service's flag and pass its probe, THEN this. Same accepted values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_DELIVERY_OPTIONS:
+    value:
+
+  # LinkedIn Website visits with a manual CPC bid (linuxfoundation/lfx-v2-campaign-service#676): accepts
+  # `linkedInConfig.objective: "traffic"` with a manual `bidding`, created as WEBSITE_VISIT with costType CPC,
+  # optimizationTargetType NONE and the bid as unitCost. An omitted objective with a manual bid is still Website
+  # conversions.
+  #
+  # A CAPABILITY flag of the Bidding kind: REQUIRES a campaign-service release carrying #676 DEPLOYED with
+  # `LINKEDIN_ADS_TRAFFIC_MANUAL_BID_ENABLED` on, and the create pipeline on. Off (the default), the create route refuses
+  # traffic with a manual bid with a 400, as before. Fields only, so turning it back off strands nothing.
+  # Order: set campaign-service's flag and pass its paused probe, THEN this. Same accepted values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_TRAFFIC_MANUAL_BID:
+    value:
+
   # Offers Meta ad set audience targeting on the Implement tab (#5905), sent as
   # `metaConfig.targeting`: age range, gender and Advantage+ audience for every campaign manager, and
   # included/excluded custom audiences (picked from `GET /api/campaigns/meta/custom-audiences`) only for
@@ -1051,6 +1159,17 @@ environment:
   LFX_CUTOVER_CAMPAIGN_SERVICE_META_AD_SCHEDULE:
     value:
   LFX_CUTOVER_CAMPAIGN_SERVICE_META_FREQUENCY_CAP:
+    value:
+
+  # Meta carousel ads (#6331): accepts `metaConfig.format: carousel`, ONE ad whose 2 to 10 image cards are the
+  # variants, with variant 1's primary text as its one message and never with a lead form.
+  #
+  # CAPABILITY flag of the Bidding kind: REQUIRES campaign-service v1.0.44 DEPLOYED with `META_CAROUSEL_ENABLED`
+  # on (linuxfoundation/lfx-v2-campaign-service#550 gap 10), and the create pipeline on. Off (the default), the
+  # create route refuses any format but single with a 400, never dropping it. A field only, so turning it back off
+  # strands nothing. Order: set campaign-service's flag and pass its live probe, THEN this. Same accepted values
+  # as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_META_CAROUSEL:
     value:
 
   # Offers a PNG/JPEG image upload in the Microsoft section of the create flow, sent as
@@ -1387,6 +1506,15 @@ environment:
   # than serving a different account; the tab's Retry re-checks which source to use.
   # Reads only, so turning it back off strands nothing.
   LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR:
+    value: "false"
+
+  # Asks campaign-service's Google Ads, LinkedIn, Meta, Reddit and X monitors for EVERY campaign on
+  # the shared account, labeled by the project that recorded it or as created outside LFX (#6209,
+  # campaign-service#672 scope=account). Sent only for callers holding global_marketing_ops on the
+  # project; everyone else keeps the project-scoped read. Needs LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR on,
+  # and campaign-service's ACCOUNT_MONITOR_ACCOUNT_SCOPE_ENABLED on first (it answers 400 until then).
+  # Reads only, so turning it back off strands nothing.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR_ACCOUNT_SCOPE:
     value: "false"
 
   # Set to 'live' to proxy WG Weekly Brief endpoints to committee-service (LFXV2-2175/2176).

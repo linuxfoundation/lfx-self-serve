@@ -978,7 +978,7 @@ describe('OrgLensPeopleController Trainees outside-learner keys (lfx-self-serve#
 
 describe('OrgLensPeopleController trainees access qualification', () => {
   const controller = new OrgLensPeopleController();
-  const EMPTY_TRAINEES = { accountId: ORG_UID, timeRange: '730d', trainees: [], details: [], outsideLearners: [], asOf: null };
+  const EMPTY_TRAINEES = { accountId: ORG_UID, timeRange: '730d', trainees: [], pairs: [], details: [], outsideLearners: [], asOf: null };
 
   beforeEach(() => {
     vi.clearAllMocks();

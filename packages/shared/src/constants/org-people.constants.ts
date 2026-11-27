@@ -260,6 +260,7 @@ export const EMPTY_ORG_TRAINEES_RESPONSE: OrgTraineesResponse = {
   accountId: '',
   timeRange: ORG_LENS_DEFAULT_TIME_RANGE,
   trainees: [],
+  pairs: [],
   details: [],
   outsideLearners: [],
   formerOnPeopleList: { people: 0, pairs: 0 },

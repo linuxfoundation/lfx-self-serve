@@ -1192,8 +1192,16 @@ export class CampaignsComponent {
   protected readonly briefCampaignsLinkedInLeadGenEnabled = signal<boolean | null>(null);
   /** Whether the LinkedIn section offers carousel ads (`CampaignListResult.linkedInCarouselEnabled`, campaign-service#665). */
   protected readonly briefCampaignsLinkedInCarouselEnabled = signal<boolean | null>(null);
+  /** Whether the LinkedIn section offers document ads (`CampaignListResult.linkedInDocumentEnabled`, campaign-service#665). */
+  protected readonly briefCampaignsLinkedInDocumentEnabled = signal<boolean | null>(null);
+  /** Whether the LinkedIn section offers boosting an existing post (`CampaignListResult.linkedInBoostEnabled`, campaign-service#673). */
+  protected readonly briefCampaignsLinkedInBoostEnabled = signal<boolean | null>(null);
   /** Whether the LinkedIn section offers a target cost (`CampaignListResult.linkedInTargetCostEnabled`, campaign-service#674). */
   protected readonly briefCampaignsLinkedInTargetCostEnabled = signal<boolean | null>(null);
+  /** Whether the LinkedIn section offers its delivery options (`CampaignListResult.linkedInDeliveryOptionsEnabled`, campaign-service#667). */
+  protected readonly briefCampaignsLinkedInDeliveryOptionsEnabled = signal<boolean | null>(null);
+  /** Whether a LinkedIn traffic create may take a manual bid (`CampaignListResult.linkedInTrafficManualBidEnabled`, campaign-service#676). */
+  protected readonly briefCampaignsLinkedInTrafficManualBidEnabled = signal<boolean | null>(null);
   /** Whether the Microsoft section offers an image upload — `CampaignListResult.microsoftAssetUploadEnabled`, read and cleared like the capabilities above. */
   protected readonly briefCampaignsMicrosoftAssetUploadEnabled = signal<boolean | null>(null);
   /** Whether the create flow offers the Bidding control (#3299) — `CampaignListResult.biddingEnabled`, read and cleared like the capabilities above. */
@@ -1211,10 +1219,18 @@ export class CampaignsComponent {
   protected readonly briefCampaignsRedditCustomAudiencesEnabled = signal<boolean | null>(null);
   /** `CampaignListResult.redditTargetingExclusionsEnabled` (#6108 row 3): whether a Reddit create may carry excluded communities and countries. */
   protected readonly briefCampaignsRedditTargetingExclusionsEnabled = signal<boolean | null>(null);
+  /** `CampaignListResult.redditPlacementsEnabled`, `redditBudgetTypeEnabled` and `redditPixelListEnabled` (#6108 row 5): Reddit placements, devices and expansion; the budget type; the pixel list. */
+  protected readonly briefCampaignsRedditPlacementsEnabled = signal<boolean | null>(null);
+  protected readonly briefCampaignsRedditBudgetTypeEnabled = signal<boolean | null>(null);
+  protected readonly briefCampaignsRedditPixelListEnabled = signal<boolean | null>(null);
+  /** `CampaignListResult.redditTargetingResolutionEnabled` (#6108 row 4): whether the Reddit subreddits and interests are editable. */
+  protected readonly briefCampaignsRedditTargetingResolutionEnabled = signal<boolean | null>(null);
   /** The Meta call to action, conversion event and optimization goal (#5934), one capability each, read and cleared like the capabilities above. */
   protected readonly briefCampaignsMetaCallToActionEnabled = signal<boolean | null>(null);
   /** Meta lead forms (#5940) — `CampaignListResult.metaLeadFormsEnabled`: whether THIS caller may create a lead ad. */
   protected readonly briefCampaignsMetaLeadFormsEnabled = signal<boolean | null>(null);
+  /** Whether the Meta section offers carousel ads (`CampaignListResult.metaCarouselEnabled`, #6331). */
+  protected readonly briefCampaignsMetaCarouselEnabled = signal<boolean | null>(null);
   /** Meta interests, behaviors with job titles, languages (#5904 row 4), and regions with cities (row 6): deployment-wide answers, read and cleared like the capabilities above. */
   protected readonly briefCampaignsMetaInterestTargetingEnabled = signal<boolean | null>(null);
   protected readonly briefCampaignsMetaBehaviorTargetingEnabled = signal<boolean | null>(null);
@@ -3422,7 +3438,11 @@ export class CampaignsComponent {
         this.briefCampaignsLinkedInConversionsEnabled.set(null);
         this.briefCampaignsLinkedInLeadGenEnabled.set(null);
         this.briefCampaignsLinkedInCarouselEnabled.set(null);
+        this.briefCampaignsLinkedInDocumentEnabled.set(null);
+        this.briefCampaignsLinkedInBoostEnabled.set(null);
         this.briefCampaignsLinkedInTargetCostEnabled.set(null);
+        this.briefCampaignsLinkedInDeliveryOptionsEnabled.set(null);
+        this.briefCampaignsLinkedInTrafficManualBidEnabled.set(null);
         this.briefCampaignsMicrosoftAssetUploadEnabled.set(null);
         this.briefCampaignsBiddingEnabled.set(null);
         this.briefCampaignsMicrosoftScheduleEnabled.set(null);
@@ -3431,6 +3451,7 @@ export class CampaignsComponent {
         this.briefCampaignsMetaAudienceTargetingEnabled.set(null);
         this.briefCampaignsMetaCallToActionEnabled.set(null);
         this.briefCampaignsMetaLeadFormsEnabled.set(null);
+        this.briefCampaignsMetaCarouselEnabled.set(null);
         this.briefCampaignsMetaInterestTargetingEnabled.set(null);
         this.briefCampaignsMetaBehaviorTargetingEnabled.set(null);
         this.briefCampaignsMetaLocaleTargetingEnabled.set(null);
@@ -3444,6 +3465,10 @@ export class CampaignsComponent {
         this.briefCampaignsMetaCustomAudiencesEnabled.set(null);
         this.briefCampaignsRedditCustomAudiencesEnabled.set(null);
         this.briefCampaignsRedditTargetingExclusionsEnabled.set(null);
+        this.briefCampaignsRedditPlacementsEnabled.set(null);
+        this.briefCampaignsRedditBudgetTypeEnabled.set(null);
+        this.briefCampaignsRedditPixelListEnabled.set(null);
+        this.briefCampaignsRedditTargetingResolutionEnabled.set(null);
         this.briefCampaignsGoogleAudienceSegmentsEnabled.set(null);
         this.briefCampaignsGoogleConversionActionsEnabled.set(null);
         this.briefCampaignsGoogleDemandGenAudienceEnabled.set(null);
@@ -6524,7 +6549,11 @@ export class CampaignsComponent {
           this.briefCampaignsLinkedInConversionsEnabled.set(result.linkedInConversionsEnabled);
           this.briefCampaignsLinkedInLeadGenEnabled.set(result.linkedInLeadGenEnabled);
           this.briefCampaignsLinkedInCarouselEnabled.set(result.linkedInCarouselEnabled);
+          this.briefCampaignsLinkedInDocumentEnabled.set(result.linkedInDocumentEnabled);
+          this.briefCampaignsLinkedInBoostEnabled.set(result.linkedInBoostEnabled);
           this.briefCampaignsLinkedInTargetCostEnabled.set(result.linkedInTargetCostEnabled);
+          this.briefCampaignsLinkedInDeliveryOptionsEnabled.set(result.linkedInDeliveryOptionsEnabled);
+          this.briefCampaignsLinkedInTrafficManualBidEnabled.set(result.linkedInTrafficManualBidEnabled);
           this.briefCampaignsMicrosoftAssetUploadEnabled.set(result.microsoftAssetUploadEnabled);
           this.briefCampaignsBiddingEnabled.set(result.biddingEnabled);
           this.briefCampaignsMicrosoftScheduleEnabled.set(result.microsoftScheduleEnabled);
@@ -6533,6 +6562,7 @@ export class CampaignsComponent {
           this.briefCampaignsMetaAudienceTargetingEnabled.set(result.metaAudienceTargetingEnabled ?? null);
           this.briefCampaignsMetaCallToActionEnabled.set(result.metaCallToActionEnabled ?? null);
           this.briefCampaignsMetaLeadFormsEnabled.set(result.metaLeadFormsEnabled ?? null);
+          this.briefCampaignsMetaCarouselEnabled.set(result.metaCarouselEnabled ?? null);
           this.briefCampaignsMetaInterestTargetingEnabled.set(result.metaInterestTargetingEnabled ?? null);
           this.briefCampaignsMetaBehaviorTargetingEnabled.set(result.metaBehaviorTargetingEnabled ?? null);
           this.briefCampaignsMetaLocaleTargetingEnabled.set(result.metaLocaleTargetingEnabled ?? null);
@@ -6546,6 +6576,10 @@ export class CampaignsComponent {
           this.briefCampaignsMetaCustomAudiencesEnabled.set(result.metaCustomAudiencesEnabled ?? null);
           this.briefCampaignsRedditCustomAudiencesEnabled.set(result.redditCustomAudiencesEnabled ?? null);
           this.briefCampaignsRedditTargetingExclusionsEnabled.set(result.redditTargetingExclusionsEnabled ?? null);
+          this.briefCampaignsRedditPlacementsEnabled.set(result.redditPlacementsEnabled ?? null);
+          this.briefCampaignsRedditBudgetTypeEnabled.set(result.redditBudgetTypeEnabled ?? null);
+          this.briefCampaignsRedditPixelListEnabled.set(result.redditPixelListEnabled ?? null);
+          this.briefCampaignsRedditTargetingResolutionEnabled.set(result.redditTargetingResolutionEnabled ?? null);
           this.briefCampaignsGoogleAudienceSegmentsEnabled.set(result.googleAudienceSegmentsEnabled);
           this.briefCampaignsGoogleConversionActionsEnabled.set(result.googleConversionActionsEnabled ?? null);
           this.briefCampaignsGoogleDemandGenAudienceEnabled.set(result.googleDemandGenAudienceEnabled ?? null);
@@ -6588,7 +6622,11 @@ export class CampaignsComponent {
           this.briefCampaignsLinkedInConversionsEnabled.set(null);
           this.briefCampaignsLinkedInLeadGenEnabled.set(null);
           this.briefCampaignsLinkedInCarouselEnabled.set(null);
+          this.briefCampaignsLinkedInDocumentEnabled.set(null);
+          this.briefCampaignsLinkedInBoostEnabled.set(null);
           this.briefCampaignsLinkedInTargetCostEnabled.set(null);
+          this.briefCampaignsLinkedInDeliveryOptionsEnabled.set(null);
+          this.briefCampaignsLinkedInTrafficManualBidEnabled.set(null);
           this.briefCampaignsMicrosoftAssetUploadEnabled.set(null);
           this.briefCampaignsBiddingEnabled.set(null);
           this.briefCampaignsMicrosoftScheduleEnabled.set(null);
@@ -6597,6 +6635,7 @@ export class CampaignsComponent {
           this.briefCampaignsMetaAudienceTargetingEnabled.set(null);
           this.briefCampaignsMetaCallToActionEnabled.set(null);
           this.briefCampaignsMetaLeadFormsEnabled.set(null);
+          this.briefCampaignsMetaCarouselEnabled.set(null);
           this.briefCampaignsMetaInterestTargetingEnabled.set(null);
           this.briefCampaignsMetaBehaviorTargetingEnabled.set(null);
           this.briefCampaignsMetaLocaleTargetingEnabled.set(null);
@@ -6610,6 +6649,10 @@ export class CampaignsComponent {
           this.briefCampaignsMetaCustomAudiencesEnabled.set(null);
           this.briefCampaignsRedditCustomAudiencesEnabled.set(null);
           this.briefCampaignsRedditTargetingExclusionsEnabled.set(null);
+          this.briefCampaignsRedditPlacementsEnabled.set(null);
+          this.briefCampaignsRedditBudgetTypeEnabled.set(null);
+          this.briefCampaignsRedditPixelListEnabled.set(null);
+          this.briefCampaignsRedditTargetingResolutionEnabled.set(null);
           this.briefCampaignsGoogleAudienceSegmentsEnabled.set(null);
           this.briefCampaignsGoogleConversionActionsEnabled.set(null);
           this.briefCampaignsGoogleDemandGenAudienceEnabled.set(null);
@@ -6697,7 +6740,11 @@ export class CampaignsComponent {
       this.briefCampaignsLinkedInConversionsEnabled.set(null);
       this.briefCampaignsLinkedInLeadGenEnabled.set(null);
       this.briefCampaignsLinkedInCarouselEnabled.set(null);
+      this.briefCampaignsLinkedInDocumentEnabled.set(null);
+      this.briefCampaignsLinkedInBoostEnabled.set(null);
       this.briefCampaignsLinkedInTargetCostEnabled.set(null);
+      this.briefCampaignsLinkedInDeliveryOptionsEnabled.set(null);
+      this.briefCampaignsLinkedInTrafficManualBidEnabled.set(null);
       this.briefCampaignsMicrosoftAssetUploadEnabled.set(null);
       this.briefCampaignsBiddingEnabled.set(null);
       this.briefCampaignsMicrosoftScheduleEnabled.set(null);
@@ -6706,6 +6753,7 @@ export class CampaignsComponent {
       this.briefCampaignsMetaAudienceTargetingEnabled.set(null);
       this.briefCampaignsMetaCallToActionEnabled.set(null);
       this.briefCampaignsMetaLeadFormsEnabled.set(null);
+      this.briefCampaignsMetaCarouselEnabled.set(null);
       this.briefCampaignsMetaInterestTargetingEnabled.set(null);
       this.briefCampaignsMetaBehaviorTargetingEnabled.set(null);
       this.briefCampaignsMetaLocaleTargetingEnabled.set(null);
@@ -6719,6 +6767,10 @@ export class CampaignsComponent {
       this.briefCampaignsMetaCustomAudiencesEnabled.set(null);
       this.briefCampaignsRedditCustomAudiencesEnabled.set(null);
       this.briefCampaignsRedditTargetingExclusionsEnabled.set(null);
+      this.briefCampaignsRedditPlacementsEnabled.set(null);
+      this.briefCampaignsRedditBudgetTypeEnabled.set(null);
+      this.briefCampaignsRedditPixelListEnabled.set(null);
+      this.briefCampaignsRedditTargetingResolutionEnabled.set(null);
       this.briefCampaignsGoogleAudienceSegmentsEnabled.set(null);
       this.briefCampaignsGoogleConversionActionsEnabled.set(null);
       this.briefCampaignsGoogleDemandGenAudienceEnabled.set(null);
@@ -6776,7 +6828,11 @@ export class CampaignsComponent {
             this.briefCampaignsLinkedInConversionsEnabled.set(result.linkedInConversionsEnabled);
             this.briefCampaignsLinkedInLeadGenEnabled.set(result.linkedInLeadGenEnabled);
             this.briefCampaignsLinkedInCarouselEnabled.set(result.linkedInCarouselEnabled);
+            this.briefCampaignsLinkedInDocumentEnabled.set(result.linkedInDocumentEnabled);
+            this.briefCampaignsLinkedInBoostEnabled.set(result.linkedInBoostEnabled);
             this.briefCampaignsLinkedInTargetCostEnabled.set(result.linkedInTargetCostEnabled);
+            this.briefCampaignsLinkedInDeliveryOptionsEnabled.set(result.linkedInDeliveryOptionsEnabled);
+            this.briefCampaignsLinkedInTrafficManualBidEnabled.set(result.linkedInTrafficManualBidEnabled);
             this.briefCampaignsMicrosoftAssetUploadEnabled.set(result.microsoftAssetUploadEnabled);
             this.briefCampaignsBiddingEnabled.set(result.biddingEnabled);
             this.briefCampaignsMicrosoftScheduleEnabled.set(result.microsoftScheduleEnabled);
@@ -6785,6 +6841,7 @@ export class CampaignsComponent {
             this.briefCampaignsMetaAudienceTargetingEnabled.set(result.metaAudienceTargetingEnabled ?? null);
             this.briefCampaignsMetaCallToActionEnabled.set(result.metaCallToActionEnabled ?? null);
             this.briefCampaignsMetaLeadFormsEnabled.set(result.metaLeadFormsEnabled ?? null);
+            this.briefCampaignsMetaCarouselEnabled.set(result.metaCarouselEnabled ?? null);
             this.briefCampaignsMetaInterestTargetingEnabled.set(result.metaInterestTargetingEnabled ?? null);
             this.briefCampaignsMetaBehaviorTargetingEnabled.set(result.metaBehaviorTargetingEnabled ?? null);
             this.briefCampaignsMetaLocaleTargetingEnabled.set(result.metaLocaleTargetingEnabled ?? null);
@@ -6798,6 +6855,10 @@ export class CampaignsComponent {
             this.briefCampaignsMetaCustomAudiencesEnabled.set(result.metaCustomAudiencesEnabled ?? null);
             this.briefCampaignsRedditCustomAudiencesEnabled.set(result.redditCustomAudiencesEnabled ?? null);
             this.briefCampaignsRedditTargetingExclusionsEnabled.set(result.redditTargetingExclusionsEnabled ?? null);
+            this.briefCampaignsRedditPlacementsEnabled.set(result.redditPlacementsEnabled ?? null);
+            this.briefCampaignsRedditBudgetTypeEnabled.set(result.redditBudgetTypeEnabled ?? null);
+            this.briefCampaignsRedditPixelListEnabled.set(result.redditPixelListEnabled ?? null);
+            this.briefCampaignsRedditTargetingResolutionEnabled.set(result.redditTargetingResolutionEnabled ?? null);
             this.briefCampaignsGoogleAudienceSegmentsEnabled.set(result.googleAudienceSegmentsEnabled);
             this.briefCampaignsGoogleConversionActionsEnabled.set(result.googleConversionActionsEnabled ?? null);
             this.briefCampaignsGoogleDemandGenAudienceEnabled.set(result.googleDemandGenAudienceEnabled ?? null);
@@ -6838,7 +6899,11 @@ export class CampaignsComponent {
             this.briefCampaignsLinkedInConversionsEnabled.set(null);
             this.briefCampaignsLinkedInLeadGenEnabled.set(null);
             this.briefCampaignsLinkedInCarouselEnabled.set(null);
+            this.briefCampaignsLinkedInDocumentEnabled.set(null);
+            this.briefCampaignsLinkedInBoostEnabled.set(null);
             this.briefCampaignsLinkedInTargetCostEnabled.set(null);
+            this.briefCampaignsLinkedInDeliveryOptionsEnabled.set(null);
+            this.briefCampaignsLinkedInTrafficManualBidEnabled.set(null);
             this.briefCampaignsMicrosoftAssetUploadEnabled.set(null);
             this.briefCampaignsBiddingEnabled.set(null);
             this.briefCampaignsMicrosoftScheduleEnabled.set(null);
@@ -6847,6 +6912,7 @@ export class CampaignsComponent {
             this.briefCampaignsMetaAudienceTargetingEnabled.set(null);
             this.briefCampaignsMetaCallToActionEnabled.set(null);
             this.briefCampaignsMetaLeadFormsEnabled.set(null);
+            this.briefCampaignsMetaCarouselEnabled.set(null);
             this.briefCampaignsMetaInterestTargetingEnabled.set(null);
             this.briefCampaignsMetaBehaviorTargetingEnabled.set(null);
             this.briefCampaignsMetaLocaleTargetingEnabled.set(null);
@@ -6860,6 +6926,10 @@ export class CampaignsComponent {
             this.briefCampaignsMetaCustomAudiencesEnabled.set(null);
             this.briefCampaignsRedditCustomAudiencesEnabled.set(null);
             this.briefCampaignsRedditTargetingExclusionsEnabled.set(null);
+            this.briefCampaignsRedditPlacementsEnabled.set(null);
+            this.briefCampaignsRedditBudgetTypeEnabled.set(null);
+            this.briefCampaignsRedditPixelListEnabled.set(null);
+            this.briefCampaignsRedditTargetingResolutionEnabled.set(null);
             this.briefCampaignsGoogleAudienceSegmentsEnabled.set(null);
             this.briefCampaignsGoogleConversionActionsEnabled.set(null);
             this.briefCampaignsGoogleDemandGenAudienceEnabled.set(null);

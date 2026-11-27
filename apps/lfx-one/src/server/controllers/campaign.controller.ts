@@ -8,6 +8,7 @@
 import { emailLinkDestinations, emailLinkMatchKey, hasVisibleHtmlText, sanitizeDisplayText, stripResourceLoadingHtml } from '@lfx-one/shared/utils/html-utils';
 import { canonicalHttpUrl } from '@lfx-one/shared/utils/url.utils';
 import { campaignSurveySourceTextTooLong, deriveNewsletterSlug, normalizeSponsors } from '@lfx-one/shared/utils/campaign.utils';
+import { campaignMonitorScope, withAccountWideSystemAccountRead, withRecordedProjects } from '@lfx-one/shared/utils/campaign-monitor-scope.utils';
 import { twitterTweetTextError } from '@lfx-one/shared/utils/campaign-twitter.utils';
 import { resolveLinkedInTargetingProfileId, roundUsdToCentsLikeGo } from '@lfx-one/shared/utils/campaign-linkedin.utils';
 import { correctLinkedInGeoTargets, linkedInConfigKeyRefusal } from '@lfx-one/shared/utils/campaign-linkedin-config.utils';
@@ -22,6 +23,12 @@ import { linkedInConfigNamesConversions, linkedInConversionRules, linkedInObject
 import { linkedInTargetingNamesSegments, linkedInTargetingRefusal } from '@lfx-one/shared/utils/campaign-linkedin-targeting.utils';
 import { redditConversionEventRefusal } from '@lfx-one/shared/utils/campaign-reddit-conversion-event.utils';
 import { redditTargetingExclusionsRefusal } from '@lfx-one/shared/utils/campaign-reddit-targeting-exclusions.utils';
+import { redditSubCountryGeoRefusal } from '@lfx-one/shared/utils/campaign-reddit-subcountry-geo.utils';
+import { redditAdPerVariantRefusal } from '@lfx-one/shared/utils/campaign-reddit-ad-variants.utils';
+import { redditBudgetTypeRefusal, redditPlacementsRefusal } from '@lfx-one/shared/utils/campaign-reddit-delivery.utils';
+import { redditDemographicsRefusal } from '@lfx-one/shared/utils/campaign-reddit-demographics.utils';
+import { redditVideoRefusal } from '@lfx-one/shared/utils/campaign-reddit-video.utils';
+import { redditPixelsFromPayload } from '@lfx-one/shared/utils/campaign-reddit-pixels.utils';
 import {
   redditConfigNamesCustomAudiences,
   redditCustomAudienceQuery,
@@ -33,6 +40,7 @@ import { compactLinkedInVariantFields, linkedInVariantFieldsRefusal } from '@lfx
 import { linkedInVideoVariantsRefusal } from '@lfx-one/shared/utils/campaign-linkedin-video.utils';
 import { linkedInCarouselRefusal } from '@lfx-one/shared/utils/campaign-linkedin-carousel.utils';
 import { linkedInBoostRefusal } from '@lfx-one/shared/utils/campaign-linkedin-boost.utils';
+import { linkedInDeliveryOptionsRefusal } from '@lfx-one/shared/utils/campaign-linkedin-delivery-options.utils';
 import { linkedInConfigIsDocument, linkedInDocumentRefusal } from '@lfx-one/shared/utils/campaign-linkedin-document.utils';
 import { linkedInTargetCostRefusal } from '@lfx-one/shared/utils/campaign-linkedin-target-cost.utils';
 import {
@@ -93,6 +101,7 @@ import {
   metaConfigRecord,
 } from '@lfx-one/shared/utils/campaign-meta-ad-options.utils';
 import { hasMetaLeadFormKeyVariant, metaLeadFormId, metaLeadFormRefusal } from '@lfx-one/shared/utils/campaign-meta-lead-form.utils';
+import { metaAdFormatToSend, metaCarouselRefusal } from '@lfx-one/shared/utils/campaign-meta-carousel.utils';
 import {
   compactMetaDeliveryOptions,
   metaAdScheduleRefusal,
@@ -160,6 +169,9 @@ import type {
   CampaignSSEEventType,
   CampaignMonitorConnections,
   CampaignServiceAccountMonitor,
+  CampaignServiceMonitorScope,
+  MonitorResponseWithCampaigns,
+  MonitorSystemAccountRead,
   CampaignServiceMonitorProvider,
   CampaignStatusUpdateRequest,
   CampaignStatusUpdateResult,
@@ -194,6 +206,7 @@ import type {
   NormalizedGoogleAdSchedule,
   NormalizedGoogleDeviceBidModifier,
   MetaAdOptionKey,
+  MetaAdFormat,
   MetaAdOptions,
   MetaDeliveryOptions,
   MetaAudienceTargeting,
@@ -206,6 +219,7 @@ import type {
   MetaTargetingSearchResult,
   MetaCustomAudiencesResult,
   RedditCustomAudiencesResult,
+  RedditPixelsResult,
   MetaLeadFormsResult,
 } from '@lfx-one/shared/interfaces';
 import {
@@ -232,6 +246,7 @@ import {
   CAMPAIGN_METRICS_WINDOWS,
   CAMPAIGN_PLATFORMS,
   CAMPAIGN_SERVICE_BUDGET_UNWRITABLE_MESSAGE_PREFIX,
+  CREATIVE_ASSET_DOCUMENT_DISABLED_MESSAGE,
   CREATIVE_ASSET_DOCUMENT_MIME_TYPE,
   CREATIVE_ASSET_VIDEO_MIME_TYPE,
   DEFAULT_CAMPAIGN_BID_TYPE,
@@ -374,6 +389,7 @@ import {
   MONITOR_ACCOUNT_SOURCE_CONNECTION,
   MONITOR_ACCOUNT_SOURCE_LEGACY,
   MONITOR_ACCOUNT_SOURCE_PARAM,
+  MONITOR_ACCOUNT_WIDE_PARAM,
   MONITOR_CONNECTION_PROVIDERS,
   MONITOR_CUTOVER_LEGACY_MISMATCH_CODE,
   MONITOR_CUTOVER_MISMATCH_CODE,
@@ -407,6 +423,7 @@ import {
   META_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE_MESSAGE,
   META_CUSTOM_AUDIENCES_RESTRICTED_CODE,
   REDDIT_CUSTOM_AUDIENCES_ACCESS_ERRORS,
+  REDDIT_PIXELS_ACCESS_ERRORS,
   LINKEDIN_MARKETING_OPS_ACCESS_ERRORS,
   LINKEDIN_GEO_SEARCH_BUSY_MESSAGE,
   LINKEDIN_TARGETING_SEARCH_BUSY_MESSAGE,
@@ -464,6 +481,8 @@ import {
   canSetLinkedInCallToAction,
   canSetLinkedInCarousel,
   canSetLinkedInBoost,
+  canSetLinkedInDeliveryOptions,
+  canSetLinkedInTrafficManualBid,
   canSetLinkedInDocument,
   canSetLinkedInConversions,
   canSetLinkedInLeadGen,
@@ -488,10 +507,18 @@ import {
   canSetMetaOsTargeting,
   canSetMetaAdSchedule,
   canSetMetaFrequencyCap,
+  canSetMetaCarousel,
   canSetMetaOptimizationGoal,
   canSetRedditConversionEvent,
   canSetRedditCustomAudiences,
   canSetRedditTargetingExclusions,
+  canSetRedditSubCountryGeo,
+  canSetRedditPlacements,
+  canSetRedditBudgetType,
+  canSetRedditAdPerVariant,
+  canSetRedditDemographics,
+  canSetRedditVideo,
+  canListRedditPixels,
   canSetRedditConversionPixel,
   canUseGoogleCreativeAssets,
   canUseLinkedInCreativeAssets,
@@ -1480,6 +1507,62 @@ export class CampaignController {
           service: 'campaign_controller',
         });
       }
+      // Reddit regions, cities and DMAs (#6108 row 7): refused, never dropped, while this deployment cannot send them, and
+      // held to campaign-service's rules (`checkRedditSubCountryGeo`), whose gate and value rules it runs after the
+      // exclusions' and before the placements' (it type-checks every field first, so a mistyped later field may be named
+      // there instead; either way nothing is created). Whether Reddit can target an id is campaign-service's own read. See
+      // `redditSubCountryGeoRefusal`. Only for a Reddit create: campaign-service runs the Reddit pre-check only for the
+      // platforms selected, so a `redditConfig` beside other platforms is never judged there.
+      const redditSubCountryGeoRefused = platforms.includes('reddit-ads') ? redditSubCountryGeoRefusal(body?.redditConfig, canSetRedditSubCountryGeo()) : null;
+      if (redditSubCountryGeoRefused !== null) {
+        throw ServiceValidationError.forField(redditSubCountryGeoRefused.field, redditSubCountryGeoRefused.message, {
+          operation: 'campaign_create',
+          service: 'campaign_controller',
+        });
+      }
+      // Reddit placements, devices and expansion, gender, languages and dayparting, and the budget type (#6108 rows 5
+      // and 9): refused, never dropped, while this deployment cannot send them, and held to campaign-service's rules
+      // (`checkRedditPlacementTargeting`, `checkRedditDemographicTargeting`, `checkRedditBudgetType`), feature by feature
+      // in its PreflightCreate order. campaign-service runs every shape check first, so when two features are both wrong
+      // it may name the other field; either way the create is refused. See `redditPlacementsRefusal`,
+      // `redditDemographicsRefusal` and `redditBudgetTypeRefusal`. The demographics only when Reddit is selected:
+      // campaign-service checks only the selected platforms, so an unused redditConfig must not block another create.
+      const redditDeliveryRefused =
+        redditPlacementsRefusal(body?.redditConfig, canSetRedditPlacements()) ??
+        (platforms.includes('reddit-ads') ? redditDemographicsRefusal(body?.redditConfig, canSetRedditDemographics()) : null) ??
+        redditBudgetTypeRefusal(body?.redditConfig, canSetRedditBudgetType());
+      if (redditDeliveryRefused !== null) {
+        throw ServiceValidationError.forField(redditDeliveryRefused.field, redditDeliveryRefused.message, {
+          operation: 'campaign_create',
+          service: 'campaign_controller',
+        });
+      }
+      // A Reddit video post (#6108 row 8): `videoAssetId` and `thumbnailAssetId` refused, never dropped, while this
+      // deployment cannot send them (`canSetRedditVideo`, which needs the Reddit assets flag too, so a stored video is
+      // refused wherever a stored image is), and held to campaign-service's rules (`checkRedditVideoChoice`), which it
+      // checks after the budget type. One ad per variant decides whether 2 or more variants may ride along. See
+      // `redditVideoRefusal`. Only when Reddit is selected, as below.
+      const redditVideoRefused = platforms.includes('reddit-ads')
+        ? redditVideoRefusal(body?.redditConfig, canSetRedditVideo(), canSetRedditAdPerVariant())
+        : null;
+      if (redditVideoRefused !== null) {
+        throw ServiceValidationError.forField(redditVideoRefused.field, redditVideoRefused.message, {
+          operation: 'campaign_create',
+          service: 'campaign_controller',
+        });
+      }
+      // Reddit one ad per variant (#6108 row 6): while this deployment offers it, an authored-post create's variants are
+      // held to campaign-service's rules (`checkRedditAdPerVariant`), which campaign-service checks after every other
+      // config refusal; never refused while off, since creates already carry the brief's variants. See
+      // `redditAdPerVariantRefusal`. Only when Reddit is selected: campaign-service checks only the selected platforms, so
+      // unused Reddit copy must not block another platform's create.
+      const redditAdPerVariantRefused = platforms.includes('reddit-ads') ? redditAdPerVariantRefusal(body?.redditConfig, canSetRedditAdPerVariant()) : null;
+      if (redditAdPerVariantRefused !== null) {
+        throw ServiceValidationError.forField(redditAdPerVariantRefused.field, redditAdPerVariantRefused.message, {
+          operation: 'campaign_create',
+          service: 'campaign_controller',
+        });
+      }
       if (redditConfigNamesCustomAudiences(body?.redditConfig)) {
         await this.requireMarketingOpsAccess(req, projectSlug, 'campaign_create', 'the Reddit custom audiences', REDDIT_CUSTOM_AUDIENCES_ACCESS_ERRORS);
       }
@@ -1559,6 +1642,15 @@ export class CampaignController {
           service: 'campaign_controller',
         });
       }
+      // LinkedIn Audience Expansion and Audience Network (campaign-service#667): refused, never dropped, while this
+      // deployment cannot send them, and held to campaign-service's rules. See `linkedInDeliveryOptionsRefusal`.
+      const linkedInDeliveryOptionsRefused = linkedInDeliveryOptionsRefusal(body?.linkedInConfig, canSetLinkedInDeliveryOptions());
+      if (linkedInDeliveryOptionsRefused !== null) {
+        throw ServiceValidationError.forField(linkedInDeliveryOptionsRefused.field, linkedInDeliveryOptionsRefused.message, {
+          operation: 'campaign_create',
+          service: 'campaign_controller',
+        });
+      }
       // LinkedIn target cost (linuxfoundation/lfx-v2-campaign-service#674): refused, never dropped, while this deployment
       // cannot send it, and held to campaign-service's rules. See `linkedInTargetCostRefusal`.
       const linkedInTargetCostRefused = linkedInTargetCostRefusal(body?.linkedInConfig, canSetLinkedInTargetCost());
@@ -1584,8 +1676,9 @@ export class CampaignController {
         await this.requireLinkedInAudienceAccess(req, projectSlug, 'campaign_create', 'the LinkedIn audience segments');
       }
       // LinkedIn objective and conversions (#5764 rows 2 and 4): refused, never dropped, while this deployment cannot send
-      // them, and held to campaign-service's rules. See `linkedInObjectiveRefusal`.
-      const linkedInObjectiveRefused = linkedInObjectiveRefusal(body?.linkedInConfig, canSetLinkedInConversions());
+      // them, and held to campaign-service's rules; traffic with a manual bid only while its own flag is on
+      // (campaign-service#676). See `linkedInObjectiveRefusal`.
+      const linkedInObjectiveRefused = linkedInObjectiveRefusal(body?.linkedInConfig, canSetLinkedInConversions(), canSetLinkedInTrafficManualBid());
       if (linkedInObjectiveRefused !== null) {
         throw ServiceValidationError.forField(linkedInObjectiveRefused.field, linkedInObjectiveRefused.message, {
           operation: 'campaign_create',
@@ -1631,6 +1724,8 @@ export class CampaignController {
       // The Meta ad schedule and frequency cap (#5904 row 5), checked here, before the lead form's upstream reads,
       // so a bad one fails fast. See `metaDeliveryOptionsToForward`.
       const metaDelivery = this.metaDeliveryOptionsToForward(body);
+      // The Meta creative format and a carousel's cards (#6331), checked here for the same reason. See `metaFormatToForward`.
+      const metaFormat = this.metaFormatToForward(body);
       // The Meta Instant Form of a `leads` create (#5940), or none. See `metaLeadFormToForward`.
       const metaLeadFormIdToSend = await this.metaLeadFormToForward(req, projectSlug, body);
       // The addresses a NEWSLETTER brief's notes carry, or null for every other create. See
@@ -1643,6 +1738,7 @@ export class CampaignController {
         metaAdOptions,
         metaLeadFormIdToSend,
         metaDelivery,
+        metaFormat,
         emailNoteLinks
       );
 
@@ -3578,7 +3674,7 @@ export class CampaignController {
 
   /**
    * `POST /api/campaigns/brief/creative-assets?project=&brief_id=` — the raw image bytes, typed
-   * `image/png` or `image/jpeg`, the raw video bytes typed `video/mp4` (#5764 row 18), or a PDF typed `application/pdf`
+   * `image/png` or `image/jpeg`, the raw video bytes typed `video/mp4` (#5764 row 18, #6108 row 8), or a PDF typed `application/pdf`
    * (campaign-service#665), stored against the brief by campaign-service's
    * `upload-creative-asset`. Answers `{ id, mimeType, byteSize, checksum, created }` with 201 when
    * the asset was stored and 200 when an identical one already was (the id is usable either way).
@@ -3586,8 +3682,8 @@ export class CampaignController {
    * Refused before anything is sent upstream: EVERY capability off (`canUseRedditCreativeAssets`,
    * `canUseGoogleCreativeAssets`, `canUseMetaCreativeAssets`, `canUseLinkedInCreativeAssets`,
    * `canUseMicrosoftCreativeAssets` and `canCreateTwitter` (the tweet image) — nothing could use the asset; any one alone admits the upload), a missing `project` or `brief_id`, a type outside
-   * `CREATIVE_ASSET_UPLOAD_MIME_TYPES`, an MP4 while `canSetLinkedInVideoAds()` is off (only a LinkedIn video ad uses
-   * one), a PDF while `canSetLinkedInDocument()` is off (only a LinkedIn document ad uses one, campaign-service#665), or
+   * `CREATIVE_ASSET_UPLOAD_MIME_TYPES`, an MP4 while `canSetLinkedInVideoAds()` and `canSetRedditVideo()` are both off
+   * (only a LinkedIn video ad or a Reddit video post uses one), a PDF while `canSetLinkedInDocument()` is off (only a LinkedIn document ad uses one, campaign-service#665), or
    * bytes that are not the type they claim (415), an empty body (400). Over the type's own limit
    * (`creativeAssetUploadMaxBytes`: 10 MiB for an image, 30 MiB for a video or a PDF) is a 413 from the route's raw parsers
    * before this runs; the length is re-checked here so a direct caller of this method gets the same answer.
@@ -3634,17 +3730,18 @@ export class CampaignController {
     // no Buffer — told apart from an empty file by the declared type, not by the body.
     const declaredType = (req.headers['content-type'] ?? '').split(';')[0].trim().toLowerCase();
     const image: unknown = req.body;
-    // A video is stored only where something can use it: a LinkedIn video ad (#5764 row 18). The route does not even
-    // read its body otherwise.
+    // A video is stored only where something can use it: a LinkedIn video ad (#5764 row 18) or a Reddit video post
+    // (#6108 row 8). The route does not even read its body otherwise.
     const video = declaredType === CREATIVE_ASSET_VIDEO_MIME_TYPE;
-    if (video && !canSetLinkedInVideoAds()) {
+    if (video && !canSetLinkedInVideoAds() && !canSetRedditVideo()) {
       next(this.unsupportedCreativeAsset(req, operation, declaredType));
       return;
     }
-    // Likewise a PDF: only a LinkedIn document ad uses one (campaign-service#665).
+    // Likewise a PDF: only a LinkedIn document ad uses one (campaign-service#665). Its 415 says the feature is off, not
+    // that the PDF is broken: the page offered the upload, so the flag changed after it loaded.
     const document = declaredType === CREATIVE_ASSET_DOCUMENT_MIME_TYPE;
     if (document && !canSetLinkedInDocument()) {
-      next(this.unsupportedCreativeAsset(req, operation, declaredType));
+      next(this.unsupportedCreativeAsset(req, operation, declaredType, CREATIVE_ASSET_DOCUMENT_DISABLED_MESSAGE));
       return;
     }
     // Narrowed where it enters: only a raw parser's Buffer is a body, never a parsed array or string.
@@ -4465,7 +4562,7 @@ export class CampaignController {
           platformLabel: 'LinkedIn Ads',
           provider: 'linkedin-ads',
           days,
-          read: (projectSlug, accountId) => this.campaignServiceClient.getLinkedInAdsAccountMonitor(req, projectSlug, accountId, days),
+          read: (projectSlug, accountId, scope) => this.campaignServiceClient.getLinkedInAdsAccountMonitor(req, projectSlug, accountId, days, scope),
           toResponse: (payload) =>
             toLinkedInMonitorResponse(
               payload,
@@ -4485,7 +4582,7 @@ export class CampaignController {
         platformLabel: 'LinkedIn Ads',
         days,
         accountId,
-        read: (projectSlug) => this.campaignServiceClient.getLinkedInAdsAccountMonitor(req, projectSlug, accountId, days),
+        read: (projectSlug, scope) => this.campaignServiceClient.getLinkedInAdsAccountMonitor(req, projectSlug, accountId, days, scope),
         toResponse: (payload) => toLinkedInMonitorResponse(payload, label, new Date().toISOString()),
       });
       return;
@@ -4736,7 +4833,7 @@ export class CampaignController {
           platformLabel: 'Reddit Ads',
           provider: 'reddit-ads',
           days,
-          read: (projectSlug, accountId) => this.campaignServiceClient.getRedditAdsAccountMonitor(req, projectSlug, accountId, days),
+          read: (projectSlug, accountId, scope) => this.campaignServiceClient.getRedditAdsAccountMonitor(req, projectSlug, accountId, days, scope),
           toResponse: (payload) =>
             toRedditMonitorResponse(
               payload,
@@ -4756,7 +4853,7 @@ export class CampaignController {
         platformLabel: 'Reddit Ads',
         days,
         accountId,
-        read: (projectSlug) => this.campaignServiceClient.getRedditAdsAccountMonitor(req, projectSlug, accountId, days),
+        read: (projectSlug, scope) => this.campaignServiceClient.getRedditAdsAccountMonitor(req, projectSlug, accountId, days, scope),
         toResponse: (payload) => toRedditMonitorResponse(payload, label, new Date().toISOString()),
       });
       return;
@@ -5540,6 +5637,43 @@ export class CampaignController {
   }
 
   /**
+   * The conversion pixels on the Reddit ad account a create for this project uses, for a picker that fills
+   * `redditConfig.conversionPixelId` (#6108 row 5), camel-cased (`redditPixelsFromPayload`). The ad account is shared by
+   * every foundation, so it is answered on the relation campaign-service's gateway checks first: `global_marketing_ops`
+   * on the project (linuxfoundation/lfx-v2-campaign-service#549) — a coded 403 when refused, a coded 503 when the check
+   * cannot be made, both before any upstream call. Registered ahead of the blanket `requireCampaignManager`, behind its
+   * own `requireRedditPixelsAccess`, as the custom-audience picker is. 404 while the pixel list is off
+   * (`canListRedditPixels`). campaign-service's own 404 (no connection) and 503 (Reddit's answer cannot be trusted) pass
+   * through; an unreadable answer is a 502, never an empty list.
+   */
+  public async getRedditPixels(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const operation = 'reddit_pixels';
+    if (!canListRedditPixels()) {
+      next(this.monitorDisabledError(operation));
+      return;
+    }
+    const projectSlug = this.requireMonitorProject(req, next, operation);
+    if (projectSlug === null) {
+      return;
+    }
+    try {
+      await this.requireMarketingOpsAccess(req, projectSlug, operation, 'the Reddit pixel read', REDDIT_PIXELS_ACCESS_ERRORS);
+      const startTime = logger.startOperation(req, operation, { viaCampaignService: true });
+      const result: RedditPixelsResult | null = redditPixelsFromPayload(await this.campaignServiceClient.listRedditPixels(req, projectSlug));
+      if (result === null) {
+        throw new MicroserviceError('campaign-service returned an unreadable Reddit pixel read.', 502, 'BAD_GATEWAY', {
+          operation,
+          service: 'campaign_controller',
+        });
+      }
+      logger.success(req, operation, startTime, { count: result.pixelCount, truncated: result.truncated });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * One kind of audience resource on the Google Ads account a create for this project uses, camel-cased.
    * `?type=` picks it (`GOOGLE_ADS_AUDIENCE_READ_TYPES`): `audience`, the default, for the Demand Gen
    * audience picker (#5244) and the Performance Max audience signal picker (#5262), the enabled,
@@ -5888,7 +6022,7 @@ export class CampaignController {
           platformLabel: 'Meta Ads',
           provider: 'meta-ads',
           days,
-          read: (projectSlug, accountId) => this.campaignServiceClient.getMetaAdsAccountMonitor(req, projectSlug, accountId, days),
+          read: (projectSlug, accountId, scope) => this.campaignServiceClient.getMetaAdsAccountMonitor(req, projectSlug, accountId, days, scope),
           toResponse: (payload) =>
             toMetaMonitorResponse(
               payload,
@@ -5908,7 +6042,7 @@ export class CampaignController {
         platformLabel: 'Meta Ads',
         days,
         accountId,
-        read: (projectSlug) => this.campaignServiceClient.getMetaAdsAccountMonitor(req, projectSlug, accountId, days),
+        read: (projectSlug, scope) => this.campaignServiceClient.getMetaAdsAccountMonitor(req, projectSlug, accountId, days, scope),
         toResponse: (payload) => toMetaMonitorResponse(payload, label, new Date().toISOString()),
       });
       return;
@@ -6020,7 +6154,8 @@ export class CampaignController {
       operation: 'twitter_monitor',
       platformLabel: 'X Ads',
       accountIdPattern: TWITTER_ADS_MONITOR_ACCOUNT_ID_PATTERN,
-      read: (projectSlug, accountId, days) => this.campaignServiceClient.getTwitterAdsAccountMonitor(req, projectSlug, accountId, days),
+      scoped: true,
+      read: (projectSlug, accountId, days, scope) => this.campaignServiceClient.getTwitterAdsAccountMonitor(req, projectSlug, accountId, days, scope),
     });
   }
 
@@ -6765,7 +6900,7 @@ export class CampaignController {
    * The campaign-service arm of the Google Ads, LinkedIn, Meta and Reddit monitor routes: read the account monitor and
    * answer in the legacy shape the Monitor and Optimize panels already render.
    */
-  private async serveLegacyShapedMonitor<T>(
+  private async serveLegacyShapedMonitor<T extends MonitorResponseWithCampaigns & { systemAccountRead?: MonitorSystemAccountRead }>(
     req: Request,
     res: Response,
     next: NextFunction,
@@ -6775,7 +6910,7 @@ export class CampaignController {
       days: number;
       /** The account asked for, for the log; NULL when campaign-service picks it (#5622). */
       accountId: string | null;
-      read: (projectSlug: string) => Promise<CampaignServiceAccountMonitor>;
+      read: (projectSlug: string, scope: CampaignServiceMonitorScope) => Promise<CampaignServiceAccountMonitor>;
       toResponse: (payload: CampaignServiceAccountMonitor) => T;
       /** A failure this caller answers itself; return undefined to use the shared mapping. */
       mapError?: (error: unknown) => unknown;
@@ -6785,11 +6920,13 @@ export class CampaignController {
     if (projectSlug === null) {
       return;
     }
-    const startTime = logger.startOperation(req, opts.operation, { days: opts.days, accountId: opts.accountId, viaCampaignService: true });
+    const scope = await this.accountMonitorScope(req, projectSlug, opts.operation);
+    const startTime = logger.startOperation(req, opts.operation, { days: opts.days, accountId: opts.accountId, viaCampaignService: true, scope });
 
     try {
-      const payload = await opts.read(projectSlug);
-      const data = opts.toResponse(payload);
+      const payload = await opts.read(projectSlug, scope);
+      const mapped = opts.toResponse(payload);
+      const data = scope === 'account' ? withAccountWideSystemAccountRead(withRecordedProjects(mapped, payload)) : mapped;
       logger.success(req, opts.operation, startTime, {
         viaCampaignService: true,
         campaigns: payload.campaigns?.length ?? 0,
@@ -6833,7 +6970,7 @@ export class CampaignController {
         platformLabel: 'Google Ads',
         days,
         accountId: ownAccountId,
-        read: (slug) => this.campaignServiceClient.getGoogleAdsAccountMonitor(req, slug, ownAccountId, days),
+        read: (slug, scope) => this.campaignServiceClient.getGoogleAdsAccountMonitor(req, slug, ownAccountId, days, scope),
         toResponse: (payload) => ({
           ...toGoogleMonitorResponse(payload, new Date().toISOString()),
           accountId: ownAccountId,
@@ -6843,13 +6980,33 @@ export class CampaignController {
       return;
     }
     const priorState = connection.state === 'no_account' ? 'no_account' : 'no_connection';
+    // The LF account an account-wide read named, if any: its response is labelled `shared_account`, not as the
+    // account this project's campaigns were created under (set by `read`, which runs before `toResponse`).
+    let sharedAccount: string | undefined;
+    let accountWide = false;
     await this.serveLegacyShapedMonitor(req, res, next, {
       operation,
       platformLabel: 'Google Ads',
       days,
       accountId: null,
-      read: (slug) => this.campaignServiceClient.getGoogleAdsAccountMonitor(req, slug, undefined, days),
-      toResponse: (payload) => toRecordedCampaignsGoogleMonitorResponse(payload, new Date().toISOString()),
+      // Project-scoped, campaign-service names the account the project's campaigns were created under. Account-wide,
+      // that is empty for a project with none recorded, so the LF account is named when it is configured.
+      read: (slug, scope) => {
+        accountWide = scope === 'account';
+        sharedAccount = accountWide ? this.accountWideFallbackAccount('google-ads') : undefined;
+        return this.campaignServiceClient.getGoogleAdsAccountMonitor(req, slug, sharedAccount, days, scope);
+      },
+      // An account-wide read with no LF account configured still reads the customer the project's campaigns were
+      // created under, but every campaign on it: `accountWide` makes the note say so.
+      toResponse: (payload) =>
+        sharedAccount === undefined
+          ? { ...toRecordedCampaignsGoogleMonitorResponse(payload, new Date().toISOString()), ...(accountWide ? { accountWide: true } : {}) }
+          : {
+              ...toGoogleMonitorResponse(payload, new Date().toISOString()),
+              accountId: sharedAccount,
+              googleAccountOrigin: 'shared_account' as const,
+              accountWide: true,
+            },
       mapError: (error) => (isAccountIdRequiredByUpstream(error) ? toMonitorConnectionError(priorState, 'Google Ads', operation) : undefined),
     });
   }
@@ -6878,6 +7035,31 @@ export class CampaignController {
       default:
         return null;
     }
+  }
+
+  /**
+   * The LF account an ACCOUNT-WIDE read names when the project has no account of its own and the platform's fallback
+   * names none (#6209): campaign-service otherwise picks the account the project's campaigns were created under, which
+   * a project with none recorded does not have, so the read would come back empty. Google Ads: the configured
+   * `GADS_CUSTOMER_ID`; LinkedIn: `LINKEDIN_AD_ACCOUNT_ID`, then the configured default, then the first listed. `undefined`
+   * (campaign-service picks) when unset.
+   */
+  private accountWideFallbackAccount(provider: CampaignServiceMonitorProvider): string | undefined {
+    if (provider === 'google-ads') {
+      const customer = (process.env['GADS_CUSTOMER_ID'] ?? '').replace(/-/g, '').trim();
+      return /^[0-9]+$/.test(customer) ? customer : undefined;
+    }
+    if (provider === 'linkedin-ads') {
+      // Resolved as the LinkedIn service resolves an unspecified account (getAccountId): LINKEDIN_AD_ACCOUNT_ID, then
+      // the configured default, and only then the first listed account.
+      const fromEnv = (process.env['LINKEDIN_AD_ACCOUNT_ID'] ?? '').trim();
+      if (/^[0-9]+$/.test(fromEnv)) {
+        return fromEnv;
+      }
+      const config = getLinkedInConfig();
+      return config.defaultAccountId || config.accounts[0]?.accountId || undefined;
+    }
+    return undefined;
   }
 
   /** A connection with no account bound of its own, as `system_account` where the platform has that read (#5889). */
@@ -6909,7 +7091,7 @@ export class CampaignController {
    * campaign-service that still requires LinkedIn's account, is `toSystemAccountRefusedError`: the tab
    * then shows the notice for the project's own state behind the fallback, as it did before.
    */
-  private async serveSystemAccountMonitor<T>(
+  private async serveSystemAccountMonitor<T extends MonitorResponseWithCampaigns>(
     req: Request,
     res: Response,
     next: NextFunction,
@@ -6918,7 +7100,7 @@ export class CampaignController {
       platformLabel: string;
       provider: CampaignServiceMonitorProvider;
       days: number;
-      read: (projectSlug: string, accountId: string | undefined) => Promise<CampaignServiceAccountMonitor>;
+      read: (projectSlug: string, accountId: string | undefined, scope: CampaignServiceMonitorScope) => Promise<CampaignServiceAccountMonitor>;
       toResponse: (payload: CampaignServiceAccountMonitor) => T;
     }
   ): Promise<void> {
@@ -6938,7 +7120,7 @@ export class CampaignController {
         platformLabel: opts.platformLabel,
         days: opts.days,
         accountId: ownAccountId,
-        read: (slug) => opts.read(slug, ownAccountId),
+        read: (slug, scope) => opts.read(slug, ownAccountId, scope),
         toResponse: opts.toResponse,
       });
       return;
@@ -6954,7 +7136,7 @@ export class CampaignController {
       platformLabel: opts.platformLabel,
       days: opts.days,
       accountId: fallback.accountId ?? null,
-      read: (slug) => opts.read(slug, fallback.accountId),
+      read: (slug, scope) => opts.read(slug, fallback.accountId ?? (scope === 'account' ? this.accountWideFallbackAccount(opts.provider) : undefined), scope),
       toResponse: (payload) => ({ ...opts.toResponse(payload), systemAccountRead: toSystemAccountRead(payload, opts.platformLabel) }),
       mapError: (error) => (isSystemAccountRefusal(error) ? toSystemAccountRefusedError(error, opts.platformLabel, opts.operation) : undefined),
     });
@@ -6969,7 +7151,9 @@ export class CampaignController {
       operation: string;
       platformLabel: string;
       accountIdPattern: RegExp;
-      read: (projectSlug: string, accountId: string, days: number) => Promise<CampaignServiceAccountMonitor>;
+      /** True on X, whose monitor takes `scope` (#672); Microsoft's is account-wide already. */
+      scoped?: boolean;
+      read: (projectSlug: string, accountId: string, days: number, scope: CampaignServiceMonitorScope) => Promise<CampaignServiceAccountMonitor>;
     }
   ): Promise<void> {
     if (!isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMonitor)) {
@@ -6987,10 +7171,13 @@ export class CampaignController {
       return;
     }
     const days = this.parseMonitorDays(req);
-    const startTime = logger.startOperation(req, opts.operation, { days, accountId, viaCampaignService: true });
+    const scope = opts.scoped ? await this.accountMonitorScope(req, projectSlug, opts.operation) : undefined;
+    const startTime = logger.startOperation(req, opts.operation, { days, accountId, viaCampaignService: true, scope });
 
     try {
-      const data = toReportBackedMonitorResponse(await opts.read(projectSlug, accountId, days), new Date().toISOString());
+      const payload = await opts.read(projectSlug, accountId, days, scope);
+      const mapped = toReportBackedMonitorResponse(payload, new Date().toISOString());
+      const data = scope === 'account' ? withRecordedProjects(mapped, payload) : mapped;
       logger.success(req, opts.operation, startTime, {
         campaigns: data.campaigns.length,
         metricsAsOf: data.metricsAsOf,
@@ -7150,6 +7337,23 @@ export class CampaignController {
     kind: keyof typeof LINKEDIN_MARKETING_OPS_ACCESS_ERRORS = 'audiences'
   ): Promise<void> {
     await this.requireMarketingOpsAccess(req, projectSlug, operation, subject, LINKEDIN_MARKETING_OPS_ACCESS_ERRORS[kind]);
+  }
+
+  /**
+   * The scope of a campaign-service account-monitor read (#6209): `account` — every campaign on the shared ad
+   * account, whoever created it (linuxfoundation/lfx-v2-campaign-service#672) — only while
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR_ACCOUNT_SCOPE` is on, the request opts in (`accountWide=true`, sent by the
+   * Monitor tab only: the Optimize tab reads these same routes and its levers act on the project's own campaigns),
+   * and the caller holds `global_marketing_ops` on the project, the relation campaign-service admits it on. Anything
+   * else, a check that could not be made included, keeps the project-scoped read: the narrower view, never an error.
+   */
+  private async accountMonitorScope(req: Request, projectSlug: string, operation: string): Promise<CampaignServiceMonitorScope> {
+    const flagOn = isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMonitorAccountScope);
+    const requested = req.query[MONITOR_ACCOUNT_WIDE_PARAM] === 'true';
+    if (!flagOn || !requested) {
+      return undefined;
+    }
+    return campaignMonitorScope(flagOn, requested, await this.googleMarketingOpsAccess(req, projectSlug, operation, 'the account-wide monitor read'));
   }
 
   /**
@@ -7365,10 +7569,11 @@ export class CampaignController {
   /**
    * 415 for an upload that is not a PNG, JPEG, MP4 or PDF, or whose bytes are not the type declared. The message names
    * the declared kind (`creativeAssetWrongTypeMessage`): a video or PDF while this deployment takes none, or one whose
-   * bytes are not that type.
+   * bytes are not that type. `message` replaces it where the refusal is not about the bytes (a PDF while document ads
+   * are off).
    */
-  private unsupportedCreativeAsset(req: Request, operation: string, declaredType: string): MicroserviceError {
-    return new MicroserviceError(creativeAssetWrongTypeMessage(declaredType), 415, 'UNSUPPORTED_MEDIA_TYPE', {
+  private unsupportedCreativeAsset(req: Request, operation: string, declaredType: string, message?: string): MicroserviceError {
+    return new MicroserviceError(message ?? creativeAssetWrongTypeMessage(declaredType), 415, 'UNSUPPORTED_MEDIA_TYPE', {
       operation,
       service: 'campaign_controller',
       path: req.path,
@@ -7380,7 +7585,9 @@ export class CampaignController {
    *
    * `in`, as for bidding: an explicit `imageAssetId: null` is still the field, and campaign-service
    * would refuse it. Off means either the legacy creator serves (it never reads the field, so the
-   * campaign would have no ad) or campaign-service's URL signing is unconfigured (it refuses).
+   * campaign would have no ad) or campaign-service's URL signing is unconfigured (it refuses). A video post's
+   * `videoAssetId` and `thumbnailAssetId` are refused in that state too, by `redditVideoRefusal`: its gate,
+   * `canSetRedditVideo`, needs this same capability.
    */
   private unservedRedditAssetField(body: CampaignCreateRequest): string | null {
     if (canUseRedditCreativeAssets()) return null;
@@ -7881,6 +8088,7 @@ export class CampaignController {
     metaAdOptions: MetaAdOptions = {},
     metaLeadFormIdToSend: string | null = null,
     metaDelivery: MetaDeliveryOptions = {},
+    metaFormat: MetaAdFormat | null = null,
     emailNoteLinks: readonly string[] | null = null
   ): Record<string, unknown> {
     const envelope: Record<string, unknown> = {};
@@ -7893,7 +8101,7 @@ export class CampaignController {
     if (linkedInConfig) envelope['linkedInConfig'] = linkedInConfig;
     if (body?.redditConfig) envelope['redditConfig'] = body.redditConfig;
 
-    const metaConfig = this.buildMetaConfig(body, metaTargeting, metaAdOptions, metaLeadFormIdToSend, metaDelivery);
+    const metaConfig = this.buildMetaConfig(body, metaTargeting, metaAdOptions, metaLeadFormIdToSend, metaDelivery, metaFormat);
     if (metaConfig) envelope['metaConfig'] = metaConfig;
 
     const microsoftConfig = this.buildMicrosoftConfig(body);
@@ -10488,14 +10696,16 @@ export class CampaignController {
    * compacted (#5905), and otherwise nothing. Likewise the call to action, conversion event and
    * optimization goal: only what `metaAdOptionsToForward` checked (#5934), and the lead form: only the id
    * `metaLeadFormToForward` checked (#5940), and the ad schedule and frequency cap: only what
-   * `metaDeliveryOptionsToForward` checked (#5904 row 5).
+   * `metaDeliveryOptionsToForward` checked (#5904 row 5), and the creative format: only the normalized one
+   * `metaFormatToForward` checked (#6331).
    */
   private buildMetaConfig(
     body: CampaignCreateRequest,
     targeting: MetaTargeting | null = null,
     adOptions: MetaAdOptions = {},
     leadFormId: string | null = null,
-    delivery: MetaDeliveryOptions = {}
+    delivery: MetaDeliveryOptions = {},
+    format: MetaAdFormat | null = null
   ): Record<string, unknown> | null {
     if (!body?.metaConfig) return null;
 
@@ -10504,6 +10714,7 @@ export class CampaignController {
     delete rest.leadFormId;
     delete rest.adSchedule;
     delete rest.frequencyCap;
+    delete rest.format;
     for (const { key } of META_AD_OPTION_FIELDS) delete rest[key];
     return {
       ...rest,
@@ -10512,7 +10723,27 @@ export class CampaignController {
       ...adOptions,
       ...(leadFormId !== null ? { leadFormId } : {}),
       ...delivery,
+      ...(format !== null ? { format } : {}),
     };
+  }
+
+  /**
+   * The `metaConfig.format` a create sends (#6331), or `null` to send none (single, campaign-service's default):
+   *
+   * - a format other than blank or single while carousel ads are off (`canSetMetaCarousel`): 400, never a silent drop.
+   *   Dropping it would create one ad per card where the operator chose one carousel ad;
+   * - a carousel that breaks campaign-service's rules (`metaCarouselRefusal`, in campaign-service's order: no lead form,
+   *   2 to 10 variants, one message, an image and no video on every card): 400 naming the field;
+   * - otherwise the format trimmed and lower-cased. The cards are the variants, forwarded as they are.
+   *
+   * A differently cased `format` or `variants` key is refused before this, by `metaConfigKeyVariant`.
+   */
+  private metaFormatToForward(body: CampaignCreateRequest): MetaAdFormat | null {
+    const refusal = metaCarouselRefusal(body?.metaConfig, canSetMetaCarousel());
+    if (refusal !== null) {
+      throw ServiceValidationError.forField(refusal.field, refusal.message, { operation: 'campaign_create', service: 'campaign_controller' });
+    }
+    return metaAdFormatToSend(body?.metaConfig);
   }
 
   /**

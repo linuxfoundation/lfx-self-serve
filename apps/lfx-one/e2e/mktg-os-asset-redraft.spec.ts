@@ -41,6 +41,19 @@ test('the Send button keeps the count from the click while the accepted send mar
   await expect(panel.getByTestId('mktg-comments-feed')).toBeVisible();
   await page.screenshot({ path: test.info().outputPath('redraft-sending-count-frozen.png'), fullPage: true });
 });
+test('a send another writer already made names them, is not repeated, and follows their run', async ({ page }) => {
+  const { fixture, state } = await redraftFixture(page);
+  const runId = 'd'.repeat(64);
+  state.heldBy = { sentBy: 'Synthetic sender', runId };
+  await fixture.open();
+  const panel = page.getByTestId('mktg-comments-panel');
+  await panel.getByRole('button', { name: 'Send 2 open comments to the agent', exact: true }).click();
+  // The app-level toast carries the line across the move to the run page.
+  await expect(page.locator('.p-toast').getByText('Synthetic sender already sent these — the agent is redrafting.')).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`/mktg-os-agents/foundation-setup\\?.*run=${runId}`));
+  expect(state.sends).toHaveLength(1);
+  await page.screenshot({ path: test.info().outputPath('redraft-already-sent-elsewhere.png'), fullPage: true });
+});
 test('uncertain retry keeps the original nonce/IDs and release409 says still starting without another generation', async ({ page }) => {
   const { fixture, state } = await redraftFixture(page);
   state.fail = true;

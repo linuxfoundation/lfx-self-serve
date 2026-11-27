@@ -593,6 +593,80 @@ describe('private field comment store', () => {
     );
   });
 
+  it('names who sent the held comments and when, to a new send only, without writing the name or a reservation', async () => {
+    const store = service();
+    await store.add(req, project, type, 'living', request());
+    const id = record().threads[0].id;
+    const body = { project, revisionId, commentIds: [id], clientRequestId: 'send-one' };
+    expect(await store.admit(req, project, type, 'living', body)).toBe(false);
+    await store.reserve(req, project, type, 'living', body);
+    const sentAt = record().submissions[0].createdAt;
+    // The sender's own same-ID replay is admitted to re-observe its run, never refused by its own hold.
+    expect(await store.admit(req, project, type, 'living', body)).toBe(true);
+    const other = { ...body, clientRequestId: 'different-send' };
+    const runId = 'c'.repeat(64);
+    flows.subject.mockReturnValue('opaque-user-two');
+    flows.user.mockResolvedValue({ success: true, data: { name: 'Synthetic sender' } });
+    const starting = { sentBy: 'Synthetic sender', sentByViewer: false, sentAt, runId: null };
+    // A new request: names are memoised per request, and this one has not yet resolved the sender.
+    const second = {} as Request;
+    for (const refused of [() => store.admit(second, project, type, 'living', other), () => store.reserve(second, project, type, 'living', other)]) {
+      const error = await refused().catch((caught: unknown) => caught);
+      expect(error).toBeInstanceOf(ConflictError);
+      expect((error as ConflictError).toResponse()).toMatchObject({
+        code: 'MKTG_REDRAFT_COMMENTS_BUSY',
+        ...starting,
+        message: 'Synthetic sender already sent these — the agent is redrafting.',
+      });
+      // The log line keeps the generic sentence: the name is response-only.
+      expect((error as ConflictError).message).toBe('Some comments are already reserved for another send.');
+    }
+    expect(flows.user).toHaveBeenCalledWith(second, 'opaque-user-one');
+    // Bound but still reserved: the run record is not published yet, so there is no run to open.
+    flows.subject.mockReturnValue('opaque-user-one');
+    await store.bindRun(req, project, type, 'living', 'send-one', runId);
+    expect(record().submissions[0]).toMatchObject({ state: 'reserved', runId });
+    flows.subject.mockReturnValue('opaque-user-two');
+    for (const refused of [
+      () => store.admit({} as Request, project, type, 'living', other),
+      () => store.reserve({} as Request, project, type, 'living', other),
+    ]) {
+      await expect(refused()).rejects.toSatisfy((error: ConflictError) => error.toResponse()['runId'] === null && error.toResponse()['sentAt'] === sentAt);
+    }
+    flows.subject.mockReturnValue('opaque-user-one');
+    await store.bindRun(req, project, type, 'living', 'send-one', runId, true);
+    flows.subject.mockReturnValue('opaque-user-two');
+    await expect(store.admit({} as Request, project, type, 'living', other)).rejects.toSatisfy(
+      (error: ConflictError) => error.toResponse()['runId'] === runId && error.toResponse()['sentAt'] === sentAt
+    );
+    // No display name: a directory failure, an email or the subject itself never stands in for one.
+    for (const reply of [
+      { success: false },
+      { success: true, data: { name: 'sender@synthetic.example' } },
+      { success: true, data: { name: 'opaque-user-one' } },
+    ]) {
+      resetMktgDocumentAuthorNamesForTests();
+      flows.user.mockResolvedValue(reply);
+      await expect(store.admit({} as Request, project, type, 'living', other)).rejects.toSatisfy((error: ConflictError) => {
+        const response = error.toResponse();
+        return response['sentBy'] === null && response['message'] === 'Someone on your team already sent these — the agent is redrafting.';
+      });
+    }
+    // The same writer from another window: no directory lookup, and never another writer's name.
+    flows.subject.mockReturnValue('opaque-user-one');
+    flows.user.mockClear();
+    await expect(store.admit({} as Request, project, type, 'living', other)).rejects.toSatisfy((error: ConflictError) => {
+      const response = error.toResponse();
+      return response['sentByViewer'] === true && response['sentBy'] === null && response['message'] === 'You already sent these — the agent is redrafting.';
+    });
+    expect(flows.user).not.toHaveBeenCalled();
+    expect(record().submissions).toHaveLength(1);
+    expect(objects.get(key)?.body).not.toContain('Synthetic sender');
+    // A settled hold no longer refuses: the comments are open for an explicit new send.
+    await store.endStart(req, project, type, 'living', 'send-one', false);
+    expect(await store.admit(req, project, type, 'living', other)).toBe(false);
+  });
+
   it('bounds comparison retries instead of spinning indefinitely', async () => {
     flows.put.mockResolvedValue(false);
     await expect(service().add(req, project, type, 'living', request())).rejects.toBeInstanceOf(PreconditionFailedError);

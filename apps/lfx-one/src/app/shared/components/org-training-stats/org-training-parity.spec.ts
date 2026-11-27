@@ -5,8 +5,15 @@ import { computed, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
 import { ORG_TRAINING_STAT_TILES, EMPTY_ORG_TRAINEES_RESPONSE } from '@lfx-one/shared/constants';
-import type { Account, OrgTraineeDetailRow, OrgTraineesResponse, OrgTrainingGroupsResponse, OrgTrainingStats } from '@lfx-one/shared/interfaces';
-import { countOrgTraineePairs, matchesOrgTrainingFilters, parseOrgTrainingViewState, resolveOrgTraineePairs } from '@lfx-one/shared/utils';
+import type {
+  Account,
+  OrgTraineeDetailRow,
+  OrgTraineePair,
+  OrgTraineesResponse,
+  OrgTrainingGroupsResponse,
+  OrgTrainingStats,
+} from '@lfx-one/shared/interfaces';
+import { countOrgTraineePairs, matchesOrgTrainingFilters, parseOrgTrainingViewState } from '@lfx-one/shared/utils';
 import { OrgTrainingComponent } from '@modules/dashboards/org/org-training/org-training.component';
 import { TraineesComponent } from '@modules/dashboards/org/org-people/components/trainees/trainees.component';
 import { TraineesService } from '@modules/dashboards/org/org-people/services/trainees.service';
@@ -31,32 +38,37 @@ const ACME: Account = { accountId: 'acc-1', accountName: 'Synthetic Org', member
 const QUERY = '?range=all&trainingProject=proj-k8s';
 
 /** Six course pairs over three people, all in project `proj-k8s`: 2 certifications, 1 training completed, 3 in progress. */
-const DETAILS: OrgTraineeDetailRow[] = [
-  row('p-1', 'cka', 'Certified', 'Certification'),
-  row('p-1', 'cka', 'Enrolled', 'Certification'), // re-enrollment of the same course: one pair, Certified wins
-  row('p-1', 'k8s-intro', 'Enrolled', 'Training'),
-  row('p-2', 'cka', 'Certified', 'Certification'),
-  row('p-2', 'k8s-intro', 'Certified', 'Training'),
-  row('p-3', 'k8s-intro', 'Enrolled', 'Training'),
-  row('p-3', 'lfs-ci', 'Enrolled', 'Training'),
+const PAIRS: OrgTraineePair[] = [
+  pair('p-1', 'cka', 'Certified', 'Certification'),
+  pair('p-1', 'k8s-intro', 'Enrolled', 'Training'),
+  pair('p-2', 'cka', 'Certified', 'Certification'),
+  pair('p-2', 'k8s-intro', 'Certified', 'Training'),
+  pair('p-3', 'k8s-intro', 'Enrolled', 'Training'),
+  pair('p-3', 'lfs-ci', 'Enrolled', 'Training'),
 ];
 
-function row(personKey: string, courseId: string, status: OrgTraineeDetailRow['status'], productType: string): OrgTraineeDetailRow {
+function pair(personKey: string, courseId: string, status: OrgTraineePair['status'], productType: string): OrgTraineePair {
   return {
     personKey,
-    status,
-    courseOrCertId: `${status}:${personKey}:${courseId}`,
     courseId,
+    status,
+    productType,
     courseName: courseId,
+    courseLevel: 'Beginner',
+    courseFormat: 'E-Learning',
     foundationId: 'foundation-a',
     foundationName: 'Foundation A',
     projectId: 'proj-k8s',
     projectName: 'Project K',
-    courseLevel: 'Beginner',
-    productType,
-    courseFormat: 'E-Learning',
-    activityTs: '2026-09-01T00:00:00.000Z',
+    lastActivityTs: '2026-09-01T00:00:00.000Z',
   };
+}
+
+function datesOf(pairs: readonly OrgTraineePair[]): OrgTraineeDetailRow[] {
+  return pairs.flatMap((p) => {
+    const enrolled: OrgTraineeDetailRow = { personKey: p.personKey, courseId: p.courseId, status: 'Enrolled', activityTs: '2026-08-01T00:00:00.000Z' };
+    return p.status === 'Certified' ? [enrolled, { ...enrolled, status: 'Certified' as const, activityTs: p.lastActivityTs! }] : [enrolled];
+  });
 }
 
 const PEOPLE = ['p-1', 'p-2', 'p-3'].map((personKey, index) => ({
@@ -68,7 +80,6 @@ const PEOPLE = ['p-1', 'p-2', 'p-3'].map((personKey, index) => ({
   email: null,
 }));
 
-/** What the BFF's stats call returns for DETAILS under the QUERY filters. */
 const STATS: OrgTrainingStats = {
   range: 'all',
   asOf: '2026-10-30T09:48:21.094Z',
@@ -198,7 +209,7 @@ async function renderTrainingPage(
 }
 
 async function renderTraineesPage(
-  details: OrgTraineeDetailRow[] = DETAILS,
+  pairs: OrgTraineePair[] = PAIRS,
   query: string = QUERY,
   stats: OrgTrainingStats = STATS,
   formerOnPeopleList: OrgTraineesResponse['formerOnPeopleList'] = { people: 0, pairs: 0 },
@@ -210,7 +221,8 @@ async function renderTraineesPage(
     accountId: ACME.accountId,
     timeRange: 'all',
     trainees: PEOPLE,
-    details,
+    pairs,
+    details: datesOf(pairs),
     formerOnPeopleList,
     outsideLearners,
     asOf: STATS.asOf,
@@ -258,7 +270,7 @@ describe('Learners not on the people list: tile vs the Trainees list', () => {
   const UNFILTERED_STATS: OrgTrainingStats = { ...STATS, learnersOutsidePeopleList: OUTSIDE.length };
 
   it('shows a tile value equal to the Trainees outside list length, and keeps it out of the people tile', async () => {
-    const host = await renderTraineesPage(DETAILS, '?range=all', UNFILTERED_STATS, { people: 0, pairs: 0 }, OUTSIDE, true);
+    const host = await renderTraineesPage(PAIRS, '?range=all', UNFILTERED_STATS, { people: 0, pairs: 0 }, OUTSIDE, true);
     const tiles = snapshotTiles(host);
     const outsideTile = tiles.find((tile) => tile.testId === 'org-training-stat-learners-outside-people-list')!;
     const peopleTile = tiles.find((tile) => tile.testId === 'org-training-stat-people-with-training-activity')!;
@@ -268,7 +280,7 @@ describe('Learners not on the people list: tile vs the Trainees list', () => {
     expect(outsideTile.value).toBe('3');
     // The people tile is the people-list people (the Trainees table rows), without the outside learners.
     expect(peopleTile.value).toBe('3');
-    expect(Number(peopleTile.value)).toBe(new Set(resolveOrgTraineePairs(DETAILS).map((pair) => pair.personKey)).size);
+    expect(Number(peopleTile.value)).toBe(new Set(PAIRS.map((p) => p.personKey)).size);
   });
 });
 
@@ -290,8 +302,8 @@ describe('Trainees client-derived per-person counts vs the cards', () => {
     ]);
   });
 
-  it('group the fixture rows into pairs (Certified wins, product-type split) that equal the stats payload', () => {
-    const pairs = resolveOrgTraineePairs(DETAILS);
+  it('count the fixture pairs (product-type split) to the stats payload', () => {
+    const pairs = PAIRS;
     const counts = countOrgTraineePairs(pairs);
 
     expect(pairs).toHaveLength(6);
@@ -309,33 +321,20 @@ describe('Trainees client-derived per-person counts vs the cards', () => {
   });
 });
 
-// One pair whose rows disagree: the enrollment is Beginner / no format / the lower project id, the later certificate is
-// Intermediate / Certification Exam / the higher project id. The pair rule resolves the attributes across both rows BEFORE
-// any filter applies, so the pair is Intermediate / Certification Exam / proj-b everywhere, and a filter keeps or drops it whole.
-const MIXED_DETAILS: OrgTraineeDetailRow[] = [
+const MIXED_PAIRS: OrgTraineePair[] = [
   {
-    ...row('p-1', 'cka', 'Enrolled', 'Certification'),
-    courseLevel: 'Beginner',
-    courseFormat: null,
-    projectId: 'proj-a',
-    projectName: 'Project A',
-    activityTs: '2026-03-01T00:00:00.000Z',
-  },
-  {
-    ...row('p-1', 'cka', 'Certified', 'Certification'),
+    ...pair('p-1', 'cka', 'Certified', 'Certification'),
     courseLevel: 'Intermediate',
     courseFormat: 'Certification Exam',
     projectId: 'proj-b',
     projectName: 'Project B',
-    activityTs: '2026-04-01T00:00:00.000Z',
   },
-  { ...row('p-2', 'k8s-intro', 'Enrolled', 'Training'), courseLevel: 'Beginner', courseFormat: 'E-Learning', projectId: 'proj-a', projectName: 'Project A' },
+  { ...pair('p-2', 'k8s-intro', 'Enrolled', 'Training'), courseLevel: 'Beginner', courseFormat: 'E-Learning', projectId: 'proj-a', projectName: 'Project A' },
 ];
 
-/** The stats the BFF's SQL pair rule yields for a filter set, computed through the shared util (the rule both sides pin). */
 function statsForFilters(query: string): OrgTrainingStats {
   const filters = parseOrgTrainingViewState((key) => new URLSearchParams(query).get(key));
-  const pairs = resolveOrgTraineePairs(MIXED_DETAILS).filter((pair) => matchesOrgTrainingFilters(pair, filters));
+  const pairs = MIXED_PAIRS.filter((p) => matchesOrgTrainingFilters(p, filters));
   const counts = countOrgTraineePairs(pairs);
   const completed = counts.certifications + counts.trainingsCompleted;
   return {
@@ -353,7 +352,6 @@ function statsForFilters(query: string): OrgTrainingStats {
 }
 
 describe('Mixed-attribute pair: Training strip, Trainees cards and Trainees table counts agree under every filter set', () => {
-  // [filters, courses taken, certifications, trainings completed, in progress] — pinned so the pair rule cannot drift.
   it.each<[string, number, number, number, number]>([
     ['range=all', 2, 1, 0, 1],
     ['range=all&level=Intermediate', 1, 1, 0, 0],
@@ -375,7 +373,7 @@ describe('Mixed-attribute pair: Training strip, Trainees cards and Trainees tabl
 
     const training = snapshotTiles(await renderTrainingPage(Object.fromEntries(new URLSearchParams(query)), trainingService(stats)));
     TestBed.resetTestingModule();
-    const traineesHost = await renderTraineesPage(MIXED_DETAILS, `?${query}`, stats);
+    const traineesHost = await renderTraineesPage(MIXED_PAIRS, `?${query}`, stats);
     const trainees = snapshotTiles(traineesHost);
 
     expect(trainees).toEqual(training);
@@ -391,15 +389,13 @@ describe('Mixed-attribute pair: Training strip, Trainees cards and Trainees tabl
   });
 });
 
-// A former employee still on the people list: their rows count in the stats call (cards) but the table lists current
-// employees only, so the response carries no detail rows for them, only the counts of `formerOnPeopleList`.
-const FORMER_DETAILS: OrgTraineeDetailRow[] = [row('p-gone', 'cka', 'Certified', 'Certification'), row('p-gone', 'lfs-ci', 'Enrolled', 'Training')];
+const FORMER_PAIRS: OrgTraineePair[] = [pair('p-gone', 'cka', 'Certified', 'Certification'), pair('p-gone', 'lfs-ci', 'Enrolled', 'Training')];
 
 describe('Former employee on the people list: cards = table-derived sums + former counts', () => {
-  const formerPairs = resolveOrgTraineePairs(FORMER_DETAILS);
+  const formerPairs = FORMER_PAIRS;
   const former = countOrgTraineePairs(formerPairs);
   const formerOnPeopleList = { people: new Set(formerPairs.map((pair) => pair.personKey)).size, pairs: formerPairs.length };
-  const allPairs = resolveOrgTraineePairs([...DETAILS, ...FORMER_DETAILS]);
+  const allPairs = [...PAIRS, ...FORMER_PAIRS];
   const all = countOrgTraineePairs(allPairs);
   const withFormerStats: OrgTrainingStats = {
     ...STATS,
@@ -416,7 +412,7 @@ describe('Former employee on the people list: cards = table-derived sums + forme
 
   it('shows cards equal to the table sums plus the former pairs, and a note with the former people count', async () => {
     // No filter: the former count is the range's, so the note (and this equality) holds while no filter narrows the cards.
-    const host = await renderTraineesPage(DETAILS, '?range=all', withFormerStats, formerOnPeopleList);
+    const host = await renderTraineesPage(PAIRS, '?range=all', withFormerStats, formerOnPeopleList);
     const cards = Object.fromEntries(snapshotTiles(host).map((tile) => [tile.testId, Number(tile.value)]));
     // columns: chevron, name, status, courses, certs, trainings, in progress, recent
     const sums = [3, 4, 5, 6].map((index) =>
@@ -436,7 +432,7 @@ describe('Former employee on the people list: cards = table-derived sums + forme
   });
 
   it("hides the note while a filter narrows the cards, since the former count is the range's unfiltered one", async () => {
-    const host = await renderTraineesPage(DETAILS, QUERY, withFormerStats, formerOnPeopleList);
+    const host = await renderTraineesPage(PAIRS, QUERY, withFormerStats, formerOnPeopleList);
 
     expect(host.querySelector('[data-testid="org-people-trainees-former-note"]')).toBeNull();
   });

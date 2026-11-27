@@ -3,7 +3,10 @@
 
 <!-- Exact [Npx] design values: rem undershoots at the 14px root. -->
 <lfx-ui-modal [heading]="data.meeting.title" [width]="520" closable data-testid="public-calendar-modal">
-  <div modalHeaderExtra class="flex flex-wrap items-center gap-[8px] text-[12px] leading-[16px] text-gray-600" data-testid="public-calendar-modal-type">
+  <div
+    modalHeaderExtra
+    class="flex flex-wrap items-center gap-[8px] px-[24px] text-[12px] leading-[16px] text-gray-600"
+    data-testid="public-calendar-modal-type">
     <span class="inline-flex items-center gap-[6px]">
       <span class="size-[8px] rounded-full" [style.background]="typeColor" aria-hidden="true"></span>{{ typeLabel }}
     </span>

@@ -86,6 +86,7 @@ import {
   MktgPendingGeneration,
   MktgRunAnsweredNotice,
   MktgDocumentCommentScope,
+  MktgRedraftElsewhere,
   MktgRedraftLanding,
   MktgCommentAgentKey,
 } from '@lfx-one/shared/interfaces';
@@ -123,6 +124,7 @@ import { MktgPrintService } from '@services/mktg-print.service';
 import { Member360Service } from '@services/member-360.service';
 import { UserService } from '@services/user.service';
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
+import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { TooltipModule } from 'primeng/tooltip';
 import { TooltipHostFocusDirective } from '@shared/directives/tooltip-host-focus.directive';
@@ -239,6 +241,7 @@ import { createVisibilityPoll, pollBackoffDelayMs } from '@shared/utils/visibili
 export class MktgDocumentViewComponent {
   // === Injections ===
   private readonly dialogService = inject(DialogService);
+  private readonly messages = inject(MessageService);
   private readonly dependencyService = inject(MktgDependencyService);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly injector = inject(Injector);
@@ -1215,6 +1218,26 @@ export class MktgDocumentViewComponent {
     });
   }
 
+  /** The server refused a send for another run on this document: say who holds it, then open that run as the guard's Open it does. */
+  protected onRedraftElsewhere(scope: MktgDocumentCommentScope, elsewhere: MktgRedraftElsewhere): void {
+    const commands = mktgRunRouteFor(scope.agentKey, mktgKitRootPath(this.router.url));
+    // No recorded run yet, or the page moved on: the panel keeps the line and nothing navigates.
+    if (
+      !elsewhere.runId ||
+      !MKTG_STARTED_RUN_ID_REGEX.test(elsewhere.runId) ||
+      !commands ||
+      this.projectContext.activeContextUid() !== scope.projectUid ||
+      this.params().agentKey !== scope.agentKey ||
+      this.params().documentId !== scope.documentId
+    )
+      return;
+    // The app-level toast outlives the navigation, so the line is still read on the run page.
+    this.messages.add({ severity: 'info', summary: elsewhere.message });
+    void this.router.navigate(commands, {
+      queryParams: { project: this.projectSlug(), ...MKTG_RUN_RESUME_QUERY_CLEAR, mode: null, type: null, run: elsewhere.runId },
+    });
+  }
+
   protected onDownloadWorkbook(): void {
     const view = this.view();
     const envelope = view?.member360;
@@ -1797,8 +1820,13 @@ export class MktgDocumentViewComponent {
         const type = this.runDetail()?.type;
         // A confirmed run with no revision can name its asset; never guess from route params.
         if (!type) return '';
-        // A Member 360 title needs its period, which only a revision has; a failed run never gets one, so name the run.
-        if (type.agentKey === 'member-360') return this.runFailed() ? `The ${type.itemLabel} wasn't finished` : '';
+        // A Member 360 title needs its period, which only a revision has. A failed run never gets one, so name the run.
+        // A discarded or superseded run never gets one either: name the type instead, so the title placeholder
+        // (announced as "Loading…") does not stay over the closure message.
+        if (type.agentKey === 'member-360') {
+          if (this.runFailed()) return `The ${type.itemLabel} wasn't finished`;
+          return this.closedRun() ? type.label : '';
+        }
         const label = mktgKitAssetLabel(type.agentKey) ?? type.itemLabel;
         return `${this.projectContext.activeContext()?.name ?? ''} ${label}`.trim();
       }

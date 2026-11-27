@@ -62,6 +62,11 @@ export class LinkedInObjectivePickerComponent {
    * lead gen carousel), when the choice is not offered. A held lead generation choice stays on screen so it can be changed.
    */
   public readonly leadGenOffered = input<boolean>(true);
+  /**
+   * Whether a document ad is chosen (campaign-service#665): its default is an engagement ad, and LinkedIn offers it no
+   * website visits or conversions objective, so those are not offered (a held one stays on screen so it can be changed).
+   */
+  public readonly documentChosen = input<boolean>(false);
   /** `linkedInTargetCostOffered`: the capability is on and LinkedIn bidding is automatic. Off, the field is hidden and not sent. */
   public readonly targetCostOffered = input<boolean>(false);
   public readonly draft = model.required<LinkedInObjectiveDraft>();

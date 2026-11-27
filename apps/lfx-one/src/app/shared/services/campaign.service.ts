@@ -7,6 +7,10 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import {
   CAMPAIGN_JOB_POLL_INTERVAL_MS,
   CREATIVE_ASSET_CANCELLED_UPLOADING_MESSAGE,
+  CREATIVE_ASSET_DOCUMENT_MAX_BYTES,
+  CREATIVE_ASSET_DOCUMENT_MIME_TYPE,
+  CREATIVE_ASSET_DOCUMENT_TOO_LARGE_MESSAGE,
+  CREATIVE_ASSET_DOCUMENT_WRONG_TYPE_MESSAGE,
   CREATIVE_ASSET_CANCELLED_WAITING_MESSAGE,
   CREATIVE_ASSET_EMPTY_MESSAGE,
   CREATIVE_ASSET_FAILED_FALLBACK_MESSAGE,
@@ -21,11 +25,14 @@ import {
   CREATIVE_ASSET_TOO_LARGE_MESSAGE,
   CREATIVE_ASSET_UPLOADED_MESSAGE,
   CREATIVE_ASSET_WRONG_TYPE_MESSAGE,
+  creativeAssetTooLargeMessage,
+  creativeAssetWrongTypeMessage,
   isCreativeAssetMimeType,
   JOB_LOST_MESSAGE,
   MONITOR_ACCOUNT_SOURCE_CONNECTION,
   MONITOR_ACCOUNT_SOURCE_LEGACY,
   MONITOR_ACCOUNT_SOURCE_PARAM,
+  MONITOR_ACCOUNT_WIDE_PARAM,
   CAMPAIGN_NEWSLETTER_CACHE_TTL_MS,
 } from '@lfx-one/shared/constants';
 import {
@@ -112,6 +119,7 @@ import {
   KeywordMetricsResponse,
   MetaCustomAudiencesResult,
   RedditCustomAudiencesResult,
+  RedditPixelsResult,
   MetaLeadFormsResult,
   MetaTargetingSearchResult,
   MetaTargetingSearchType,
@@ -154,7 +162,8 @@ import type {
   RedditKeywordMetricsResponse,
   RedditKeywordsWindow,
 } from '@lfx-one/shared/interfaces';
-import { extractErrorMessage, isTransientHttpError, retryTransientHttpError } from '@shared/utils/http-error.utils';
+import { redditPixelsQueryParams } from '@lfx-one/shared/utils';
+import { extractErrorMessage, isTransientHttpError, retryTransientHttpError, serverAuthoredMessage } from '@shared/utils/http-error.utils';
 import { strictHttpParams } from '@shared/utils/http-params.utils';
 import {
   catchError,
@@ -510,10 +519,15 @@ export class CampaignService {
    * Each item carries its brief, so files picked for another brief wait their turn in the same
    * serial lane and the first brief's outcomes stay listed for when the operator returns to it.
    */
-  public enqueueCreativeAssetUploads(files: readonly File[], projectSlug: string, briefId: string, options: { folder?: boolean } = {}): void {
+  public enqueueCreativeAssetUploads(
+    files: readonly File[],
+    projectSlug: string,
+    briefId: string,
+    options: { folder?: boolean; documents?: boolean } = {}
+  ): void {
     const added = files.map((file): CreativeAssetQueueItem => {
       const id = `asset-${++this.creativeAssetQueueSequence}`;
-      const refused = this.refuseQueuedCreativeAsset(file, options.folder === true);
+      const refused = this.refuseQueuedCreativeAsset(file, options.folder === true, options.documents === true);
       if (!refused) {
         this.creativeAssetQueueFiles.set(id, file);
       }
@@ -571,8 +585,9 @@ export class CampaignService {
   }
 
   /**
-   * Permanently delete one stored creative asset of the brief: a video the library lists (#5764 row 18). campaign-service
-   * answers 409 `creative_asset_in_use` while a live campaign could still need it, with its own remedy text.
+   * Permanently delete one stored creative asset of the brief: a video (#5764 row 18) or a PDF (campaign-service#665) the
+   * library lists. campaign-service answers 409 `creative_asset_in_use` while a live campaign could still need it, with its
+   * own remedy text.
    *
    * While the request runs, `creativeVideoDeleting` names it, and it is cleared however the request ends, including a
    * caller that unsubscribes because it was destroyed. The Implement tab holds its video pickers on it, since an upload
@@ -687,8 +702,13 @@ export class CampaignService {
     );
   }
 
-  public getMonitorData(projectSlug: string, days: number = 30): Observable<CampaignMonitorResponse> {
-    return this.http.get<CampaignMonitorResponse>('/api/campaigns/monitor', { params: { project: projectSlug, days } });
+  /**
+   * `accountWide` asks for every campaign on the account (#6209). Only the Monitor tab sends it; the server honours it
+   * only behind its flag and for a caller holding `global_marketing_ops` on the project, and the Optimize tab, whose
+   * levers act on the project's own campaigns, never does. The same holds for the LinkedIn, Reddit, Meta and X reads.
+   */
+  public getMonitorData(projectSlug: string, days: number = 30, accountWide = false): Observable<CampaignMonitorResponse> {
+    return this.http.get<CampaignMonitorResponse>('/api/campaigns/monitor', { params: { project: projectSlug, days, ...this.accountWideParam(accountWide) } });
   }
 
   public getLinkedInAccounts(projectSlug: string): Observable<LinkedInAccount[]> {
@@ -727,10 +747,17 @@ export class CampaignService {
     projectSlug: string,
     accountKey: string | null,
     days: number = 30,
-    accountSource: MonitorAccountSource | null = null
+    accountSource: MonitorAccountSource | null = null,
+    accountWide = false
   ): Observable<LinkedInMonitorResponse> {
     return this.http.get<LinkedInMonitorResponse>('/api/campaigns/linkedin/monitor', {
-      params: { project: projectSlug, days, ...(accountKey ? { accountKey } : {}), ...this.monitorAccountSource(accountSource) },
+      params: {
+        project: projectSlug,
+        days,
+        ...(accountKey ? { accountKey } : {}),
+        ...this.monitorAccountSource(accountSource),
+        ...this.accountWideParam(accountWide),
+      },
     });
   }
 
@@ -742,10 +769,17 @@ export class CampaignService {
     projectSlug: string,
     accountKey: string | null,
     days: number = 30,
-    accountSource: MonitorAccountSource | null = null
+    accountSource: MonitorAccountSource | null = null,
+    accountWide = false
   ): Observable<RedditMonitorResponse> {
     return this.http.get<RedditMonitorResponse>('/api/campaigns/reddit/monitor', {
-      params: { project: projectSlug, days, ...(accountKey ? { accountKey } : {}), ...this.monitorAccountSource(accountSource) },
+      params: {
+        project: projectSlug,
+        days,
+        ...(accountKey ? { accountKey } : {}),
+        ...this.monitorAccountSource(accountSource),
+        ...this.accountWideParam(accountWide),
+      },
     });
   }
 
@@ -815,6 +849,15 @@ export class CampaignService {
    */
   public getRedditCustomAudiences(projectSlug: string): Observable<RedditCustomAudiencesResult> {
     return this.http.get<RedditCustomAudiencesResult>('/api/campaigns/reddit/custom-audiences', { params: { project: projectSlug } });
+  }
+
+  /**
+   * The conversion pixels on the Reddit ad account a create for this project uses, for the `conversionPixelId` picker
+   * (#6108 row 5). A coded 403 without `global_marketing_ops` on the project, a coded 503 when that check cannot be made,
+   * and a 404 while the pixel list is off.
+   */
+  public getRedditPixels(projectSlug: string): Observable<RedditPixelsResult> {
+    return this.http.get<RedditPixelsResult>('/api/campaigns/reddit/pixels', { params: redditPixelsQueryParams(projectSlug) });
   }
 
   /**
@@ -933,10 +976,17 @@ export class CampaignService {
     projectSlug: string,
     accountKey: string | null,
     days: number = 30,
-    accountSource: MonitorAccountSource | null = null
+    accountSource: MonitorAccountSource | null = null,
+    accountWide = false
   ): Observable<MetaMonitorResponse> {
     return this.http.get<MetaMonitorResponse>('/api/campaigns/meta/monitor', {
-      params: { project: projectSlug, days, ...(accountKey ? { accountKey } : {}), ...this.monitorAccountSource(accountSource) },
+      params: {
+        project: projectSlug,
+        days,
+        ...(accountKey ? { accountKey } : {}),
+        ...this.monitorAccountSource(accountSource),
+        ...this.accountWideParam(accountWide),
+      },
     });
   }
 
@@ -962,9 +1012,9 @@ export class CampaignService {
   }
 
   /** X (Twitter) Ads account monitor — the Microsoft one's sibling, plus a 409 for an account it cannot monitor. */
-  public getTwitterMonitorData(projectSlug: string, accountId: string, days: number = 30): Observable<ReportBackedMonitorResponse> {
+  public getTwitterMonitorData(projectSlug: string, accountId: string, days: number = 30, accountWide = false): Observable<ReportBackedMonitorResponse> {
     return this.http.get<ReportBackedMonitorResponse>('/api/campaigns/twitter/monitor', {
-      params: { project: projectSlug, days, accountKey: accountId, ...this.monitorAccountSource('connection') },
+      params: { project: projectSlug, days, accountKey: accountId, ...this.monitorAccountSource('connection'), ...this.accountWideParam(accountWide) },
     });
   }
 
@@ -1568,6 +1618,11 @@ export class CampaignService {
     );
   }
 
+  /** `accountWide=true` on a monitor read (#6209), or nothing. Only the Monitor tab ever asks for it. */
+  private accountWideParam(accountWide: boolean): Record<string, string> {
+    return accountWide ? { [MONITOR_ACCOUNT_WIDE_PARAM]: 'true' } : {};
+  }
+
   /**
    * The marker a Monitor-tab read carries: `connection` when its account (or the panel itself) came
    * from the connection path, i.e. a pod with the monitor cutover ON, and `legacy` when it came from
@@ -1635,7 +1690,7 @@ export class CampaignService {
           });
         }),
         catchError((error: unknown) => {
-          const outcome = this.queuedCreativeAssetFailure(error);
+          const outcome = this.queuedCreativeAssetFailure(error, file.type);
           if (outcome.status === 'refused') {
             console.warn('Creative library upload refused:', queued.name, error);
             this.creativeAssetQueueFiles.delete(itemId);
@@ -1655,18 +1710,21 @@ export class CampaignService {
     });
   }
 
-  /** Why a file can never be stored as it is, checked before it is sent; null when it may be sent. */
-  private refuseQueuedCreativeAsset(file: File, folder: boolean): { refusal: CreativeAssetQueueRefusal; message: string } | null {
+  /**
+   * Why a file can never be stored as it is, checked before it is sent; null when it may be sent. With `documents` (the
+   * LinkedIn document editor's upload, campaign-service#665), only a PDF within `CREATIVE_ASSET_DOCUMENT_MAX_BYTES` may be.
+   */
+  private refuseQueuedCreativeAsset(file: File, folder: boolean, documents: boolean): { refusal: CreativeAssetQueueRefusal; message: string } | null {
     // `webkitRelativePath` is `folder/name.png` at the top level of a picked folder. Defaulted because
     // an engine without folder picks (and jsdom) leaves it undefined rather than empty.
     if (folder && (file.webkitRelativePath ?? '').split('/').length > 2) {
       return { refusal: 'subfolder', message: CREATIVE_ASSET_SUBFOLDER_MESSAGE };
     }
-    if (!isCreativeAssetMimeType(file.type)) {
-      return { refusal: 'type', message: CREATIVE_ASSET_WRONG_TYPE_MESSAGE };
+    if (documents ? file.type !== CREATIVE_ASSET_DOCUMENT_MIME_TYPE : !isCreativeAssetMimeType(file.type)) {
+      return { refusal: 'type', message: documents ? CREATIVE_ASSET_DOCUMENT_WRONG_TYPE_MESSAGE : CREATIVE_ASSET_WRONG_TYPE_MESSAGE };
     }
-    if (file.size > CREATIVE_ASSET_MAX_BYTES) {
-      return { refusal: 'size', message: CREATIVE_ASSET_TOO_LARGE_MESSAGE };
+    if (file.size > (documents ? CREATIVE_ASSET_DOCUMENT_MAX_BYTES : CREATIVE_ASSET_MAX_BYTES)) {
+      return { refusal: 'size', message: documents ? CREATIVE_ASSET_DOCUMENT_TOO_LARGE_MESSAGE : CREATIVE_ASSET_TOO_LARGE_MESSAGE };
     }
     if (file.size === 0) {
       return { refusal: 'other', message: CREATIVE_ASSET_EMPTY_MESSAGE };
@@ -1679,16 +1737,19 @@ export class CampaignService {
    * (413) or otherwise invalid (400). Anything else, including an expired session or a network drop
    * that outlasted the re-sends, is `failed` and keeps its file for Retry.
    */
-  private queuedCreativeAssetFailure(error: unknown): Pick<CreativeAssetQueueItem, 'status' | 'refusal' | 'message'> {
+  private queuedCreativeAssetFailure(error: unknown, type: string): Pick<CreativeAssetQueueItem, 'status' | 'refusal' | 'message'> {
     const status = error instanceof HttpErrorResponse && !isTransientHttpError(error) ? error.status : 0;
     if (status === 409) {
       return { status: 'refused', refusal: 'quota', message: CREATIVE_ASSET_QUOTA_MESSAGE };
     }
     if (status === 415) {
-      return { status: 'refused', refusal: 'type', message: CREATIVE_ASSET_WRONG_TYPE_MESSAGE };
+      // Each kind names its own: a PDF refused is not an image refused (campaign-service#665). A PDF's 415 also carries the
+      // BFF's own reason, which tells a broken PDF apart from document ads being turned off since the page loaded.
+      const wrongType = creativeAssetWrongTypeMessage(type);
+      return { status: 'refused', refusal: 'type', message: type === CREATIVE_ASSET_DOCUMENT_MIME_TYPE ? serverAuthoredMessage(error, wrongType) : wrongType };
     }
     if (status === 413) {
-      return { status: 'refused', refusal: 'size', message: CREATIVE_ASSET_TOO_LARGE_MESSAGE };
+      return { status: 'refused', refusal: 'size', message: creativeAssetTooLargeMessage(type) };
     }
     if (status === 400) {
       return { status: 'refused', refusal: 'other', message: extractErrorMessage(error, CREATIVE_ASSET_REFUSED_FALLBACK_MESSAGE) };

@@ -26,12 +26,12 @@ export const ORG_TRAINING_GROUP_SQL: Readonly<Record<OrgTrainingGroupBy, { key: 
   format: { key: "COALESCE(COURSE_FORMAT, '')", label: 'MAX(COURSE_FORMAT)' },
 };
 
-/**
- * `ACTIVITY_TS` (enrollment or certificate date) on or after N days before today; empty for all time. Inline, not bound:
- * the day count comes from the allow-listed range.
- */
-export function orgTrainingRangePredicate(range: OrgLensTimeRange): string {
-  return range === 'all' ? '' : `AND ACTIVITY_TS >= DATEADD(day, -${orgLensTimeRangeDays(range)}, CURRENT_DATE())`;
+export function orgTrainingBuildRangePredicate(range: OrgLensTimeRange, accountId: string): { sql: string; binds: string[] } {
+  if (range === 'all') return { sql: '', binds: [] };
+  return {
+    sql: `AND ACTIVITY_TS >= DATEADD(day, -${orgLensTimeRangeDays(range)}, TO_DATE((SELECT MAX(DBT_RUN_AT) FROM ${ORG_TRAINING_PAIRS_TABLE} WHERE ACCOUNT_ID = ?)))`,
+    binds: [accountId],
+  };
 }
 
 export function orgTrainingTabPredicate(tab: OrgTrainingTabId): string {

@@ -2452,7 +2452,20 @@ describe('CampaignServiceClient.createCampaigns', () => {
     expect(res.error).toBe(`Campaign creation was rejected and nothing was created: ${message}`);
   });
 
+  /** A Reddit region, city or DMA Reddit refused in campaign-service's live check (#6108 row 7) names the location to fix. */
+  it('names a Reddit location campaign-service could not validate', async () => {
+    const message = 'invalid campaign config: redditConfig.subCountryGeoTargets: entry 2 ("US-ZZ") is not a targetable Reddit geolocation';
+    bothFlagsOn();
+    proxyRequestWithResponse.mockRejectedValueOnce(new MicroserviceError(message, 400, 'campaign_service'));
+
+    const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['reddit-ads'], { redditConfig: { budget: 100 } });
+
+    expect(res.error).toBe(`Campaign creation was rejected and nothing was created: ${message}`);
+  });
+
   it.each([
+    // The sub-country cap names no entry, and the create route refuses it before campaign-service sees it.
+    ['the sub-country cap', 400, 'invalid campaign config: redditConfig.subCountryGeoTargets: at most 50 geolocation ids, got 51'],
     ['another reddit field', 400, 'invalid campaign config: redditConfig.keywords: entry 1 is blank'],
     ['another config field', 400, 'invalid campaign config: metaConfig.budget: must be positive'],
     ['a googleAdsConfig bidding refusal', 400, 'invalid campaign config: googleAdsConfig.bidding: use googleAdsConfig.biddingStrategy'],
@@ -4958,7 +4971,14 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       redditConversionPixelEnabled: false,
       redditConversionEventEnabled: false,
       redditTargetingExclusionsEnabled: false,
+      redditSubCountryGeoEnabled: false,
       redditTargetingResolutionEnabled: false,
+      redditPlacementsEnabled: false,
+      redditBudgetTypeEnabled: false,
+      redditAdPerVariantEnabled: false,
+      redditDemographicsEnabled: false,
+      redditVideoEnabled: false,
+      redditPixelListEnabled: false,
       googleAssetUploadEnabled: false,
       metaCreativeEnabled: false,
       metaAssetUploadEnabled: false,
@@ -4977,6 +4997,8 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       linkedInCarouselEnabled: false,
       linkedInDocumentEnabled: false,
       linkedInBoostEnabled: false,
+      linkedInDeliveryOptionsEnabled: false,
+      linkedInTrafficManualBidEnabled: false,
       microsoftAssetUploadEnabled: false,
       // OFF with every flag off: bidding needs the create cutover AND its own flag (#3299).
       biddingEnabled: false,
@@ -4997,6 +5019,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       metaOsTargetingEnabled: false,
       metaAdScheduleEnabled: false,
       metaFrequencyCapEnabled: false,
+      metaCarouselEnabled: false,
       googleAudienceSegmentsEnabled: false,
       googleGeoSearchEnabled: false,
       multiCampaignPlatforms: [],
@@ -5260,15 +5283,19 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
     [{ cutover: true, own: true }, true],
     [{ cutover: true, own: false }, false],
     [{ cutover: false, own: true }, false],
-  ])('reports each meta delivery capability only when the cutover owns the create and its flag is on (%o)', async (flags, expected) => {
-    const own = [ServerFeatureFlag.CampaignServiceMetaAdSchedule, ServerFeatureFlag.CampaignServiceMetaFrequencyCap];
+  ])('reports each meta delivery and carousel capability only when the cutover owns the create and its flag is on (%o)', async (flags, expected) => {
+    const own = [
+      ServerFeatureFlag.CampaignServiceMetaAdSchedule,
+      ServerFeatureFlag.CampaignServiceMetaFrequencyCap,
+      ServerFeatureFlag.CampaignServiceMetaCarousel,
+    ];
     isServerFeatureEnabled.mockImplementation((flag: unknown) => (own.includes(flag as ServerFeatureFlag) ? flags.own : flags.cutover));
     proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
 
     try {
       const result = await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1');
 
-      expect([result.metaAdScheduleEnabled, result.metaFrequencyCapEnabled]).toEqual([expected, expected]);
+      expect([result.metaAdScheduleEnabled, result.metaFrequencyCapEnabled, result.metaCarouselEnabled]).toEqual([expected, expected, expected]);
     } finally {
       isServerFeatureEnabled.mockImplementation(() => false);
     }
@@ -5697,6 +5724,44 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
     }
   });
 
+  /** Reddit placements, budget type and pixel list (#6108 row 5), one ad per variant (row 6), regions, cities and DMAs (row 7), and demographics (row 9): the cutover and each one's own flag. */
+  it.each([
+    ['redditSubCountryGeoEnabled', ServerFeatureFlag.CampaignServiceRedditSubCountryGeo],
+    ['redditPlacementsEnabled', ServerFeatureFlag.CampaignServiceRedditPlacements],
+    ['redditBudgetTypeEnabled', ServerFeatureFlag.CampaignServiceRedditDailyBudget],
+    ['redditDemographicsEnabled', ServerFeatureFlag.CampaignServiceRedditGenderLanguageDayparting],
+    ['redditPixelListEnabled', ServerFeatureFlag.CampaignServiceRedditPixelList],
+    ['redditAdPerVariantEnabled', ServerFeatureFlag.CampaignServiceRedditAdPerVariant],
+  ] as const)('reports %s from the cutover and %s', async (field, own) => {
+    const read = async (cutover: boolean, enabled: boolean): Promise<boolean | undefined> => {
+      isServerFeatureEnabled.mockImplementation((flag: unknown) => (flag === own ? enabled : cutover));
+      proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+      return (await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1'))[field];
+    };
+    try {
+      expect([await read(true, true), await read(true, false), await read(false, true)]).toEqual([true, false, false]);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
+  /** Reddit video posts (#6108 row 8): the cutover, the Reddit assets flag (URL signing) and its own flag, all three. */
+  it('reports redditVideoEnabled only with the cutover, the Reddit assets flag and its own flag', async () => {
+    const read = async (off: ServerFeatureFlag | null): Promise<boolean | undefined> => {
+      isServerFeatureEnabled.mockImplementation((flag: unknown) => flag !== off);
+      proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+      return (await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1')).redditVideoEnabled;
+    };
+    try {
+      const offs = [null, ServerFeatureFlag.CampaignServiceRedditVideo, ServerFeatureFlag.CampaignServiceRedditAssets, ServerFeatureFlag.CampaignServiceCreate];
+      const results = [];
+      for (const off of offs) results.push(await read(off));
+      expect(results).toEqual([true, false, false, false]);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
   /** Reddit targeting exclusions (#6108 row 3): the cutover and its own flag. */
   it.each([
     [{ cutover: true, exclusions: true }, true],
@@ -5818,6 +5883,40 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
     }
   });
 
+  /** LinkedIn delivery options (campaign-service#667): the create cutover and its own flag, like the boost above. */
+  it.each([
+    [{ cutover: true, delivery: true }, true],
+    [{ cutover: true, delivery: false }, false],
+    [{ cutover: false, delivery: true }, false],
+  ])('reports LinkedIn delivery options (%o) as %s', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) =>
+      flag === ServerFeatureFlag.CampaignServiceLinkedInDeliveryOptions ? flags.delivery : flags.cutover
+    );
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+    try {
+      expect((await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1')).linkedInDeliveryOptionsEnabled).toBe(expected);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
+  /** LinkedIn traffic with a manual bid (campaign-service#676): the create cutover and its own flag. */
+  it.each([
+    [{ cutover: true, flag: true }, true],
+    [{ cutover: true, flag: false }, false],
+    [{ cutover: false, flag: true }, false],
+  ])('reports LinkedIn traffic with a manual bid (%o) as %s', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) =>
+      flag === ServerFeatureFlag.CampaignServiceLinkedInTrafficManualBid ? flags.flag : flags.cutover
+    );
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+    try {
+      expect((await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1')).linkedInTrafficManualBidEnabled).toBe(expected);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
   /** The LinkedIn daily-cap capability (#5774): the create cutover alone, like the targeting edit above. */
   it.each([
     [{ create: true, briefs: true, jobs: true, others: false }, true],
@@ -5908,7 +6007,14 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       redditConversionPixelEnabled: false,
       redditConversionEventEnabled: false,
       redditTargetingExclusionsEnabled: false,
+      redditSubCountryGeoEnabled: false,
       redditTargetingResolutionEnabled: false,
+      redditPlacementsEnabled: false,
+      redditBudgetTypeEnabled: false,
+      redditAdPerVariantEnabled: false,
+      redditDemographicsEnabled: false,
+      redditVideoEnabled: false,
+      redditPixelListEnabled: false,
       googleAssetUploadEnabled: false,
       metaCreativeEnabled: false,
       metaAssetUploadEnabled: false,
@@ -5927,6 +6033,8 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       linkedInCarouselEnabled: false,
       linkedInDocumentEnabled: false,
       linkedInBoostEnabled: false,
+      linkedInDeliveryOptionsEnabled: false,
+      linkedInTrafficManualBidEnabled: false,
       microsoftAssetUploadEnabled: false,
       // OFF with every flag off: bidding needs the create cutover AND its own flag (#3299).
       biddingEnabled: false,
@@ -5947,6 +6055,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       metaOsTargetingEnabled: false,
       metaAdScheduleEnabled: false,
       metaFrequencyCapEnabled: false,
+      metaCarouselEnabled: false,
       googleAudienceSegmentsEnabled: false,
       googleGeoSearchEnabled: false,
       multiCampaignPlatforms: [],
@@ -6611,6 +6720,24 @@ describe('CampaignServiceClient account monitors', () => {
     expect(proxyRequest.mock.calls[0]).toHaveLength(5);
   });
 
+  it.each([
+    ['getGoogleAdsAccountMonitor', 'google-ads', '8666746580'],
+    ['getLinkedInAdsAccountMonitor', 'linkedin-ads', '512345678'],
+    ['getMetaAdsAccountMonitor', 'meta-ads', 'act_100000000000001'],
+    ['getRedditAdsAccountMonitor', 'reddit-ads', 't2_abc123'],
+    ['getTwitterAdsAccountMonitor', 'twitter-ads', '18ce54d4x5t'],
+  ] as const)('%s sends scope=account when asked (campaign-service#672)', async (method, provider, accountId) => {
+    proxyRequest.mockResolvedValueOnce(monitor);
+
+    await new CampaignServiceClient()[method](req, 'cncf', accountId, 14, 'account');
+
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', `/projects/cncf/connection-${provider}/account-monitor`, 'GET', {
+      account_id: accountId,
+      days: 14,
+      scope: 'account',
+    });
+  });
+
   it('omits account_id for a Google Ads monitor read with no account, so campaign-service picks it (#5622)', async () => {
     proxyRequest.mockResolvedValueOnce(monitor);
 
@@ -6872,6 +6999,27 @@ describe('CampaignServiceClient.listRedditCustomAudiences', () => {
 
     expect(await new CampaignServiceClient().listRedditCustomAudiences(req, 'lf/ai')).toBe(audiences);
     expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/lf%2Fai/reddit-ads/custom-audiences', 'GET');
+  });
+});
+
+describe('CampaignServiceClient.listRedditPixels', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("GETs the project's pixel read, the project encoded", async () => {
+    const pixels = { account_id: 't2_acct', pixels: [], pixel_count: 0, truncated: false };
+    proxyRequest.mockResolvedValueOnce(pixels);
+
+    expect(await new CampaignServiceClient().listRedditPixels(req, 'lf/ai')).toBe(pixels);
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', '/projects/lf%2Fai/reddit-ads/pixels', 'GET');
+  });
+
+  it('refuses an empty project without calling the proxy', async () => {
+    const caught = await new CampaignServiceClient().listRedditPixels(req, '').catch((e: unknown) => e);
+
+    expect(caught).toBeInstanceOf(ServiceValidationError);
+    expect(proxyRequest).not.toHaveBeenCalled();
   });
 });
 

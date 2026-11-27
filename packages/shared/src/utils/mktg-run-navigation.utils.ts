@@ -4,6 +4,7 @@
 import { MKTG_STARTED_RUN_ID_REGEX } from '../constants/mktg-document-store.constants';
 import { MKTG_RUN_ANSWERED } from '../constants/mktg-run.constants';
 import type { MktgDocumentRunProgress, MktgRetiredRunHint } from '../interfaces/mktg-document-run.interface';
+import { isMktgDisplayName } from './mktg-document-store.utils';
 
 /** One safe attribution policy for public and owner-token answers conflicts. */
 export function mktgRunAnsweredBy(body: unknown, runId: string, questionsId: string): string | null {
@@ -12,7 +13,7 @@ export function mktgRunAnsweredBy(body: unknown, runId: string, questionsId: str
   if (!details || typeof details !== 'object') return null;
   if (('runId' in details && runId && details.runId !== runId) || ('questionsId' in details && details.questionsId !== questionsId)) return null;
   const name = 'answeredBy' in details && typeof details.answeredBy === 'string' ? details.answeredBy.trim() : '';
-  return name && !/[<>@|:]/.test(name) ? name : 'Someone on your team';
+  return isMktgDisplayName(name) ? name : 'Someone on your team';
 }
 
 /**
@@ -50,7 +51,7 @@ export function readMktgRetiredRunHint(value: unknown): MktgRetiredRunHint | nul
     runId: value.runId,
     state: value.state,
     replacedBy: 'replacedBy' in value && typeof value.replacedBy === 'string' && MKTG_STARTED_RUN_ID_REGEX.test(value.replacedBy) ? value.replacedBy : null,
-    closedBy: name && !/[<>@|:]/.test(name) ? name : null,
+    closedBy: isMktgDisplayName(name) ? name : null,
     closedAt: date,
   };
 }

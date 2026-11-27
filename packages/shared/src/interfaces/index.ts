@@ -321,6 +321,7 @@ export * from './org-people-committee-members.internal.interface';
 
 // Org People — Trainees tab (LFXV2-1876)
 export * from './org-people-trainees.interface';
+export * from './org-people-trainees.internal.interface';
 
 // Org People — Event Attendees tab (LFXV2-1875)
 export * from './org-people-event-attendees.interface';

@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { BreakpointObserver } from '@angular/cdk/layout';
 import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { signal } from '@angular/core';
@@ -144,6 +145,15 @@ describe('MeetingComposerModalComponent (through the host, meetings-redesign on)
       expect(text('meeting-composer-section-header')).toContain('Details & Access');
       expect(text('meeting-composer-section-header')).toContain('Name the meeting, pick its type and decide who can find and join it.');
       expect(text('meeting-composer-mobile-step')).toBe('Step 1 of 5 · Details & Access');
+    });
+
+    it('starts with recording and AI summary on, without marking the create dirty', () => {
+      expect(formService.form().get('recording_enabled')?.value).toBe(true);
+      expect(formService.form().get('zoom_ai_enabled')?.value).toBe(true);
+
+      pressEscape();
+
+      expect(composer.isOpen()).toBe(false);
     });
 
     it('locks every step after an invalid required section', () => {
@@ -302,6 +312,28 @@ describe('MeetingComposerModalComponent (through the host, meetings-redesign on)
     expect(query('meeting-composer-project')).toBeNull();
   });
 
+  describe('create on a phone', () => {
+    beforeEach(async () => {
+      vi.spyOn(TestBed.inject(BreakpointObserver), 'observe').mockReturnValue(of({ matches: true, breakpoints: {} }));
+      composer.open({ mode: 'create', projectUid: 'project-1' });
+      await flush();
+      formService.form().patchValue({ title: 'Weekly sync', meeting_type: 'Technical' });
+      await flush();
+      button('meeting-composer-next')?.click();
+      await flush();
+    });
+
+    it('uses smaller footer buttons and an icon-only Back', () => {
+      const back = button('meeting-composer-back');
+
+      expect(back?.getAttribute('aria-label')).toBe('Back');
+      expect(back?.textContent?.trim()).toBe('');
+      expect(back?.className).toContain('h-ui-small');
+      expect(button('meeting-composer-next')?.className).toContain('h-ui-small');
+      expect(button('meeting-composer-cancel')?.className).toContain('h-ui-small');
+    });
+  });
+
   describe('edit', () => {
     it('drops the rail rows and the preview when the meeting fails to load', async () => {
       getMeeting.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 })));
@@ -434,6 +466,49 @@ describe('MeetingComposerModalComponent (through the host, meetings-redesign on)
 
       expect(lastToast()).toMatchObject({ variant: 'dark', message: 'Meeting deleted', description: '“Weekly sync” · 3 guests notified' });
       expect(composer.saveCount()).toBe(1);
+    });
+
+    it('leaves a composer opened since for another meeting open when a late delete lands', async () => {
+      const request = new Subject<void>();
+      deleteMeeting.mockReturnValue(request);
+      await openEdit();
+
+      button('meeting-composer-delete')?.click();
+      await flush();
+      fromDocument('meeting-composer-delete-confirm')?.click();
+      await flush();
+      composer.close();
+      await flush();
+      getMeeting.mockReturnValue(of({ ...meeting, id: 'meeting-2', title: 'Other sync' }));
+      composer.open({ mode: 'edit', meetingUid: 'meeting-2', projectUid: 'project-1' });
+
+      request.next();
+      request.complete();
+      await flush();
+
+      expect(lastToast()).toMatchObject({ message: 'Meeting deleted' });
+      expect(composer.isOpen()).toBe(true);
+      expect(composer.context()?.meetingUid).toBe('meeting-2');
+    });
+
+    it('closes a composer reopened on the deleted meeting when the late delete lands', async () => {
+      const request = new Subject<void>();
+      deleteMeeting.mockReturnValue(request);
+      await openEdit();
+
+      button('meeting-composer-delete')?.click();
+      await flush();
+      fromDocument('meeting-composer-delete-confirm')?.click();
+      await flush();
+      composer.close();
+      await flush();
+      composer.open({ mode: 'edit', meetingUid: 'meeting-1', projectUid: 'project-1' });
+
+      request.next();
+      request.complete();
+      await flush();
+
+      expect(composer.isOpen()).toBe(false);
     });
 
     it('keeps the meeting and the composer when the organizer backs out of the delete', async () => {

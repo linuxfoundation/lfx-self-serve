@@ -238,6 +238,7 @@ import {
   DEFAULT_META_AUDIENCE_TARGETING,
 } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
+import { UiCheckboxComponent } from '@shared/uikit/checkbox/checkbox.component';
 import { UiComboboxComponent } from '@shared/uikit/combobox/combobox.component';
 import { UiInputComponent } from '@shared/uikit/input/input.component';
 import { UiMultiSelectComponent } from '@shared/uikit/multi-select/multi-select.component';
@@ -386,12 +387,17 @@ import type {
   LinkedInTargeting,
   LinkedInTargetingDraft,
   LinkedInObjectiveDraft,
+  LinkedInDeliveryOptionsDraft,
   LinkedInTargetCostOfferInput,
   LinkedInTextAdDraft,
   LinkedInCarouselCardDraft,
+  LinkedInDocumentDraft,
   LinkedInTextAdImageInput,
   LinkedInVariantView,
+  MetaAdFormat,
   MetaAdVariant,
+  MetaCarouselCardDraft,
+  MetaCarouselImageContext,
   MetaCampaignCreateRequest,
   MetaObjective,
   MetaPlacement,
@@ -401,8 +407,12 @@ import type {
   RedditCallToAction,
   RedditConversionEvent,
   RedditCustomAudiencesDraft,
+  RedditBudgetCopy,
+  RedditDeliveryCapabilities,
+  RedditDeliveryDraft,
   RedditTargetedLists,
   RedditTargetingExclusionsDraft,
+  RedditTargetingListsDraft,
   RedditObjective,
   RedditVideoGoal,
   StoredCreativeAsset,
@@ -488,6 +498,7 @@ import {
   isReversedCampaignFlight,
   joinAsSentenceList,
   linkedInAccountFields,
+  linkedInAdFormatChoiceFrom,
   linkedInCreateRefusal,
   linkedInDailyCapError,
   linkedInDailyCapField,
@@ -507,9 +518,19 @@ import {
   linkedInTextAdsForCreate,
   linkedInCarouselCreateRefusal,
   linkedInCarouselFieldsForCreate,
+  emptyLinkedInDocumentDraft,
+  linkedInDocumentCreateRefusal,
+  linkedInDocumentFieldsForCreate,
+  linkedInDocumentGatedWarning,
+  linkedInBoostChosen,
+  linkedInBoostCreateRefusal,
+  linkedInBoostFieldsForCreate,
+  linkedInBoostPostError,
+  linkedInBoostUnavailable,
   emptyLinkedInTargetingDraft,
   emptyLinkedInObjectiveDraft,
   linkedInLeadGenChosen,
+  linkedInManualBidDescription,
   linkedInObjectiveCreateRefusal,
   linkedInObjectiveFieldsForCreate,
   linkedInObjectiveShown,
@@ -517,6 +538,12 @@ import {
   linkedInTargetCostCreateRefusal,
   linkedInTargetCostOffered,
   linkedInTargetCostPending,
+  emptyLinkedInDeliveryOptionsDraft,
+  linkedInAudienceNetworkOffered,
+  linkedInDeliveryOptionsCreateRefusal,
+  linkedInDeliveryOptionsForCreate,
+  linkedInDeliveryOptionsShown,
+  linkedInDeliveryOptionDisabled,
   linkedInTargetingDraftRefusal,
   linkedInTargetingForCreate,
   linkedInTargetingSegmentsAccountRefusal,
@@ -544,8 +571,13 @@ import {
   redditCustomAudiencesField,
   redditTargetingExclusionsBlock,
   redditTargetingExclusionsCapability,
+  redditTargetingListsCapability,
+  redditTargetingListsInEffect,
   redditTargetingExclusionsDraftRefusal,
   redditTargetingExclusionsField,
+  redditBudgetCopy,
+  redditDeliveryField,
+  redditDeliveryRefusal,
   redditDraftFields,
   redditDraftRestore,
   redditEffectiveGeoTargets,
@@ -624,6 +656,7 @@ import {
   metaImageDraftRestore,
   metaImageField,
   metaImageFileRefusal,
+  metaImageUploadHoldsCreate,
   metaImageUploadStatusMessage,
   metaImageUrlWithheld,
   metaInstagramDsaFields,
@@ -641,6 +674,12 @@ import {
   metaRequiresPixel,
   metaUsesInstagram,
   metaVariantsWithImage,
+  metaCarouselChosen,
+  metaCarouselOffered,
+  metaCarouselCreateRefusal,
+  metaCarouselSeed,
+  metaCarouselUnavailable,
+  metaCarouselVariantsForCreate,
   parseNegativeKeywordInput,
   resolveLinkedInTargetingProfileId,
   storedCreativeAssetLabel,
@@ -656,13 +695,18 @@ import { LinkedInObjectivePickerComponent } from '../linkedin-objective-picker/l
 import { LinkedInTargetingEditorComponent } from '../linkedin-targeting-editor/linkedin-targeting-editor.component';
 import { LinkedInTextAdsEditorComponent } from '../linkedin-text-ads-editor/linkedin-text-ads-editor.component';
 import { LinkedInCarouselEditorComponent } from '../linkedin-carousel-editor/linkedin-carousel-editor.component';
+import { LinkedInDocumentEditorComponent } from '../linkedin-document-editor/linkedin-document-editor.component';
 import { MetaAudienceTargetingComponent } from '../meta-audience-targeting/meta-audience-targeting.component';
 import { RedditCustomAudiencesComponent } from '../reddit-custom-audiences/reddit-custom-audiences.component';
 import { RedditTargetingExclusionsComponent } from '../reddit-targeting-exclusions/reddit-targeting-exclusions.component';
+import { RedditTargetingListsComponent } from '../reddit-targeting-lists/reddit-targeting-lists.component';
+import { RedditDeliveryComponent } from '../reddit-delivery/reddit-delivery.component';
+import { RedditPixelPickerComponent } from '../reddit-pixel-picker/reddit-pixel-picker.component';
 import { MetaDeliveryOptionsComponent } from '../meta-delivery-options/meta-delivery-options.component';
 import { MetaDeviceOsOptionsComponent } from '../meta-device-os-options/meta-device-os-options.component';
 import { MetaDetailedTargetingComponent } from '../meta-detailed-targeting/meta-detailed-targeting.component';
 import { MetaLeadFormPickerComponent } from '../meta-lead-form-picker/meta-lead-form-picker.component';
+import { MetaCarouselEditorComponent } from '../meta-carousel-editor/meta-carousel-editor.component';
 import { CampaignGoogleDemographicsPanelComponent } from '../campaign-google-demographics-panel/campaign-google-demographics-panel.component';
 import { CampaignGoogleExclusionsPanelComponent } from '../campaign-google-exclusions-panel/campaign-google-exclusions-panel.component';
 import { CampaignGoogleSearchAdsPanelComponent } from '../campaign-google-search-ads-panel/campaign-google-search-ads-panel.component';
@@ -729,6 +773,7 @@ let linkedInVariantKeySequence = 0;
     ButtonComponent,
     AutocompleteComponent,
     CheckboxComponent,
+    UiCheckboxComponent,
     InputTextComponent,
     RadioButtonComponent,
     SelectComponent,
@@ -747,10 +792,14 @@ let linkedInVariantKeySequence = 0;
     MetaAudienceTargetingComponent,
     RedditCustomAudiencesComponent,
     RedditTargetingExclusionsComponent,
+    RedditTargetingListsComponent,
+    RedditDeliveryComponent,
+    RedditPixelPickerComponent,
     MetaDetailedTargetingComponent,
     MetaDeliveryOptionsComponent,
     MetaDeviceOsOptionsComponent,
     MetaLeadFormPickerComponent,
+    MetaCarouselEditorComponent,
     CampaignGoogleDemographicsPanelComponent,
     CampaignGoogleExclusionsPanelComponent,
     CampaignGoogleSearchAdsPanelComponent,
@@ -768,6 +817,7 @@ let linkedInVariantKeySequence = 0;
     LinkedInTargetingEditorComponent,
     LinkedInTextAdsEditorComponent,
     LinkedInCarouselEditorComponent,
+    LinkedInDocumentEditorComponent,
   ],
   // Component-scoped so the "create another" confirmation (#4983) needs nothing from the host; the app
   // also provides one at root, and this instance behaves the same.
@@ -1011,6 +1061,46 @@ export class ImplementationTabComponent implements OnInit {
   public readonly redditTargetingExclusionsEnabled = input<boolean | null>(null);
   /** @see redditTargetingExclusionsEnabled — an explicit yes, never a `null`. */
   protected readonly redditTargetingExclusionsAvailable = computed<boolean>(() => redditTargetingExclusionsCapability(this.redditTargetingExclusionsEnabled()));
+  /**
+   * Whether campaign-service resolves Reddit subreddits and interests before creating anything
+   * (`CampaignListResult.redditTargetingResolutionEnabled`, #6108 row 4), so the two lists are offered for editing.
+   * `null` until the parent has an answer, which keeps them the brief's, read-only.
+   */
+  public readonly redditTargetingResolutionEnabled = input<boolean | null>(null);
+  /** @see redditTargetingResolutionEnabled — an explicit yes, never a `null`. */
+  protected readonly redditTargetingListsAvailable = computed<boolean>(() => redditTargetingListsCapability(this.redditTargetingResolutionEnabled()));
+  /**
+   * Whether a Reddit create may carry placements, devices and audience expansion (`CampaignListResult.redditPlacementsEnabled`)
+   * and a budget type (`redditBudgetTypeEnabled`), #6108 row 5. `null` until the parent has an answer, which withholds the
+   * controls and sends campaign-service's defaults.
+   */
+  public readonly redditPlacementsEnabled = input<boolean | null>(null);
+  public readonly redditBudgetTypeEnabled = input<boolean | null>(null);
+  /** Both, as the delivery rules read them (`redditDeliveryInEffect`): only an explicit yes counts. */
+  protected readonly redditDeliveryCapabilities = computed<RedditDeliveryCapabilities>(() => ({
+    placements: this.redditPlacementsEnabled(),
+    budgetType: this.redditBudgetTypeEnabled(),
+  }));
+  /**
+   * Whether the Reddit pixel list is served (`CampaignListResult.redditPixelListEnabled`, #6108 row 5), so the pixel
+   * override becomes a pick from the ad account's pixels. Read only together with `redditConversionPixelAvailable()`.
+   */
+  public readonly redditPixelListEnabled = input<boolean | null>(null);
+  /** @see redditPixelListEnabled — an explicit yes, never a `null`. */
+  protected readonly redditPixelListAvailable = computed<boolean>(() => this.redditPixelListEnabled() === true);
+  /**
+   * The subreddits and interests as the operator edited them on this brief, else `null`. Kept apart from the brief's seed
+   * (`redditSubreddits` / `redditInterests`), and in the draft only once edited.
+   */
+  protected readonly redditEditedTargetingLists = signal<RedditTargetingListsDraft | null>(null);
+  /** The lists shown and sent: the edits on an explicit yes, else the brief's seed (`redditTargetingListsInEffect`). */
+  protected readonly redditTargetingLists = computed<RedditTargetingListsDraft>(() =>
+    redditTargetingListsInEffect(
+      { subreddits: this.redditSubreddits(), interests: this.redditInterests() },
+      this.redditEditedTargetingLists(),
+      this.redditTargetingResolutionEnabled()
+    )
+  );
 
   /**
    * Whether the Meta section may offer an image UPLOAD (`CampaignListResult.metaAssetUploadEnabled`).
@@ -1104,11 +1194,38 @@ export class ImplementationTabComponent implements OnInit {
   /** @see linkedInCarouselEnabled — an explicit yes, never a `null`. */
   protected readonly linkedInCarouselAvailable = computed<boolean>(() => this.linkedInCarouselEnabled() === true);
 
+  /** Whether the LinkedIn section offers document ads (`CampaignListResult.linkedInDocumentEnabled`, linuxfoundation/lfx-v2-campaign-service#665). */
+  public readonly linkedInDocumentEnabled = input<boolean | null>(null);
+
+  /** @see linkedInDocumentEnabled — an explicit yes, never a `null`. */
+  protected readonly linkedInDocumentAvailable = computed<boolean>(() => this.linkedInDocumentEnabled() === true);
+
+  /** Whether the LinkedIn section offers boosting an existing post (`CampaignListResult.linkedInBoostEnabled`, campaign-service#673). */
+  public readonly linkedInBoostEnabled = input<boolean | null>(null);
+
+  /** @see linkedInBoostEnabled — an explicit yes, never a `null`. */
+  protected readonly linkedInBoostAvailable = computed<boolean>(() => this.linkedInBoostEnabled() === true);
+
   /**
    * Whether a LinkedIn create's automatic bidding may carry a target cost (`CampaignListResult.linkedInTargetCostEnabled`,
    * linuxfoundation/lfx-v2-campaign-service#674).
    */
   public readonly linkedInTargetCostEnabled = input<boolean | null>(null);
+
+  /**
+   * Whether a LinkedIn create may choose Audience Expansion and the LinkedIn Audience Network
+   * (`CampaignListResult.linkedInDeliveryOptionsEnabled`, linuxfoundation/lfx-v2-campaign-service#667).
+   */
+  public readonly linkedInDeliveryOptionsEnabled = input<boolean | null>(null);
+
+  /**
+   * Whether a LinkedIn traffic create may take a manual bid, a Website visits campaign with a manual CPC
+   * (`CampaignListResult.linkedInTrafficManualBidEnabled`, linuxfoundation/lfx-v2-campaign-service#676).
+   */
+  public readonly linkedInTrafficManualBidEnabled = input<boolean | null>(null);
+
+  /** @see linkedInTrafficManualBidEnabled — an explicit yes, never a `null`. */
+  protected readonly linkedInTrafficManualBidAvailable = computed<boolean>(() => this.linkedInTrafficManualBidEnabled() === true);
 
   /** The calls to action the variant editor offers. */
   protected readonly linkedInCallToActionOptions = LINKEDIN_CALL_TO_ACTION_OPTIONS;
@@ -1278,6 +1395,13 @@ export class ImplementationTabComponent implements OnInit {
    */
   public readonly metaLeadFormsEnabled = input<boolean | null>(null);
   protected readonly metaLeadFormsAvailable = computed<boolean>(() => this.metaLeadFormsEnabled() === true);
+
+  /** Whether the Meta section offers carousel ads (`CampaignListResult.metaCarouselEnabled`, #6331). */
+  public readonly metaCarouselEnabled = input<boolean | null>(null);
+  /** @see metaCarouselOffered — the carousel capability and the image capability together (#6331). */
+  protected readonly metaCarouselOfferedState = computed<boolean | null>(() => metaCarouselOffered(this.metaCarouselEnabled(), this.metaCreativeEnabled()));
+  /** Whether a carousel is offered: an explicit yes from {@link metaCarouselOfferedState}, never a `null`. */
+  protected readonly metaCarouselAvailable = computed<boolean>(() => this.metaCarouselOfferedState() === true);
 
   /**
    * Whether this deployment sends Meta interests (#5904 row 4) — `CampaignListResult.metaInterestTargetingEnabled`,
@@ -1581,7 +1705,10 @@ export class ImplementationTabComponent implements OnInit {
    * map stays total over `MetaObjective` so restored objectives still render a name, and `leads` without a
    * form would run as traffic. See that constant for why.
    */
-  protected readonly metaObjectiveOptions = computed<MetaObjective[]>(() => metaObjectiveChoices(this.metaLeadFormsAvailable()));
+  protected readonly metaObjectiveOptions = computed<MetaObjective[]>(() =>
+    // Not while a carousel is chosen: a carousel carries no lead form (#6331).
+    metaObjectiveChoices(this.metaLeadFormsAvailable() && !this.metaCarouselSelected())
+  );
   /**
    * True when the restored objective is one the picker no longer offers — today only `leads`.
    *
@@ -1896,7 +2023,8 @@ export class ImplementationTabComponent implements OnInit {
    * means "use the connection's pixel".
    */
   protected readonly redditConversionPixelForm = this.fb.nonNullable.group({ conversionPixelId: '' });
-  private readonly redditConversionPixelDraft = this.initFormDraft(this.redditConversionPixelForm);
+  /** The pixel as typed or picked, which `lfx-reddit-pixel-picker` shows (#6108 row 5). */
+  protected readonly redditConversionPixelDraft = this.initFormDraft(this.redditConversionPixelForm);
   protected readonly redditConversionPixelId = computed<string>(() => this.redditConversionPixelDraft().conversionPixelId.trim());
 
   // === WritableSignals ===
@@ -2042,11 +2170,28 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly linkedInCarouselIntroText = signal('');
   /** Whether this create is a carousel (campaign-service#665): chosen, and offered by this deployment. */
   protected readonly linkedInCarouselSelected = computed<boolean>(() => this.linkedInCarouselAvailable() && this.linkedInFormat() === 'carousel');
+  /** The LinkedIn document ad as edited (campaign-service#665), carried in the draft. */
+  protected readonly linkedInDocument = signal<LinkedInDocumentDraft>(emptyLinkedInDocumentDraft());
+  /** Whether this create is a document ad (campaign-service#665): chosen, and offered by this deployment. */
+  protected readonly linkedInDocumentSelected = computed<boolean>(() => this.linkedInDocumentAvailable() && this.linkedInFormat() === 'document');
+  /** The gated-document warning (decision 2026-11-25): a one-page PDF cannot be gated. Shown, never holding Create. */
+  protected readonly linkedInDocumentGatedWarning = computed<string>(() =>
+    linkedInDocumentGatedWarning(this.linkedInDocumentSelected() && this.linkedInLeadGenSelected())
+  );
+  /** The post URN a boost sponsors, as typed (campaign-service#673), carried in the draft. */
+  protected readonly linkedInBoostPost = signal('');
+  /** Whether this create is a boost (campaign-service#673): chosen, and offered on an explicit yes. */
+  protected readonly linkedInBoostSelected = computed<boolean>(() => linkedInBoostChosen(this.linkedInFormat(), this.linkedInBoostEnabled()));
+  /** The error under the boost's post field, or `''`. */
+  protected readonly linkedInBoostPostError = computed<string>(() => linkedInBoostPostError(this.linkedInBoostPost()));
   /** The Ad format picker's hint: what the chosen format needs (#5764 rows 18–19). */
   protected readonly linkedInFormatHint = computed<string>(() => {
     if (this.linkedInFormat() === 'text') return "Text ads are a headline and description on LinkedIn's desktop right rail. They need a manual bid.";
     if (this.linkedInFormat() === 'video') return 'Video ads play an MP4 in the feed. Every ad needs its own video, and video ads have no description.';
     if (this.linkedInFormat() === 'carousel') return 'A carousel is one post of 2 to 10 swipeable square image cards, each with its own headline and link.';
+    if (this.linkedInFormat() === 'document') return 'A document ad is one post of a PDF members page through in the feed, such as a prospectus or report.';
+    if (this.linkedInFormat() === 'boost')
+      return "A boost sponsors a post your company's LinkedIn page already published, as it is. The ad copy and image come from the post.";
     return 'Single image ads show an image with the intro text and headline in the feed.';
   });
   /**
@@ -2064,6 +2209,13 @@ export class ImplementationTabComponent implements OnInit {
       .map((variant) => variant.videoAssetId ?? '')
       .filter((id) => id !== '')
   );
+  /** The stored asset whose delete is running, `''` for none: the PDF picker does not offer it, and Create waits while the document ad names it. */
+  protected readonly linkedInDocumentDeletingId = computed<string>(() => this.campaignService.creativeVideoDeleting()?.id ?? '');
+  /**
+   * The stored PDF the LinkedIn document ad names (campaign-service#665), whatever the format: the library will not delete
+   * it, so a create can never send a deleted asset. It offers "Remove from ad" (`onLibraryDocumentReleased`).
+   */
+  protected readonly linkedInDocumentIdsInUse = computed<string[]>(() => (this.linkedInDocument().assetId ? [this.linkedInDocument().assetId] : []));
   /** Whether this create is a video campaign (#5764 row 18): chosen, and offered by this deployment. */
   protected readonly linkedInVideoSelected = computed<boolean>(() => this.linkedInVideoAdsAvailable() && this.linkedInFormat() === 'video');
   /** Whether custom targeting replaces the targeting profile (#5764 rows 8–11), carried in the draft. */
@@ -2091,9 +2243,10 @@ export class ImplementationTabComponent implements OnInit {
   /**
    * Whether the objective picker offers the target cost now (`linkedInTargetCostOffered`); hidden, a typed one is not sent.
    * Never with lead generation (campaign-service#664): a target cost on a MAX_LEAD campaign is not documented or probed.
+   * Nor with a document ad (campaign-service#665), for the same reason on its MAX_REACH engagement campaign.
    */
   protected readonly linkedInTargetCostShown = computed<boolean>(
-    () => linkedInTargetCostOffered(this.linkedInTargetCostOfferInput()) && !this.linkedInLeadGenSelected()
+    () => linkedInTargetCostOffered(this.linkedInTargetCostOfferInput()) && !this.linkedInLeadGenSelected() && !this.linkedInDocumentSelected()
   );
   /** A typed target cost while the capability is unread holds Create (`linkedInTargetCostPending`) rather than being dropped. */
   private readonly linkedInTargetCostAwaitingCapability = computed<boolean>(() =>
@@ -2113,6 +2266,27 @@ export class ImplementationTabComponent implements OnInit {
    * form's button replaces it), and a manual bid is refused in the Bidding control.
    */
   protected readonly linkedInLeadGenSelected = computed<boolean>(() => linkedInLeadGenChosen(this.linkedInObjectiveDraft()));
+  /** The Audience Expansion and Audience Network toggles as set (campaign-service#667), carried in the draft. */
+  protected readonly linkedInDeliveryOptions = signal<LinkedInDeliveryOptionsDraft>(emptyLinkedInDeliveryOptionsDraft());
+  /** The Audience Network goes with neither Text Ads nor lead generation; then a new opt-in is blocked and it is not sent. */
+  protected readonly linkedInAudienceNetworkOffered = computed<boolean>(() =>
+    linkedInAudienceNetworkOffered(this.linkedInTextAdsSelected(), this.linkedInLeadGenSelected())
+  );
+  /** The toggles show on an explicit yes, and while one that is on waits on the capability (`linkedInDeliveryOptionsShown`). */
+  protected readonly linkedInDeliveryOptionsShown = computed<boolean>(() =>
+    linkedInDeliveryOptionsShown(this.linkedInDeliveryOptions(), this.linkedInDeliveryOptionsEnabled(), this.linkedInAudienceNetworkOffered())
+  );
+  /** Audience Expansion takes a new opt-in only on an explicit yes; once on it can always be turned off. */
+  protected readonly linkedInAudienceExpansionDisabled = computed<boolean>(() =>
+    linkedInDeliveryOptionDisabled(this.linkedInDeliveryOptions().audienceExpansion, this.linkedInDeliveryOptionsEnabled() === true)
+  );
+  /** The Audience Network takes a new opt-in only on an explicit yes while offered; once on it can always be turned off. */
+  protected readonly linkedInAudienceNetworkDisabled = computed<boolean>(() =>
+    linkedInDeliveryOptionDisabled(
+      this.linkedInDeliveryOptions().audienceNetwork,
+      this.linkedInDeliveryOptionsEnabled() === true && this.linkedInAudienceNetworkOffered()
+    )
+  );
   /** A variant's call to action is offered (and sent) on its explicit yes, except on a lead gen create. */
   protected readonly linkedInVariantCallToActionShown = computed<boolean>(() => this.linkedInCallToActionAvailable() && !this.linkedInLeadGenSelected());
 
@@ -2193,6 +2367,10 @@ export class ImplementationTabComponent implements OnInit {
       briefId: this.briefPersistence().briefId,
     })
   );
+  /** The Reddit budget type, placements, devices and expansion (#6108 row 5), kept whatever the capabilities say; only the request is gated. */
+  protected readonly redditDelivery = signal<RedditDeliveryDraft>(redditBriefReset().delivery);
+  /** The budget box's label and hint: daily only once the budget type is offered and chosen. */
+  protected readonly redditBudgetCopy = computed<RedditBudgetCopy>(() => redditBudgetCopy(this.redditDelivery(), this.redditDeliveryCapabilities()));
   /** The Reddit subreddits and countries to exclude (#6108 row 3), kept whatever the capability says; only the request is gated. */
   protected readonly redditTargetingExclusions = signal<RedditTargetingExclusionsDraft>(redditBriefReset().targetingExclusions);
   /** The targeting a Reddit create sends, which the exclusions must not overlap. */
@@ -2340,7 +2518,9 @@ export class ImplementationTabComponent implements OnInit {
    * (campaign-service#665) holds no upload, so while one is chosen any upload is orphaned and holds nothing.
    */
   private readonly linkedInImageUploadOrphaned = computed(() => {
-    if (this.linkedInCarouselSelected()) return linkedInImageUploadOrphaned(this.linkedInImageSlot(), []);
+    // Likewise a document (campaign-service#665), whose PDF is picked from the library, and a boost (#673), which uploads nothing.
+    if (this.linkedInCarouselSelected() || this.linkedInDocumentSelected() || this.linkedInBoostSelected())
+      return linkedInImageUploadOrphaned(this.linkedInImageSlot(), []);
     return linkedInImageUploadOrphaned(this.linkedInImageSlot(), this.linkedInTextAdsSelected() ? this.linkedInTextAds() : this.linkedInVariants());
   });
   protected readonly linkedInImageUploadStatus = signal<CreativeAssetUploadStatus>('idle');
@@ -2784,6 +2964,12 @@ export class ImplementationTabComponent implements OnInit {
     return [...this.googlePriceForm.controls.offerings.controls];
   });
   protected readonly metaVariants = signal<MetaAdVariant[]>([]);
+  /** The Meta ad format, the carousel's cards and its one message as edited (#6331), carried in the draft. */
+  protected readonly metaFormat = signal<MetaAdFormat>('single');
+  protected readonly metaCarouselCards = signal<MetaCarouselCardDraft[]>([]);
+  protected readonly metaCarouselMessage = signal('');
+  /** Whether this create is a carousel (#6331): chosen, and offered on an explicit yes. */
+  protected readonly metaCarouselSelected = computed<boolean>(() => metaCarouselChosen(this.metaFormat(), this.metaCarouselOfferedState()));
   protected readonly metaGeoTargets = signal<string[]>([]);
   protected readonly metaBudgetUsd = signal(DEFAULT_META_BUDGET_USD);
   protected readonly metaLifetimeBudget = signal(false);
@@ -3014,7 +3200,7 @@ export class ImplementationTabComponent implements OnInit {
    * under a fixed `r/` prefix previews `r/r/k8s` — a section whose entire purpose is showing
    * what will be sent must not show something else.
    */
-  protected readonly redditEffectiveSubreddits: Signal<string[]> = computed(() => redditEffectiveSubreddits(this.redditSubreddits()));
+  protected readonly redditEffectiveSubreddits: Signal<string[]> = computed(() => redditEffectiveSubreddits(this.redditTargetingLists().subreddits));
 
   /**
    * The geo list a Meta create would ACTUALLY send — one value for both the preview and `submit()`.
@@ -4168,10 +4354,11 @@ export class ImplementationTabComponent implements OnInit {
    * Why Create is blocked for an uploaded LinkedIn image this tab still holds but cannot send, or
    * `null` — `metaImageAssetBlock`'s sibling, less the pasted URL LinkedIn does not have. The first
    * blocked variant's, or text ad's while Text Ads are chosen (#5764 row 19); each shows its own beside its picker. None
-   * while a carousel is chosen (campaign-service#665): its cards pick stored images, and the hidden variants send nothing.
+   * while a carousel or a document is chosen (campaign-service#665), since they pick stored assets, or while a boost is chosen
+   * (campaign-service#673), which uploads nothing; the hidden variants send nothing.
    */
   protected readonly linkedInImageAssetBlock: Signal<CampaignLinkedInImageAssetBlock | null> = computed(() => {
-    if (this.linkedInCarouselSelected()) return null;
+    if (this.linkedInCarouselSelected() || this.linkedInDocumentSelected() || this.linkedInBoostSelected()) return null;
     const views = this.linkedInTextAdsSelected() ? this.linkedInTextAdImageViews() : this.linkedInVariantViews();
     return views.find((view) => view.imageBlock !== null)?.imageBlock ?? null;
   });
@@ -4350,8 +4537,11 @@ export class ImplementationTabComponent implements OnInit {
     if (!form.eventName.value?.trim()) return 'Enter the Event Name.';
     // The remedy named is the brief editor, not this field (#5490): the campaign-service create reads
     // the destination from the SAVED brief, and the BFF refuses it while that brief has none, whatever
-    // is typed here (`createCampaign` in `campaign.controller.ts`).
-    if (!form.registrationUrl.value?.trim())
+    // is typed here (`createCampaign` in `campaign.controller.ts`). A LinkedIn document ad alone needs
+    // none (campaign-service#665): its post carries the PDF and no landing page, so neither the BFF nor
+    // campaign-service reads the URL for it.
+    const documentOnly = platforms.length === 1 && linkedInSelected && this.linkedInDocumentSelected();
+    if (!documentOnly && !form.registrationUrl.value?.trim())
       return 'Registration URL is empty. Select Edit brief, enter the Registration URL, then Save & Proceed to Implement.';
     if (!form.startDate.value) return 'Choose a Start Date.';
     if (!form.endDate.value) return 'Choose an End Date.';
@@ -4479,6 +4669,7 @@ export class ImplementationTabComponent implements OnInit {
           customAudiencesRefusal: redditCustomAudiencesDraftRefusal(this.redditCustomAudiences()),
           targetingExclusionsBlock: this.redditTargetingExclusionsBlock()?.message ?? null,
           targetingExclusionsRefusal: redditTargetingExclusionsDraftRefusal(this.redditTargetingExclusions(), this.redditTargetedLists()),
+          deliveryRefusal: redditDeliveryRefusal(this.redditDelivery(), this.redditDeliveryCapabilities()),
         })
       : null;
     if (redditRefusal !== null) return redditRefusal;
@@ -4501,6 +4692,21 @@ export class ImplementationTabComponent implements OnInit {
           adOptionsBlock: this.metaAdOptionsBlock()?.message ?? null,
           adOptionsError: this.metaAdOptionsError(),
           leadFormError: this.metaLeadFormError(),
+          // A carousel chosen but not offered is held, never sent (#6331); while chosen, its cards replace the variant check.
+          carouselUnavailable: metaCarouselUnavailable(this.metaFormat(), this.metaCarouselOfferedState()),
+          ...(this.metaCarouselSelected()
+            ? {
+                carousel: {
+                  refusal: metaCarouselCreateRefusal(
+                    this.metaCarouselCards(),
+                    this.metaCarouselMessage(),
+                    this.googleCreativeLibrary(),
+                    this.metaCarouselImageContext(),
+                    this.metaLeadFormRequested() ? this.metaLeadFormId().trim() : null
+                  ),
+                },
+              }
+            : {}),
         })
       : null;
     if (metaRefusal !== null) return metaRefusal;
@@ -4616,8 +4822,15 @@ export class ImplementationTabComponent implements OnInit {
       })
     )
       return 'Waiting for the Reddit Ads image upload to finish.';
-    // Meta's sibling of the hold above, on the same terms.
-    if (this.showMetaSection() && this.metaAssetUploadAvailable() && this.metaImageUploadStatus() === 'uploading')
+    // Meta's sibling of the hold above, on the same terms; not while a carousel hides the one image's upload (#6331).
+    if (
+      metaImageUploadHoldsCreate({
+        showMetaSection: this.showMetaSection(),
+        uploadAvailable: this.metaAssetUploadAvailable(),
+        carouselSelected: this.metaCarouselSelected(),
+        uploadStatus: this.metaImageUploadStatus(),
+      })
+    )
       return 'Waiting for the Meta Ads image upload to finish.';
     // And Google's, for an upload into an image slot of a section still on screen — an upload for a
     // section the operator un-ticked would not be sent, and its Cancel has gone with the section.
@@ -5688,6 +5901,23 @@ export class ImplementationTabComponent implements OnInit {
     this.emitDraft();
   }
 
+  /** The edited subreddits and interests, kept in the draft from now on (#6108 row 4). */
+  protected onRedditTargetingListsChange(lists: RedditTargetingListsDraft): void {
+    this.redditEditedTargetingLists.set(lists);
+    this.emitDraft();
+  }
+
+  /** The delivery choices, kept in the draft. */
+  protected onRedditDeliveryChange(delivery: RedditDeliveryDraft): void {
+    this.redditDelivery.set(delivery);
+    this.emitDraft();
+  }
+
+  /** A pixel picked or typed in `lfx-reddit-pixel-picker`; the form's own trigger saves the draft. */
+  protected onRedditConversionPixelPick(pixelId: string): void {
+    this.redditConversionPixelForm.patchValue({ conversionPixelId: pixelId });
+  }
+
   /** The exclusion lists, kept in the draft. */
   protected onRedditTargetingExclusionsChange(exclusions: RedditTargetingExclusionsDraft): void {
     this.redditTargetingExclusions.set(exclusions);
@@ -5808,7 +6038,7 @@ export class ImplementationTabComponent implements OnInit {
 
   /** The Ad format picker's value as a format: anything else reads as single image ads. */
   protected onLinkedInFormatSelect(value: unknown): void {
-    this.onLinkedInFormatChange(value === 'text' || value === 'video' || value === 'carousel' ? value : 'single_image');
+    this.onLinkedInFormatChange(linkedInAdFormatChoiceFrom(value) ?? 'single_image');
   }
 
   /**
@@ -5833,6 +6063,30 @@ export class ImplementationTabComponent implements OnInit {
     this.emitDraft();
   }
 
+  /** The boost's post URN as typed (campaign-service#673). */
+  protected onLinkedInBoostPostChange(value: string): void {
+    this.linkedInBoostPost.set(value);
+    this.emitDraft();
+  }
+
+  /** The document editor's PDF, title and intro text as edited (campaign-service#665). */
+  protected onLinkedInDocumentChange(document: LinkedInDocumentDraft): void {
+    this.linkedInDocument.set(document);
+    this.emitDraft();
+  }
+
+  /**
+   * A PDF chosen in the document editor (campaign-service#665), queued into the brief's library the way the library upload
+   * below queues images, so it is listed and offered to the picker once stored (`onCreativeLibraryChanged`).
+   */
+  protected onLinkedInDocumentUpload(files: File[]): void {
+    const briefId = this.briefPersistence().briefId ?? '';
+    const projectSlug = this.activeFoundationSlug();
+    // The editor holds its upload while a delete runs; this also refuses a pick that lands after it started.
+    if (!briefId || !projectSlug || this.linkedInDocumentDeletingId() !== '') return;
+    this.campaignService.enqueueCreativeAssetUploads(files, projectSlug, briefId, { documents: true });
+  }
+
   /** The carousel editor's intro text as edited (campaign-service#665). */
   protected onLinkedInCarouselIntroTextChange(introText: string): void {
     this.linkedInCarouselIntroText.set(introText);
@@ -5853,6 +6107,12 @@ export class ImplementationTabComponent implements OnInit {
   /** Turn custom targeting on in place of the targeting profile (#5764 rows 8–11). */
   protected onLinkedInCustomTargetingOn(): void {
     this.linkedInCustomTargeting.set(true);
+    this.emitDraft();
+  }
+
+  /** A delivery option toggled (campaign-service#667). */
+  protected onLinkedInDeliveryOptionChange(option: keyof LinkedInDeliveryOptionsDraft, checked: boolean): void {
+    this.linkedInDeliveryOptions.update((options) => ({ ...options, [option]: checked }));
     this.emitDraft();
   }
 
@@ -6046,6 +6306,22 @@ export class ImplementationTabComponent implements OnInit {
     this.linkedInVariants.update((variants) =>
       variants.map((variant) => (variant.videoAssetId === assetId ? { ...variant, videoAssetId: '', videoAssetName: '', videoAssetBriefId: '' } : variant))
     );
+    this.emitDraft();
+  }
+
+  /**
+   * A stored PDF the library deleted (campaign-service#665): the library is read again, so the PDF picker stops offering
+   * it, and it is cleared from the document ad if an upload of identical bytes put it back there.
+   */
+  protected onLibraryDocumentDeleted(assetId: string): void {
+    this.onCreativeLibraryChanged();
+    this.onLibraryDocumentReleased(assetId);
+  }
+
+  /** A stored PDF the operator took off the document ad in the library (campaign-service#665), which then lets it be deleted. */
+  protected onLibraryDocumentReleased(assetId: string): void {
+    if (this.linkedInDocument().assetId !== assetId) return;
+    this.linkedInDocument.update((document) => ({ ...document, assetId: '', assetBriefId: '' }));
     this.emitDraft();
   }
 
@@ -6384,6 +6660,39 @@ export class ImplementationTabComponent implements OnInit {
   /** The picker's report on the held form (#6107): not a draft field, so nothing is emitted. */
   protected onMetaLeadFormHeldRefusal(refusal: string | null): void {
     this.metaLeadFormHeldRefusal.set(refusal);
+  }
+
+  /** The Meta ad format picker's value (#6331): anything else reads as single. The first switch to carousel seeds its cards from the brief's copy. */
+  protected onMetaFormatSelect(value: unknown): void {
+    this.pendingMetaDraft = null;
+    const format: MetaAdFormat = value === 'carousel' ? 'carousel' : 'single';
+    this.metaFormat.set(format);
+    if (format === 'carousel' && this.metaCarouselCards().length === 0) {
+      const seed = metaCarouselSeed(this.metaVariants());
+      this.metaCarouselCards.set(seed.cards);
+      if (this.metaCarouselMessage() === '') this.metaCarouselMessage.set(seed.message);
+    }
+    this.emitDraft();
+  }
+
+  /** The carousel editor's cards as edited (#6331). */
+  protected onMetaCarouselCardsChange(cards: MetaCarouselCardDraft[]): void {
+    this.metaCarouselCards.set(cards);
+    this.emitDraft();
+  }
+
+  /** The carousel editor's one message as edited (#6331). */
+  protected onMetaCarouselMessageChange(message: string): void {
+    this.metaCarouselMessage.set(message);
+    this.emitDraft();
+  }
+
+  /** Images chosen in the carousel editor (#6331), queued into the brief's library as the LinkedIn carousel's are. */
+  protected onMetaCarouselUpload(files: File[]): void {
+    const briefId = this.briefPersistence().briefId ?? '';
+    const projectSlug = this.activeFoundationSlug();
+    if (!briefId || !projectSlug || !this.metaAssetUploadAvailable()) return;
+    this.campaignService.enqueueCreativeAssetUploads(files, projectSlug, briefId);
   }
 
   /** The lead form picked or typed in `lfx-meta-lead-form-picker` (#5940). Signal-backed like the other Meta fields, so it emits. */
@@ -7455,6 +7764,8 @@ export class ImplementationTabComponent implements OnInit {
               // choice sends what it always did and the bidding decides.
               // Lead generation (campaign-service#664) sends its form and button on its own capability.
               ...linkedInObjectiveFieldsForCreate(this.linkedInObjectiveDraft(), this.linkedInConversionsAvailable(), this.linkedInLeadGenAvailable()),
+              // Audience Expansion and the Audience Network (campaign-service#667), only when on and offered.
+              ...linkedInDeliveryOptionsForCreate(this.linkedInDeliveryOptions(), this.linkedInDeliveryOptionsEnabled(), this.linkedInAudienceNetworkOffered()),
             },
           }
         : {}),
@@ -7476,7 +7787,7 @@ export class ImplementationTabComponent implements OnInit {
               // does: dispatch strips an optional `r/`, so sending the raw value would submit
               // something the operator was never shown.
               subreddits: this.redditEffectiveSubreddits(),
-              interests: this.redditInterests(),
+              interests: this.redditTargetingLists().interests,
               keywords: this.redditKeywords().length > 0 ? this.redditKeywords() : this.briefKeywords().map((k) => k.term),
               variants: this.redditVariants(),
               // Always sent, never conditioned on differing from the default: both creators fall
@@ -7498,6 +7809,8 @@ export class ImplementationTabComponent implements OnInit {
               ...redditCustomAudiencesField(this.redditCustomAudiences(), this.redditCustomAudiencesEnabled()),
               // The same for the excluded communities and countries (#6108 row 3).
               ...redditTargetingExclusionsField(this.redditTargetingExclusions(), this.redditTargetingExclusionsEnabled()),
+              // Only what differs from campaign-service's default, and nothing a capability does not confirm (#6108 row 5).
+              ...redditDeliveryField(this.redditDelivery(), this.redditDeliveryCapabilities()),
               // Omitted when blank rather than sent empty: upstream treats an empty `postUrl` as
               // "author a post instead", and an empty `callToAction` as "use the default" — both
               // the same decision an absent key makes, so a blank string would only add a value
@@ -7533,7 +7846,8 @@ export class ImplementationTabComponent implements OnInit {
               endDate: form.endDate,
               // The SAME value the preview renders — see `metaEffectiveGeoTargets`.
               geoTargets: this.metaEffectiveGeoTargets(),
-              variants: this.metaVariantsForCreate(),
+              // A carousel (#6331) sends its cards as the variants, in order, and `format`; else exactly as before, no `format`.
+              ...this.metaCreativesField(),
               objective: this.metaObjective(),
               placements: this.metaPlacementOverrides(),
               // Sent only under `conversions`. Under every other objective the promoted object is
@@ -8184,6 +8498,24 @@ export class ImplementationTabComponent implements OnInit {
     return metaVariantsWithImage(this.metaVariants(), this.metaImageField());
   }
 
+  /** The Meta creatives for the request: a carousel's cards and `format: 'carousel'` while chosen and offered (#6331), else the variants. */
+  private metaCreativesField(): { variants: MetaAdVariant[]; format?: MetaAdFormat } {
+    if (!this.metaCarouselSelected()) return { variants: this.metaVariantsForCreate() };
+    return {
+      format: 'carousel',
+      variants: metaCarouselVariantsForCreate(this.metaCarouselCards(), this.metaCarouselMessage(), this.metaCarouselImageContext()),
+    };
+  }
+
+  /** What a carousel card may send as its image: a stored one while uploads are offered, a URL while images are (#6331). */
+  private metaCarouselImageContext(): MetaCarouselImageContext {
+    return {
+      uploadAvailable: this.metaAssetUploadAvailable(),
+      creativeAvailable: this.metaCreativeAvailable(),
+      briefId: this.briefPersistence().briefId ?? '',
+    };
+  }
+
   private metaImageField(): MetaImageField {
     return metaImageField({
       uploadAvailable: this.metaAssetUploadAvailable(),
@@ -8208,7 +8540,8 @@ export class ImplementationTabComponent implements OnInit {
   private initMetaImageAssetBlock(): Signal<CampaignMetaImageAssetBlock | null> {
     return computed(() =>
       metaImageAssetBlock({
-        showMetaSection: this.showMetaSection(),
+        // Not while a carousel is chosen (#6331): its cards carry their own images, and the one image is not sent.
+        showMetaSection: this.showMetaSection() && !this.metaCarouselSelected(),
         briefId: this.briefPersistence().briefId,
         assetId: this.metaImageAssetId(),
         assetBriefId: this.metaImageAssetBriefId(),
@@ -9201,10 +9534,14 @@ export class ImplementationTabComponent implements OnInit {
   /**
    * The LinkedIn creatives for the request (#5764 row 19, campaign-service#665): `format: 'text'`, the text ads and no
    * variants while Text Ads are chosen and offered; `format: 'carousel'`, the cards, the intro text and no variants while a
-   * carousel is chosen and offered; else the variants exactly as before (no `format` key), each with its video while video
-   * ads are chosen.
+   * carousel is chosen and offered; `format: 'document'`, the PDF, title, intro text and no variants while a document is
+   * chosen and offered; `format: 'boost'`, the post and no variants while a boost is chosen and offered (campaign-service#673);
+   * else the variants exactly as before (no `format` key), each with its video while video ads are chosen.
    */
-  private linkedInCreativesField(): Pick<LinkedInCampaignCreateRequest, 'variants' | 'format' | 'textAds' | 'carouselCards' | 'carouselIntroText'> {
+  private linkedInCreativesField(): Pick<
+    LinkedInCampaignCreateRequest,
+    'variants' | 'format' | 'textAds' | 'carouselCards' | 'carouselIntroText' | 'documentAssetId' | 'documentTitle' | 'documentIntroText' | 'boostPost'
+  > {
     // Video ads (#5764 row 18) are the single-image request with a video on each variant, and no image or description.
     if (this.linkedInVideoSelected()) {
       return {
@@ -9218,14 +9555,20 @@ export class ImplementationTabComponent implements OnInit {
     if (this.linkedInCarouselSelected()) {
       return linkedInCarouselFieldsForCreate(this.linkedInCarouselCards(), this.linkedInCarouselIntroText(), this.briefPersistence().briefId ?? '');
     }
+    // A document (campaign-service#665) is one creative built from its PDF, and sends no variants.
+    if (this.linkedInDocumentSelected()) return linkedInDocumentFieldsForCreate(this.linkedInDocument(), this.briefPersistence().briefId ?? '');
+    // A boost (campaign-service#673) sponsors its post as it is, and sends no variants.
+    if (this.linkedInBoostSelected()) return linkedInBoostFieldsForCreate(this.linkedInBoostPost());
     if (!this.linkedInTextAdsSelected()) return { variants: this.linkedInVariantsSent() };
     const textAds = linkedInTextAdsForCreate(this.linkedInTextAds(), this.linkedInAssetUploadAvailable(), this.briefPersistence().briefId ?? '');
     return { format: 'text', textAds, variants: [] };
   }
 
-  /** The request `format` the objective checks are run against: Text Ads or a carousel while chosen and offered, else none. */
-  private linkedInFormatSent(): 'text' | 'carousel' | undefined {
+  /** The request `format` the objective checks are run against: Text Ads, a carousel, a document or a boost while chosen and offered, else none. */
+  private linkedInFormatSent(): 'text' | 'carousel' | 'document' | 'boost' | undefined {
     if (this.linkedInTextAdsSelected()) return 'text';
+    if (this.linkedInDocumentSelected()) return 'document';
+    if (this.linkedInBoostSelected()) return 'boost';
     return this.linkedInCarouselSelected() ? 'carousel' : undefined;
   }
 
@@ -9276,6 +9619,30 @@ export class ImplementationTabComponent implements OnInit {
             },
           }
         : {}),
+      // A document chosen but no longer offered: held, never sent as single image ads instead (campaign-service#665).
+      documentUnavailable: this.linkedInFormat() === 'document' && !this.linkedInDocumentAvailable(),
+      // While a document is chosen, its PDF, title and intro replace the variant checks, judged with the objective and
+      // bidding the create sends. Not while the brief saves, for the carousel's reason above.
+      ...(this.linkedInDocumentSelected()
+        ? {
+            document: {
+              refusal:
+                this.briefSaveInFlight() || this.briefPersistence().status === 'saving'
+                  ? null
+                  : linkedInDocumentCreateRefusal(
+                      this.linkedInDocument(),
+                      this.googleCreativeLibrary(),
+                      this.briefPersistence().briefId ?? '',
+                      { objective: this.linkedInObjectiveDraft().objective, bidding: this.biddingField('linkedin-ads').bidding },
+                      this.linkedInDocumentDeletingId()
+                    ),
+            },
+          }
+        : {}),
+      // A boost chosen but not offered (off, or not read yet): held, never sent (campaign-service#673). While chosen, its
+      // post replaces the variant checks.
+      boostUnavailable: linkedInBoostUnavailable(this.linkedInFormat(), this.linkedInBoostEnabled()),
+      ...(this.linkedInBoostSelected() ? { boost: { refusal: linkedInBoostCreateRefusal(this.linkedInBoostPost()) } } : {}),
       ...(this.linkedInVideoSelected() ? { videoMissing: linkedInVideoMissing(this.linkedInVariants(), this.briefPersistence().briefId ?? '') } : {}),
       customTargetingUnavailable: this.linkedInCustomTargeting() && !this.linkedInTargetingAvailable(),
       // Custom targeting (#5764 rows 8–11) holds Create while its clauses cannot be sent, and replaces the profile checks.
@@ -9288,12 +9655,19 @@ export class ImplementationTabComponent implements OnInit {
         bidding: this.biddingField('linkedin-ads').bidding,
         leadGenAvailable: this.linkedInLeadGenAvailable(),
         format: this.linkedInFormatSent(),
+        trafficManualBidAvailable: this.linkedInTrafficManualBidAvailable(),
       }),
       // The target cost (campaign-service#674): held while offered and refused; hidden, it is not sent and holds nothing.
       targetCostRefusal: linkedInTargetCostCreateRefusal(
         this.linkedInObjectiveDraft(),
         this.linkedInTargetCostShown(),
         this.linkedInTargetCostAwaitingCapability()
+      ),
+      // The delivery options (campaign-service#667): held only while one that is on waits on the capability.
+      deliveryOptionsRefusal: linkedInDeliveryOptionsCreateRefusal(
+        this.linkedInDeliveryOptions(),
+        this.linkedInDeliveryOptionsEnabled(),
+        this.linkedInAudienceNetworkOffered()
       ),
       // Text Ads replace the variant checks while chosen (#5764 row 19); they need a manual bid.
       ...(this.linkedInTextAdsSelected()
@@ -9674,6 +10048,10 @@ export class ImplementationTabComponent implements OnInit {
     if (metaRestore.detailedTargeting !== undefined) this.metaDetailedTargeting.set(metaRestore.detailedTargeting);
     if (metaRestore.adOptions !== undefined) this.metaAdOptions.set(metaRestore.adOptions);
     if (metaRestore.leadFormId !== null) this.metaLeadFormId.set(metaRestore.leadFormId);
+    // The format, cards and message as edited (#6331), present-only; a carousel is sent only while offered.
+    if (metaRestore.format !== undefined) this.metaFormat.set(metaRestore.format);
+    if (metaRestore.carouselCards !== undefined) this.metaCarouselCards.set(metaRestore.carouselCards);
+    if (metaRestore.carouselMessage !== undefined) this.metaCarouselMessage.set(metaRestore.carouselMessage);
     if (metaRestore.geoTargets !== undefined) this.metaGeoTargets.set(metaRestore.geoTargets);
     if (metaRestore.budgetUsd !== undefined) this.metaBudgetUsd.set(metaRestore.budgetUsd);
     if (metaRestore.lifetimeBudget !== undefined) this.metaLifetimeBudget.set(metaRestore.lifetimeBudget);
@@ -9717,6 +10095,8 @@ export class ImplementationTabComponent implements OnInit {
     if (redditRestore.conversionEvent !== undefined) this.redditConversionEvent.set(redditRestore.conversionEvent);
     if (redditRestore.customAudiences !== undefined) this.redditCustomAudiences.set(redditRestore.customAudiences);
     if (redditRestore.targetingExclusions !== undefined) this.redditTargetingExclusions.set(redditRestore.targetingExclusions);
+    if (redditRestore.delivery !== undefined) this.redditDelivery.set(redditRestore.delivery);
+    if (redditRestore.editedTargetingLists !== undefined) this.redditEditedTargetingLists.set(redditRestore.editedTargetingLists);
     // The Meta image, on the Reddit image's terms above.
     const metaImageRestore = metaImageDraftRestore(draft);
     if (metaImageRestore.imageUrl !== undefined) this.metaImageUrl.set(metaImageRestore.imageUrl);
@@ -9736,11 +10116,16 @@ export class ImplementationTabComponent implements OnInit {
     // The carousel cards and intro text as edited (campaign-service#665), present-only.
     if (linkedInRestore.carouselCards) this.linkedInCarouselCards.set(linkedInRestore.carouselCards);
     if (linkedInRestore.carouselIntroText !== undefined) this.linkedInCarouselIntroText.set(linkedInRestore.carouselIntroText);
+    // The boost's post as typed (campaign-service#673), present-only.
+    if (linkedInRestore.boostPost !== undefined) this.linkedInBoostPost.set(linkedInRestore.boostPost);
+    // The document ad as edited (campaign-service#665), present-only.
+    if (linkedInRestore.document) this.linkedInDocument.set(linkedInRestore.document);
     // Custom targeting and its clauses as edited (#5764 rows 8–11), present-only.
     if (linkedInRestore.customTargeting !== undefined) this.linkedInCustomTargeting.set(linkedInRestore.customTargeting);
     if (linkedInRestore.targetingDraft) this.linkedInTargetingDraft.set(linkedInRestore.targetingDraft);
     // The objective and conversion rules (#5764 rows 2 and 4), present-only.
     if (linkedInRestore.objectiveDraft) this.linkedInObjectiveDraft.set(linkedInRestore.objectiveDraft);
+    if (linkedInRestore.deliveryOptions) this.linkedInDeliveryOptions.set(linkedInRestore.deliveryOptions);
     // The LinkedIn upload, on the Meta upload's terms above, for the variant it was chosen for.
     this.linkedInImageUploadVariantKey.set(linkedInRestore.uploadVariantKey);
     if (linkedInRestore.failedUpload) this.failLinkedInImageUpload(linkedInRestore.failedUpload.message, linkedInRestore.failedUpload.briefId);
@@ -10201,6 +10586,9 @@ export class ImplementationTabComponent implements OnInit {
         adOptions: this.metaAdOptions(),
         leadFormId: this.metaLeadFormId(),
         foundation: this.activeFoundationSlug(),
+        format: this.metaFormat(),
+        carouselCards: this.metaCarouselCards(),
+        carouselMessage: this.metaCarouselMessage(),
         budgetUsd: this.metaBudgetUsd(),
         lifetimeBudget: this.metaLifetimeBudget(),
       }),
@@ -10265,9 +10653,12 @@ export class ImplementationTabComponent implements OnInit {
         textAds: this.linkedInTextAds(),
         carouselCards: this.linkedInCarouselCards(),
         carouselIntroText: this.linkedInCarouselIntroText(),
+        document: this.linkedInDocument(),
+        boostPost: this.linkedInBoostPost(),
         customTargeting: this.linkedInCustomTargeting(),
         targetingDraft: this.linkedInTargetingDraft(),
         objectiveDraft: this.linkedInObjectiveDraft(),
+        deliveryOptions: this.linkedInDeliveryOptions(),
       }),
       // Snapshotted whatever `redditCreativeAvailable()` says — see the draft interface for why a
       // capability must not decide what the draft remembers. A failed upload is kept with its brief
@@ -10290,6 +10681,8 @@ export class ImplementationTabComponent implements OnInit {
         conversionEvent: this.redditConversionEvent(),
         customAudiences: this.redditCustomAudiences(),
         targetingExclusions: this.redditTargetingExclusions(),
+        editedTargetingLists: this.redditEditedTargetingLists(),
+        delivery: this.redditDelivery(),
       }),
       ...metaImageDraftFields({
         imageUrl: this.metaImageUrl(),
@@ -10347,6 +10740,8 @@ export class ImplementationTabComponent implements OnInit {
     this.redditConversionEvent.set(redditReset.conversionEvent);
     this.redditCustomAudiences.set(redditReset.customAudiences);
     this.redditTargetingExclusions.set(redditReset.targetingExclusions);
+    this.redditDelivery.set(redditReset.delivery);
+    this.redditEditedTargetingLists.set(null);
     this.redditBudgetUsd.set(redditReset.budgetUsd);
     this.setRedditBriefLists(redditReset);
     // The other platforms on the same terms (#4624): every value the brief does not derive, or derives
@@ -10598,6 +10993,9 @@ export class ImplementationTabComponent implements OnInit {
     this.metaImageUrl.set('');
     this.metaGeoTargets.set([]);
     this.metaVariants.set([]);
+    this.metaFormat.set('single');
+    this.metaCarouselCards.set([]);
+    this.metaCarouselMessage.set('');
   }
 
   /**
@@ -10613,9 +11011,12 @@ export class ImplementationTabComponent implements OnInit {
     this.linkedInTextAds.set([]);
     this.linkedInCarouselCards.set([]);
     this.linkedInCarouselIntroText.set('');
+    this.linkedInDocument.set(emptyLinkedInDocumentDraft());
+    this.linkedInBoostPost.set('');
     this.linkedInCustomTargeting.set(false);
     this.linkedInTargetingDraft.set(emptyLinkedInTargetingDraft());
     this.linkedInObjectiveDraft.set(emptyLinkedInObjectiveDraft());
+    this.linkedInDeliveryOptions.set(emptyLinkedInDeliveryOptionsDraft());
     this.campaignForm.patchValue({
       linkedInAccountId: untracked(() => this.linkedInAccounts())[0]?.accountId ?? '',
       linkedInGeoTargets: [],
@@ -11262,8 +11663,13 @@ export class ImplementationTabComponent implements OnInit {
         projectSlug: this.activeFoundationSlug(),
         briefId: this.briefPersistence().briefId ?? '',
         revision: this.creativeLibraryRevision(),
-        // Also while a LinkedIn carousel is chosen (campaign-service#665): its cards pick from the same library.
-        wanted: (this.googleAssetUploadAvailable() && this.googleCreativeSections().length > 0) || this.linkedInCarouselSelected(),
+        // Also while a LinkedIn carousel or document is chosen (campaign-service#665): its cards and its PDF pick from the same library.
+        wanted:
+          (this.googleAssetUploadAvailable() && this.googleCreativeSections().length > 0) ||
+          this.linkedInCarouselSelected() ||
+          this.linkedInDocumentSelected() ||
+          // And a Meta carousel's cards (#6331), while stored images are offered.
+          (this.metaCarouselSelected() && this.metaAssetUploadAvailable()),
       }),
       {
         equal: (a, b) => a.projectSlug === b.projectSlug && a.briefId === b.briefId && a.revision === b.revision && a.wanted === b.wanted,
@@ -11274,7 +11680,7 @@ export class ImplementationTabComponent implements OnInit {
         switchMap((target) => {
           if (!target.wanted || target.projectSlug === '' || target.briefId === '') return of(idle);
           return this.campaignService.listCreativeAssets(target.projectSlug, target.briefId).pipe(
-            map((library): CreativeAssetLibraryState => ({ status: 'ready', assets: library.assets })),
+            map((library): CreativeAssetLibraryState => ({ status: 'ready', assets: library.assets, documents: library.documents })),
             catchError(() => of<CreativeAssetLibraryState>({ status: 'error', assets: [] })),
             startWith<CreativeAssetLibraryState>({ status: 'loading', assets: [] })
           );
@@ -12532,6 +12938,13 @@ export class ImplementationTabComponent implements OnInit {
         const value = drafts[platform] ?? defaultCampaignBiddingDraft();
         views[platform] = { platform, value, error: campaignBiddingError(platform, value, this.biddingContext(platform)) };
       }
+      // LinkedIn's Manual is a Website visits campaign while traffic is chosen and both the objective and its manual bid
+      // are offered (campaign-service#676); a held traffic choice that cannot be sent keeps the usual text.
+      const linkedInManual = linkedInManualBidDescription(
+        this.linkedInObjectiveDraft().objective,
+        this.linkedInConversionsAvailable() && this.linkedInTrafficManualBidAvailable()
+      );
+      if (linkedInManual !== null) views['linkedin-ads'] = { ...views['linkedin-ads'], manualDescription: linkedInManual };
       return views;
     });
   }

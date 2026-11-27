@@ -1,7 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { OrgTraineeDetailRow, OrgTraineeOutsideLearner, OrgTraineeRow, OrgTraineesResponse, OrgTrainingStats } from '@lfx-one/shared/interfaces';
+import type {
+  OrgTraineeDetailRow,
+  OrgTraineeOutsideLearner,
+  OrgTraineePair,
+  OrgTraineeRow,
+  OrgTraineesResponse,
+  OrgTrainingStats,
+} from '@lfx-one/shared/interfaces';
 import { expect, Page, test } from '@playwright/test';
 
 import { SYNTHETIC_ORG_ACCOUNT_ID, SYNTHETIC_ORG_DOMAIN, SYNTHETIC_ORG_LEGAL_NAME, SYNTHETIC_ORG_NAME } from '../fixtures/mock-data/synthetic-org.mock';
@@ -229,23 +236,25 @@ export function syntheticTrainees(count: number = SYNTHETIC_TRAINEE_COUNT): OrgT
   }));
 }
 
-/** One course per trainee, alternating certified and enrolled, all under one foundation so a foundation pick keeps every row. */
-export function syntheticTraineeDetails(trainees: readonly OrgTraineeRow[] = syntheticTrainees()): OrgTraineeDetailRow[] {
+export function syntheticTraineePairs(trainees: readonly OrgTraineeRow[] = syntheticTrainees()): OrgTraineePair[] {
   return trainees.map((trainee, index) => ({
     personKey: trainee.personKey,
-    status: index % 2 === 0 ? 'Certified' : 'Enrolled',
-    courseOrCertId: `${index % 2 === 0 ? 'certified' : 'enrolled'}:course-${index % 5}`,
     courseId: `course-${index % 5}`,
+    status: index % 2 === 0 ? 'Certified' : 'Enrolled',
+    productType: index % 4 === 0 ? 'Certification' : 'Training',
     courseName: `Synthetic Course ${index % 5}`,
+    courseLevel: 'Advanced',
+    courseFormat: 'Online',
     foundationId: SYNTHETIC_FOUNDATION_ID,
     foundationName: 'CNCF',
     projectId: 'project-1',
     projectName: 'Synthetic Project',
-    courseLevel: 'Advanced',
-    productType: index % 4 === 0 ? 'Certification' : 'Training',
-    courseFormat: 'Online',
-    activityTs: new Date(Date.UTC(2026, 9, 1 + (index % 28))).toISOString(),
+    lastActivityTs: new Date(Date.UTC(2026, 9, 1 + (index % 28))).toISOString(),
   }));
+}
+
+export function syntheticTraineeDetails(pairs: readonly OrgTraineePair[] = syntheticTraineePairs()): OrgTraineeDetailRow[] {
+  return pairs.map((pair) => ({ personKey: pair.personKey, courseId: pair.courseId, status: pair.status, activityTs: pair.lastActivityTs! }));
 }
 
 /** Learners outside the people list: opaque keys, name and status only. */
@@ -300,6 +309,7 @@ export async function guardUnstubbedApi(page: Page): Promise<OrgTrainingApiGuard
 
 export interface TraineesStubOptions {
   trainees?: OrgTraineeRow[];
+  pairs?: OrgTraineePair[];
   details?: OrgTraineeDetailRow[];
   outsideLearners?: OrgTraineeOutsideLearner[];
 }
@@ -307,7 +317,8 @@ export interface TraineesStubOptions {
 /** Answers `/lens/people/trainees` (echoing the requested range) and replaces the stats with the synthetic ones above. */
 export async function stubOrgTraineesRoutes(page: Page, options: TraineesStubOptions = {}): Promise<void> {
   const trainees = options.trainees ?? syntheticTrainees();
-  const details = options.details ?? syntheticTraineeDetails(trainees);
+  const pairs = options.pairs ?? syntheticTraineePairs(trainees);
+  const details = options.details ?? syntheticTraineeDetails(pairs);
   const outsideLearners = options.outsideLearners ?? syntheticOutsideLearners();
   const json = (body: unknown) => ({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
 
@@ -320,6 +331,7 @@ export async function stubOrgTraineesRoutes(page: Page, options: TraineesStubOpt
           accountId: MOCK_ACCOUNT_ID,
           timeRange: range,
           trainees,
+          pairs,
           details,
           outsideLearners,
           formerOnPeopleList: SYNTHETIC_FORMER_ON_LIST,

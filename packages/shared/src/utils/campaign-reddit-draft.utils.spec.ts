@@ -28,6 +28,8 @@ describe('redditDraftFields', () => {
     conversionEvent: 'SIGN_UP',
     customAudiences: { customAudienceIds: ['aud_in'], excludedCustomAudienceIds: ['aud_out'] },
     targetingExclusions: { excludedSubreddits: ['politics'], excludedGeoTargets: ['CA'] },
+    editedTargetingLists: { subreddits: ['kubernetes'], interests: ['technology_v3'] },
+    delivery: { budgetType: 'daily', placements: ['FEED'], platforms: ['DESKTOP', 'MOBILE_WEB'], expandTargeting: false },
   };
 
   it('carries every typed value, the pixel and the upload slot as held', () => {
@@ -51,7 +53,19 @@ describe('redditDraftFields', () => {
       redditExcludedCustomAudienceIds: ['aud_out'],
       redditExcludedSubreddits: ['politics'],
       redditExcludedGeoTargets: ['CA'],
+      redditEditedSubreddits: ['kubernetes'],
+      redditEditedInterests: ['technology_v3'],
+      redditBudgetType: 'daily',
+      redditPlacements: ['FEED'],
+      redditPlatforms: ['DESKTOP', 'MOBILE_WEB'],
+      redditExpandTargeting: false,
     });
+  });
+
+  it('leaves unedited subreddits and interests out, so the brief re-seeds them', () => {
+    const fields = redditDraftFields({ ...state, editedTargetingLists: null });
+    expect(fields).not.toHaveProperty('redditEditedSubreddits');
+    expect(fields).not.toHaveProperty('redditEditedInterests');
   });
 
   it.each([
@@ -181,6 +195,39 @@ describe('redditDraftRestore: targeting exclusions', () => {
   });
 });
 
+describe('redditDraftRestore: edited subreddits and interests', () => {
+  it.each<[string, unknown, unknown, unknown]>([
+    ['both lists', ['kubernetes'], ['technology_v3'], { subreddits: ['kubernetes'], interests: ['technology_v3'] }],
+    ['a cleared list beside a missing one', [], undefined, { subreddits: [], interests: [] }],
+    ['only the strings of a stored list', ['kubernetes', 7], undefined, { subreddits: ['kubernetes'], interests: [] }],
+    ['neither key (an older draft), so the seed stands', undefined, undefined, undefined],
+  ])('restores %s', (_name, subs, interests, expected) => {
+    // @ts-expect-error -- a draft is replayed from stored JSON whose inner shape is not validated
+    expect(redditDraftRestore(draft({ redditEditedSubreddits: subs, redditEditedInterests: interests })).editedTargetingLists).toEqual(expected);
+  });
+});
+
+// Each key is read on its own; the capability gate is `redditDeliveryInEffect`'s (campaign-reddit-delivery.utils.spec.ts).
+describe('redditDraftRestore: delivery choices', () => {
+  const ALL = { budgetType: 'lifetime', placements: ['FEED', 'COMMENTS_PAGE'], platforms: ['DESKTOP', 'MOBILE_NATIVE', 'MOBILE_WEB'], expandTargeting: true };
+  it.each<[string, Record<string, unknown>, unknown]>([
+    ['none of the keys (an older draft), so the defaults stand', {}, undefined],
+    [
+      'every choice',
+      { redditBudgetType: 'daily', redditPlacements: ['FEED'], redditPlatforms: ['MOBILE_WEB'], redditExpandTargeting: false },
+      { budgetType: 'daily', placements: ['FEED'], platforms: ['MOBILE_WEB'], expandTargeting: false },
+    ],
+    ['one key, the rest at their defaults', { redditExpandTargeting: false }, { ...ALL, expandTargeting: false }],
+    ['an unknown budget type as lifetime', { redditBudgetType: 'weekly' }, ALL],
+    ['only the known values of a list, in order', { redditPlatforms: ['MOBILE_WEB', 'ALL', 'DESKTOP'] }, { ...ALL, platforms: ['DESKTOP', 'MOBILE_WEB'] }],
+    ['an empty list as every value', { redditPlacements: [] }, ALL],
+    ['a list that is not one as every value', { redditPlacements: 'FEED' }, ALL],
+    ['an expandTargeting that is not a boolean as on', { redditExpandTargeting: 'false' }, ALL],
+  ])('restores %s', (_name, stored, expected) => {
+    expect(redditDraftRestore(draft(stored as RedditDraftSnapshot)).delivery).toEqual(expected);
+  });
+});
+
 describe('redditBriefReset', () => {
   it('sets every typed value to its default and empties the brief lists', () => {
     expect(redditBriefReset()).toEqual({
@@ -192,6 +239,7 @@ describe('redditBriefReset', () => {
       conversionEvent: 'PURCHASE',
       customAudiences: { customAudienceIds: [], excludedCustomAudienceIds: [] },
       targetingExclusions: { excludedSubreddits: [], excludedGeoTargets: [] },
+      delivery: { budgetType: 'lifetime', placements: ['FEED', 'COMMENTS_PAGE'], platforms: ['DESKTOP', 'MOBILE_NATIVE', 'MOBILE_WEB'], expandTargeting: true },
       budgetUsd: DEFAULT_REDDIT_BUDGET_USD,
       variants: [],
       subreddits: [],

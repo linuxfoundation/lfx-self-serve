@@ -17,7 +17,10 @@ import { MktgDocumentRedraftInputService } from './mktg-document-redraft-input.s
 import type { MktgDocumentRunService } from './mktg-document-run.service';
 import { MktgDocumentStoreService } from './mktg-document-store.service';
 
-/** Writer/canonical-project boundary is the Documents controller. No callback after reservation can create another session. */
+/**
+ * Writer/canonical-project boundary is the Documents controller. No callback after reservation can create another session.
+ * Both refusals come before any reservation is committed, so a 409 MKTG_REDRAFT_COMMENTS_BUSY or MKTG_RUN_ACTIVE proves nothing was sent.
+ */
 export class MktgDocumentRedraftService {
   private readonly guild = new GuildService();
   private readonly comments = new MktgDocumentCommentsService();
@@ -41,6 +44,9 @@ export class MktgDocumentRedraftService {
     const agent = MKTG_AGENTS.find((entry) => entry.id === type.catalogAgentId);
     if (!agent || agent.status !== 'active' || !MKTG_AGENT_INTAKES[agent.id])
       throw ServiceValidationError.forField('agentKey', 'No registered redraft intake.');
+    // First answer wins. A replay only re-observes its own run; a new send never starts over a run that holds this document.
+    const replay = await this.comments.admit(req, project, type, documentId, input);
+    if (!replay) await runs.assertSingleActiveRun(req, project, type.agentKey, { documentId });
     let prepared: MktgPreparedRedraft | undefined;
     const reservation = await this.comments.reserve(req, project, type, documentId, input, async (comments) => {
       this.guild.preflight('mktg_document_redraft');

@@ -152,6 +152,10 @@ export function linkedInCreateRefusal(input: LinkedInCreateRefusalInput): string
   if (input.carouselUnavailable) return 'LinkedIn Ads: carousel ads are not available right now. Choose single image ads as the ad format.';
   // A carousel beside lead generation, which campaign-service builds none of yet.
   if (input.carouselWithLeadGen) return 'LinkedIn Ads: lead generation campaigns cannot be carousels yet. Choose single image or video ads as the ad format.';
+  // A document chosen but no longer offered: held, never sent as single image ads instead (campaign-service#665).
+  if (input.documentUnavailable) return 'LinkedIn Ads: document ads are not available right now. Choose single image ads as the ad format.';
+  // Likewise a boost (campaign-service#673).
+  if (input.boostUnavailable) return 'LinkedIn Ads: boosting a post is not available right now. Choose single image ads as the ad format.';
   // Custom targeting this deployment no longer offers is held rather than sent as the profile, a wider audience (#5764 rows 8–11).
   if (input.customTargetingUnavailable) return 'LinkedIn Ads: custom targeting is not available right now. Choose a targeting profile.';
   if (input.textAds) {
@@ -161,6 +165,12 @@ export function linkedInCreateRefusal(input: LinkedInCreateRefusalInput): string
   } else if (input.carousel) {
     // A carousel's cards (campaign-service#665) take the variants' place too: already a whole message.
     if (input.carousel.refusal !== null) return input.carousel.refusal;
+  } else if (input.document) {
+    // A document (campaign-service#665) takes the variants' place too: already a whole message.
+    if (input.document.refusal !== null) return input.document.refusal;
+  } else if (input.boost) {
+    // A boost (campaign-service#673) sponsors its post, the one creative, in the variants' place: already a whole message.
+    if (input.boost.refusal !== null) return input.boost.refusal;
   } else {
     if (input.variantCount === 0) return 'LinkedIn Ads: add at least one ad variant.';
     if (input.variantCount > LINKEDIN_MAX_VARIANTS) return `LinkedIn Ads: remove ad variants until there are at most ${LINKEDIN_MAX_VARIANTS}.`;
@@ -184,6 +194,8 @@ export function linkedInCreateRefusal(input: LinkedInCreateRefusalInput): string
   if (input.objectiveRefusal) return input.objectiveRefusal;
   // The target cost (campaign-service#674): already a whole message (`linkedInTargetCostCreateRefusal`).
   if (input.targetCostRefusal) return input.targetCostRefusal;
+  // The delivery options (campaign-service#667): already a whole message (`linkedInDeliveryOptionsCreateRefusal`).
+  if (input.deliveryOptionsRefusal) return input.deliveryOptionsRefusal;
   // The legacy account must be one the CATALOG confirms, not merely a non-empty string: before the catalog read
   // returns, and for good if it fails, the restored id is still on the form while the selector shows nothing.
   // Membership also covers the blank id. Skipped when the connection decides the account (#5809), since the create

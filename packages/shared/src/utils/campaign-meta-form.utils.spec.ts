@@ -405,6 +405,10 @@ describe('metaCreateRefusal', () => {
     [{ adOptionsBlock: 'ad options are loading.' }, 'Meta Ads: ad options are loading.'],
     [{ adOptionsError: 'fix the CTA.' }, 'Meta Ads: fix the CTA.'],
     [{ leadFormError: 'choose a lead form.' }, 'Meta Ads: choose a lead form.'],
+    // A carousel (#6331): held rather than sent as single ads, and its cards replace the variant check.
+    [{ carouselUnavailable: true }, 'Meta Ads: carousel ads are not available right now. Choose single image ads as the ad format.'],
+    [{ carousel: { refusal: 'Meta Ads: card 2 needs an image.' } }, 'Meta Ads: card 2 needs an image.'],
+    [{ carousel: { refusal: null }, variants: [], pixelValid: false }, 'Meta Ads: fix the pixel.'],
   ] as [Partial<MetaCreateRefusalInput>, string][])('refuses %j with %j', (overrides, expected) => {
     expect(metaCreateRefusal({ ...clear, ...overrides })).toBe(expected);
   });

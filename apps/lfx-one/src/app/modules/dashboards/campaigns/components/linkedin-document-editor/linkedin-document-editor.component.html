@@ -1,0 +1,65 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<fieldset class="flex flex-col gap-3" aria-describedby="linkedin-document-hint" data-testid="linkedin-document-editor">
+  <legend class="float-left text-xs font-medium text-gray-700">Document</legend>
+  <p id="linkedin-document-hint" class="text-xs text-gray-500">
+    One sponsored post of a PDF from the brief's library, up to 30 MB, that members page through in the feed. It needs no landing page.
+  </p>
+
+  @if (gatedWarning()) {
+    <p role="note" class="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="linkedin-document-editor-gated-warning">
+      {{ gatedWarning() }}
+    </p>
+  }
+
+  <lfx-ui-select
+    label="PDF"
+    size="small"
+    placeholder="Choose a stored PDF"
+    [value]="document().assetId"
+    (valueChange)="onPdfPick($event)"
+    [error]="view().assetProblem"
+    data-testid="linkedin-document-editor-pdf">
+    @for (option of view().pdfOptions; track option.value) {
+      <lfx-ui-option [value]="option.value" [label]="option.label" />
+    }
+  </lfx-ui-select>
+  @if (view().pdfNote) {
+    <p class="text-xs text-gray-500" data-testid="linkedin-document-editor-pdf-note">{{ view().pdfNote }}</p>
+  }
+
+  <!-- Held while a stored asset's delete runs: an upload of identical bytes would answer with the asset being deleted. -->
+  @if (uploadAvailable() && deletingAssetId()) {
+    <p class="text-xs text-gray-500" data-testid="linkedin-document-editor-upload-held">Wait for the library delete to finish to upload a PDF.</p>
+  } @else if (uploadAvailable()) {
+    <div class="flex flex-col gap-1" data-testid="linkedin-document-editor-upload">
+      <label class="text-xs font-medium text-gray-700" for="linkedin-document-pdf-file">Upload a PDF to the brief's library</label>
+      <input
+        id="linkedin-document-pdf-file"
+        type="file"
+        [attr.accept]="pdfAccept"
+        (change)="onFiles($event)"
+        aria-describedby="linkedin-document-upload-hint"
+        class="text-sm text-gray-900 file:mr-3 file:rounded-md file:border file:border-gray-300 file:bg-white file:px-3 file:py-1.5 file:text-sm file:text-gray-700 hover:file:bg-gray-50"
+        data-testid="linkedin-document-editor-upload-file" />
+      <p id="linkedin-document-upload-hint" class="text-xs text-gray-500">Uploads are listed with the library below and offered here once stored.</p>
+    </div>
+  }
+
+  <lfx-ui-input
+    label="Title"
+    size="small"
+    [value]="document().title"
+    (valueChange)="onTextChange('title', $event)"
+    [error]="view().titleError"
+    [hint]="view().titleLength + '/' + limits.title + ' characters'"
+    data-testid="linkedin-document-editor-title" />
+  <lfx-ui-textarea
+    label="Intro text"
+    [value]="document().introText"
+    (valueChange)="onTextChange('introText', $event)"
+    [error]="view().introError"
+    [hint]="view().introLength + '/' + limits.introText + ' characters' + (view().introHint ? '. ' + view().introHint : '')"
+    data-testid="linkedin-document-editor-intro" />
+</fieldset>

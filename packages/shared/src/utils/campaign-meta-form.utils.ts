@@ -210,7 +210,14 @@ export function metaBasicsRefusal(budgetUsd: number, effectiveGeoTargets: readon
 
 /** Why the Meta form refuses Create, or `null`. The first failing check wins, in this order. */
 export function metaCreateRefusal(input: MetaCreateRefusalInput): string | null {
-  if (!input.variants.some((v) => v.primaryText.trim() && v.headline.trim())) return 'Meta Ads: give at least one ad both primary text and a headline.';
+  // A carousel chosen but no longer offered is held, never sent as single ads instead (#6331).
+  if (input.carouselUnavailable) return 'Meta Ads: carousel ads are not available right now. Choose single image ads as the ad format.';
+  if (input.carousel) {
+    // A carousel's cards take the variants' place: already a whole message.
+    if (input.carousel.refusal !== null) return input.carousel.refusal;
+  } else if (!input.variants.some((v) => v.primaryText.trim() && v.headline.trim())) {
+    return 'Meta Ads: give at least one ad both primary text and a headline.';
+  }
   if (!input.hasPlacement) return 'Meta Ads: choose at least one placement.';
   if (!input.pixelValid) return 'Meta Ads: fix the pixel.';
   if (input.instagramDsaInvalid) return 'Meta Ads: fix the Instagram account or the EU disclosure fields.';

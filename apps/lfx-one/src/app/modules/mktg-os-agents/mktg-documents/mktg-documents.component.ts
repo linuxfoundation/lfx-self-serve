@@ -142,7 +142,6 @@ export class MktgDocumentsComponent {
    */
   private listDeniedScope: string | null = null;
   private detailDeniedScope: string | null = null;
-  private destroyed = false;
 
   private readonly selectedParam = toSignal(this.route.queryParamMap.pipe(map((params) => params.get('type'))), { initialValue: null });
 
@@ -258,7 +257,6 @@ export class MktgDocumentsComponent {
   );
 
   public constructor() {
-    this.destroyRef.onDestroy(() => (this.destroyed = true));
     if (isPlatformBrowser(this.platformId)) {
       this.initLists()
         .pipe(takeUntilDestroyed())
@@ -599,7 +597,7 @@ export class MktgDocumentsComponent {
 
   /** True while this live component still lists the scope a write started from. */
   private listing(scope: string): boolean {
-    return !this.destroyed && scope === this.listedScope;
+    return !this.destroyRef.destroyed && scope === this.listedScope;
   }
 
   private dismissErrorText(error: HttpErrorResponse): string {

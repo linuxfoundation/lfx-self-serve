@@ -3,6 +3,7 @@
 
 import type {
   CampaignImplementationDraft,
+  LinkedInAdFormatChoice,
   LinkedInBriefCopy,
   LinkedInBriefSeed,
   LinkedInCreativeVariant,
@@ -11,7 +12,10 @@ import type {
   LinkedInDraftState,
   LinkedInVariantDraft,
 } from '../interfaces/campaign.interface';
+import { LINKEDIN_AD_FORMAT_CHOICES } from '../constants/campaign.constants';
 import { linkedInCarouselCardsFromStored } from './campaign-linkedin-carousel-form.utils';
+import { linkedInDeliveryOptionsDraftFromStored } from './campaign-linkedin-delivery-options-form.utils';
+import { linkedInDocumentDraftFromStored } from './campaign-linkedin-document-form.utils';
 import { linkedInObjectiveDraftFromStored } from './campaign-linkedin-objective-form.utils';
 import { linkedInTargetingDraftFromStored } from './campaign-linkedin-targeting-form.utils';
 
@@ -19,6 +23,11 @@ import { linkedInTargetingDraftFromStored } from './campaign-linkedin-targeting-
  * The Implement tab's LinkedIn draft rules (#5980): what the draft carries, what a restore sets, and what a brief seeds.
  * The component reads its signals and the form, and runs the writes and upload steps these return.
  */
+
+/** A LinkedIn ad format the picker offers, read from an untyped value (a picker event, a stored draft), or `undefined`. */
+export function linkedInAdFormatChoiceFrom(value: unknown): LinkedInAdFormatChoice | undefined {
+  return LINKEDIN_AD_FORMAT_CHOICES.find((format) => format === value);
+}
 
 /** A LinkedIn variant for the editor from a brief's copy, keyed by `key`, with no upload. */
 export function newLinkedInVariantDraft(copy: LinkedInCreativeVariant, key: string): LinkedInVariantDraft {
@@ -54,9 +63,12 @@ export function linkedInDraftFields(
   | 'linkedInTextAds'
   | 'linkedInCarouselCards'
   | 'linkedInCarouselIntroText'
+  | 'linkedInDocument'
+  | 'linkedInBoostPost'
   | 'linkedInCustomTargeting'
   | 'linkedInTargetingDraft'
   | 'linkedInObjectiveDraft'
+  | 'linkedInDeliveryOptions'
 > {
   return {
     linkedInBudgetUsd: state.budgetUsd,
@@ -72,9 +84,12 @@ export function linkedInDraftFields(
     linkedInTextAds: state.textAds.map((ad) => ({ ...ad })),
     linkedInCarouselCards: state.carouselCards.map((card) => ({ ...card })),
     linkedInCarouselIntroText: state.carouselIntroText,
+    linkedInDocument: { ...state.document },
+    linkedInBoostPost: state.boostPost,
     linkedInCustomTargeting: state.customTargeting,
     linkedInTargetingDraft: structuredClone(state.targetingDraft),
     linkedInObjectiveDraft: { ...state.objectiveDraft, conversions: [...state.objectiveDraft.conversions] },
+    linkedInDeliveryOptions: { ...state.deliveryOptions },
   };
 }
 
@@ -98,10 +113,15 @@ export function linkedInDraftRestore(draft: LinkedInDraftSnapshot): LinkedInDraf
   if (draft.linkedInImageUploadFailedMessage && draft.linkedInImageUploadFailedBriefId) {
     restore.failedUpload = { message: draft.linkedInImageUploadFailedMessage, briefId: draft.linkedInImageUploadFailedBriefId };
   }
-  // Text Ads (#5764 row 19), video ads (row 18) and carousels (campaign-service#665): present-only, so an older draft keeps the single-image default. An
+  // Text Ads (#5764 row 19), video ads (row 18), carousels, documents (campaign-service#665) and boosts (#673): present-only, so an older draft keeps the single-image default. An
   // unknown format restores nothing.
-  const format = draft.linkedInFormat;
-  if (format === 'single_image' || format === 'text' || format === 'video' || format === 'carousel') restore.format = format;
+  const format = linkedInAdFormatChoiceFrom(draft.linkedInFormat);
+  if (format !== undefined) restore.format = format;
+  // The boost's post as typed (campaign-service#673): present-only, as text. Sent only while the boost is offered.
+  if (typeof draft.linkedInBoostPost === 'string') restore.boostPost = draft.linkedInBoostPost;
+  // The document ad (campaign-service#665): present-only, with every field as text.
+  const document = linkedInDocumentDraftFromStored(draft.linkedInDocument);
+  if (document) restore.document = document;
   // Carousel cards and intro text (campaign-service#665): present-only, and only entries whose fields are all text.
   const carouselCards = linkedInCarouselCardsFromStored(draft.linkedInCarouselCards);
   if (carouselCards) restore.carouselCards = carouselCards;
@@ -124,6 +144,9 @@ export function linkedInDraftRestore(draft: LinkedInDraftSnapshot): LinkedInDraf
   // The objective and conversion rules (#5764 rows 2 and 4): present-only, so an older draft keeps the default.
   const objectiveDraft = linkedInObjectiveDraftFromStored(draft.linkedInObjectiveDraft);
   if (objectiveDraft) restore.objectiveDraft = objectiveDraft;
+  // The delivery options (campaign-service#667): present-only, so an older draft keeps both off.
+  const deliveryOptions = linkedInDeliveryOptionsDraftFromStored(draft.linkedInDeliveryOptions);
+  if (deliveryOptions) restore.deliveryOptions = deliveryOptions;
   if (draft.linkedInImageUploadPendingName) {
     restore.pendingUpload = { name: draft.linkedInImageUploadPendingName, briefId: draft.linkedInImageUploadPendingBriefId ?? '' };
   }

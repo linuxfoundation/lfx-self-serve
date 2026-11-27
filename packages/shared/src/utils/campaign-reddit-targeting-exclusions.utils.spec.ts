@@ -30,7 +30,7 @@ describe('redditTargetingExclusionsRefusal', () => {
     ['a repeated subreddit', { excludedSubreddits: ['news', 'NEWS'] }, true],
     ['100 subreddits', { excludedSubreddits: Array.from({ length: 100 }, (_, i) => `sub_${i}`) }, true],
     ['countries beside explicit geo targets', { geoTargets: ['US'], excludedGeoTargets: ['ca', ' gb '] }, true],
-    ['US excluded when sub-country locations replace the default', { subCountryGeoTargets: ['6252001'], excludedGeoTargets: ['US'] }, true],
+    ['US excluded when sub-country locations replace the default', { subCountryGeoTargets: ['CA:6167865'], excludedGeoTargets: ['US'] }, true],
     ['a repeated country', { geoTargets: ['US'], excludedGeoTargets: ['CA', 'ca'] }, true],
     // campaign-service decodes keys ignoring case, so a case variant of geoTargets is the targeting it compares against.
     ['US excluded beside a case-variant geoTargets', { GeoTargets: ['CA'], excludedGeoTargets: ['US'] }, true],
@@ -77,7 +77,7 @@ describe('redditTargetingExclusionsRefusal', () => {
   describe.each<[string, string, string, unknown, unknown, Record<string, unknown>, string]>([
     ['geoTargets', 'geoTargets', 'geotargets', ['US'], ['CA'], { excludedGeoTargets: ['US'] }, GEOS],
     ['subreddits', 'Subreddits', 'subreddits', ['news'], ['gaming'], { excludedSubreddits: ['news'] }, SUBS],
-    ['subCountryGeoTargets', 'subCountryGeoTargets', 'subcountrygeotargets', [], ['6252001'], { excludedGeoTargets: ['US'] }, GEOS],
+    ['subCountryGeoTargets', 'subCountryGeoTargets', 'subcountrygeotargets', [], ['CA:6167865'], { excludedGeoTargets: ['US'] }, GEOS],
   ])('two spellings of %s', (_key, earlier, later, colliding, clear, exclusions, field) => {
     it.each([true, false])('the later spelling decides (later sent last: %s)', (laterLast) => {
       const config = (earlierValue: unknown, laterValue: unknown): Record<string, unknown> =>

@@ -189,6 +189,22 @@ describe('linkedInCreateRefusal', () => {
       'LinkedIn Ads: video ads are not available right now. Choose single image ads as the ad format.',
     ],
     ['an ad with no video', { videoMissing: true }, 'LinkedIn Ads: upload a video for every ad.'],
+    // A document (campaign-service#665): held rather than sent as image ads, and it replaces the variant checks.
+    [
+      'a document no longer offered',
+      { documentUnavailable: true },
+      'LinkedIn Ads: document ads are not available right now. Choose single image ads as the ad format.',
+    ],
+    ['a document that can be sent, with no variants', { document: { refusal: null }, variantCount: 0 }, null],
+    ['a document that cannot be sent', { document: { refusal: 'LinkedIn Ads: Choose the PDF.' } }, 'LinkedIn Ads: Choose the PDF.'],
+    // A boost (campaign-service#673): held rather than sent as image ads, and its post replaces the variant checks.
+    [
+      'a boost no longer offered',
+      { boostUnavailable: true },
+      'LinkedIn Ads: boosting a post is not available right now. Choose single image ads as the ad format.',
+    ],
+    ['a boost that can be sent, with no variants', { boost: { refusal: null }, variantCount: 0 }, null],
+    ['a boost that cannot be sent', { boost: { refusal: 'LinkedIn Ads: Choose the post.' } }, 'LinkedIn Ads: Choose the post.'],
     [
       'custom targeting no longer offered',
       { customTargetingUnavailable: true },
@@ -222,6 +238,9 @@ describe('linkedInCreateRefusal', () => {
     // The target cost (campaign-service#674) arrives as a whole message too.
     ['a target cost refused', { targetCostRefusal: 'LinkedIn Ads: fix it.' }, 'LinkedIn Ads: fix it.'],
     ['a target cost that can be sent', { targetCostRefusal: null }, null],
+    // The delivery options (campaign-service#667) arrive as a whole message too.
+    ['delivery options held', { deliveryOptionsRefusal: 'LinkedIn Ads: wait.' }, 'LinkedIn Ads: wait.'],
+    ['delivery options that can be sent', { deliveryOptionsRefusal: null }, null],
     ['an account the catalog does not list', { accountInCatalog: false }, 'LinkedIn Ads: choose an ad account.'],
     ['an unlisted account the connection decides', { accountInCatalog: false, accountSetByConnection: true }, null],
     [

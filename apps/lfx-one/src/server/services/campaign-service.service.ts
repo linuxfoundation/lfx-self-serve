@@ -12,6 +12,7 @@ import {
   CAMPAIGN_SERVICE_MULTI_CAMPAIGN_CAPABLE_PLATFORMS,
   CAMPAIGN_TACTIC_OPTIONS,
   CAMPAIGN_SERVICE_BIDDING_REFUSAL_PATTERN,
+  CAMPAIGN_SERVICE_REDDIT_SUBCOUNTRY_GEO_REFUSAL_PATTERN,
   CAMPAIGN_SERVICE_REDDIT_TARGETING_REFUSAL_PATTERN,
   CAMPAIGN_SERVICE_STALE_BRIEF_REFUSAL_PATTERN,
   CAMPAIGN_GOALS,
@@ -88,6 +89,7 @@ import type {
   CampaignTactic,
   CampaignProgramType,
   CampaignServiceAccountMonitor,
+  CampaignServiceMonitorScope,
   CampaignServiceAudience,
   CampaignServiceCampaign,
   CampaignServiceCampaignMetrics,
@@ -99,6 +101,7 @@ import type {
   CampaignServiceGoogleAdsUserLists,
   CampaignServiceMetaCustomAudiences,
   CampaignServiceRedditCustomAudiences,
+  CampaignServiceRedditPixels,
   CampaignServiceLinkedInAudiences,
   CampaignServiceLinkedInConversions,
   CampaignServiceLinkedInLeadForms,
@@ -760,6 +763,16 @@ export function canSetRedditTargetingExclusions(): boolean {
 }
 
 /**
+ * Whether a Reddit create may carry `subCountryGeoTargets` (#6108 row 7, campaign-service #549). Needs the
+ * campaign-service create path AND `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_SUBCOUNTRY_GEO`, which follows campaign-service's
+ * own `REDDIT_SUBCOUNTRY_GEO_ENABLED`: campaign-service refuses the field while that is off, and the legacy creator
+ * ignores it.
+ */
+export function canSetRedditSubCountryGeo(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceRedditSubCountryGeo);
+}
+
+/**
  * Whether campaign-service resolves a Reddit create's `subreddits` and `interests` before creating anything (#6108 row 4,
  * campaign-service #573), so the Implement tab may offer them for editing. Needs the campaign-service create path AND
  * `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_TARGETING_RESOLUTION`, which follows campaign-service's own
@@ -767,6 +780,69 @@ export function canSetRedditTargetingExclusions(): boolean {
  */
 export function canResolveRedditTargeting(): boolean {
   return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceRedditTargetingResolution);
+}
+
+/**
+ * Whether a Reddit create may carry `placements` / `platforms` / `expandTargeting` (#6108 row 5, campaign-service #549).
+ * Needs the campaign-service create path AND `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_PLACEMENTS`, which follows
+ * campaign-service's own `REDDIT_PLACEMENT_TARGETING_ENABLED`: campaign-service refuses all three while that is off, and
+ * the legacy creator ignores them.
+ */
+export function canSetRedditPlacements(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceRedditPlacements);
+}
+
+/**
+ * Whether a Reddit create may carry `budgetType` (#6108 row 5, campaign-service #549). Needs the campaign-service create
+ * path AND `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_DAILY_BUDGET`, which follows campaign-service's own
+ * `REDDIT_DAILY_BUDGET_ENABLED`: campaign-service refuses the field while that is off, `lifetime` included, and the
+ * legacy creator ignores it.
+ */
+export function canSetRedditBudgetType(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceRedditDailyBudget);
+}
+
+/**
+ * Whether a Reddit create that authors its post makes one ad per variant (#6108 row 6, campaign-service #549). Needs the
+ * campaign-service create path AND `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_AD_PER_VARIANT`, which follows campaign-service's
+ * own `REDDIT_AD_PER_VARIANT_ENABLED`: only then does campaign-service read more than the first variant, and refuse more
+ * than 5 or a blank or over-long headline.
+ */
+export function canSetRedditAdPerVariant(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceRedditAdPerVariant);
+}
+
+/**
+ * Whether a Reddit create may carry `gender` / `languages` / `schedule` (#6108 row 9, campaign-service #549). Needs the
+ * campaign-service create path AND `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_GENDER_LANGUAGE_DAYPARTING`, which follows
+ * campaign-service's own `REDDIT_GENDER_LANGUAGE_DAYPARTING_ENABLED`: campaign-service refuses all three while that is
+ * off, and the legacy creator ignores them.
+ */
+export function canSetRedditDemographics(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceRedditGenderLanguageDayparting);
+}
+
+/**
+ * Whether a Reddit create may carry `videoAssetId` and `thumbnailAssetId`, a video post from stored assets (#6108 row 8,
+ * campaign-service #549). Needs the Reddit creative asset path (`canUseRedditCreativeAssets`, which includes the
+ * campaign-service create path and says URL signing is configured), since Reddit fetches the video and its thumbnail
+ * from signed URLs, AND `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_VIDEO`, which follows campaign-service's own
+ * `REDDIT_VIDEO_ENABLED`: campaign-service refuses both fields while either is missing, and the legacy creator ignores
+ * them. Also admits an MP4 to the creative-asset upload.
+ */
+export function canSetRedditVideo(): boolean {
+  return canUseRedditCreativeAssets() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceRedditVideo);
+}
+
+/**
+ * Whether the Reddit pixel picker's read is served (#6108 row 5, campaign-service #549). Needs the campaign-service create
+ * path AND `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_PIXEL_LIST`, which follows campaign-service's own
+ * `REDDIT_PIXEL_LIST_ENABLED`: campaign-service refuses the read while that is off. The caller also needs
+ * `global_marketing_ops` on the project, checked by the controller. Sending the chosen pixel stays
+ * {@link canSetRedditConversionPixel}'s call.
+ */
+export function canListRedditPixels(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceRedditPixelList);
 }
 
 /**
@@ -939,6 +1015,11 @@ export function canSetMetaAdSchedule(): boolean {
 export function canSetMetaFrequencyCap(): boolean {
   return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMetaFrequencyCap);
 }
+
+/** Whether a Meta create may carry `metaConfig.format: 'carousel'` (#6331; campaign-service#550 gap 10). */
+export function canSetMetaCarousel(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMetaCarousel);
+}
 /** Whether `GET /api/campaigns/meta/targeting-search` answers: only while some list it fills can be sent. */
 export function canSearchMetaTargeting(): boolean {
   return canSetMetaInterestTargeting() || canSetMetaBehaviorTargeting() || canSetMetaLocaleTargeting() || canSetMetaRegionTargeting();
@@ -1088,6 +1169,26 @@ export function canSetLinkedInDocument(): boolean {
  */
 export function canSetLinkedInBoost(): boolean {
   return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceLinkedInBoost);
+}
+
+/**
+ * Whether a LinkedIn create may choose Audience Expansion and the LinkedIn Audience Network: `audienceExpansionEnabled`
+ * and `offsiteDeliveryEnabled` (campaign-service#667). Needs the campaign-service create path (`cutoverOwnsCreate`), since
+ * the legacy creator ignores the fields, AND `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_DELIVERY_OPTIONS`, which follows
+ * campaign-service's own `LINKEDIN_ADS_DELIVERY_OPTIONS_ENABLED`: campaign-service refuses the fields while that is off.
+ */
+export function canSetLinkedInDeliveryOptions(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceLinkedInDeliveryOptions);
+}
+
+/**
+ * Whether a LinkedIn create may pair `objective: "traffic"` with a manual bid (campaign-service#676). Needs the
+ * campaign-service create path (`cutoverOwnsCreate`) AND `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_TRAFFIC_MANUAL_BID`, which
+ * follows campaign-service's own `LINKEDIN_ADS_TRAFFIC_MANUAL_BID_ENABLED`: campaign-service refuses the pair while that
+ * is off.
+ */
+export function canSetLinkedInTrafficManualBid(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceLinkedInTrafficManualBid);
 }
 
 /**
@@ -1348,7 +1449,14 @@ export class CampaignServiceClient {
         redditConversionPixelEnabled: canSetRedditConversionPixel(),
         redditConversionEventEnabled: canSetRedditConversionEvent(),
         redditTargetingExclusionsEnabled: canSetRedditTargetingExclusions(),
+        redditSubCountryGeoEnabled: canSetRedditSubCountryGeo(),
         redditTargetingResolutionEnabled: canResolveRedditTargeting(),
+        redditPlacementsEnabled: canSetRedditPlacements(),
+        redditBudgetTypeEnabled: canSetRedditBudgetType(),
+        redditAdPerVariantEnabled: canSetRedditAdPerVariant(),
+        redditDemographicsEnabled: canSetRedditDemographics(),
+        redditVideoEnabled: canSetRedditVideo(),
+        redditPixelListEnabled: canListRedditPixels(),
         googleAssetUploadEnabled: canUseGoogleCreativeAssets(),
         metaCreativeEnabled: cutoverOwnsCreate(),
         metaAssetUploadEnabled: canUseMetaCreativeAssets(),
@@ -1367,6 +1475,8 @@ export class CampaignServiceClient {
         linkedInCarouselEnabled: canSetLinkedInCarousel(),
         linkedInDocumentEnabled: canSetLinkedInDocument(),
         linkedInBoostEnabled: canSetLinkedInBoost(),
+        linkedInDeliveryOptionsEnabled: canSetLinkedInDeliveryOptions(),
+        linkedInTrafficManualBidEnabled: canSetLinkedInTrafficManualBid(),
         microsoftAssetUploadEnabled: canUseMicrosoftCreativeAssets(),
         biddingEnabled: canCreateWithBidding(),
         microsoftScheduleEnabled: canCreateMicrosoftSchedule(),
@@ -1384,6 +1494,7 @@ export class CampaignServiceClient {
         metaOsTargetingEnabled: canSetMetaOsTargeting(),
         metaAdScheduleEnabled: canSetMetaAdSchedule(),
         metaFrequencyCapEnabled: canSetMetaFrequencyCap(),
+        metaCarouselEnabled: canSetMetaCarousel(),
         // Per caller, so never granted here: `CampaignController.listBriefCampaigns` sets it.
         googleAudienceSegmentsEnabled: false,
         googleGeoSearchEnabled: canSearchGoogleGeoTargets(),
@@ -1448,7 +1559,14 @@ export class CampaignServiceClient {
       redditConversionPixelEnabled: canSetRedditConversionPixel(),
       redditConversionEventEnabled: canSetRedditConversionEvent(),
       redditTargetingExclusionsEnabled: canSetRedditTargetingExclusions(),
+      redditSubCountryGeoEnabled: canSetRedditSubCountryGeo(),
       redditTargetingResolutionEnabled: canResolveRedditTargeting(),
+      redditPlacementsEnabled: canSetRedditPlacements(),
+      redditBudgetTypeEnabled: canSetRedditBudgetType(),
+      redditAdPerVariantEnabled: canSetRedditAdPerVariant(),
+      redditDemographicsEnabled: canSetRedditDemographics(),
+      redditVideoEnabled: canSetRedditVideo(),
+      redditPixelListEnabled: canListRedditPixels(),
       googleAssetUploadEnabled: canUseGoogleCreativeAssets(),
       metaCreativeEnabled: cutoverOwnsCreate(),
       metaAssetUploadEnabled: canUseMetaCreativeAssets(),
@@ -1467,6 +1585,8 @@ export class CampaignServiceClient {
       linkedInCarouselEnabled: canSetLinkedInCarousel(),
       linkedInDocumentEnabled: canSetLinkedInDocument(),
       linkedInBoostEnabled: canSetLinkedInBoost(),
+      linkedInDeliveryOptionsEnabled: canSetLinkedInDeliveryOptions(),
+      linkedInTrafficManualBidEnabled: canSetLinkedInTrafficManualBid(),
       microsoftAssetUploadEnabled: canUseMicrosoftCreativeAssets(),
       biddingEnabled: canCreateWithBidding(),
       microsoftScheduleEnabled: canCreateMicrosoftSchedule(),
@@ -1484,6 +1604,7 @@ export class CampaignServiceClient {
       metaOsTargetingEnabled: canSetMetaOsTargeting(),
       metaAdScheduleEnabled: canSetMetaAdSchedule(),
       metaFrequencyCapEnabled: canSetMetaFrequencyCap(),
+      metaCarouselEnabled: canSetMetaCarousel(),
       // Per caller, so never granted here: `CampaignController.listBriefCampaigns` sets it.
       googleAudienceSegmentsEnabled: false,
       googleGeoSearchEnabled: canSearchGoogleGeoTargets(),
@@ -2632,12 +2753,15 @@ export class CampaignServiceClient {
         ) {
           return { enabled: true, jobId: null, error: CAMPAIGN_CREATE_STALE_BRIEF_MESSAGE };
         }
-        // The refusals worth naming: an invalid bid (#3299), and a Reddit community or interest Reddit does
-        // not know (#6108 row 4). Matched on the service's own wording, so nothing else upstream sends is
-        // rendered — see `CAMPAIGN_SERVICE_BIDDING_REFUSAL_PATTERN` and `CAMPAIGN_SERVICE_REDDIT_TARGETING_REFUSAL_PATTERN`.
+        // The refusals worth naming: an invalid bid (#3299), a Reddit community or interest Reddit does not know
+        // (#6108 row 4), and a Reddit region, city or DMA Reddit cannot target (row 7). Matched on the service's own
+        // wording, so nothing else upstream sends is rendered — see `CAMPAIGN_SERVICE_BIDDING_REFUSAL_PATTERN`,
+        // `CAMPAIGN_SERVICE_REDDIT_TARGETING_REFUSAL_PATTERN` and `CAMPAIGN_SERVICE_REDDIT_SUBCOUNTRY_GEO_REFUSAL_PATTERN`.
         const namedRefusal =
           error instanceof MicroserviceError && error.statusCode === 400
-            ? (CAMPAIGN_SERVICE_BIDDING_REFUSAL_PATTERN.exec(error.message) ?? CAMPAIGN_SERVICE_REDDIT_TARGETING_REFUSAL_PATTERN.exec(error.message))
+            ? (CAMPAIGN_SERVICE_BIDDING_REFUSAL_PATTERN.exec(error.message) ??
+              CAMPAIGN_SERVICE_REDDIT_TARGETING_REFUSAL_PATTERN.exec(error.message) ??
+              CAMPAIGN_SERVICE_REDDIT_SUBCOUNTRY_GEO_REFUSAL_PATTERN.exec(error.message))
             : null;
         if (namedRefusal !== null) {
           return { enabled: true, jobId: null, error: `Campaign creation was rejected and nothing was created: ${namedRefusal[0]}` };
@@ -3016,7 +3140,7 @@ export class CampaignServiceClient {
       Number.isFinite(list.bytes_used) &&
       typeof list.bytes_limit === 'number' &&
       Number.isFinite(list.bytes_limit);
-    // A LinkedIn video (#5764 row 18) shares the brief's store but is no image any image slot can use, so it is listed
+    // A LinkedIn video (#5764 row 18) or a Reddit video post's MP4 (#6108 row 8) shares the brief's store but is no image any image slot can use, so it is listed
     // apart, as `videos`, where it can be deleted to free the quota. `count` and `bytesUsed` stay upstream's.
     const isVideo = (asset: CampaignServiceCreativeAsset | undefined) => asset?.mime_type === CREATIVE_ASSET_VIDEO_MIME_TYPE;
     // Likewise a PDF (campaign-service#665), which only a LinkedIn document ad uses, listed as `documents`.
@@ -3805,9 +3929,10 @@ export class CampaignServiceClient {
     req: Request,
     projectSlug: string,
     accountId: string | undefined,
-    days: number
+    days: number,
+    scope?: CampaignServiceMonitorScope
   ): Promise<CampaignServiceAccountMonitor> {
-    return this.getAccountMonitor(req, 'google-ads', projectSlug, accountId, days);
+    return this.getAccountMonitor(req, 'google-ads', projectSlug, accountId, days, scope);
   }
 
   /**
@@ -3827,9 +3952,10 @@ export class CampaignServiceClient {
     req: Request,
     projectSlug: string,
     accountId: string | undefined,
-    days: number
+    days: number,
+    scope?: CampaignServiceMonitorScope
   ): Promise<CampaignServiceAccountMonitor> {
-    return this.getAccountMonitor(req, 'meta-ads', projectSlug, accountId, days);
+    return this.getAccountMonitor(req, 'meta-ads', projectSlug, accountId, days, scope);
   }
 
   /**
@@ -3846,9 +3972,10 @@ export class CampaignServiceClient {
     req: Request,
     projectSlug: string,
     accountId: string | undefined,
-    days: number
+    days: number,
+    scope?: CampaignServiceMonitorScope
   ): Promise<CampaignServiceAccountMonitor> {
-    return this.getAccountMonitor(req, 'linkedin-ads', projectSlug, accountId, days);
+    return this.getAccountMonitor(req, 'linkedin-ads', projectSlug, accountId, days, scope);
   }
 
   /** The Reddit Ads account monitor (`monitor-reddit-ads-account`). Same scoping and account rules as `getMetaAdsAccountMonitor`. */
@@ -3856,9 +3983,10 @@ export class CampaignServiceClient {
     req: Request,
     projectSlug: string,
     accountId: string | undefined,
-    days: number
+    days: number,
+    scope?: CampaignServiceMonitorScope
   ): Promise<CampaignServiceAccountMonitor> {
-    return this.getAccountMonitor(req, 'reddit-ads', projectSlug, accountId, days);
+    return this.getAccountMonitor(req, 'reddit-ads', projectSlug, accountId, days, scope);
   }
 
   /**
@@ -3878,8 +4006,14 @@ export class CampaignServiceClient {
    * the one monitor with a 409: more than 200 campaigns active in the window, or an account timezone
    * off the whole UTC hour (`reason` says which).
    */
-  public async getTwitterAdsAccountMonitor(req: Request, projectSlug: string, accountId: string, days: number): Promise<CampaignServiceAccountMonitor> {
-    return this.getAccountMonitor(req, 'twitter-ads', projectSlug, accountId, days);
+  public async getTwitterAdsAccountMonitor(
+    req: Request,
+    projectSlug: string,
+    accountId: string,
+    days: number,
+    scope?: CampaignServiceMonitorScope
+  ): Promise<CampaignServiceAccountMonitor> {
+    return this.getAccountMonitor(req, 'twitter-ads', projectSlug, accountId, days, scope);
   }
 
   /**
@@ -4061,6 +4195,27 @@ export class CampaignServiceClient {
       req,
       'LFX_V2_CAMPAIGN_SERVICE',
       `/projects/${encodePathSegment(projectSlug)}/reddit-ads/custom-audiences`,
+      'GET'
+    );
+  }
+
+  /**
+   * The conversion pixels on the Reddit ad account a create for this project uses (`list-reddit-ads-pixels`,
+   * linuxfoundation/lfx-v2-campaign-service#549), for the `conversionPixelId` picker (#6108 row 5). Upstream answers it on
+   * `global_marketing_ops` of the path project, the relation the BFF checks first: every pixel, with `truncated` when
+   * Reddit had more pages. Failures are left to the caller.
+   */
+  public async listRedditPixels(req: Request, projectSlug: string): Promise<CampaignServiceRedditPixels> {
+    if (projectSlug === '') {
+      throw ServiceValidationError.forField('project', 'A pixel read requires the project it belongs to.', {
+        operation: 'list_reddit_pixels',
+        service: 'campaign_service_client',
+      });
+    }
+    return this.microserviceProxy.proxyRequest<CampaignServiceRedditPixels>(
+      req,
+      'LFX_V2_CAMPAIGN_SERVICE',
+      `/projects/${encodePathSegment(projectSlug)}/reddit-ads/pixels`,
       'GET'
     );
   }
@@ -4297,13 +4452,18 @@ export class CampaignServiceClient {
     );
   }
 
-  /** The shared account-monitor GET. The provider segment comes from the calling method, never the request. */
+  /**
+   * The shared account-monitor GET. The provider segment comes from the calling method, never the request.
+   * `scope: 'account'` asks for every campaign on the account (linuxfoundation/lfx-v2-campaign-service#672,
+   * `global_marketing_ops` only); absent, the read is project-scoped as before.
+   */
   private async getAccountMonitor(
     req: Request,
     provider: CampaignServiceMonitorProvider,
     projectSlug: string,
     accountId: string | undefined,
-    days: number
+    days: number,
+    scope?: CampaignServiceMonitorScope
   ): Promise<CampaignServiceAccountMonitor> {
     // Only Google Ads (#5622) and LinkedIn (#5889) may omit the account; every other monitor reads a named account.
     if (projectSlug === '' || accountId === '' || (accountId === undefined && provider !== 'google-ads' && provider !== 'linkedin-ads')) {
@@ -4319,7 +4479,10 @@ export class CampaignServiceClient {
       'LFX_V2_CAMPAIGN_SERVICE',
       `/projects/${encodePathSegment(projectSlug)}/connection-${provider}/account-monitor`,
       'GET',
-      accountId === undefined ? { days } : { account_id: accountId, days }
+      {
+        ...(accountId === undefined ? { days } : { account_id: accountId, days }),
+        ...(scope === undefined ? {} : { scope }),
+      }
     );
   }
 

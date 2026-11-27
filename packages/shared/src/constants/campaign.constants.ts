@@ -87,11 +87,17 @@ import type {
   MonitorTabPlatform,
   NegativeKeywordCampaignPlatform,
   ParsedCampaignName,
+  RedditBudgetCopy,
+  RedditBudgetType,
   RedditConversionEvent,
   RedditCustomAudienceListView,
+  RedditDeliveryDraft,
+  RedditDevicePlatform,
+  RedditPlacement,
   RedditCustomAudiencesDraft,
   RedditTargetingExclusionListView,
   RedditTargetingExclusionsDraft,
+  RedditTargetingListView,
   RedditObjective,
   RedditObjectiveParams,
   RedditVideoGoal,
@@ -877,6 +883,9 @@ export const LINKEDIN_VARIANT_FIELD_LIMITS = {
  */
 export const LINKEDIN_AD_FORMATS = ['single_image', 'text', 'carousel', 'document', 'boost'] as const;
 
+/** The formats the Implement tab's LinkedIn picker offers: every request format, plus `video` (#5764 row 18). */
+export const LINKEDIN_AD_FORMAT_CHOICES = [...LINKEDIN_AD_FORMATS, 'video'] as const;
+
 /** The field a LinkedIn boost refusal names (linuxfoundation/lfx-v2-campaign-service#673). */
 export const LINKEDIN_BOOST_POST_FIELD = 'linkedInConfig.boostPost';
 
@@ -885,6 +894,12 @@ export const LINKEDIN_BOOST_POST_FIELD = 'linkedInConfig.boostPost';
  * `urn:li:share:<digits>` or `urn:li:ugcPost:<digits>`, the two references a creative accepts. Go's `\d` is ASCII only.
  */
 export const LINKEDIN_BOOST_POST_URN_PATTERN = /^urn:li:(share|ugcPost):[0-9]+$/;
+
+/** The field a LinkedIn Audience Expansion refusal names (linuxfoundation/lfx-v2-campaign-service#667). */
+export const LINKEDIN_AUDIENCE_EXPANSION_FIELD = 'linkedInConfig.audienceExpansionEnabled';
+
+/** The field a LinkedIn Audience Network refusal names (linuxfoundation/lfx-v2-campaign-service#667). */
+export const LINKEDIN_OFFSITE_DELIVERY_FIELD = 'linkedInConfig.offsiteDeliveryEnabled';
 
 /**
  * LinkedIn Text Ads limits (#5764 row 19), campaign-service's `TextAdHeadlineMaxChars`, `TextAdDescriptionMaxChars`
@@ -1435,6 +1450,14 @@ export const META_MAX_LOCALES = 50;
 export const META_MAX_GEO_LOCATIONS = 25;
 /** The Meta location types the targeting search keeps and a create takes, each with its own `metaConfig.targeting` list. */
 export const META_LOCATION_TYPES = ['region', 'city'] as const;
+/**
+ * The Meta creative formats `metaConfig.format` takes (#6331; campaign-service#550 gap 10, `meta.NormalizeFormat`): `single`
+ * (one ad per variant, the default for an absent or blank format) or `carousel` (one ad whose cards are the variants).
+ */
+export const META_AD_FORMATS = ['single', 'carousel'] as const;
+/** A Meta carousel's card count, one card per variant (Meta `child_attachments`; campaign-service `MinCarouselCards`/`MaxCarouselCards`). */
+export const META_CAROUSEL_MIN_CARDS = 2;
+export const META_CAROUSEL_MAX_CARDS = 10;
 /** The Meta device platforms a create may name (#5904 row 6; campaign-service#612). */
 export const META_DEVICE_PLATFORMS = ['mobile', 'desktop'] as const;
 /** The device checkboxes the Implement tab offers, as a create sends them. */
@@ -1869,6 +1892,17 @@ export const CAMPAIGN_SERVICE_BIDDING_REFUSAL_PATTERN = /invalid campaign config
 export const CAMPAIGN_SERVICE_REDDIT_TARGETING_REFUSAL_PATTERN = /invalid campaign config: redditConfig\.(?:subreddits|interests): entry \d+ .+/;
 
 /**
+ * campaign-service's synchronous refusal of a Reddit region, city or DMA (#6108 row 7, `ValidateSubCountryGeoTargets` in
+ * `internal/platform/reddit/subcountry_geo.go`, mapped by `redditLookupPreflightError`, #549), e.g.
+ * `invalid campaign config: redditConfig.subCountryGeoTargets: entry 2 ("US-ZZ") is not a targetable Reddit geolocation`.
+ * Reddit's own reason is not quoted: the entry is named by position, and the only caller value it can echo passes
+ * `domain.CallerValue`. So, like the community and interest refusal, the BFF may show it: it tells the operator which
+ * location to fix. It also matches campaign-service's config-only `NormalizeSubCountryGeoTargets` refusals, which the
+ * create route refuses first anyway.
+ */
+export const CAMPAIGN_SERVICE_REDDIT_SUBCOUNTRY_GEO_REFUSAL_PATTERN = /invalid campaign config: redditConfig\.subCountryGeoTargets: entry \d+ .+/;
+
+/**
  * campaign-service's two refusals of a create whose brief is no longer the approved version this page
  * read (#4983). Both mean the stored brief moved since this tab loaded it, most often because it was
  * edited and saved in another tab: a replace resets it to `draft` and bumps its version.
@@ -2127,6 +2161,12 @@ export const MONITOR_KEYWORD_PAGE_SIZE = 10;
  * account (LinkedIn's default) or refuse it as off the allowlist (Reddit, Meta).
  */
 export const MONITOR_ACCOUNT_SOURCE_PARAM = 'accountSource';
+
+/**
+ * The monitor-read query parameter the Monitor tab sends, as `true`, to ask for every campaign on the account
+ * (#6209). The Optimize tab never sends it, so its levers only ever see the project's own campaigns.
+ */
+export const MONITOR_ACCOUNT_WIDE_PARAM = 'accountWide';
 export const MONITOR_ACCOUNT_SOURCE_CONNECTION = 'connection';
 /**
  * The inverse marker: the Monitor tab's read whose account came from a LEGACY picker, i.e. from a
@@ -2242,6 +2282,11 @@ export const META_DEVICE_TARGETING_OFF_MESSAGE = 'Meta device targeting is not a
 /** The 400 a create gets for Meta operating-system targeting while it is off on this deployment. */
 export const META_OS_TARGETING_OFF_MESSAGE =
   'Meta operating system targeting is not available on this deployment. Reload the page, then create again without it.';
+/**
+ * The 400 a create gets for a Meta `format` other than single while carousel ads are off on this deployment. It names no
+ * format, as campaign-service's own refusal, so it never advertises one the deployment cannot build.
+ */
+export const META_CAROUSEL_OFF_MESSAGE = 'This Meta ad format is not available on this deployment. Reload the page, then create again with single-image ads.';
 /** The 400 a create gets for a Meta ad schedule while scheduling is off on this deployment. */
 export const META_AD_SCHEDULE_OFF_MESSAGE = 'Meta ad scheduling is not available on this deployment. Reload the page, then create again without it.';
 /** The 400 a create gets for a Meta frequency cap while it is off on this deployment. */
@@ -4452,9 +4497,9 @@ export const CREATIVE_ASSET_WRONG_TYPE_MESSAGE = 'Only PNG and JPEG images can b
 
 /**
  * The video type a creative-asset upload accepts (#5764 row 18): campaign-service's `MimeTypeMP4`, checked structurally
- * there (`validateMP4Upload`). Only a LinkedIn video ad consumes one here, so the BFF admits it only while
- * `canSetLinkedInVideoAds()`. Kept apart from `CREATIVE_ASSET_MIME_TYPES`, which every image slot and the image library
- * check against.
+ * there (`validateMP4Upload`). Only a LinkedIn video ad or a Reddit video post (#6108 row 8) consumes one here, so the
+ * BFF admits it only while `canSetLinkedInVideoAds() || canSetRedditVideo()`. Kept apart from `CREATIVE_ASSET_MIME_TYPES`,
+ * which every image slot and the image library check against.
  */
 export const CREATIVE_ASSET_VIDEO_MIME_TYPE = 'video/mp4';
 
@@ -4491,8 +4536,15 @@ export const CREATIVE_ASSET_DOCUMENT_MAX_BYTES = 30 * 1024 * 1024;
 /** Shown, and answered by the BFF, when a PDF exceeds `CREATIVE_ASSET_DOCUMENT_MAX_BYTES`. */
 export const CREATIVE_ASSET_DOCUMENT_TOO_LARGE_MESSAGE = 'The PDF is larger than 30 MB. Choose a smaller PDF.';
 
-/** Shown, and answered by the BFF, when a file is not a complete PDF, or is one while this deployment takes no document. */
+/** Shown, and answered by the BFF, when a file declared as a PDF is not a complete one. */
 export const CREATIVE_ASSET_DOCUMENT_WRONG_TYPE_MESSAGE = 'Only complete PDF documents can be uploaded.';
+
+/**
+ * Answered by the BFF with its 415 when a PDF is uploaded while LinkedIn document ads are off on this deployment
+ * (`LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_DOCUMENT`), so a sound PDF is not reported as a broken one.
+ */
+export const CREATIVE_ASSET_DOCUMENT_DISABLED_MESSAGE =
+  'PDF uploads are turned off on this deployment because LinkedIn document ads are not enabled. Reload the page, or choose another ad format.';
 
 /**
  * campaign-service's structural PDF check (`pdfStructurally`, `internal/service/creative_asset_document.go`): the
@@ -4841,10 +4893,41 @@ export const REDDIT_TARGETING_EXCLUSION_LIMITS = { excludedSubreddits: 100, excl
 /** A subreddit name campaign-service accepts (`subredditNameRE`): 2 to 21 ASCII letters, digits or underscores. */
 export const REDDIT_SUBREDDIT_NAME_PATTERN = /^[A-Za-z0-9_]{2,21}$/;
 
+/** The create field a Reddit sub-country location refusal names (#6108 row 7). */
+export const REDDIT_SUBCOUNTRY_GEO_FIELD = 'redditConfig.subCountryGeoTargets';
+
+/**
+ * The most Reddit sub-country locations a create may carry (#6108 row 7), campaign-service's `MaxSubCountryGeoTargets`
+ * (`internal/platform/reddit/subcountry_geo.go`), counted on the raw list.
+ */
+export const REDDIT_MAX_SUBCOUNTRY_GEO_TARGETS = 50;
+
+/**
+ * Reddit sub-country geolocation id shapes campaign-service accepts (`subCountryRegionRE`, `subCountryCityRE`,
+ * `subCountryDMARE`), matched on the trimmed, upper-cased id. A region is a country, a hyphen and an ISO 3166-2
+ * subdivision part (`US-CA`; a longer digit run is a postal code, refused); a city is a country, a colon and a positive
+ * numeric id (`CA:6167865`); a DMA is a three-digit Nielsen market code (`662`), always in the US. The first group is the
+ * country.
+ */
+export const REDDIT_SUBCOUNTRY_REGION_PATTERN = /^([A-Z]{2})-([A-Z0-9]{1,3})$/;
+export const REDDIT_SUBCOUNTRY_CITY_PATTERN = /^([A-Z]{2}):[1-9][0-9]{0,9}$/;
+export const REDDIT_SUBCOUNTRY_DMA_PATTERN = /^[1-9][0-9]{2}$/;
+
 /** The Reddit targeting exclusion lists the Implement tab offers, in order (#6108 row 3). */
 export const REDDIT_TARGETING_EXCLUSION_LISTS: readonly RedditTargetingExclusionListView[] = [
   { key: 'excludedSubreddits', label: 'Exclude communities', placeholder: 'Enter a subreddit, e.g. r/politics', emptyText: 'Press Enter to add it' },
   { key: 'excludedGeoTargets', label: 'Exclude countries', placeholder: 'Search countries or enter a country code', emptyText: 'No country matches' },
+];
+/**
+ * Reddit's targeting list caps while campaign-service resolves them (#6108 row 4): `MaxResolvedSubreddits` and
+ * `MaxResolvedInterests` (lfx-v2-campaign-service `internal/platform/reddit/targeting_resolution.go`, #573).
+ */
+export const REDDIT_TARGETING_LIST_LIMITS = { subreddits: 100, interests: 200 } as const;
+
+/** The Reddit targeting lists the Implement tab can edit, in order (#6108 row 4). */
+export const REDDIT_TARGETING_LISTS: readonly RedditTargetingListView[] = [
+  { key: 'subreddits', label: 'Subreddits', placeholder: 'Enter a subreddit, e.g. r/kubernetes' },
+  { key: 'interests', label: 'Interests', placeholder: 'Enter a Reddit interest name or id' },
 ];
 /** The Reddit targeting exclusions a fresh form starts from, which sends nothing. */
 export const DEFAULT_REDDIT_TARGETING_EXCLUSIONS: Readonly<RedditTargetingExclusionsDraft> = { excludedSubreddits: [], excludedGeoTargets: [] };
@@ -4897,6 +4980,140 @@ export const REDDIT_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE_MESSAGE = 'Your access t
 export const REDDIT_CUSTOM_AUDIENCES_ACCESS_ERRORS = {
   restricted: { code: REDDIT_CUSTOM_AUDIENCES_RESTRICTED_CODE, message: REDDIT_CUSTOM_AUDIENCES_RESTRICTED_MESSAGE },
   unavailable: { code: REDDIT_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE_CODE, message: REDDIT_CUSTOM_AUDIENCES_ACCESS_UNAVAILABLE_MESSAGE },
+} as const;
+
+/**
+ * The Reddit ad placements a create may name in `redditConfig.placements` (#6108 row 5), campaign-service's
+ * `placementValues` (`internal/platform/reddit/placement_targeting.go`, #549), in its order. Omitted or empty is both.
+ */
+export const REDDIT_PLACEMENTS = ['FEED', 'COMMENTS_PAGE'] as const;
+
+/**
+ * The Reddit device platforms a create may name in `redditConfig.platforms` (#6108 row 5), campaign-service's
+ * `platformValues`, in its order. Omitted or empty is every device; `ALL` itself is refused there, so it is not listed.
+ */
+export const REDDIT_DEVICE_PLATFORMS = ['DESKTOP', 'MOBILE_NATIVE', 'MOBILE_WEB'] as const;
+
+/** The `redditConfig.budgetType` values campaign-service accepts (#6108 row 5, `ResolveBudgetGoalType`). Omitted is `lifetime`. */
+export const REDDIT_BUDGET_TYPES = ['lifetime', 'daily'] as const;
+
+/** The three `redditConfig` keys of the Reddit placement choices (#6108 row 5), as campaign-service spells them. */
+export const REDDIT_PLACEMENT_KEYS = ['placements', 'platforms', 'expandTargeting'] as const;
+
+/**
+ * The most variants a Reddit create that authors its post may carry while one ad per variant is on (#6108 row 6):
+ * campaign-service's `MaxAdVariants` (`internal/platform/reddit/ad_variants.go`, #549). Each headline is held to
+ * `MAX_REDDIT_HEADLINE_LENGTH`.
+ */
+export const MAX_REDDIT_AD_VARIANTS = 5;
+
+/**
+ * The `redditConfig.gender` values campaign-service accepts (#6108 row 9), its `genderValues`
+ * (`internal/platform/reddit/demographic_targeting.go`, #549). Read trimmed and upper-cased; omitted is every gender.
+ */
+export const REDDIT_GENDERS = ['FEMALE', 'MALE'] as const;
+
+/**
+ * The `redditConfig.languages` codes campaign-service accepts (#6108 row 9), its `languageValues`: Reddit's
+ * `components_enum_targeting_language_codes` (ISO 639-1, upper-case), in that order. Omitted or empty is every language.
+ */
+export const REDDIT_LANGUAGES = [
+  'AR',
+  'CS',
+  'DA',
+  'DE',
+  'EL',
+  'EN',
+  'ES',
+  'FI',
+  'FR',
+  'HU',
+  'IT',
+  'JA',
+  'KO',
+  'NL',
+  'NO',
+  'PL',
+  'PT',
+  'RO',
+  'SV',
+  'VI',
+  'ZH',
+] as const;
+
+/** The most `redditConfig.schedule` windows one create may carry (#6108 row 9): campaign-service's `MaxScheduleWindows`. */
+export const REDDIT_MAX_SCHEDULE_WINDOWS = 50;
+
+/** The three `redditConfig` keys of the Reddit gender, language and dayparting choices (#6108 row 9), as campaign-service spells them. */
+export const REDDIT_DEMOGRAPHIC_KEYS = ['gender', 'languages', 'schedule'] as const;
+
+/** The four fields of one `redditConfig.schedule` window (#6108 row 9), as campaign-service's `ScheduleWindow` spells them. */
+export const REDDIT_SCHEDULE_WINDOW_KEYS = ['startDay', 'startHour', 'endDay', 'endHour'] as const;
+
+/**
+ * The two `redditConfig` keys of a Reddit video post (#6108 row 8), as campaign-service spells them: the stored MP4 and
+ * its stored PNG or JPEG thumbnail (`internal/dispatch/reddit_video.go`, #549).
+ */
+export const REDDIT_VIDEO_KEYS = ['videoAssetId', 'thumbnailAssetId'] as const;
+
+/** A Reddit pixel id campaign-service offers (`ValidPixelID`): 1 to 64 letters, digits or underscores. */
+export const REDDIT_PIXEL_ID_PATTERN = /^[A-Za-z0-9_]{1,64}$/;
+
+/**
+ * The error `code` (HTTP 403) of a Reddit pixel read refused because the caller does not hold `global_marketing_ops` on
+ * the project: the Reddit ad account is shared by every foundation, so campaign-service answers the read on that relation
+ * (linuxfoundation/lfx-v2-campaign-service#549).
+ */
+export const REDDIT_PIXELS_RESTRICTED_CODE = 'REDDIT_PIXELS_RESTRICTED';
+export const REDDIT_PIXELS_RESTRICTED_MESSAGE =
+  'Reddit pixels can only be listed by the LF marketing team, because every foundation shares one Reddit ad account.';
+/** The error `code` (HTTP 503) when that relation could not be checked. Nothing was read. */
+export const REDDIT_PIXELS_ACCESS_UNAVAILABLE_CODE = 'REDDIT_PIXELS_ACCESS_UNAVAILABLE';
+export const REDDIT_PIXELS_ACCESS_UNAVAILABLE_MESSAGE = 'Your access to Reddit pixels could not be verified. Try again in a few minutes.';
+/** The 403 and 503 a Reddit pixel read answers, shaped like `REDDIT_CUSTOM_AUDIENCES_ACCESS_ERRORS`. */
+export const REDDIT_PIXELS_ACCESS_ERRORS = {
+  restricted: { code: REDDIT_PIXELS_RESTRICTED_CODE, message: REDDIT_PIXELS_RESTRICTED_MESSAGE },
+  unavailable: { code: REDDIT_PIXELS_ACCESS_UNAVAILABLE_CODE, message: REDDIT_PIXELS_ACCESS_UNAVAILABLE_MESSAGE },
+} as const;
+
+/** What the Implement tab calls each Reddit placement (#6108 row 5). */
+export const REDDIT_PLACEMENT_LABELS: Readonly<Record<RedditPlacement, string>> = { FEED: 'Feed', COMMENTS_PAGE: 'Conversation pages' };
+/** What the Implement tab calls each Reddit device platform (#6108 row 5). */
+export const REDDIT_DEVICE_PLATFORM_LABELS: Readonly<Record<RedditDevicePlatform, string>> = {
+  DESKTOP: 'Desktop',
+  MOBILE_NATIVE: 'Mobile app',
+  MOBILE_WEB: 'Mobile web',
+};
+/** What the Implement tab calls each Reddit budget type (#6108 row 5). */
+export const REDDIT_BUDGET_TYPE_LABELS: Readonly<Record<RedditBudgetType, string>> = { lifetime: 'Lifetime (whole flight)', daily: 'Daily' };
+/**
+ * The Reddit delivery choices a fresh form starts from (#6108 row 5): every placement, every device, expansion on and a
+ * lifetime budget, campaign-service's defaults, so a create that sends none of them builds the same campaign.
+ */
+export const DEFAULT_REDDIT_DELIVERY: Readonly<RedditDeliveryDraft> = {
+  budgetType: 'lifetime',
+  placements: [...REDDIT_PLACEMENTS],
+  platforms: [...REDDIT_DEVICE_PLATFORMS],
+  expandTargeting: true,
+};
+/** The Reddit budget box's label and hint for each budget type (#6108 row 5); `lifetime` is what the box always said. */
+export const REDDIT_BUDGET_COPY: Readonly<Record<RedditBudgetType, RedditBudgetCopy>> = {
+  lifetime: {
+    label: 'Reddit Budget (USD, lifetime)',
+    hint: 'A lifetime cap for the whole flight, not a daily spend — unlike the Meta and LinkedIn budgets above, which default to daily. Reddit campaigns are created paused.',
+  },
+  daily: {
+    label: 'Reddit Budget (USD, daily)',
+    hint: 'Spent each day of the flight, like the Meta and LinkedIn daily budgets above. Reddit campaigns are created paused.',
+  },
+};
+/** What the Reddit pixel picker says while it loads, lists only part, or falls back to a typed pixel id (#6108 row 5). */
+export const REDDIT_PIXEL_PICKER_LOADING = "Loading the Reddit ad account's pixels…";
+export const REDDIT_PIXEL_PICKER_TRUNCATED = 'The Reddit ad account has more pixels than this list shows.';
+export const REDDIT_PIXEL_PICKER_REASONS = {
+  restricted: "Only the LF marketing team can list the Reddit ad account's pixels. Enter a pixel id instead, or leave it blank.",
+  failed: "Couldn't load the Reddit ad account's pixels. Enter a pixel id instead, or leave it blank.",
+  empty: 'The Reddit ad account has no pixels to pick from. Enter a pixel id instead, or leave it blank.',
 } as const;
 
 /**

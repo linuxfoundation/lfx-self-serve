@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPlatformBrowser } from '@angular/common';
+import { formatDate, isPlatformBrowser } from '@angular/common';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { computed, inject, Injectable, PLATFORM_ID } from '@angular/core';
 import { toObservable } from '@angular/core/rxjs-interop';
@@ -10,12 +10,15 @@ import {
   MKTG_DOCUMENT_TYPES,
   MKTG_AGENT_INTAKES,
   MKTG_DOCUMENT_COMMENT_LIMITS,
+  MKTG_REDRAFT_COMMENTS_BUSY,
+  MKTG_RUN_ACTIVE,
   MKTG_STARTED_RUN_ID_REGEX,
   MKTG_RUN_STORAGE_TTL_MS,
 } from '@lfx-one/shared/constants';
 import type {
   MktgDocumentCommentScope,
   MktgPendingRedraftIntent,
+  MktgRedraftElsewhere,
   MktgRedraftStartResponse,
   MktgRedraftProgress,
   MktgReviseDocumentRequest,
@@ -23,7 +26,13 @@ import type {
   MktgReleaseRedraftResponse,
   MktgRedraftRecoveryResponse,
 } from '@lfx-one/shared/interfaces';
-import { mktgDocumentLocationOfReceipt } from '@lfx-one/shared/utils';
+import {
+  mktgActiveRunConflictHeading,
+  mktgDocumentLocationOfReceipt,
+  mktgRedraftSentElsewhereNotice,
+  readMktgActiveRunConflict,
+  readMktgRedraftBusyConflict,
+} from '@lfx-one/shared/utils';
 import { catchError, concat, concatMap, defer, EMPTY, filter, finalize, map, Observable, of, take, takeUntil, tap, throwError } from 'rxjs';
 import { MktgRunAttemptService } from './mktg-run-attempt.service';
 import { MktgAgentRunService } from './mktg-agent-run.service';
@@ -171,23 +180,28 @@ export class MktgDocumentRedraftClientService {
     const path = `${MKTG_DOCUMENTS_API_PATH}/${encodeURIComponent(scope.agentKey)}/${encodeURIComponent(scope.documentId)}/revise`;
     return this.http.post<MktgRedraftStartResponse>(path, body).pipe(
       take(1),
+      map((ack) => ({ ack, elsewhere: null as MktgRedraftElsewhere | null })),
       catchError((error: unknown) => {
         if (owner === this.identity() && error instanceof HttpErrorResponse) {
           const code = error.error?.code;
           const rejected =
             (error.status === 400 && code === 'VALIDATION_ERROR') ||
             (error.status === 404 && code === 'NOT_FOUND') ||
-            (error.status === 409 && (code === 'MKTG_REDRAFT_COMMENTS_BUSY' || code === 'MKTG_REDRAFT_REQUEST_FAILED'));
+            (error.status === 409 && (code === MKTG_REDRAFT_COMMENTS_BUSY || code === MKTG_RUN_ACTIVE || code === 'MKTG_REDRAFT_REQUEST_FAILED'));
           // Only these PRIMARY BFF answers prove non-acceptance. Unknown 4xx/5xx and transport failures retain creator recovery.
           if (rejected) {
             this.attempts.clearRedraft(scope);
             this.comments.refresh();
+            // First answer wins: the server named the run that holds this document, so say who and follow it.
+            const elsewhere = error.status === 409 ? this.elsewhere(scope, error.error) : null;
+            if (elsewhere) return of({ ack: null, elsewhere });
           } else this.attempts.saveRedraft({ ...intent, releaseAllowed: true });
         }
         return throwError(() => error);
       }),
-      concatMap((ack) => {
+      concatMap(({ ack, elsewhere }) => {
         this.assertOwner(owner, scope);
+        if (elsewhere) return of<MktgRedraftProgress>({ type: 'elsewhere', ...elsewhere });
         if (
           !ack ||
           typeof ack.runId !== 'string' ||
@@ -252,6 +266,16 @@ export class MktgDocumentRedraftClientService {
         return concat(activity$, of<MktgRedraftProgress>({ type: 'ready', location }));
       })
     );
+  }
+  /** Only validated server facts name a person or select a run; any other refusal stays the unnamed rejection. */
+  private elsewhere(scope: MktgDocumentCommentScope, body: unknown): MktgRedraftElsewhere | null {
+    const busy = readMktgRedraftBusyConflict(body);
+    if (busy) return { message: mktgRedraftSentElsewhereNotice(busy), runId: busy.runId };
+    const agentId = MKTG_DOCUMENT_TYPES.find((row) => row.agentKey === scope.agentKey)?.catalogAgentId;
+    const active = agentId ? readMktgActiveRunConflict(body, agentId, scope.documentId) : null;
+    if (!active) return null;
+    const started = formatDate(active.startedAt, 'd MMM y, HH:mm', 'en-US');
+    return { message: `${mktgActiveRunConflictHeading(active)} (started ${started}). Your comments were not sent.`, runId: active.activeRunId };
   }
   private assertOwner(owner: string, scope: MktgDocumentCommentScope): void {
     if (!this.attempts.subject() || owner !== this.identity() || scope.projectUid !== this.project.activeContextUid())

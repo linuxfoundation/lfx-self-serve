@@ -25,7 +25,15 @@ export async function redraftFixture(page: Page) {
   const fixture = await setupComments(page);
   const nextId = `000002-${'b'.repeat(64)}`;
   fixture.state.rows = [redraftComment('comment-one'), redraftComment('comment-two')];
-  const state = { done: false, fail: false, releaseBusy: true, sends: [] as Record<string, unknown>[] };
+  const state = {
+    done: false,
+    fail: false,
+    releaseBusy: true,
+    sends: [] as Record<string, unknown>[],
+    /** Another writer's send already holds these comments: the server refuses this one, naming them and their run. */
+    heldBy: null as { sentBy: string; runId: string } | null,
+  };
+  const heldAt = '2026-10-21T10:05:00.000Z';
   const base = assetRevision();
   base.revision.draftVersion = 1;
   base.revision.approval = { approvedAt: '2026-10-21T10:00:00Z', approvedBy: { name: 'Project writer' } };
@@ -34,6 +42,8 @@ export async function redraftFixture(page: Page) {
   const threadsFor = (revision: string | null): MktgDocumentComment[] => {
     if (revision === nextId)
       return fixture.state.rows.map((row) => ({ ...row, status: 'resolved', resultRevisionId: nextId, resolution: 'Updated synthetically.' }));
+    // The other writer's send marked them sent before this page asked to send them.
+    if (state.heldBy && state.sends.length) return fixture.state.rows.map((row) => ({ ...row, status: 'sent', sentInRun: state.heldBy?.runId ?? null }));
     if (state.sends.length && !state.fail) return fixture.state.rows.map((row) => ({ ...row, status: 'sent', sentInRun: 'c'.repeat(64) }));
     return fixture.state.rows;
   };
@@ -47,10 +57,17 @@ export async function redraftFixture(page: Page) {
       response = state.releaseBusy ? { code: 'MKTG_REDRAFT_COMMENTS_BUSY' } : { success: true };
     } else if (url.pathname.endsWith('/revise')) {
       state.sends.push(route.request().postDataJSON());
-      status = state.fail ? 503 : 200;
-      response = state.fail
-        ? { code: 'MKTG_REDRAFT_START_UNCERTAIN' }
-        : { sessionId: 'synthetic-redraft', ownerToken: 'synthetic-proof', runId: 'c'.repeat(64), priorVersion: 1 };
+      if (state.heldBy) {
+        // Mirrors the BFF's named 409 (mktg-document-comments.service.ts busyConflict): top-level facts, no session.
+        const message = `${state.heldBy.sentBy} already sent these — the agent is redrafting.`;
+        status = 409;
+        response = { code: 'MKTG_REDRAFT_COMMENTS_BUSY', ...state.heldBy, sentByViewer: false, sentAt: heldAt, message, error: message };
+      } else {
+        status = state.fail ? 503 : 200;
+        response = state.fail
+          ? { code: 'MKTG_REDRAFT_START_UNCERTAIN' }
+          : { sessionId: 'synthetic-redraft', ownerToken: 'synthetic-proof', runId: 'c'.repeat(64), priorVersion: 1 };
+      }
     } else {
       const isNew = url.pathname.endsWith(nextId);
       const content = JSON.parse(base.markdown);
@@ -62,7 +79,20 @@ export async function redraftFixture(page: Page) {
         revisions: state.done ? [revised, base.revision] : [base.revision],
         current: { revisionId: ASSET_REVISION, changedAt: '2026-10-21T10:00:00Z', changedBy: { name: 'Project writer' } },
         approvedCurrent: { revisionId: ASSET_REVISION, number: 1 },
-        runs: [],
+        // The other send landed after this page loaded: from the refusal on, its run is the document's active run for every reader.
+        runs:
+          state.heldBy && state.sends.length
+            ? [
+                {
+                  project: ASSET_PROJECT.uid,
+                  agentKey: 'foundation-message',
+                  documentId: 'living',
+                  runId: state.heldBy.runId,
+                  startedAt: heldAt,
+                  state: 'writing',
+                },
+              ]
+            : [],
       };
     }
     await route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(response) });

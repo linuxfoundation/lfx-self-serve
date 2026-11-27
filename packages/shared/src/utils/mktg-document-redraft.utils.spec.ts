@@ -12,6 +12,8 @@ import {
   validateMktgRedraftResult,
   isMktgRedraftContext,
   isMktgRedraftSubmissionBusy,
+  mktgRedraftSentElsewhereNotice,
+  readMktgRedraftBusyConflict,
 } from './mktg-document-redraft.utils';
 
 function result(agent: MktgCommentAgentKey = 'foundation-message') {
@@ -26,6 +28,40 @@ function result(agent: MktgCommentAgentKey = 'foundation-message') {
   if (agent !== 'brand-kit') Object.assign(revision, { mode: 'redraft' });
   return { mode: 'redraft', version: 3, project_name: 'Synthetic Orbit', revision };
 }
+
+describe('named busy conflict', () => {
+  const busy = {
+    code: 'MKTG_REDRAFT_COMMENTS_BUSY',
+    sentBy: 'Synthetic writer',
+    sentByViewer: false,
+    sentAt: '2026-10-21T12:00:00.000Z',
+    runId: 'c'.repeat(64),
+  };
+  it('projects only the display name, time and opaque run id', () => {
+    expect(readMktgRedraftBusyConflict({ ...busy, requestedBy: 'private-subject', sessionId: 'private-session', error: 'Synthetic' })).toEqual(busy);
+  });
+  it.each([
+    [busy, 'Synthetic writer already sent these — the agent is redrafting.'],
+    [{ ...busy, sentBy: null }, 'Someone on your team already sent these — the agent is redrafting.'],
+    [{ ...busy, sentBy: 'writer@synthetic.example' }, 'Someone on your team already sent these — the agent is redrafting.'],
+    [{ ...busy, sentBy: null, sentByViewer: true, runId: null }, 'You already sent these — the agent is redrafting.'],
+  ])('names the sender of %j', (value, line) => {
+    const conflict = readMktgRedraftBusyConflict(value);
+    expect(conflict && mktgRedraftSentElsewhereNotice(conflict)).toBe(line);
+  });
+  it.each([
+    null,
+    'bad',
+    { code: 'MKTG_REDRAFT_COMMENTS_BUSY' },
+    { ...busy, code: 'MKTG_RUN_ACTIVE' },
+    { ...busy, sentByViewer: 'false' },
+    { ...busy, sentAt: 'invalid' },
+    { ...busy, runId: '../unsafe' },
+    { ...busy, runId: undefined },
+  ])('leaves a malformed or unnamed conflict unnamed %j', (value) => {
+    expect(readMktgRedraftBusyConflict(value)).toBeNull();
+  });
+});
 
 describe('reservation busy/deadline matrix', () => {
   it.each([

@@ -13,6 +13,8 @@ tags:
     daily cap,
     target cost,
     automatic bidding,
+    manual bidding,
+    website visits,
     lifetime budget,
     targeting,
     locations,
@@ -61,6 +63,21 @@ With automatic bidding, you can set an optional **Target cost (USD)** under the 
 The target must be more than 0, no more than 1,000,000 and use at most two decimal places. Otherwise a message appears under it and **Create** stays disabled until you fix or clear it.
 
 The box is only there with automatic bidding, and only where your deployment supports a target cost. Switch to manual bidding and the target is not sent. If you typed a target and the campaign settings are still loading, **Create** waits until they load, so the campaign is never created without the target you entered. If they can't be loaded, clear the target cost to continue.
+
+## Website visits with a manual bid
+
+Where your deployment supports it, you can choose **Website visits** as the **Campaign objective** and **Manual max CPC bid** together. The campaign is created as a website visits campaign with your bid as its maximum cost per click, for example $45; LinkedIn may charge less per click. While website visits is chosen, the manual bidding option says "Creates a website-visits campaign with a manual cost-per-click bid."
+
+Leave the objective on **Set by bidding (default)** and a manual bid still creates a website conversions campaign, as before. Where your deployment doesn't support it, website visits with a manual bid keeps **Create** disabled with "The traffic objective takes automatic bidding only"; choose automatic bidding or the website conversions objective to continue.
+
+## Delivery options
+
+Where your deployment supports them, **Delivery options** has two checkboxes under the LinkedIn bidding choice. Both are off by default, and a campaign created with both off is set up the same way as before.
+
+- **Audience Expansion** lets LinkedIn also reach members similar to your targeting.
+- **LinkedIn Audience Network** also shows the ads on partner apps and sites outside LinkedIn. You can't use it with text ads or with the lead generation objective, so the checkbox is greyed out and not sent while either is chosen.
+
+A campaign that reuses an existing LinkedIn campaign keeps that campaign's own settings. If you turned an option on and the campaign settings are still loading, **Create** waits until they load. If they can't be loaded, turn the options off to continue.
 
 ## Locations
 

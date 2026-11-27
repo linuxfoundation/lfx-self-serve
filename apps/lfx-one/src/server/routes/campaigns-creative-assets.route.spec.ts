@@ -62,6 +62,7 @@ vi.mock('../middleware/require-marketing-access.middleware', () => ({
   requireLinkedInConversionsAccess: (_req: express.Request, _res: express.Response, next: express.NextFunction) => next(),
   requireLinkedInLeadFormsAccess: (_req: express.Request, _res: express.Response, next: express.NextFunction) => next(),
   requireRedditCustomAudiencesAccess: (_req: express.Request, _res: express.Response, next: express.NextFunction) => next(),
+  requireRedditPixelsAccess: (_req: express.Request, _res: express.Response, next: express.NextFunction) => next(),
 }));
 vi.mock('../services/logger.service', () => ({
   logger: {
@@ -79,6 +80,7 @@ const campaignsRouter = (await import('./campaigns.route')).default;
 const { apiErrorHandler } = await import('../middleware/error-handler.middleware');
 const { MicroserviceError } = await import('../errors/microservice.error');
 const {
+  CREATIVE_ASSET_DOCUMENT_DISABLED_MESSAGE,
   CREATIVE_ASSET_DOCUMENT_MAX_BYTES,
   CREATIVE_ASSET_DOCUMENT_TOO_LARGE_MESSAGE,
   CREATIVE_ASSET_DOCUMENT_WRONG_TYPE_MESSAGE,
@@ -214,8 +216,21 @@ describe('POST /api/campaigns/brief/creative-assets', () => {
       expect(uploadCreativeAsset).not.toHaveBeenCalled();
     });
 
-    it('refuses an MP4 while LinkedIn video ads are off without reading it, so even one over the limit is a 415', async () => {
+    // A Reddit video post (#6108 row 8) uses the same upload, so either video capability admits an MP4.
+    it('forwards an MP4 while only Reddit video posts are on', async () => {
       isServerFeatureEnabled.mockImplementation((flag) => flag !== ServerFeatureFlag.CampaignServiceLinkedInVideo);
+      uploadCreativeAsset.mockResolvedValue({ ...ASSET, mimeType: 'video/mp4' });
+
+      const response = await upload(Buffer.concat([MP4, Buffer.alloc(CREATIVE_ASSET_MAX_BYTES)]), 'video/mp4');
+
+      expect(response.status).toBe(201);
+      expect(uploadCreativeAsset.mock.calls[0][3]).toBe('video/mp4');
+    });
+
+    it('refuses an MP4 while LinkedIn video ads and Reddit video posts are off without reading it, so even one over the limit is a 415', async () => {
+      isServerFeatureEnabled.mockImplementation(
+        (flag) => flag !== ServerFeatureFlag.CampaignServiceLinkedInVideo && flag !== ServerFeatureFlag.CampaignServiceRedditVideo
+      );
 
       const response = await upload(Buffer.concat([MP4, Buffer.alloc(CREATIVE_ASSET_VIDEO_MAX_BYTES)]), 'video/mp4');
 
@@ -258,13 +273,13 @@ describe('POST /api/campaigns/brief/creative-assets', () => {
       expect(uploadCreativeAsset).not.toHaveBeenCalled();
     });
 
-    it('refuses a PDF while LinkedIn document ads are off without reading it, so even one over the limit is a 415', async () => {
+    it('refuses a PDF while LinkedIn document ads are off without reading it, so even one over the limit is a 415 saying so', async () => {
       isServerFeatureEnabled.mockImplementation((flag) => flag !== ServerFeatureFlag.CampaignServiceLinkedInDocument);
 
       const response = await upload(pdf(CREATIVE_ASSET_DOCUMENT_MAX_BYTES + 1), 'application/pdf');
 
       expect(response.status).toBe(415);
-      expect((await response.json()).error).toBe(CREATIVE_ASSET_DOCUMENT_WRONG_TYPE_MESSAGE);
+      expect((await response.json()).error).toBe(CREATIVE_ASSET_DOCUMENT_DISABLED_MESSAGE);
       expect(uploadCreativeAsset).not.toHaveBeenCalled();
     });
 
