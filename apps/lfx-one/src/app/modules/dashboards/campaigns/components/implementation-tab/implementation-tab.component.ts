@@ -239,6 +239,7 @@ import {
   DEFAULT_META_AUDIENCE_TARGETING,
 } from '@lfx-one/shared/constants';
 import { CampaignService } from '@services/campaign.service';
+import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiCheckboxComponent } from '@shared/uikit/checkbox/checkbox.component';
 import { UiComboboxComponent } from '@shared/uikit/combobox/combobox.component';
 import { UiInputComponent } from '@shared/uikit/input/input.component';
@@ -257,6 +258,7 @@ import type { Signal } from '@angular/core';
 import type {
   CampaignBiddingCapabilityBlock,
   CampaignRedditCustomAudiencesBlock,
+  CampaignRedditDemographicsBlock,
   CampaignRedditTargetingExclusionsBlock,
   CampaignBiddingConfig,
   CampaignBiddingContext,
@@ -595,6 +597,8 @@ import {
   redditSubCountryGeoDraftRefusal,
   redditSubCountryGeoField,
   redditDemographicsCapability,
+  emptyRedditDemographicsDraft,
+  redditDemographicsBlock,
   redditDemographicsDraftRefusal,
   redditDemographicsField,
   redditBudgetCopy,
@@ -817,6 +821,7 @@ let linkedInVariantKeySequence = 0;
     FileUploadComponent,
     AutocompleteComponent,
     CheckboxComponent,
+    UiButtonComponent,
     UiCheckboxComponent,
     InputTextComponent,
     RadioButtonComponent,
@@ -2528,6 +2533,15 @@ export class ImplementationTabComponent implements OnInit {
   /** Why the gender, languages or schedule would be refused (`redditDemographicsDraftRefusal`), or `null`; holds Create. */
   protected readonly redditDemographicsRefusal = computed<string | null>(() =>
     redditDemographicsDraftRefusal(this.redditDemographics(), this.redditDemographicsEnabled())
+  );
+  /** Why Create is held for choices the capability has not confirmed, or `null` — held, never dropped (`redditDemographicsBlock`). */
+  protected readonly redditDemographicsBlock = computed<CampaignRedditDemographicsBlock | null>(() =>
+    redditDemographicsBlock({
+      demographics: this.redditDemographics(),
+      enabled: this.redditDemographicsEnabled(),
+      createCapabilityRead: this.createCapabilityRead(),
+      briefId: this.briefPersistence().briefId,
+    })
   );
   /** The targeting a Reddit create sends, which the exclusions must not overlap. */
   protected readonly redditTargetedLists = computed<RedditTargetedLists>(() => ({
@@ -4911,6 +4925,7 @@ export class ImplementationTabComponent implements OnInit {
           targetingExclusionsBlock: this.redditTargetingExclusionsBlock()?.message ?? null,
           targetingExclusionsRefusal: redditTargetingExclusionsDraftRefusal(this.redditTargetingExclusions(), this.redditTargetedLists()),
           deliveryRefusal: redditDeliveryRefusal(this.redditDelivery(), this.redditDeliveryCapabilities()),
+          demographicsBlock: this.redditDemographicsBlock()?.message ?? null,
           demographicsRefusal: this.redditDemographicsRefusal(),
           variantsRefusal:
             redditAdPerVariantRefusal(this.redditAdVariantsConfig(), this.redditAdVariantsAvailable())?.message ??
@@ -6222,6 +6237,11 @@ export class ImplementationTabComponent implements OnInit {
   protected onRedditDemographicsChange(demographics: RedditDemographicsDraft): void {
     this.redditDemographics.set(demographics);
     this.emitDraft();
+  }
+
+  /** Back to every gender, every language, any time: the way past a {@link redditDemographicsBlock}, whose editor is hidden. */
+  protected removeRedditDemographics(): void {
+    this.onRedditDemographicsChange(emptyRedditDemographicsDraft());
   }
 
   /** Back to Purchase: the way past an `unsupported` {@link redditConversionEventBlock}, whose picker is hidden. */
