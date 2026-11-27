@@ -2568,21 +2568,9 @@ describe('MktgDocumentRunService active slot', () => {
     expect(stored().metadata['state']).toBe('discarded');
   });
 
-  it('fences a release by its claim, and writes over a reservation that is expired or unreadable', async () => {
-    const slots = service['slots'];
-    const first = (await slots.claim(writerA, slot, 'synthetic-writer-a')).held;
-    expect(first).toMatchObject({ ...slot, creatorSubject: 'synthetic-writer-a', expiresAt: Date.now() + MKTG_RUN_SLOT_TTL_MS });
-    vi.advanceTimersByTime(MKTG_RUN_SLOT_TTL_MS);
-    const second = (await slots.claim(writerB, slot, 'synthetic-writer-b')).held;
-    if (!first || !second) throw new Error('Both synthetic claims must hold the slot in turn');
-    // The first start outlived its reservation: its late release must not free the start that took the slot.
-    await slots.release(writerA, first);
-    expect(logger.warning).toHaveBeenCalledWith(writerA, 'mktg_run_slot_release', expect.stringContaining('no longer held'), { project, agentKey });
-    expect(await slots.claim(writerA, slot, null)).toEqual({ held: null, holder: second });
-    await slots.release(writerB, second);
-    expect(reservation()).toMatchObject({ claim: second.claim, expiresAt: 0 });
+  it('refuses a start naming nobody and no run when the reservation cannot be read or written over', async () => {
+    // The claim and release rules themselves are covered in mktg-run-slot.service.spec.ts; this is the start's answer.
     objects.set(slotKey, { body: 'not a reservation', metadata: {}, lastModified: new Date() });
-    // With no version to write over, no start can take the slot: still a refusal, naming nobody and no run.
     flows.omitEtag = true;
     const unnamed = await start(writerB, 'session-b').catch((err: unknown) => err);
     expect(unnamed instanceof ConflictError ? unnamed.toResponse() : null).toMatchObject({
@@ -2592,6 +2580,7 @@ describe('MktgDocumentRunService active slot', () => {
     expect(unnamed instanceof ConflictError ? unnamed.details : null).toEqual({ agentKey });
     expect(sessions).toBe(0);
     flows.omitEtag = false;
-    expect((await slots.claim(writerA, slot, null)).held).toMatchObject({ ...slot, creatorSubject: null });
+    await expect(start(writerB, 'session-b')).resolves.toBe(hash('session-b'));
+    expect(reservation()).toMatchObject({ ...slot, expiresAt: 0 });
   });
 });
