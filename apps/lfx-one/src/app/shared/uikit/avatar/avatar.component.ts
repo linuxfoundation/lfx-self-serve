@@ -78,8 +78,10 @@ export class UiAvatarComponent {
   protected readonly fontSize: Signal<number> = this.initFontSize();
   protected readonly classes: Signal<string> = this.initClasses();
   // A logo is contained, square-cornered, inside the padded box so its artwork stays whole; a photo covers the shape.
+  // Positioned over the box rather than in the grid, so an image's own size can't stretch the avatar (#6290).
   protected readonly imageClasses: Signal<string> = computed(
-    () => `h-full w-full ${this.shape() === 'logo' ? 'object-contain' : 'rounded-[inherit] object-cover'}`
+    () =>
+      `absolute ${this.shape() === 'logo' ? 'inset-[4px] h-[calc(100%-8px)] w-[calc(100%-8px)] object-contain' : 'inset-0 h-full w-full rounded-[inherit] object-cover'}`
   );
   protected readonly fallbackIcon: Signal<string> = computed(() => (this.shape() === 'logo' ? 'fa-light fa-building' : 'fa-light fa-user'));
 

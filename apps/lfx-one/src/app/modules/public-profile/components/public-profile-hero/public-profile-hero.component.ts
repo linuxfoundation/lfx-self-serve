@@ -69,6 +69,19 @@ export class PublicProfileHeroComponent {
     navigator.clipboard?.writeText(url).catch(() => undefined);
   }
 
+  protected linkedInUrl(value: string | undefined): string | null {
+    const vanity = value?.trim();
+    if (!vanity) {
+      return null;
+    }
+    return isValidUrl(vanity) ? vanity : `https://www.linkedin.com/in/${encodeURIComponent(vanity)}`;
+  }
+
+  protected githubUsername(basic: PublicProfileBasic): string | null {
+    const fromIdentity = basic.Identities?.find((identity) => identity.Username?.trim())?.Username?.trim();
+    return fromIdentity || basic.GithubID?.trim() || null;
+  }
+
   private initSocials(): Signal<PublicProfileSocialLink[]> {
     return computed(() => {
       const basic = this.basic();
@@ -95,19 +108,6 @@ export class PublicProfileHeroComponent {
 
       return links;
     });
-  }
-
-  private linkedInUrl(value: string | undefined): string | null {
-    const vanity = value?.trim();
-    if (!vanity) {
-      return null;
-    }
-    return isValidUrl(vanity) ? vanity : `https://www.linkedin.com/in/${encodeURIComponent(vanity)}`;
-  }
-
-  private githubUsername(basic: PublicProfileBasic): string | null {
-    const fromIdentity = basic.Identities?.find((identity) => identity.Username?.trim())?.Username?.trim();
-    return fromIdentity || basic.GithubID?.trim() || null;
   }
 
   private twitterUrl(value: string | undefined): string | null {

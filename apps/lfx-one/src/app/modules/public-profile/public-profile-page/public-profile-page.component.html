@@ -13,9 +13,17 @@
   </div>
 } @else if (redesign()) {
   <!-- The profile redesign (#6088), for a signed-in viewer it is on for: one stacked column; exact [Npx] design values. -->
-  <div class="min-h-screen bg-white pb-[32px] text-gray-900" data-testid="public-profile-redesign">
+  <!-- The visitor's light or dark theme scopes the token colours below (#6091); the grid fade follows the page surface. -->
+  <div
+    class="min-h-screen bg-ui-background-100 pb-[32px] text-ui-neutral-900 [--lfx-profile-surface:var(--ui-background-100)]"
+    [attr.data-theme]="theme.theme()"
+    data-testid="public-profile-redesign">
     <div class="mx-auto w-full max-w-[1200px] px-[64px] max-[640px]:px-[20px]">
-      <lfx-public-profile-topbar [basic]="basic()"></lfx-public-profile-topbar>
+      <lfx-public-profile-topbar-redesign
+        [basic]="basic()"
+        [owner]="owner()"
+        [signedIn]="signedIn()"
+        [returnTo]="profilePath()"></lfx-public-profile-topbar-redesign>
 
       @if (loading()) {
         <div class="flex flex-col gap-[48px]" data-testid="public-profile-redesign-loading">
@@ -26,31 +34,27 @@
       } @else if (error()) {
         <ng-container *ngTemplateOutlet="errorCard" />
       } @else if (profile()) {
-        <lfx-public-profile-hero [basic]="basic()" [about]="about()" data-testid="public-profile-hero"></lfx-public-profile-hero>
+        <lfx-public-profile-hero-redesign [basic]="basic()" [about]="about()" data-testid="public-profile-hero"></lfx-public-profile-hero-redesign>
 
         <!-- Blocks with data, in the design's order: 48px below the hero, 64px apart; one with no data leaves no gap. -->
         <div class="mt-[48px] flex flex-col gap-[64px] empty:hidden" data-testid="public-profile-blocks">
           @if (hasBadges()) {
-            <lfx-profile-section [heading]="sectionCopy.recognitions" [description]="sectionCopy.recognitionsDescription" testId="public-profile-recognitions">
-              <lfx-public-profile-badges [badges]="badges()" [showHeading]="false" data-testid="public-profile-badges"></lfx-public-profile-badges>
+            <lfx-profile-section
+              [heading]="sectionCopy.recognitions"
+              [description]="owner() ? sectionCopy.recognitionsDescriptionOwner : sectionCopy.recognitionsDescription"
+              testId="public-profile-recognitions">
+              <lfx-public-profile-recognitions [badges]="badges()" data-testid="public-profile-badges"></lfx-public-profile-recognitions>
             </lfx-profile-section>
           }
           @if (hasContributions()) {
-            <lfx-profile-section [heading]="sectionCopy.involvement" [description]="sectionCopy.involvementDescription" testId="public-profile-involvement">
-              <lfx-public-profile-contributions
-                [technicalContribution]="technicalContribution()"
-                [showHeading]="false"
-                data-testid="public-profile-contributions"></lfx-public-profile-contributions>
+            <lfx-profile-section
+              [heading]="sectionCopy.involvement"
+              [description]="owner() ? sectionCopy.involvementDescriptionOwner : sectionCopy.involvementDescription"
+              testId="public-profile-involvement">
+              <lfx-public-profile-involvement [projects]="projects()" data-testid="public-profile-projects"></lfx-public-profile-involvement>
             </lfx-profile-section>
           }
-          @if (hasCertifications()) {
-            <lfx-public-profile-certifications
-              [certifications]="certifications()"
-              data-testid="public-profile-certifications"></lfx-public-profile-certifications>
-          }
-          @if (hasTrainings()) {
-            <lfx-public-profile-trainings [trainings]="trainings()" data-testid="public-profile-trainings"></lfx-public-profile-trainings>
-          }
+          <!-- Certifications and Training enrollment are left out of the redesign (#6092). -->
         </div>
 
         <ng-container *ngTemplateOutlet="footer; context: { $implicit: true }" />
@@ -141,34 +145,66 @@
   </div>
 </ng-template>
 
-<!-- The footer, with the redesign's 64px margin and 48px padding above it there. -->
+<!-- The footer, with the redesign's 64px margin and 48px padding above it there, in token colours that follow its theme; the LF
+     logo turns white in dark. -->
 <ng-template #footer let-redesigned>
   <!-- Footer — matches design markup: LF horizontal logo, three-line legal text, cookie link -->
   <footer
-    class="border-t border-gray-200 text-[13px] leading-[1.7] text-gray-500"
-    [ngClass]="redesigned ? 'mt-[64px] pt-[48px]' : 'mt-[72px] pt-12'"
+    class="border-t text-[13px] leading-[1.7]"
+    [ngClass]="
+      redesigned
+        ? 'mt-[64px] border-ui-neutral-200 pt-[48px] text-ui-neutral-500 [[data-theme=dark]_&]:text-ui-neutral-600'
+        : 'mt-[72px] border-gray-200 pt-12 text-gray-500'
+    "
     data-testid="public-profile-footer">
-    <img src="/images/logo_lf_horizontal_color.png" alt="The Linux Foundation" class="mb-7 block h-4 w-auto opacity-[0.85]" />
+    <img
+      src="/images/logo_lf_horizontal_color.png"
+      alt="The Linux Foundation"
+      class="mb-7 block h-4 w-auto opacity-[0.85]"
+      [ngClass]="redesigned ? '[[data-theme=dark]_&]:brightness-0 [[data-theme=dark]_&]:invert' : ''" />
     <p class="mb-3.5 text-xs [text-wrap:pretty]">
       Copyright © 2026 The Linux Foundation®. All rights reserved. <br />
       The Linux Foundation has registered trademarks and uses trademarks. <br />
       For more information, including terms of use,
-      <a href="https://www.linuxfoundation.org/legal/platform-use-agreement" target="_blank" rel="noopener noreferrer" class="text-gray-700 hover:underline"
+      <a
+        href="https://www.linuxfoundation.org/legal/platform-use-agreement"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="hover:underline"
+        [ngClass]="redesigned ? 'text-ui-neutral-700' : 'text-gray-700'"
         >Platform Usage</a
       >,
-      <a href="https://www.linuxfoundation.org/legal/privacy-policy" target="_blank" rel="noopener noreferrer" class="text-gray-700 hover:underline"
+      <a
+        href="https://www.linuxfoundation.org/legal/privacy-policy"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="hover:underline"
+        [ngClass]="redesigned ? 'text-ui-neutral-700' : 'text-gray-700'"
         >Privacy Policy</a
       >, and
-      <a href="https://www.linuxfoundation.org/legal/trademark-usage" target="_blank" rel="noopener noreferrer" class="text-gray-700 hover:underline"
+      <a
+        href="https://www.linuxfoundation.org/legal/trademark-usage"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="hover:underline"
+        [ngClass]="redesigned ? 'text-ui-neutral-700' : 'text-gray-700'"
         >Trademark Usage</a
       >, please see our
-      <a href="https://www.linuxfoundation.org/legal/policies" target="_blank" rel="noopener noreferrer" class="text-gray-500 hover:underline">Policies</a>
+      <a
+        href="https://www.linuxfoundation.org/legal/policies"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="hover:underline"
+        [ngClass]="redesigned ? 'text-ui-neutral-500 [[data-theme=dark]_&]:text-ui-neutral-600' : 'text-gray-500'"
+        >Policies</a
+      >
       page.
     </p>
     <button
       type="button"
       (click)="manageCookies()"
-      class="cursor-pointer border-0 bg-transparent p-0 text-xs text-gray-700 hover:underline"
+      class="cursor-pointer border-0 bg-transparent p-0 text-xs hover:underline"
+      [ngClass]="redesigned ? 'text-ui-neutral-700' : 'text-gray-700'"
       [class.hidden]="!cookieSettingsAvailable"
       data-testid="public-profile-footer-cookie-settings">
       Manage cookie preferences.

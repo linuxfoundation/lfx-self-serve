@@ -43,7 +43,7 @@ describe('profile section building blocks', () => {
     expect(section.tagName).toBe('SECTION');
     expect(section.getAttribute('aria-labelledby')).toBe(query(root, 'profile-recognitions-title')?.id);
     expect(query(root, 'profile-recognitions-title')?.textContent?.trim()).toBe('Recognitions');
-    expect(query(root, 'profile-recognitions-description')?.textContent).toBe("Awards you've earned.");
+    expect(query(root, 'profile-recognitions-description')?.textContent?.trim()).toBe("Awards you've earned.");
   });
 
   it('leaves the description out when there is none', () => {

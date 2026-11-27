@@ -18,8 +18,9 @@ vi.mock('../services/logger.service', () => ({
   },
 }));
 
+import { MicroserviceError } from '../errors';
 import { logger } from '../services/logger.service';
-import { fetchAllQueryResources } from './query-service.helper';
+import { fetchAllQueryResources, isUnsatisfiableFilterError } from './query-service.helper';
 
 interface Row {
   id: number;
@@ -122,5 +123,34 @@ describe('fetchAllQueryResources', () => {
     expect(rows.map((row) => row.id)).toEqual([1, 2, 3, 4]);
     expect(fetchPage).toHaveBeenCalledTimes(2);
     expect(capWarnings()).toHaveLength(0);
+  });
+});
+
+describe('isUnsatisfiableFilterError', () => {
+  const upstream400 = (message: string, statusCode = 400) => new MicroserviceError(message, statusCode, 'BAD_REQUEST', { errorBody: { message } });
+  const groupsioMessage = 'tag prefix "committee_uid:" is not carried by any indexed groupsio_artifact document';
+
+  it.each([
+    'date_field "created_at" is not carried by any indexed committee_document document',
+    'parent kind "committee" is not carried by any indexed v1_past_meeting_recording document',
+    groupsioMessage,
+    'filter field "status" is not carried by any indexed vote document',
+    'group_by prefix "project_uid:" is not carried by any indexed committee_link document',
+    'metric prefix "size:" is not carried by any indexed v1_meeting_attachment document',
+  ])('recognises the documented 400: %s', (message) => {
+    expect(isUnsatisfiableFilterError(upstream400(message))).toBe(true);
+  });
+
+  it('recognises a plain object carrying status and message', () => {
+    expect(isUnsatisfiableFilterError({ status: 400, message: groupsioMessage })).toBe(true);
+  });
+
+  it.each<[string, unknown]>([
+    ['the same text at 500', upstream400(groupsioMessage, 500)],
+    ['an unrelated 400', upstream400('at least one search parameter must be provided')],
+    ['an incomplete-count error with no status', new Error('Count is incomplete (has_more)')],
+    ['undefined', undefined],
+  ])('rejects %s', (_label, error) => {
+    expect(isUnsatisfiableFilterError(error)).toBe(false);
   });
 });

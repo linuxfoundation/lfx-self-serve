@@ -18,6 +18,7 @@ import type {
   VoteResultsResponse,
   VoteVoter,
 } from '../interfaces/poll.interface';
+import { buildIrvRoundsView } from './irv-rounds.utils';
 import {
   buildCondorcetSurvivorTiebreaker,
   buildOverviewOutcome,
@@ -152,6 +153,14 @@ function buildQuestionView(pr: PollQuestionResult, ballots: VoteVoter[] | null):
     ranks,
     rankSummary,
     ballotPatterns: ballots ? buildBallotPatterns(pr.question.question_id, ballots, textById) : null,
+    irvRounds: usedIrv
+      ? buildIrvRoundsView(
+          pr.irv_round_summary ?? [],
+          standings.map((row) => row.choiceId),
+          [...winners],
+          (id) => textById.get(id) ?? id
+        )
+      : null,
   };
 }
 

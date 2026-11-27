@@ -184,7 +184,11 @@
           <span class="lfxn__me-actions">
             @if (profileRedesignEnabled()) {
               <!-- The profile redesign splits the hub: Profile, then Account & Settings, each active on its own pages. -->
-              <a routerLink="/profile" routerLinkActive="is-active" class="lfxn__me-action lfxn__me-action--split" data-testid="me-card-profile-link">
+              <a
+                routerLink="/profile"
+                routerLinkActive="is-active"
+                class="lfxn__me-action lfxn__me-action--split lfxn__me-action--fit"
+                data-testid="me-card-profile-link">
                 <i class="fa-light fa-circle-user" aria-hidden="true"></i>
                 <span class="lfxn__me-action-label">Profile</span>
               </a>

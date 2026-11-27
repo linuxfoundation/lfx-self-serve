@@ -2,7 +2,16 @@
 // SPDX-License-Identifier: MIT
 
 import { BEHAVIORAL_CLASS_CALENDAR_COLORS, PUBLIC_CALENDAR_LEGEND } from '../constants/calendar-colors.constants';
-import { Meeting, MeetingOccurrenceRoute, PastMeeting, PublicCalendarMeeting } from '../interfaces';
+import {
+  Meeting,
+  MeetingCalendarGridEntry,
+  MeetingOccurrenceRoute,
+  PastMeeting,
+  PublicCalendarItem,
+  PublicCalendarMeeting,
+  PublicCalendarModalFacts,
+  PublicCalendarModalState,
+} from '../interfaces';
 import type {
   CalendarColor,
   CalendarLegendItem,
@@ -231,6 +240,76 @@ export function publicMeetingToCalendarEvents(meeting: PublicCalendarMeeting, co
       },
     },
   ];
+}
+
+/**
+ * A public feed meeting's dates as calendar grid entries, keyed like `publicMeetingToCalendarEvents` ids; cancelled
+ * occurrences are left out.
+ */
+export function publicMeetingToCalendarGridEntries(meeting: PublicCalendarMeeting, now = new Date()): MeetingCalendarGridEntry[] {
+  const entry = (key: string, startTime: string, durationMinutes: number): MeetingCalendarGridEntry => ({
+    key,
+    title: meeting.title,
+    type: meeting.meeting_type,
+    startTime,
+    durationMinutes,
+    past: isOccurrencePast(startTime, durationMinutes, now),
+  });
+  if (meeting.occurrences?.length) {
+    return meeting.occurrences
+      .filter((occ) => !isMeetingOccurrenceCancelled(occ, meeting.cancelled_occurrences))
+      .map((occ) => entry(`${meeting.id}-${occ.occurrence_id}`, occ.start_time, occ.duration ?? meeting.duration));
+  }
+  return [entry(meeting.meeting_and_occurrence_id ?? meeting.id, meeting.scheduled_start_time ?? meeting.start_time, meeting.duration)];
+}
+
+/**
+ * Every date of a public feed as calendar items, soonest first. A date just ended can come both from its live series and
+ * as an archived row, so it is kept once, as the archived row.
+ */
+export function toPublicCalendarItems(meetings: readonly PublicCalendarMeeting[], now = new Date()): PublicCalendarItem[] {
+  const items = new Map<string, PublicCalendarItem>();
+  for (const meeting of meetings) {
+    for (const entry of publicMeetingToCalendarGridEntries(meeting, now)) {
+      const date = `${meeting.id}|${Date.parse(entry.startTime)}`;
+      if (!items.has(date) || meeting.meeting_and_occurrence_id) items.set(date, { meeting, entry });
+    }
+  }
+  return [...items.values()].sort((a, b) => Date.parse(a.entry.startTime) - Date.parse(b.entry.startTime));
+}
+
+/** The badge, note and actions of the public calendar meeting modal for what is known about the viewer and the date. */
+export function resolvePublicCalendarModalState(facts: PublicCalendarModalFacts): PublicCalendarModalState {
+  const { signedIn, past, live, restricted, invited, recording, summary, access } = facts;
+  if (past && signedIn && !access) {
+    const text = "Only the meeting's invited guests can see its recording and summary.";
+    return { badge: { label: 'Ended', tone: 'neutral', variant: 'outline' }, note: { text, warning: true }, actions: [] };
+  }
+  if (past) {
+    const actions: PublicCalendarModalState['actions'] = [];
+    if (summary) actions.push(signedIn ? 'view-summary' : 'sign-in-summary');
+    if (recording) actions.push(signedIn ? 'watch-recording' : 'sign-in-watch');
+    const note = actions.length ? null : { text: 'No recording or summary was published for this meeting.', warning: false };
+    return { badge: { label: 'Ended', tone: 'neutral', variant: 'outline' }, note, actions };
+  }
+  const inviteOnly = { label: 'Invite only', tone: 'danger', variant: 'subtle' } as const;
+  if (restricted && !signedIn) {
+    return { badge: inviteOnly, note: { text: "Only invited guests can join. Sign in to check if you're invited.", warning: false }, actions: ['sign-in'] };
+  }
+  if (restricted && invited) {
+    return { badge: { label: "You're invited", tone: 'success', variant: 'subtle' }, note: null, actions: live ? ['join'] : [] };
+  }
+  if (restricted) {
+    const text = 'Only invited guests can join this meeting. Contact the organizers if you think you should be invited.';
+    return { badge: inviteOnly, note: { text, warning: true }, actions: [] };
+  }
+  if (live) return { badge: null, note: null, actions: ['join'] };
+  if (!signedIn) return { badge: null, note: null, actions: ['sign-in-register'] };
+  if (invited) {
+    const text = "You'll get the join link by email before the meeting starts.";
+    return { badge: { label: 'Registered', tone: 'success', variant: 'subtle' }, note: { text, warning: false }, actions: [] };
+  }
+  return { badge: null, note: null, actions: ['register'] };
 }
 
 /**

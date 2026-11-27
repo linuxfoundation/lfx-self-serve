@@ -30,6 +30,7 @@ describe('VoteCreateMenuComponent', () => {
 
   const menuItems = (): MenuItem[] => fixture.componentInstance['menuItems'];
   const rows = (): (MenuItem & Partial<VoteCreateMenuRow>)[] => menuItems()[0].items ?? [];
+  const rowFor = (pollType: PollType): MenuItem & Partial<VoteCreateMenuRow> => rows().find((row) => row.testId === `vote-create-method-${pollType}`)!;
 
   const stubPanel = (): HTMLElement => {
     const panel = document.createElement('div');
@@ -89,7 +90,7 @@ describe('VoteCreateMenuComponent', () => {
       expect(menuItems()).toHaveLength(1);
       expect(menuItems()[0].label).toBe('Vote type');
       expect(rows().map((row) => row.testId)).toEqual(VOTE_METHOD_OPTIONS.map((option) => `vote-create-method-${option.value}`));
-      expect(rows().map((row) => row.label)).toEqual(['Plurality vote', 'Condorcet IRV']);
+      expect(rows().map((row) => row.label)).toEqual(['Plurality vote', 'Instant Runoff', 'Condorcet IRV']);
     });
 
     it('shares each method’s description and icon with the form’s Voting Method select', async () => {
@@ -99,15 +100,14 @@ describe('VoteCreateMenuComponent', () => {
       expect(rows().map((row) => row.icon)).toEqual(VOTE_METHOD_OPTIONS.map((option) => option.icon));
     });
 
-    it('emits both available voting methods', async () => {
+    it('emits every available voting method', async () => {
       await mount();
+      const methods = [PollType.CONDORCET_IRV, PollType.INSTANT_RUNOFF_VOTE, PollType.GENERIC];
 
-      rows()[1].command!({});
-      rows()[0].command!({});
+      methods.forEach((method) => rowFor(method).command!({}));
 
-      expect(rows()[1].disabled).not.toBe(true);
-      expect(rows()[0].disabled).not.toBe(true);
-      expect(emitted).toEqual([PollType.CONDORCET_IRV, PollType.GENERIC]);
+      methods.forEach((method) => expect(rowFor(method).disabled).not.toBe(true));
+      expect(emitted).toEqual(methods);
     });
   });
 
@@ -181,16 +181,19 @@ describe('VoteCreateMenuComponent', () => {
 
     const rowIn = (panel: HTMLElement, testId: string): HTMLElement => panel.querySelector<HTMLElement>(`[data-testid="${testId}"]`)!;
 
-    it('enables Condorcet without coming-soon copy and activates it with a click', async () => {
+    it.each([
+      ['Condorcet', PollType.CONDORCET_IRV],
+      ['Instant Runoff', PollType.INSTANT_RUNOFF_VOTE],
+    ])('enables %s without coming-soon copy and activates it with a click', async (_name, pollType) => {
       await mount([provideNoopAnimations()]);
       const panel = await openPanel();
-      const condorcet = rowIn(panel, 'vote-create-method-condorcet_irv') as HTMLButtonElement;
+      const row = rowIn(panel, `vote-create-method-${pollType}`) as HTMLButtonElement;
 
-      expect(condorcet.disabled).toBe(false);
-      expect(condorcet.textContent).not.toContain('Coming soon');
-      expect(condorcet.closest('li')?.getAttribute('aria-disabled')).not.toBe('true');
-      condorcet.click();
-      expect(emitted).toEqual([PollType.CONDORCET_IRV]);
+      expect(row.disabled).toBe(false);
+      expect(row.textContent).not.toContain('Coming soon');
+      expect(row.closest('li')?.getAttribute('aria-disabled')).not.toBe('true');
+      row.click();
+      expect(emitted).toEqual([pollType]);
     });
 
     it('activates the Condorcet row with Enter', async () => {

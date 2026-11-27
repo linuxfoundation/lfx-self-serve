@@ -4662,9 +4662,14 @@
                 Reads the SAME computed `submit()` sends, so the line cannot name one country while
                 the request buys another. The empty arm is a real state — nothing usable was
                 supplied — and `canSubmit` blocks there rather than letting the server default.
+                Region and city picks the create sends replace the country fallback (#5904).
               -->
               @if (metaGeoTargets().length === 0) {
-                @if (metaEffectiveGeoTargets().length > 0) {
+                @if (metaLocationPicksSent().length > 0) {
+                  <span class="text-xs text-gray-400" data-testid="implementation-meta-geo-locations"
+                    >No geo targets selected — targeting the picked regions and cities</span
+                  >
+                } @else if (metaEffectiveGeoTargets().length > 0) {
                   <span class="text-xs text-gray-400">No geo targets selected — defaults to {{ metaEffectiveGeoTargets().join(', ') }}</span>
                 } @else {
                   <span class="text-xs text-red-500" data-testid="implementation-meta-geo-none">Add at least one geo target — no usable country is set.</span>
@@ -5612,6 +5617,54 @@
               </div>
             }
 
+            <!-- Custom audiences (#6108 row 1): the picker only on an explicit yes
+                 (LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_CUSTOM_AUDIENCES and global_marketing_ops); picks held
+                 without it stay listed with Remove and hold Create below rather than being dropped. -->
+            <lfx-reddit-custom-audiences
+              [projectSlug]="activeFoundationSlug()"
+              [enabled]="redditCustomAudiencesAvailable()"
+              [audiences]="redditCustomAudiences()"
+              (audiencesChange)="onRedditCustomAudiencesChange($event)" />
+            @if (redditCustomAudiencesBlock(); as block) {
+              <div
+                role="alert"
+                class="flex flex-col items-start gap-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800"
+                [attr.data-testid]="'implementation-reddit-custom-audiences-block-' + block.kind">
+                <p>{{ block.message }}</p>
+                @if (block.kind === 'failed') {
+                  <lfx-button
+                    label="Retry"
+                    size="small"
+                    severity="secondary"
+                    [outlined]="true"
+                    (onClick)="retryCreateCapabilities.emit()"
+                    data-testid="implementation-reddit-custom-audiences-block-retry" />
+                }
+              </div>
+            }
+            <lfx-reddit-targeting-exclusions
+              [enabled]="redditTargetingExclusionsAvailable()"
+              [targeted]="redditTargetedLists()"
+              [exclusions]="redditTargetingExclusions()"
+              (exclusionsChange)="onRedditTargetingExclusionsChange($event)" />
+            @if (redditTargetingExclusionsBlock(); as block) {
+              <div
+                role="alert"
+                class="flex flex-col items-start gap-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800"
+                [attr.data-testid]="'implementation-reddit-targeting-exclusions-block-' + block.kind">
+                <p>{{ block.message }}</p>
+                @if (block.kind === 'failed') {
+                  <lfx-button
+                    label="Retry"
+                    size="small"
+                    severity="secondary"
+                    [outlined]="true"
+                    (onClick)="retryCreateCapabilities.emit()"
+                    data-testid="implementation-reddit-targeting-exclusions-block-retry" />
+                }
+              </div>
+            }
+
             <!-- Conversion pixel override (#3484). Optional and normally blank: campaign-service
                  falls back to the connection's own pixel. Offered only on an explicit yes from
                  `redditConversionPixelAvailable()`, because the legacy creator never reads the field
@@ -5847,29 +5900,36 @@
             </div>
           }
 
-          <!-- Gate on the EFFECTIVE list, matching the count and chips below. Gating on the raw
-               list renders "Subreddits (0)" with no chips for a brief whose names all normalise
-               away — the geo and keyword blocks already gate on their effective lists. -->
-          @if (redditEffectiveSubreddits().length > 0) {
+          <!-- Subreddits and interests (#6108 row 4): editable while campaign-service resolves them, else the brief's, read-only. -->
+          @if (redditTargetingListsAvailable()) {
             <div class="mb-4">
-              <label class="mb-2 block text-xs font-medium text-gray-700">Subreddits ({{ redditEffectiveSubreddits().length }})</label>
-              <div class="flex flex-wrap gap-2">
-                @for (sub of redditEffectiveSubreddits(); track sub) {
-                  <span class="inline-flex items-center rounded-full bg-orange-50 px-3 py-1 text-xs font-medium text-orange-700">r/{{ sub }}</span>
-                }
-              </div>
+              <lfx-reddit-targeting-lists [lists]="redditTargetingLists()" (listsChange)="onRedditTargetingListsChange($event)" />
             </div>
-          }
+          } @else {
+            <!-- Gate on the EFFECTIVE list, matching the count and chips below. Gating on the raw
+                 list renders "Subreddits (0)" with no chips for a brief whose names all normalise
+                 away — the geo and keyword blocks already gate on their effective lists. -->
+            @if (redditEffectiveSubreddits().length > 0) {
+              <div class="mb-4">
+                <label class="mb-2 block text-xs font-medium text-gray-700">Subreddits ({{ redditEffectiveSubreddits().length }})</label>
+                <div class="flex flex-wrap gap-2">
+                  @for (sub of redditEffectiveSubreddits(); track sub) {
+                    <span class="inline-flex items-center rounded-full bg-orange-50 px-3 py-1 text-xs font-medium text-orange-700">r/{{ sub }}</span>
+                  }
+                </div>
+              </div>
+            }
 
-          @if (redditInterests().length > 0) {
-            <div class="mb-4">
-              <label class="mb-2 block text-xs font-medium text-gray-700">Interests ({{ redditInterests().length }})</label>
-              <div class="flex flex-wrap gap-2">
-                @for (interest of redditInterests(); track interest) {
-                  <span class="inline-flex items-center rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700">{{ interest }}</span>
-                }
+            @if (redditTargetingLists().interests.length > 0) {
+              <div class="mb-4">
+                <label class="mb-2 block text-xs font-medium text-gray-700">Interests ({{ redditTargetingLists().interests.length }})</label>
+                <div class="flex flex-wrap gap-2">
+                  @for (interest of redditTargetingLists().interests; track interest) {
+                    <span class="inline-flex items-center rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700">{{ interest }}</span>
+                  }
+                </div>
               </div>
-            </div>
+            }
           }
 
           @if (redditEffectiveKeywords().length > 0) {

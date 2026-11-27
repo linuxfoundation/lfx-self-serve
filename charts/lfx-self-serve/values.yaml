@@ -721,6 +721,28 @@ environment:
   LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_CUSTOM_AUDIENCES:
     value:
 
+  # Reddit targeting exclusions (#6108 row 3, linuxfoundation/lfx-v2-campaign-service#549): accepts
+  # `redditConfig.excludedSubreddits` (at most 100 subreddit names, optionally after r/) and
+  # `redditConfig.excludedGeoTargets` (at most 50 ISO 3166-1 alpha-2 codes). Neither may also be targeted.
+  #
+  # A CAPABILITY flag of the Bidding kind: REQUIRES campaign-service DEPLOYED with `REDDIT_TARGETING_EXCLUSIONS_ENABLED`
+  # on, and the create pipeline on. Off (the default), the create route refuses the fields with a 400, never dropping
+  # them. Fields only, so turning it back off strands nothing. Order: set campaign-service's flag and pass its live probe,
+  # THEN this. Same accepted values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_TARGETING_EXCLUSIONS:
+    value:
+
+  # Reddit community and interest resolution (#6108 row 4, linuxfoundation/lfx-v2-campaign-service#573): offers the
+  # Reddit section's subreddits and interests for editing on the Implement tab; campaign-service resolves them to Reddit's
+  # names and ids, refusing an unknown one before anything is created.
+  # Changes no request field.
+  #
+  # A CAPABILITY flag: REQUIRES campaign-service DEPLOYED with `REDDIT_TARGETING_RESOLUTION_ENABLED` on, and the create
+  # pipeline on. Off (the default), the lists stay the brief's, read-only. Order: set campaign-service's flag and pass its
+  # live probe, THEN this. Same accepted values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_TARGETING_RESOLUTION:
+    value:
+
   # Offers a stored-image LIBRARY in each Google creative image slot (Demand Gen, Performance Max
   # and Display): upload a PNG/JPEG into the brief's library (the same library REDDIT_ASSETS and
   # META_ASSETS upload into), or pick a stored image that fits the slot's aspect ratio and minimum
@@ -903,6 +925,18 @@ environment:
   # library). Order: set campaign-service's flag and pass its paused document probe, THEN this. Same accepted values as
   # the flags above.
   LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_DOCUMENT:
+    value:
+
+  # Boosting an existing LinkedIn organization post (linuxfoundation/lfx-v2-campaign-service#673): accepts
+  # `linkedInConfig.format: "boost"` with `linkedInConfig.boostPost`, exactly `urn:li:share:<id>` or `urn:li:ugcPost:<id>`.
+  # The post is the one creative, so a boost sends no variants and no text ads. campaign-service reads the post (when the
+  # token can) and checks the creative's author on read-back; whether the post can be sponsored is its call.
+  #
+  # A CAPABILITY flag of the Bidding kind: REQUIRES a campaign-service release carrying #673 (after v1.0.44) DEPLOYED with
+  # `LINKEDIN_ADS_BOOST_POST_ENABLED` on, and the create pipeline on. Off (the default), the create route refuses the
+  # fields with a 400, never dropping them. Fields only, so turning it back off strands nothing. Order: set
+  # campaign-service's flag and pass its paused boost probe, THEN this. Same accepted values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_BOOST:
     value:
 
   # Offers Meta ad set audience targeting on the Implement tab (#5905), sent as

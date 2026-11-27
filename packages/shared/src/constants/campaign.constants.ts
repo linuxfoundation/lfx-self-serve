@@ -88,6 +88,11 @@ import type {
   NegativeKeywordCampaignPlatform,
   ParsedCampaignName,
   RedditConversionEvent,
+  RedditCustomAudienceListView,
+  RedditCustomAudiencesDraft,
+  RedditTargetingExclusionListView,
+  RedditTargetingExclusionsDraft,
+  RedditTargetingListView,
   RedditObjective,
   RedditObjectiveParams,
   RedditVideoGoal,
@@ -868,10 +873,19 @@ export const LINKEDIN_VARIANT_FIELD_LIMITS = {
 
 /**
  * The ad formats a LinkedIn create may name (#5764 row 19), campaign-service's `FormatSingleImage`, `FormatText`
- * (`internal/platform/linkedin/text_ads.go`, #586), `FormatCarousel` (`carousel.go`, #665) and `FormatDocument`
- * (`documents.go`, #665). Omitted is the single-image default.
+ * (`internal/platform/linkedin/text_ads.go`, #586), `FormatCarousel` (`carousel.go`, #665), `FormatDocument`
+ * (`documents.go`, #665) and `FormatBoost` (`boost.go`, #673). Omitted is the single-image default.
  */
-export const LINKEDIN_AD_FORMATS = ['single_image', 'text', 'carousel', 'document'] as const;
+export const LINKEDIN_AD_FORMATS = ['single_image', 'text', 'carousel', 'document', 'boost'] as const;
+
+/** The field a LinkedIn boost refusal names (linuxfoundation/lfx-v2-campaign-service#673). */
+export const LINKEDIN_BOOST_POST_FIELD = 'linkedInConfig.boostPost';
+
+/**
+ * A post a LinkedIn boost may sponsor, campaign-service's `postURNRe` (`internal/platform/linkedin/client.go`): exactly
+ * `urn:li:share:<digits>` or `urn:li:ugcPost:<digits>`, the two references a creative accepts. Go's `\d` is ASCII only.
+ */
+export const LINKEDIN_BOOST_POST_URN_PATTERN = /^urn:li:(share|ugcPost):[0-9]+$/;
 
 /**
  * LinkedIn Text Ads limits (#5764 row 19), campaign-service's `TextAdHeadlineMaxChars`, `TextAdDescriptionMaxChars`
@@ -1844,6 +1858,16 @@ export const CAMPAIGN_BIDDING_CREATE_PLATFORMS: readonly CampaignBiddingPlatform
  * operator which bid to fix. Google's `googleAdsConfig.bidding` refusal is deliberately not matched.
  */
 export const CAMPAIGN_SERVICE_BIDDING_REFUSAL_PATTERN = /invalid campaign config: (?:linkedIn|meta|microsoft|reddit|twitter)Config\.bidding: .+/;
+
+/**
+ * campaign-service's synchronous refusal of a Reddit community or interest it could not resolve (#6108 row 4,
+ * `internal/dispatch/reddit_targeting_resolution.go`, #573), e.g.
+ * `invalid campaign config: redditConfig.interests: entry 2 names 3 Reddit interests; send the interest id instead`.
+ * The entry is named by position, and the only caller value it can echo passes `domain.CallerValue` (letters, digits and
+ * `._:-`, at most 64, quoted; anything else is withheld). So, like the bidding refusal, the BFF may show it: it tells
+ * the operator which entry to fix.
+ */
+export const CAMPAIGN_SERVICE_REDDIT_TARGETING_REFUSAL_PATTERN = /invalid campaign config: redditConfig\.(?:subreddits|interests): entry \d+ .+/;
 
 /**
  * campaign-service's two refusals of a create whose brief is no longer the approved version this page
@@ -4804,6 +4828,40 @@ export const REDDIT_CONVERSION_EVENT_LABELS: Readonly<Record<RedditConversionEve
 export const REDDIT_CONVERSION_EVENT_FIELD = 'redditConfig.conversionEvent';
 
 /**
+ * The two Reddit targeting exclusion lists a create may carry (#6108 row 3), as campaign-service spells the `redditConfig`
+ * keys (`redditExclusionFields`, lfx-v2-campaign-service `internal/dispatch/reddit_targeting_exclusions.go`, #549).
+ */
+export const REDDIT_TARGETING_EXCLUSION_KEYS = ['excludedSubreddits', 'excludedGeoTargets'] as const;
+
+/**
+ * Reddit targeting exclusion caps (#6108 row 3), campaign-service's `MaxExcludedSubreddits` and `MaxExcludedGeoTargets`
+ * (`internal/platform/reddit/targeting_exclusions.go`), counted on the raw list.
+ */
+export const REDDIT_TARGETING_EXCLUSION_LIMITS = { excludedSubreddits: 100, excludedGeoTargets: 50 } as const;
+
+/** A subreddit name campaign-service accepts (`subredditNameRE`): 2 to 21 ASCII letters, digits or underscores. */
+export const REDDIT_SUBREDDIT_NAME_PATTERN = /^[A-Za-z0-9_]{2,21}$/;
+
+/** The Reddit targeting exclusion lists the Implement tab offers, in order (#6108 row 3). */
+export const REDDIT_TARGETING_EXCLUSION_LISTS: readonly RedditTargetingExclusionListView[] = [
+  { key: 'excludedSubreddits', label: 'Exclude communities', placeholder: 'Enter a subreddit, e.g. r/politics', emptyText: 'Press Enter to add it' },
+  { key: 'excludedGeoTargets', label: 'Exclude countries', placeholder: 'Search countries or enter a country code', emptyText: 'No country matches' },
+];
+/**
+ * Reddit's targeting list caps while campaign-service resolves them (#6108 row 4): `MaxResolvedSubreddits` and
+ * `MaxResolvedInterests` (lfx-v2-campaign-service `internal/platform/reddit/targeting_resolution.go`, #573).
+ */
+export const REDDIT_TARGETING_LIST_LIMITS = { subreddits: 100, interests: 200 } as const;
+
+/** The Reddit targeting lists the Implement tab can edit, in order (#6108 row 4). */
+export const REDDIT_TARGETING_LISTS: readonly RedditTargetingListView[] = [
+  { key: 'subreddits', label: 'Subreddits', placeholder: 'Enter a subreddit, e.g. r/kubernetes' },
+  { key: 'interests', label: 'Interests', placeholder: 'Enter a Reddit interest name or id' },
+];
+/** The Reddit targeting exclusions a fresh form starts from, which sends nothing. */
+export const DEFAULT_REDDIT_TARGETING_EXCLUSIONS: Readonly<RedditTargetingExclusionsDraft> = { excludedSubreddits: [], excludedGeoTargets: [] };
+
+/**
  * The two Reddit custom audience lists a create may carry (#6108 row 1), as campaign-service spells the
  * `redditConfig` keys (`redditCustomAudienceFields`, lfx-v2-campaign-service `internal/dispatch/reddit_custom_audiences.go`, #549).
  */
@@ -4818,6 +4876,23 @@ export const REDDIT_CUSTOM_AUDIENCE_ID_PATTERN = /^[A-Za-z0-9_]{1,64}$/;
 
 /** At most this many ids in EACH list: campaign-service's `MaxCustomAudienceIDs` (#549). */
 export const MAX_REDDIT_CUSTOM_AUDIENCE_IDS = 100;
+
+/** The Reddit custom-audience lists the Implement tab offers, in order (#6108 row 1). */
+export const REDDIT_CUSTOM_AUDIENCE_LISTS: readonly RedditCustomAudienceListView[] = [
+  { key: 'customAudienceIds', label: 'Target custom audiences' },
+  { key: 'excludedCustomAudienceIds', label: 'Exclude custom audiences' },
+];
+/** The Reddit custom audiences a fresh form starts from, which sends nothing. */
+export const DEFAULT_REDDIT_CUSTOM_AUDIENCES: Readonly<RedditCustomAudiencesDraft> = { customAudienceIds: [], excludedCustomAudienceIds: [] };
+/** What the Reddit custom-audience picker says while it loads, finds none, lists only part, or cannot read the account. */
+export const REDDIT_CUSTOM_AUDIENCE_PICKER_LOADING = "Loading the Reddit ad account's custom audiences…";
+export const REDDIT_CUSTOM_AUDIENCE_PICKER_EMPTY = 'The Reddit ad account has no custom audiences to pick from. Enter audience ids instead.';
+export const REDDIT_CUSTOM_AUDIENCE_PICKER_TRUNCATED =
+  "The Reddit ad account has more custom audiences than the picker shows. If one isn't listed, enter its id.";
+export const REDDIT_CUSTOM_AUDIENCE_PICKER_REASONS = {
+  unavailable: "The Reddit ad account's custom audiences can't be listed here. Enter audience ids instead.",
+  failed: "Couldn't load the Reddit ad account's custom audiences. Enter audience ids instead, or reload the page to try again.",
+} as const;
 
 /**
  * The error `code` (HTTP 403) of a Reddit custom-audience read, or a create naming custom audiences, refused because the

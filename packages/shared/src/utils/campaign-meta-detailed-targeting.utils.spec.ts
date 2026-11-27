@@ -43,6 +43,8 @@ import {
   metaDetailedTargetingPicksSendable,
   emptyMetaDetailedTargetingPicks,
   metaLocaleKeys,
+  metaLocationPickCountries,
+  metaLocationPicksSent,
   metaTargetingBoxChoices,
   metaTargetingBoxesShown,
   metaTargetingBoxPicks,
@@ -412,7 +414,13 @@ describe('the detailed-targeting create rules', () => {
         regions: [{ id: '3847', name: 'California, US' }],
         cities: [{ id: '2420379', name: 'Austin, Texas, US' }],
       },
-      { ...none, locales: picks.locales, regions: picks.regions, cities: picks.cities },
+      // Saved before picks kept a code: each place reads its country back from the end of its name.
+      {
+        ...none,
+        locales: picks.locales,
+        regions: [{ id: '3847', name: 'California, US', countryCode: 'US' }],
+        cities: [{ id: '2420379', name: 'Austin, Texas, US', countryCode: 'US' }],
+      },
     ],
   ])('reads a saved draft holding %s', (_case, raw, expected) => {
     expect(metaDetailedTargetingPicksFromDraft(raw)).toEqual(expected);
@@ -501,8 +509,13 @@ describe('the language and location picker rules', () => {
 
   it.each<[string, MetaTargetingBox['key'], MetaTargetingSearchOption, Partial<MetaDetailedTargetingPicks>]>([
     ['a language keeps its key as text', 'locales', language, { locales: [{ id: '6', name: 'English (US)' }] }],
-    ['a region keeps its country in its name', 'locations', region, { regions: [{ id: '3847', name: 'California, US' }] }],
-    ['a city keeps its region and country in its name', 'locations', city, { cities: [{ id: '2420379', name: 'Austin, Texas, US' }] }],
+    ['a region keeps its country in its name and code', 'locations', region, { regions: [{ id: '3847', name: 'California, US', countryCode: 'US' }] }],
+    [
+      'a city keeps its region and country in its name, and its country code',
+      'locations',
+      city,
+      { cities: [{ id: '2420379', name: 'Austin, Texas, US', countryCode: 'US' }] },
+    ],
     [
       'a city with no place reads as its name',
       'locations',
@@ -533,6 +546,61 @@ describe('the language and location picker rules', () => {
     const choices = metaTargetingBoxChoices(box('locations'), [region, city, { id: '1', name: 'X', path: [] }], picks);
     expect(choices.map((c) => c.disabled)).toEqual(disabled);
     expect(choices.map((c) => c.pathLabel)).toEqual(details);
+  });
+
+  it.each<[string, MetaTargetingPickKey, string | undefined, string | undefined]>([
+    ['a location list upper-cases a two-letter code', 'cities', ' de ', 'DE'],
+    ['a location list drops a code that is not two letters', 'regions', 'USA', undefined],
+    ['a non-location list never keeps a code', 'interests', 'US', undefined],
+  ])('metaTargetingPicksWith: %s', (_case, list, countryCode, expected) => {
+    expect(metaTargetingPicksWith([], { id: '6003', name: 'X', countryCode }, list)[0]?.countryCode).toBe(expected);
+  });
+
+  it('restores a location pick country code from a draft, or from the end of its name, only when it is a country code', () => {
+    const restored = metaDetailedTargetingPicksFromDraft({
+      cities: [
+        { id: '2420379', name: 'Berlin, DE', countryCode: 'DE' },
+        { id: '2420380', name: 'Odd', countryCode: 49 },
+        { id: '2420381', name: 'Paris, Ile-de-France, FR' },
+      ],
+      interests: [{ id: '6003', name: 'K', countryCode: 'US' }],
+    });
+    expect(restored?.cities).toEqual([
+      { id: '2420379', name: 'Berlin, DE', countryCode: 'DE' },
+      { id: '2420380', name: 'Odd' },
+      { id: '2420381', name: 'Paris, Ile-de-France, FR', countryCode: 'FR' },
+    ]);
+    expect(restored?.interests).toEqual([{ id: '6003', name: 'K' }]);
+    expect(copyMetaDetailedTargetingPicks(restored ?? none).cities[0]?.countryCode).toBe('DE');
+  });
+
+  it.each<[string, boolean | null, string[]]>([
+    ['sends regions then cities while the region flag is yes', true, ['3847', '2420379', '2420381']],
+    ['sends none while the region flag is unanswered', null, []],
+    ['sends none while the region flag is no', false, []],
+  ])('metaLocationPicksSent %s', (_case, region, expected) => {
+    const picks: MetaDetailedTargetingPicks = {
+      ...none,
+      interests: [{ id: '6003', name: 'K' }],
+      regions: [{ id: '3847', name: 'California, US', countryCode: 'US' }],
+      cities: [
+        { id: '2420379', name: 'Austin, Texas, US', countryCode: 'US' },
+        { id: '2420381', name: 'Paris, FR', countryCode: 'FR' },
+      ],
+    };
+    const sent = metaLocationPicksSent(picks, { interest: true, behavior: true, locale: true, region });
+    expect(sent.map((pick) => pick.id)).toEqual(expected);
+  });
+
+  it('lists the countries of location picks once each, skipping picks without a code', () => {
+    expect(
+      metaLocationPickCountries([
+        { id: '1', name: 'A', countryCode: 'US' },
+        { id: '2', name: 'B' },
+        { id: '3', name: 'C', countryCode: 'FR' },
+        { id: '4', name: 'D', countryCode: 'US' },
+      ])
+    ).toEqual(['US', 'FR']);
   });
 
   it('lists an interest row with its taxonomy path, disabled once picked', () => {

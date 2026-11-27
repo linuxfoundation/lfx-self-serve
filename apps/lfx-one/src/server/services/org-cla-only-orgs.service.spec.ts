@@ -29,7 +29,7 @@ const COMPANY_C = '0014100000GammaAAA';
 const req = (overrides: Partial<Request> = {}): Request => ({ path: '/api/nav/org-items', bearerToken: 'target-token', ...overrides }) as unknown as Request;
 
 function scopesOf(...sfids: string[]) {
-  return { getCompanySfids: vi.fn().mockResolvedValue(new Set(sfids)) };
+  return { getCompanySfids: vi.fn().mockResolvedValue(new Set(sfids)), refreshCompanySfids: vi.fn().mockResolvedValue(new Set(sfids)) };
 }
 
 function company(sfid: string, name: string | undefined = `Company ${sfid}`) {
@@ -226,6 +226,32 @@ describe('OrgClaOnlyOrgsService.resolveOrg', () => {
     const scopes = { getCompanySfids: vi.fn().mockRejectedValue(new Error('user-service down')) };
 
     expect(await service(scopes).resolveOrg(req(), COMPANY_A)).toBeNull();
+  });
+
+  it('resolves a company the cached scopes lack once the uncached re-check names it', async () => {
+    const scopes = scopesOf(COMPANY_B);
+    scopes.refreshCompanySfids.mockResolvedValue(new Set([COMPANY_A, COMPANY_B]));
+    gatewayFetch.mockResolvedValue(company(COMPANY_A, 'Acme Corp'));
+
+    expect(await service(scopes).resolveOrg(req(), COMPANY_A)).toEqual({ uid: COMPANY_A, slug: null, name: 'Acme Corp', claOnly: true });
+    expect(scopes.refreshCompanySfids).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not re-check when the cached scopes already name the company', async () => {
+    const scopes = scopesOf(COMPANY_A);
+    gatewayFetch.mockResolvedValue(company(COMPANY_A, 'Acme Corp'));
+
+    await service(scopes).resolveOrg(req(), COMPANY_A);
+
+    expect(scopes.refreshCompanySfids).not.toHaveBeenCalled();
+  });
+
+  it('answers not found when the uncached re-check fails', async () => {
+    const scopes = scopesOf(COMPANY_B);
+    scopes.refreshCompanySfids.mockRejectedValue(new Error('user-service down'));
+
+    expect(await service(scopes).resolveOrg(req(), COMPANY_A)).toBeNull();
+    expect(gatewayFetch).not.toHaveBeenCalled();
   });
 
   it('answers not found when EasyCLA cannot answer', async () => {

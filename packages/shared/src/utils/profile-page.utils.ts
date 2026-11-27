@@ -39,16 +39,16 @@ export function buildProfileInvolvement(affiliations: CdpProjectAffiliation[], l
         logo: project.projectLogo,
         role: project.roles[0]?.role === 'Maintainer' ? 'Maintainer' : 'Contributor',
         current,
-        years: involvementLabel(start.slice(0, 4), end.slice(0, 4)),
-        period: involvementLabel(formatYearMonth(start), formatYearMonth(end)),
+        years: formatInvolvementPeriod(start.slice(0, 4), end.slice(0, 4)),
+        period: formatInvolvementPeriod(formatYearMonth(start), formatYearMonth(end)),
         start,
       };
     })
     .sort((a, b) => Number(b.current) - Number(a.current) || b.start.localeCompare(a.start) || a.name.localeCompare(b.name));
 }
 
-// "Since {from}" while current, "{from} – {to}" once ended, or just "{from}" when both ends match; '' without a start.
-function involvementLabel(from: string, to: string): string {
+/** "Since {from}" while current, "{from} – {to}" once ended, or just "{from}" when both ends match; '' without a start. */
+export function formatInvolvementPeriod(from: string, to: string): string {
   if (!from) return '';
   if (!to) return `Since ${from}`;
   return from === to ? from : `${from} – ${to}`;

@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest';
 
 import { MEETINGS_HOME_CALENDAR_WEEKDAY_NAMES } from '../constants/meeting-list.constants';
 import { MeetingVisibility } from '../enums';
-import type { Meeting, MeetingHomeRow, PastMeeting } from '../interfaces';
+import type { Meeting, MeetingCalendarGridEntry, MeetingHomeRow, PastMeeting } from '../interfaces';
 import {
   buildMeetingCalendarDialogDays,
   formatMeetingCalendarHourLabel,
@@ -24,6 +24,8 @@ import {
   formatMeetingCalendarTime,
   getLocalDayKey,
   groupMeetingCalendarEntries,
+  groupMeetingCalendarGridEntries,
+  toMeetingCalendarGridEntry,
 } from './meetings-home-calendar.utils';
 
 function buildMeeting(overrides: Partial<Meeting> = {}): Meeting {
@@ -57,6 +59,10 @@ function buildMeeting(overrides: Partial<Meeting> = {}): Meeting {
 
 const typed = (key: string, start: Date, type = 'Board', durationMinutes = 60): MeetingHomeRow =>
   row(key, start, buildMeeting({ id: key, meeting_type: type }), durationMinutes);
+
+const entry = (source: MeetingHomeRow, past = false): MeetingCalendarGridEntry => toMeetingCalendarGridEntry({ row: source, past });
+
+const gridDays = (rows: MeetingHomeRow[]): Map<string, MeetingCalendarGridEntry[]> => groupMeetingCalendarGridEntries(rows.map((source) => entry(source)));
 
 function row(key: string, start: Date, meeting: Meeting = buildMeeting({ id: key }), durationMinutes = 60): MeetingHomeRow {
   return {
@@ -198,7 +204,7 @@ describe('meetings home calendar utils', () => {
       process.env['TZ'] = 'America/New_York';
       try {
         // 2026-03-08 springs forward at 2:00 AM: an hour from 1:30 AM ends at 3:30 AM on the clock.
-        const [event] = layoutMeetingCalendarWeekDay([{ row: typed('dst', new Date(2026, 2, 8, 1, 30), 'Board', 60), past: false }]);
+        const [event] = layoutMeetingCalendarWeekDay([entry(typed('dst', new Date(2026, 2, 8, 1, 30), 'Board', 60))]);
         expect([event.top, event.height]).toEqual([72, 94]);
       } finally {
         process.env['TZ'] = zone;
@@ -206,14 +212,11 @@ describe('meetings home calendar utils', () => {
     });
 
     it('keeps a carry-over to its real end, and never draws two events of one lane over each other', () => {
-      const days = groupMeetingCalendarEntries(
-        [
-          typed('overnight', new Date(2026, 9, 3, 23, 50), 'Board', 15),
-          typed('early', new Date(2026, 9, 4, 0, 10), 'Board', 60),
-          typed('later', new Date(2026, 9, 4, 3), 'Board', 60),
-        ],
-        []
-      );
+      const days = gridDays([
+        typed('overnight', new Date(2026, 9, 3, 23, 50), 'Board', 15),
+        typed('early', new Date(2026, 9, 4, 0, 10), 'Board', 60),
+        typed('later', new Date(2026, 9, 4, 3), 'Board', 60),
+      ]);
 
       const [sunday] = buildMeetingCalendarDialogDays([new Date(2026, 9, 4)], days, new Date(2026, 9, 1), null, 0);
 
@@ -230,7 +233,7 @@ describe('meetings home calendar utils', () => {
     });
 
     it('does not carry a short meeting that ends by midnight into the next day', () => {
-      const days = groupMeetingCalendarEntries([typed('short', new Date(2026, 9, 3, 23, 45), 'Board', 15)], []);
+      const days = gridDays([typed('short', new Date(2026, 9, 3, 23, 45), 'Board', 15)]);
 
       const [, sunday] = buildMeetingCalendarDialogDays([new Date(2026, 9, 3), new Date(2026, 9, 4)], days, new Date(2026, 9, 1), null, 0);
 
@@ -238,7 +241,7 @@ describe('meetings home calendar utils', () => {
     });
 
     it('shows a meeting that crosses midnight on both days of the week, clipped to each', () => {
-      const days = groupMeetingCalendarEntries([typed('late', new Date(2026, 9, 3, 23, 30), 'Board', 60)], []);
+      const days = gridDays([typed('late', new Date(2026, 9, 3, 23, 30), 'Board', 60)]);
       const dates = [new Date(2026, 9, 3), new Date(2026, 9, 4)];
 
       const [saturday, sunday] = buildMeetingCalendarDialogDays(dates, days, new Date(2026, 9, 1), null, 0);
@@ -247,12 +250,21 @@ describe('meetings home calendar utils', () => {
       expect(sunday.events.map((event) => [event.key, event.top, event.height])).toEqual([['late', 0, 22]]);
     });
 
+    it('adapts home rows to grid entries and buckets them by local day, soonest first', () => {
+      const days = gridDays([typed('late', new Date(2026, 9, 1, 15), 'Legal', 30), typed('early', new Date(2026, 9, 1, 9))]);
+
+      expect(days.get('2026-10-01')).toEqual([
+        { key: 'early', title: 'early', type: 'Board', startTime: new Date(2026, 9, 1, 9).toISOString(), durationMinutes: 60, past: false },
+        { key: 'late', title: 'late', type: 'Legal', startTime: new Date(2026, 9, 1, 15).toISOString(), durationMinutes: 30, past: false },
+      ]);
+    });
+
     it('colours chips by type, faded for past meetings, and falls back to Other', () => {
       expect(getMeetingCalendarTypeColor('board')).toBe('var(--ui-danger-500)');
       expect(getMeetingCalendarTypeColor('Unknown')).toBe('var(--ui-neutral-500)');
       expect(getMeetingCalendarTypeColor(null)).toBe('var(--ui-neutral-500)');
 
-      const upcoming = toMeetingCalendarChip({ row: typed('a', new Date(2026, 9, 1, 10)), past: false });
+      const upcoming = toMeetingCalendarChip(entry(typed('a', new Date(2026, 9, 1, 10))));
       expect(upcoming).toMatchObject({
         time: '10:00 AM',
         background: 'color-mix(in srgb, var(--ui-danger-500) 16%, var(--ui-white))',
@@ -260,7 +272,7 @@ describe('meetings home calendar utils', () => {
         bar: 'var(--ui-danger-500)',
         detail: 'Thu, Oct 1 · 10:00 AM · Board',
       });
-      const past = toMeetingCalendarChip({ row: typed('b', new Date(2026, 9, 1, 10), ''), past: true });
+      const past = toMeetingCalendarChip(entry(typed('b', new Date(2026, 9, 1, 10), ''), true));
       expect(past).toMatchObject({
         background: 'color-mix(in srgb, var(--ui-neutral-500) 7%, var(--ui-white))',
         ink: 'color-mix(in srgb, var(--ui-neutral-500) 75%, var(--ui-white))',
@@ -271,10 +283,10 @@ describe('meetings home calendar utils', () => {
 
     it('places week events by time and puts overlapping ones in greedy lanes', () => {
       const events = layoutMeetingCalendarWeekDay([
-        { row: typed('late', new Date(2026, 9, 1, 11), 'Board', 60), past: false },
-        { row: typed('early', new Date(2026, 9, 1, 9), 'Board', 120), past: false },
-        { row: typed('short', new Date(2026, 9, 1, 9, 30), 'Board', 10), past: false },
-        { row: typed('alone', new Date(2026, 9, 1, 14), 'Board', 60), past: false },
+        entry(typed('late', new Date(2026, 9, 1, 11), 'Board', 60)),
+        entry(typed('early', new Date(2026, 9, 1, 9), 'Board', 120)),
+        entry(typed('short', new Date(2026, 9, 1, 9, 30), 'Board', 10)),
+        entry(typed('alone', new Date(2026, 9, 1, 14), 'Board', 60)),
       ]);
 
       expect(events.map((event) => [event.key, event.top, event.height, event.lane, event.lanes])).toEqual([
@@ -287,10 +299,10 @@ describe('meetings home calendar utils', () => {
 
     it('gives every meeting of a chain of overlaps the same lane count', () => {
       const events = layoutMeetingCalendarWeekDay([
-        { row: typed('E', new Date(2026, 9, 1, 9), 'Board', 60), past: false },
-        { row: typed('F', new Date(2026, 9, 1, 9), 'Board', 120), past: false },
-        { row: typed('G', new Date(2026, 9, 1, 10), 'Board', 90), past: false },
-        { row: typed('H', new Date(2026, 9, 1, 10, 30), 'Board', 60), past: false },
+        entry(typed('E', new Date(2026, 9, 1, 9), 'Board', 60)),
+        entry(typed('F', new Date(2026, 9, 1, 9), 'Board', 120)),
+        entry(typed('G', new Date(2026, 9, 1, 10), 'Board', 90)),
+        entry(typed('H', new Date(2026, 9, 1, 10, 30), 'Board', 60)),
       ]);
 
       // E and H never overlap, but F and G link them: all four share three lanes.
@@ -308,10 +320,7 @@ describe('meetings home calendar utils', () => {
     });
 
     it('keeps three chips per month cell and counts the rest', () => {
-      const entries = groupMeetingCalendarEntries(
-        [8, 9, 10, 11, 12].map((hour) => typed(`m${hour}`, new Date(2026, 9, 1, hour))),
-        []
-      );
+      const entries = gridDays([8, 9, 10, 11, 12].map((hour) => typed(`m${hour}`, new Date(2026, 9, 1, hour))));
       const [first, outside] = buildMeetingCalendarDialogDays([new Date(2026, 9, 1), new Date(2026, 10, 1)], entries, new Date(2026, 9, 1), 9, 3);
 
       expect(first).toMatchObject({ key: '2026-10-01', label: 'Thu, Oct 1', inMonth: true, today: true, more: 2, events: [] });

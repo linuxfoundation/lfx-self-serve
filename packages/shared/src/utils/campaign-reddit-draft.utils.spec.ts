@@ -26,6 +26,9 @@ describe('redditDraftFields', () => {
     uploadFailedBriefId: '',
     videoGoal: 'VIDEO_VIEW_15S',
     conversionEvent: 'SIGN_UP',
+    customAudiences: { customAudienceIds: ['aud_in'], excludedCustomAudienceIds: ['aud_out'] },
+    targetingExclusions: { excludedSubreddits: ['politics'], excludedGeoTargets: ['CA'] },
+    editedTargetingLists: { subreddits: ['kubernetes'], interests: ['technology_v3'] },
   };
 
   it('carries every typed value, the pixel and the upload slot as held', () => {
@@ -45,7 +48,19 @@ describe('redditDraftFields', () => {
       redditImageUploadFailedBriefId: '',
       redditVideoGoal: 'VIDEO_VIEW_15S',
       redditConversionEvent: 'SIGN_UP',
+      redditCustomAudienceIds: ['aud_in'],
+      redditExcludedCustomAudienceIds: ['aud_out'],
+      redditExcludedSubreddits: ['politics'],
+      redditExcludedGeoTargets: ['CA'],
+      redditEditedSubreddits: ['kubernetes'],
+      redditEditedInterests: ['technology_v3'],
     });
+  });
+
+  it('leaves unedited subreddits and interests out, so the brief re-seeds them', () => {
+    const fields = redditDraftFields({ ...state, editedTargetingLists: null });
+    expect(fields).not.toHaveProperty('redditEditedSubreddits');
+    expect(fields).not.toHaveProperty('redditEditedInterests');
   });
 
   it.each([
@@ -141,6 +156,52 @@ describe('redditDraftRestore', () => {
   });
 });
 
+describe('redditDraftRestore: custom audiences', () => {
+  it.each<[string, Partial<RedditDraftSnapshot>, unknown]>([
+    [
+      'both lists',
+      { redditCustomAudienceIds: ['a1'], redditExcludedCustomAudienceIds: ['b1'] },
+      { customAudienceIds: ['a1'], excludedCustomAudienceIds: ['b1'] },
+    ],
+    ['one list, the other empty', { redditExcludedCustomAudienceIds: ['b1'] }, { customAudienceIds: [], excludedCustomAudienceIds: ['b1'] }],
+    ['neither key (an older draft)', {}, undefined],
+  ])('restores %s', (_name, over, expected) => {
+    expect(redditDraftRestore(draft(over)).customAudiences).toEqual(expected);
+  });
+
+  it.each([
+    ['only the strings of a stored list', ['a1', 7, null], { customAudienceIds: ['a1'], excludedCustomAudienceIds: [] }],
+    ['a list stored as text', 'a1', undefined],
+  ])('restores %s', (_name, stored, expected) => {
+    // @ts-expect-error -- a draft is replayed from stored JSON whose inner shape is not validated
+    expect(redditDraftRestore(draft({ redditCustomAudienceIds: stored })).customAudiences).toEqual(expected);
+  });
+});
+
+describe('redditDraftRestore: targeting exclusions', () => {
+  it.each<[string, unknown, unknown, unknown]>([
+    ['both lists', ['politics'], ['CA'], { excludedSubreddits: ['politics'], excludedGeoTargets: ['CA'] }],
+    ['one list, the other empty', undefined, ['CA'], { excludedSubreddits: [], excludedGeoTargets: ['CA'] }],
+    ['only the strings of a stored list', ['politics', 7], undefined, { excludedSubreddits: ['politics'], excludedGeoTargets: [] }],
+    ['neither key (an older draft)', undefined, undefined, undefined],
+  ])('restores %s', (_name, subs, geos, expected) => {
+    // @ts-expect-error -- a draft is replayed from stored JSON whose inner shape is not validated
+    expect(redditDraftRestore(draft({ redditExcludedSubreddits: subs, redditExcludedGeoTargets: geos })).targetingExclusions).toEqual(expected);
+  });
+});
+
+describe('redditDraftRestore: edited subreddits and interests', () => {
+  it.each<[string, unknown, unknown, unknown]>([
+    ['both lists', ['kubernetes'], ['technology_v3'], { subreddits: ['kubernetes'], interests: ['technology_v3'] }],
+    ['a cleared list beside a missing one', [], undefined, { subreddits: [], interests: [] }],
+    ['only the strings of a stored list', ['kubernetes', 7], undefined, { subreddits: ['kubernetes'], interests: [] }],
+    ['neither key (an older draft), so the seed stands', undefined, undefined, undefined],
+  ])('restores %s', (_name, subs, interests, expected) => {
+    // @ts-expect-error -- a draft is replayed from stored JSON whose inner shape is not validated
+    expect(redditDraftRestore(draft({ redditEditedSubreddits: subs, redditEditedInterests: interests })).editedTargetingLists).toEqual(expected);
+  });
+});
+
 describe('redditBriefReset', () => {
   it('sets every typed value to its default and empties the brief lists', () => {
     expect(redditBriefReset()).toEqual({
@@ -150,6 +211,8 @@ describe('redditBriefReset', () => {
       objective: DEFAULT_REDDIT_OBJECTIVE,
       videoGoal: '',
       conversionEvent: 'PURCHASE',
+      customAudiences: { customAudienceIds: [], excludedCustomAudienceIds: [] },
+      targetingExclusions: { excludedSubreddits: [], excludedGeoTargets: [] },
       budgetUsd: DEFAULT_REDDIT_BUDGET_USD,
       variants: [],
       subreddits: [],

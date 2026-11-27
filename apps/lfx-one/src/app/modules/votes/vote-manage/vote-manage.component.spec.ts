@@ -1470,6 +1470,7 @@ describe('VoteManageComponent', () => {
 
     it.each([
       ['condorcet_irv', PollType.CONDORCET_IRV],
+      ['instant_runoff_vote', PollType.INSTANT_RUNOFF_VOTE],
       ['generic', PollType.GENERIC],
       ['meek_stv', PollType.GENERIC],
       ['bogus', PollType.GENERIC],
@@ -1501,6 +1502,19 @@ describe('VoteManageComponent', () => {
       expect(control.disabled).toBe(true);
     });
 
+    it('keeps an existing Instant Runoff vote’s method and ranked questions in edit mode, locked (#2936)', async () => {
+      setRouteMode(VOTE_UID);
+      setQueryParams({ poll_type: 'condorcet_irv' });
+      fetchVote.mockReturnValue(of({ ...rankedVote(), poll_type: PollType.INSTANT_RUNOFF_VOTE } as Vote));
+      const fixture = await createComponent();
+      const form = fixture.componentInstance.form();
+      const options = ((form.get('questions') as FormArray).at(0) as FormGroup).get('options') as FormArray;
+
+      expect(form.get('poll_type')?.value).toBe(PollType.INSTANT_RUNOFF_VOTE);
+      expect(form.get('poll_type')?.disabled).toBe(true);
+      expect(options.value).toEqual(['Alice', 'Bob']);
+    });
+
     it('saves a new Condorcet draft with ranked questions', async () => {
       const fixture = await createFilled();
       fixture.componentInstance.onSaveAsDraft();
@@ -1525,6 +1539,43 @@ describe('VoteManageComponent', () => {
       capturedConfirmation!.accept!();
       expect(voteServiceMock.confirmSpeculativeVote).toHaveBeenCalledWith(request);
       expect(messageAdd).not.toHaveBeenCalledWith(expect.objectContaining({ summary: 'Voting method unavailable' }));
+    });
+
+    it('saves a new Instant Runoff draft with ranked questions (#2936)', async () => {
+      const fixture = await createFilled(PollType.INSTANT_RUNOFF_VOTE);
+      fixture.componentInstance.onSaveAsDraft();
+
+      expect(voteServiceMock.createVote).toHaveBeenCalledWith(
+        expect.objectContaining({ poll_type: PollType.INSTANT_RUNOFF_VOTE, poll_questions: [expect.objectContaining({ type: 'multiple_choice' })] })
+      );
+      expect(messageAdd).not.toHaveBeenCalledWith(expect.objectContaining({ summary: 'Voting method unavailable' }));
+    });
+
+    it('opens a new Instant Runoff vote with ranked questions after confirmation (#2936)', async () => {
+      const fixture = await createFilled(PollType.INSTANT_RUNOFF_VOTE);
+      fixture.componentInstance.onSubmit();
+
+      const request = expect.objectContaining({
+        poll_type: PollType.INSTANT_RUNOFF_VOTE,
+        poll_questions: [expect.objectContaining({ type: 'multiple_choice' })],
+      });
+      expect(voteServiceMock.beginSpeculativeCreate).toHaveBeenCalledWith(request);
+      expect(capturedConfirmation).not.toBeNull();
+      capturedConfirmation!.accept!();
+      expect(voteServiceMock.confirmSpeculativeVote).toHaveBeenCalledWith(request);
+      expect(messageAdd).not.toHaveBeenCalledWith(expect.objectContaining({ summary: 'Voting method unavailable' }));
+    });
+
+    it('opens a new Instant Runoff vote with a two-member group without counting eligible voters (#2936)', async () => {
+      getCommitteeMembers.mockReturnValue(of(members(2)));
+      const fixture = await createFilled(PollType.INSTANT_RUNOFF_VOTE);
+
+      expect(getCommitteeMembers).not.toHaveBeenCalled();
+      expect(fixture.componentInstance.eligibleVoterCountState().status).toBe('idle');
+      expect(fixture.componentInstance.canGoNext()).toBe(true);
+
+      fixture.componentInstance.onSubmit();
+      expect(voteServiceMock.beginSpeculativeCreate).toHaveBeenCalledWith(expect.objectContaining({ poll_type: PollType.INSTANT_RUNOFF_VOTE }));
     });
 
     it.each(['onSubmit', 'onSaveAsDraft'] as const)('blocks unsupported methods at %s even if the form is set programmatically', async (action) => {

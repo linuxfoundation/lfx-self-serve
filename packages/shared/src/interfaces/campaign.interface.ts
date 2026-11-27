@@ -489,6 +489,14 @@ export interface RedditCreateRefusalInput {
   videoPostError: string | null;
   /** Why the conversion event cannot be sent yet (`redditConversionEventBlock`), or `null`. */
   conversionEventBlock: string | null;
+  /** Why the custom audiences cannot be sent yet (`redditCustomAudiencesBlock`), or `null`. */
+  customAudiencesBlock: string | null;
+  /** Why the custom audience lists break campaign-service's rules (`redditCustomAudiencesRefusal`), or `null`. */
+  customAudiencesRefusal: string | null;
+  /** Why the excluded communities and countries cannot be sent yet (`redditTargetingExclusionsBlock`), or `null`. */
+  targetingExclusionsBlock: string | null;
+  /** Why the exclusion lists break campaign-service's rules (`redditTargetingExclusionsDraftRefusal`), or `null`. */
+  targetingExclusionsRefusal: string | null;
 }
 
 /** The three inputs needed to author a promoted post, once a creator has decided to author one. */
@@ -1500,6 +1508,26 @@ export interface CampaignImplementationDraft {
    * only the REQUEST is gated on them. A non-default event the capability no longer confirms holds Create, never dropped.
    */
   redditConversionEvent?: RedditConversionEvent;
+  /**
+   * The Reddit custom audiences to target and to exclude (#6108 row 1), kept whatever the capability says; only the
+   * REQUEST is gated on it. Picks the capability no longer confirms hold Create, never dropped.
+   */
+  redditCustomAudienceIds?: string[];
+  redditExcludedCustomAudienceIds?: string[];
+  /**
+   * The subreddits and countries to exclude (#6108 row 3), on the same terms as the custom audiences above: kept whatever
+   * the capability says, and held for Create when it no longer confirms them.
+   */
+  redditExcludedSubreddits?: string[];
+  redditExcludedGeoTargets?: string[];
+  /**
+   * The Reddit subreddits and interests as the operator edited them (#6108 row 4). Carried once they gained an editor,
+   * as `linkedInVariants` is: restored over the brief's seed. Absent (an older draft), the brief's seed stands. Not the
+   * `redditSubreddits` / `redditInterests` keys an older build wrote: those were stale copies of the brief's seed, which
+   * a restore deliberately ignores.
+   */
+  redditEditedSubreddits?: string[];
+  redditEditedInterests?: string[];
   /**
    * The Meta ad image, on the same terms as the Reddit image fields above: a pasted URL, or an
    * upload made for ONE brief (its asset id, file name and brief), plus an upload still in flight
@@ -2705,6 +2733,11 @@ export interface LinkedInCampaignCreateRequest {
   /** The document post's intro text, at most 600 characters (LinkedIn recommends about 150). Only with `format: 'document'`. */
   documentIntroText?: string;
   /**
+   * The existing organization post a `format: 'boost'` create sponsors (campaign-service#673): exactly
+   * `urn:li:share:<id>` or `urn:li:ugcPost:<id>`, sent with an empty `variants`. Only while `linkedInBoostEnabled`.
+   */
+  boostPost?: string;
+  /**
    * The campaign's own LinkedIn targeting (#5764 rows 8–11, campaign-service #552). Set, it REPLACES `targetingProfile`,
    * so it is refused with `targetingProfileEdit`. Only while `linkedInTargetingEnabled`.
    */
@@ -3054,6 +3087,13 @@ export interface RedditCampaignCreateRequest {
    */
   customAudienceIds?: string[];
   excludedCustomAudienceIds?: string[];
+  /**
+   * Communities and countries the ad group excludes (#6108 row 3, campaign-service #549): subreddit names (an `r/` prefix
+   * is allowed) and ISO 3166-1 alpha-2 codes. Neither may also be targeted. Only while
+   * `CampaignListResult.redditTargetingExclusionsEnabled`: the create route refuses them otherwise, never dropping them.
+   */
+  excludedSubreddits?: string[];
+  excludedGeoTargets?: string[];
   /** Optional bidding choice (#3299) — see {@link CampaignBiddingConfig}. Omitted means automatic. */
   bidding?: CampaignBiddingConfig;
 }
@@ -3388,6 +3428,8 @@ export interface MetaDetailedTargetingEnabled {
 export interface MetaTargetingPick {
   id: string;
   name: string;
+  /** Set on region and city picks only: the ISO country the location is in, from the search row (#5904). */
+  countryCode?: string;
 }
 
 /**
@@ -3737,6 +3779,12 @@ export type RedditDraftSnapshot = Pick<
   | 'redditImageUploadFailedBriefId'
   | 'redditVideoGoal'
   | 'redditConversionEvent'
+  | 'redditCustomAudienceIds'
+  | 'redditExcludedCustomAudienceIds'
+  | 'redditExcludedSubreddits'
+  | 'redditExcludedGeoTargets'
+  | 'redditEditedSubreddits'
+  | 'redditEditedInterests'
 >;
 
 /** The Reddit values `redditDraftFields` snapshots into the draft (#5980): the typed fields, the pixel and the image upload slot. */
@@ -3756,6 +3804,10 @@ export interface RedditDraftState {
   uploadFailedBriefId: string;
   videoGoal: RedditVideoGoal | '';
   conversionEvent: RedditConversionEvent;
+  customAudiences: RedditCustomAudiencesDraft;
+  targetingExclusions: RedditTargetingExclusionsDraft;
+  /** The subreddits and interests once the operator edited them, else `null`: an unedited list stays the brief's, out of the draft. */
+  editedTargetingLists: RedditTargetingListsDraft | null;
 }
 
 /** What a restored draft does to the Reddit section (#5980): values to set, and at most one upload step for the component to run. */
@@ -3773,6 +3825,10 @@ export interface RedditDraftRestore {
   pendingUpload?: { name: string; briefId: string };
   videoGoal?: RedditVideoGoal | '';
   conversionEvent?: RedditConversionEvent;
+  customAudiences?: RedditCustomAudiencesDraft;
+  targetingExclusions?: RedditTargetingExclusionsDraft;
+  /** Both lists as edited, set over the brief's seed; absent when the draft carries neither. */
+  editedTargetingLists?: RedditTargetingListsDraft;
 }
 
 /** The Reddit lists a brief seeds (#5980): the variants and the four targeting lists. */
@@ -3792,6 +3848,8 @@ export interface RedditBriefReset extends RedditBriefSeed {
   objective: RedditObjective;
   videoGoal: '';
   conversionEvent: RedditConversionEvent;
+  customAudiences: RedditCustomAudiencesDraft;
+  targetingExclusions: RedditTargetingExclusionsDraft;
   budgetUsd: number;
 }
 
@@ -3869,6 +3927,115 @@ export interface RedditCustomAudiencesResult {
   accountId: string;
   audiences: RedditCustomAudienceOption[];
   truncated: boolean;
+}
+
+/** The two Reddit custom-audience lists, keyed as `redditConfig` spells them (`REDDIT_CUSTOM_AUDIENCE_KEYS`). */
+export type RedditCustomAudienceListKey = 'customAudienceIds' | 'excludedCustomAudienceIds';
+
+/** The two Reddit targeting exclusion lists, keyed as `redditConfig` spells them (`REDDIT_TARGETING_EXCLUSION_KEYS`, #6108 row 3). */
+export type RedditTargetingExclusionKey = 'excludedSubreddits' | 'excludedGeoTargets';
+
+/** The two Reddit targeting lists the Implement tab can edit once campaign-service resolves them (#6108 row 4). */
+export type RedditTargetingListKey = 'subreddits' | 'interests';
+
+/** The Reddit subreddits and interests as the Implement tab holds them once edited (#6108 row 4). */
+export type RedditTargetingListsDraft = Record<RedditTargetingListKey, string[]>;
+
+/** One editable Reddit targeting list as the Implement tab renders it (#6108 row 4). */
+export interface RedditTargetingListView {
+  key: RedditTargetingListKey;
+  label: string;
+  placeholder: string;
+}
+
+/** One editable Reddit targeting list with its entries: the box's label with the count against the cap, and the chips (`id` is the entry as held). */
+export interface RedditTargetingListState extends RedditTargetingListView {
+  heading: string;
+  chips: MetaCustomAudienceChipView[];
+}
+
+/** The Reddit targeting exclusions the Implement tab holds (#6108 row 3): subreddit names without `r/`, and country codes. */
+export type RedditTargetingExclusionsDraft = Record<RedditTargetingExclusionKey, string[]>;
+
+/** One Reddit targeting exclusion list as the Implement tab renders it. */
+export interface RedditTargetingExclusionListView {
+  key: RedditTargetingExclusionKey;
+  label: string;
+  placeholder: string;
+  emptyText: string;
+}
+
+/** One Reddit targeting exclusion list with its entries: the box's label with the count against the cap, and the chips. */
+export interface RedditTargetingExclusionListState extends RedditTargetingExclusionListView {
+  heading: string;
+  chips: MetaCustomAudienceChipView[];
+}
+
+/** The targeting a create sends, which the exclusions must not overlap: the subreddits and the geo targets as sent. */
+export interface RedditTargetedLists {
+  subreddits: string[];
+  geoTargets: string[];
+}
+
+/**
+ * Why Create is held for Reddit exclusions the draft holds but the request cannot carry (#6108 row 3). `restricted` when
+ * the deployment says no (`redditTargetingExclusionsEnabled === false`), and the capability read's own states while it
+ * is unanswered.
+ */
+export interface CampaignRedditTargetingExclusionsBlock {
+  kind: 'pending' | 'failed' | 'unsaved' | 'restricted';
+  message: string;
+}
+
+/** The state `redditTargetingExclusionsBlock` (`campaign-reddit-targeting-exclusions.utils.ts`) reads, as plain values. */
+export interface RedditTargetingExclusionsBlockInput {
+  exclusions: RedditTargetingExclusionsDraft;
+  enabled: boolean | null;
+  createCapabilityRead: CampaignCapabilityReadState;
+  /** The open brief's id, or `null` while the brief is unsaved. */
+  briefId: string | null;
+}
+
+/** The Reddit custom audiences the Implement tab holds (#6108 row 1): the ids to target and to exclude, as picked or typed. */
+export type RedditCustomAudiencesDraft = Record<RedditCustomAudienceListKey, string[]>;
+
+/** One Reddit custom-audience list as the Implement tab renders it. */
+export interface RedditCustomAudienceListView {
+  key: RedditCustomAudienceListKey;
+  label: string;
+}
+
+/** One Reddit custom-audience list with its current picks: the box's label with the count against the cap, and the chips. */
+export interface RedditCustomAudienceListState extends RedditCustomAudienceListView {
+  heading: string;
+  chips: MetaCustomAudienceChipView[];
+}
+
+/** Where the Reddit custom-audience picker stands; `unavailable` carries the sentence the typed boxes are offered with. */
+export interface RedditCustomAudiencePickerState {
+  status: 'idle' | 'loading' | 'loaded' | 'unavailable';
+  audiences: RedditCustomAudienceOption[];
+  truncated: boolean;
+  reason: string | null;
+}
+
+/**
+ * Why Create is held for Reddit custom audiences the draft holds but the request cannot carry (#6108 row 1).
+ * `restricted` when the answer is no (`redditCustomAudiencesEnabled === false`: the deployment or the caller's
+ * `global_marketing_ops`, one answer), and the capability read's own states while it is unanswered.
+ */
+export interface CampaignRedditCustomAudiencesBlock {
+  kind: 'pending' | 'failed' | 'unsaved' | 'restricted';
+  message: string;
+}
+
+/** The state `redditCustomAudiencesBlock` (`campaign-reddit-custom-audiences.utils.ts`) reads, as plain values. */
+export interface RedditCustomAudiencesBlockInput {
+  audiences: RedditCustomAudiencesDraft;
+  enabled: boolean | null;
+  createCapabilityRead: CampaignCapabilityReadState;
+  /** The open brief's id, or `null` while the brief is unsaved. */
+  briefId: string | null;
 }
 
 /** One Instant Form of the Page a Meta create uses (#5940). Only an ACTIVE form passes a create. */
@@ -8647,6 +8814,12 @@ export interface CampaignListResult {
    */
   linkedInDocumentEnabled: boolean;
   /**
+   * Whether a LinkedIn create may boost an existing organization post (`format: 'boost'` with `boostPost`,
+   * campaign-service#673). Needs the campaign-service create path AND `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_BOOST`, which
+   * follows campaign-service's own `LINKEDIN_ADS_BOOST_POST_ENABLED`.
+   */
+  linkedInBoostEnabled: boolean;
+  /**
    * Whether the Microsoft section may offer an image UPLOAD, sent as
    * `MicrosoftCampaignCreateRequest.imageAssetId` and attached as an image ad extension.
    *
@@ -8721,6 +8894,19 @@ export interface CampaignListResult {
    * `null` when that check cannot be made. Optional, so a BFF that predates it reads as unanswered.
    */
   redditCustomAudiencesEnabled?: boolean | null;
+  /**
+   * Whether a Reddit create may carry `redditConfig.excludedSubreddits` and `excludedGeoTargets` (#6108 row 3): the
+   * campaign-service create path AND `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_TARGETING_EXCLUSIONS`, which follows
+   * campaign-service's own `REDDIT_TARGETING_EXCLUSIONS_ENABLED`. Optional, so a BFF that predates it reads as unanswered.
+   */
+  redditTargetingExclusionsEnabled?: boolean;
+  /**
+   * Whether campaign-service resolves a Reddit create's `subreddits` and `interests` before creating anything (#6108 row 4):
+   * the campaign-service create path AND `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_TARGETING_RESOLUTION`, which follows
+   * campaign-service's own `REDDIT_TARGETING_RESOLUTION_ENABLED`. The Implement tab offers the subreddits and interests for
+   * editing, and sends the edits, only on an explicit yes. Optional, so a BFF that predates it reads as unanswered.
+   */
+  redditTargetingResolutionEnabled?: boolean;
   /**
    * Whether a Meta create may carry `metaConfig.callToAction`, `conversionEvent` and `optimizationGoal`
    * (#5934), one flag each: `cutoverOwnsCreate()` AND `LFX_CUTOVER_CAMPAIGN_SERVICE_META_CALL_TO_ACTION`,

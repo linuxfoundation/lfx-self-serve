@@ -890,15 +890,18 @@ describe('VotesDashboardComponent personal summary', () => {
       expect(toggle).toHaveBeenCalledTimes(1);
     });
 
-    it('opens the create form with the method chosen in the Create Vote dropdown (#2921)', async () => {
+    it('opens the create form with the method chosen in the Create Vote dropdown (#2921, #2936)', async () => {
       canWrite.set(true);
       await freshDashboard('project');
       const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
       const menu = fixture.debugElement.query(By.directive(VoteCreateMenuComponent)).componentInstance as VoteCreateMenuComponent;
 
-      menu.methodSelected.emit(PollType.CONDORCET_IRV);
+      for (const pollType of [PollType.CONDORCET_IRV, PollType.INSTANT_RUNOFF_VOTE]) {
+        navigate.mockClear();
+        menu.methodSelected.emit(pollType);
 
-      expect(navigate).toHaveBeenCalledWith(['/votes', 'create'], { queryParams: { poll_type: 'condorcet_irv' } });
+        expect(navigate).toHaveBeenCalledExactlyOnceWith(['/votes', 'create'], { queryParams: { poll_type: pollType } });
+      }
     });
   });
 

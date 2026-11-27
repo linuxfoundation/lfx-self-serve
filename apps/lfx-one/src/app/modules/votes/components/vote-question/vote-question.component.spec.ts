@@ -59,8 +59,8 @@ describe('VoteQuestionComponent — ranked methods (#2921)', () => {
     expect(element('vote-ranked-note-0')).toBeNull();
   });
 
-  it('replaces Response Type with the ranking note for Condorcet IRV', async () => {
-    await render(PollType.CONDORCET_IRV);
+  it.each([PollType.CONDORCET_IRV, PollType.INSTANT_RUNOFF_VOTE])('replaces Response Type with the ranking note for %s', async (pollType) => {
+    await render(pollType);
 
     expect(element('vote-response-type-select-0')).toBeNull();
     expect(element('vote-ranked-note-0')?.textContent?.trim()).toBe('Voters rank these options in order of preference.');

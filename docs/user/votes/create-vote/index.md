@@ -3,8 +3,8 @@ title: Create a Vote
 description: How to create a vote in LFX Self Serve with the three-step form, including the voting method, questions, comment questions, abstain, drafts, and cloning.
 audience: [maintainer, board-member, executive-director]
 product_area: Votes
-tags: [votes, create, questions, abstain, draft, governance, elections, condorcet, ranked]
-last_updated: 2026-11-24
+tags: [votes, create, questions, abstain, draft, governance, elections, condorcet, instant-runoff, ranked]
+last_updated: 2026-11-25
 intercom_collection: Votes
 ---
 
@@ -23,7 +23,7 @@ You can start from two places:
 - **Votes dashboard:** switch to your **Project** or **Foundation** lens, select **Votes** in the left navigation, then select **Create Vote** at the top of the page.
 - **A group's Votes tab:** open the group, select its **Votes** tab, and select **Create Vote**. The group is filled in and locked, and a note at the top says the vote will be created for that group.
 
-In both places, **Create Vote** opens a **Vote type** list. Select **Plurality vote** or **Condorcet IRV** to open the form with that method preselected. When a project or foundation has no votes yet, the **Create Vote** button in the empty Votes dashboard starts a plurality vote; you can change it in the form's **Voting Method** list.
+In both places, **Create Vote** opens a **Vote type** list. Select **Plurality vote**, **Instant Runoff** or **Condorcet IRV** to open the form with that method preselected. When a project or foundation has no votes yet, the **Create Vote** button in the empty Votes dashboard starts a plurality vote; you can change it in the form's **Voting Method** list.
 
 The form's **Previous**, **Cancel**, **Save as Draft**, and **Next** buttons stay at the top of the page. On the last step, **Next** becomes **Open Vote**.
 
@@ -47,18 +47,21 @@ Select **Next** when the required fields are filled in.
 ### Voting methods
 
 - **Plurality** (the default): voters pick from the options, and the option with the most votes wins.
-- **Condorcet IRV**: voters rank the options; the winner beats every other option head-to-head, with instant-runoff elimination when no such winner exists. Select it in the **Vote type** list or the form's **Voting Method** list.
+- **Instant Runoff**: voters rank the options. The option with the fewest first choices is eliminated and its ballots move to each voter's next choice, round by round, until one option has a majority.
+- **Condorcet IRV**: voters rank the options; the winner beats every other option head-to-head, with instant-runoff elimination when no such winner exists.
 
-A Condorcet IRV vote needs at least three eligible voters before it can open. If the group has fewer, a warning shows how many it has, and **Next** and **Open Vote** stay unavailable until you pick another group or widen **Eligible Participants**. You can still save a draft. If LFX can't check how many people are eligible, a note says so and you can continue. Existing Condorcet IRV votes, including drafts created in PCC, keep their method and can still be managed.
+You can select either ranked method in the **Vote type** list or the form's **Voting Method** list.
 
-New votes default to Plurality unless you choose Condorcet IRV. A direct creation link requesting Condorcet IRV also preselects that method. After a vote is created, including when you edit a draft, its method can't be changed.
+A Condorcet IRV vote needs at least three eligible voters before it can open. If the group has fewer, a warning shows how many it has, and **Next** and **Open Vote** stay unavailable until you pick another group or widen **Eligible Participants**. You can still save a draft. If LFX can't check how many people are eligible, a note says so and you can continue. Instant Runoff has no minimum number of eligible voters. Existing Instant Runoff and Condorcet IRV votes, including drafts created in PCC, keep their method and can still be managed.
+
+New votes default to Plurality unless you choose Instant Runoff or Condorcet IRV. A direct creation link requesting either also preselects it. After a vote is created, including when you edit a draft, its method can't be changed.
 
 ## Step 2: Question & Options
 
 Each question has:
 
 - **Question:** required, at least 10 characters.
-- **Response Type:** **Single selection (radio buttons)** lets each voter pick one option. **Multiple selection (checkboxes)** lets voters pick several. Condorcet IRV questions have no response type: a note says voters rank the options in order of preference.
+- **Response Type:** **Single selection (radio buttons)** lets each voter pick one option. **Multiple selection (checkboxes)** lets voters pick several. Instant Runoff and Condorcet IRV questions have no response type: a note says voters rank the options in order of preference.
 - **Options:** every question needs at least two. Select **Add Option** for more, and the **✕** next to an option removes it once a question has more than two. Every option must have text.
 
 To ask more than one question in the same vote, select **Add Another Question**. Questions are numbered, and once there is more than one you can remove any of them with the trash icon.

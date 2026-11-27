@@ -91,5 +91,13 @@ export function redditCreateRefusal(input: RedditCreateRefusalInput): string | n
   if (input.videoPostError !== null) return 'Reddit Ads: Video Views needs a video post.';
   // A non-default conversion event this deployment has not confirmed: held, never dropped (`redditConversionEventBlock`).
   if (input.conversionEventBlock !== null) return `Reddit Ads: ${input.conversionEventBlock}`;
+  // Custom audiences the deployment or the caller has not confirmed: held, never dropped (`redditCustomAudiencesBlock`).
+  if (input.customAudiencesBlock !== null) return `Reddit Ads: ${input.customAudiencesBlock}`;
+  // Lists campaign-service would refuse (`redditCustomAudiencesRefusal`).
+  if (input.customAudiencesRefusal !== null) return `Reddit Ads: ${input.customAudiencesRefusal}`;
+  // Exclusions the deployment has not confirmed: held, never dropped (`redditTargetingExclusionsBlock`).
+  if (input.targetingExclusionsBlock !== null) return `Reddit Ads: ${input.targetingExclusionsBlock}`;
+  // Exclusions campaign-service would refuse, including one the targeting now overlaps (`redditTargetingExclusionsDraftRefusal`).
+  if (input.targetingExclusionsRefusal !== null) return `Reddit Ads: ${input.targetingExclusionsRefusal}`;
   return null;
 }

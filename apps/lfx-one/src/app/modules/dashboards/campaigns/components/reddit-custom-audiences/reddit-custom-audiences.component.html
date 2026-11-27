@@ -1,0 +1,70 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@if (enabled() || hasPicks()) {
+  <fieldset class="flex flex-col gap-3" data-testid="reddit-custom-audiences">
+    <legend class="mb-2 text-xs font-medium text-gray-700">Custom audiences</legend>
+    @if (enabled()) {
+      @switch (picker().status) {
+        @case ('loading') {
+          <p class="text-xs text-gray-500" data-testid="reddit-custom-audiences-picker-loading">{{ pickerLoading }}</p>
+        }
+        @case ('unavailable') {
+          <p class="text-xs text-gray-500" data-testid="reddit-custom-audiences-picker-unavailable">{{ picker().reason }}</p>
+        }
+        @case ('loaded') {
+          @if (picker().audiences.length === 0) {
+            <p class="text-xs text-gray-500" data-testid="reddit-custom-audiences-picker-empty">{{ pickerEmpty }}</p>
+          } @else if (picker().truncated) {
+            <p class="text-xs text-gray-500" data-testid="reddit-custom-audiences-picker-truncated">{{ pickerTruncated }}</p>
+          }
+        }
+      }
+    }
+
+    @for (list of audienceLists(); track list.key) {
+      <div class="flex flex-col gap-2" [attr.data-testid]="'reddit-custom-audiences-' + list.key">
+        @if (enabled()) {
+          <lfx-ui-combobox
+            #box
+            freeText
+            size="small"
+            [label]="list.heading"
+            placeholder="Search audiences or enter an audience id"
+            emptyText="No audience matches"
+            (valueChange)="onAddAudience(list.key, $event, box)"
+            [attr.data-testid]="'reddit-custom-audiences-' + list.key + '-add'">
+            @for (audience of pickerOptions(); track audience.id) {
+              <lfx-ui-option [value]="audience.id" [label]="audience.label" />
+            }
+          </lfx-ui-combobox>
+        } @else if (list.chips.length > 0) {
+          <span class="text-xs font-medium text-gray-700">{{ list.heading }}</span>
+        }
+        <div class="flex flex-wrap items-center gap-2">
+          @for (chip of list.chips; track chip.id) {
+            <span
+              class="inline-flex items-center gap-1 rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700"
+              [attr.data-testid]="'reddit-custom-audiences-' + list.key + '-' + chip.id">
+              {{ chip.label }}
+              <button
+                type="button"
+                (click)="onRemoveAudience(list.key, chip.id)"
+                class="ml-0.5 text-blue-600 hover:text-blue-800"
+                [attr.aria-label]="'Remove ' + chip.label"
+                [attr.data-testid]="'reddit-custom-audiences-' + list.key + '-remove-' + chip.id">
+                <i class="fa-light fa-xmark text-[10px]" aria-hidden="true"></i>
+              </button>
+            </span>
+          }
+        </div>
+      </div>
+    }
+    @if (addError(); as error) {
+      <p role="alert" class="text-xs text-red-600" data-testid="reddit-custom-audiences-add-error">{{ error }}</p>
+    }
+    @if (refusal(); as refused) {
+      <p role="alert" class="text-xs text-red-600" data-testid="reddit-custom-audiences-error">{{ refused }}</p>
+    }
+  </fieldset>
+}

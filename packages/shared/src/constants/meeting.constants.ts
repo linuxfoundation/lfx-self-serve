@@ -7,6 +7,8 @@ import type {
   CardSelectorOption,
   MeetingTypeConfig,
   MeetingComposerPreviewFeature,
+  MeetingComposerSectionId,
+  MeetingTimeSlot,
   RsvpResponse,
   ShowMeetingAttendeesLockOptions,
 } from '../interfaces';
@@ -398,6 +400,23 @@ export const MEETING_COMPOSER_SECTIONS = [
   { id: 'agenda-resources', label: 'Agenda & resources', icon: 'fa-light fa-list-check', required: false },
 ] as const;
 
+/** One-line description under each section title in the redesigned composer. */
+export const MEETING_COMPOSER_SECTION_DESCRIPTIONS: Record<MeetingComposerSectionId, string> = {
+  'details-access': 'Name the meeting, pick its type and decide who can find and join it.',
+  'date-schedule': 'When it starts, how long it runs and whether it repeats.',
+  'platform-features': 'Where the meeting happens and what gets captured for people who can’t attend live.',
+  guests: 'Add people one by one, or invite a whole group at once.',
+  'agenda-resources': 'Share the plan and any material guests should look at beforehand.',
+};
+
+/** What an occurrence edit leaves out of each section, shown at the end of the section in the redesigned composer. */
+export const MEETING_COMPOSER_OCCURRENCE_NOTES: Partial<Record<MeetingComposerSectionId, string>> = {
+  'details-access': 'Meeting type, organizer, visibility and join restriction apply to every occurrence, so they’re not shown here.',
+  'date-schedule': 'Timezone, early join and how often the meeting repeats apply to every occurrence, so they’re not shown here.',
+  guests: 'Groups, and guests invited to every occurrence, belong to the series, so they can’t be changed here.',
+  'agenda-resources': 'Documents and links are shared by every occurrence, so they’re not shown here.',
+};
+
 /**
  * Sections the quick create dialog puts in front of the organizer.
  * @description Everything the dialog's two columns cover — platform and features are the one section
@@ -554,6 +573,12 @@ export const EMAIL_REMINDER_TOOLTIP =
  * component subscribes once instead of testing four keys separately in the template.
  */
 export const REMINDER_MINUTES_ERROR_KEYS = ['required', 'pattern', 'min', 'max'] as const;
+
+/** Redesigned composer: one note on every feature that needs recording. */
+export const RECORDING_REQUIRED_NOTE = 'Turn on recording to use this';
+
+/** Redesigned composer: suffix on a platform that is not available yet. */
+export const MEETING_PLATFORM_SOON_SUFFIX = ' (Soon)';
 
 /**
  * Why a recording-gated feature toggle can't be switched on yet, keyed by its form control
@@ -770,6 +795,9 @@ export const RESTRICTED_MEETING_FEATURE = {
   color: lfxColors.red[500],
 };
 
+/** Guests past this many get a filter over the redesigned composer's guest list. */
+export const COMPOSER_GUEST_FILTER_THRESHOLD = 6;
+
 /**
  * Show meeting attendees feature configuration
  * @description Feature toggle config for sharing the guest list with guests in LFX: the guest list
@@ -800,6 +828,9 @@ export const COMPOSER_ATTENDEE_LOCK: ShowMeetingAttendeesLockOptions = { allowRe
 
 /** Character limit for the meeting agenda (`description`) */
 export const MEETING_AGENDA_MAX_LENGTH = 2000;
+
+/** Native cap on the meeting title input in the redesigned composer; the API sets none. */
+export const MEETING_TITLE_MAX_LENGTH = 150;
 
 /** Character limit for the note sent with a cancelled occurrence (matches the upstream ITX cap) */
 export const MEETING_OCCURRENCE_CANCEL_NOTE_MAX_LENGTH = 4000;
@@ -895,6 +926,14 @@ export const EARLY_JOIN_CHIP_OPTIONS = [
  * Tooltip text explaining the early-join window
  */
 export const EARLY_JOIN_TOOLTIP = 'Allow guests to join the meeting early. Useful for informal networking before the official start time.';
+
+/** Start-time rows for the redesigned composer: every 15 minutes from 12:00 AM to 11:45 PM. */
+export const MEETING_START_TIME_SLOTS: readonly MeetingTimeSlot[] = Array.from({ length: 96 }, (_, index) => {
+  const minuteOfDay = index * 15;
+  const hours = Math.floor(minuteOfDay / 60);
+  const label = `${hours % 12 || 12}:${String(minuteOfDay % 60).padStart(2, '0')} ${hours < 12 ? 'AM' : 'PM'}`;
+  return { label, value: label, minuteOfDay };
+});
 
 // ============================================================================
 // Template Re-exports

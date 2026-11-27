@@ -9,6 +9,8 @@ import { CondorcetBallotPatternRow, CondorcetPairwiseRow, CondorcetQuestionView,
 import { joinNames } from '@lfx-one/shared/utils';
 import { OrdinalPipe } from '@pipes/ordinal.pipe';
 
+import { VoteIrvRoundsComponent } from '../vote-irv-rounds/vote-irv-rounds.component';
+
 /**
  * Outcome-first Condorcet IRV results for one question (#5969, #6112).
  * The service decides the outcome; preference bars and ballot previews only explain existing counts.
@@ -16,7 +18,7 @@ import { OrdinalPipe } from '@pipes/ordinal.pipe';
  */
 @Component({
   selector: 'lfx-vote-condorcet-results',
-  imports: [TagComponent, OrdinalPipe],
+  imports: [TagComponent, OrdinalPipe, VoteIrvRoundsComponent],
   templateUrl: './vote-condorcet-results.component.html',
   host: { class: 'contents' },
 })

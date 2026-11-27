@@ -103,16 +103,19 @@ describe('CommitteeVotesComponent', () => {
       expect(createMenu().toggle).toHaveBeenCalledTimes(1);
     });
 
-    it('re-checks write access, then opens the form for this group with the chosen method', () => {
-      fetchCommittee.mockReturnValue(of({ uid: 'committee-1', writer: true }));
+    it.each([PollType.CONDORCET_IRV, PollType.INSTANT_RUNOFF_VOTE])(
+      're-checks write access, then opens the form for this group with the chosen method (%s)',
+      (pollType) => {
+        fetchCommittee.mockReturnValue(of({ uid: 'committee-1', writer: true }));
 
-      createMenu().methodSelected.emit(PollType.CONDORCET_IRV);
+        createMenu().methodSelected.emit(pollType);
 
-      expect(fetchCommittee).toHaveBeenCalledWith('committee-1');
-      expect(navigate).toHaveBeenLastCalledWith(['/votes', 'create'], {
-        queryParams: { committee_uid: 'committee-1', project: 'synthetic-project', poll_type: 'condorcet_irv' },
-      });
-    });
+        expect(fetchCommittee).toHaveBeenCalledWith('committee-1');
+        expect(navigate).toHaveBeenLastCalledWith(['/votes', 'create'], {
+          queryParams: { committee_uid: 'committee-1', project: 'synthetic-project', poll_type: pollType },
+        });
+      }
+    );
 
     it('still sends a user without write access back to the overview', () => {
       fetchCommittee.mockReturnValue(of({ uid: 'committee-1', writer: false }));

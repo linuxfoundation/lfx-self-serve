@@ -1,0 +1,244 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Exact px throughout: the 14px root shrinks the rem scale. -->
+<div class="flex flex-col gap-[28px]" data-testid="composer-guests">
+  <div class="flex min-w-0 flex-col gap-[8px]">
+    <div class="flex items-center justify-between gap-[12px]">
+      <label for="composer-guest-search" class="text-[14px] font-medium leading-[20px] text-gray-900" data-testid="composer-guest-search-label">
+        {{ isOccurrenceEdit() ? 'Add guests to this occurrence' : 'Search and add guests' }}
+      </label>
+      <lfx-ui-button
+        variant="tertiary-accent"
+        size="small"
+        icon="fa-light fa-user-plus"
+        (click)="onOpenManualDialog()"
+        data-testid="composer-guest-manual-link">
+        Add manually
+      </lfx-ui-button>
+    </div>
+    <lfx-user-search
+      [form]="quickAddForm"
+      inputId="composer-guest-search"
+      searchType="v1_meeting_registrant"
+      emailControl="email"
+      firstNameControl="first_name"
+      lastNameControl="last_name"
+      jobTitleControl="job_title"
+      organizationNameControl="org_name"
+      usernameControl="username"
+      placeholder="Search by name or email"
+      styleClass="w-full"
+      inputStyleClass="w-full text-sm"
+      panelStyleClass="w-full"
+      dataTestId="composer-guest-search"
+      manualEntryPlacement="empty"
+      manualEntryLabel="Add guest manually"
+      [showAddHint]="true"
+      [waitForSearchableQuery]="true"
+      (onUserSelect)="onUserSelected()"
+      (onManualEntry)="onOpenManualDialog()" />
+  </div>
+
+  <section class="flex min-w-0 flex-col overflow-hidden rounded-[12px] border border-gray-200" aria-labelledby="composer-guests-heading">
+    <div class="flex min-h-[48px] flex-wrap items-center gap-[8px] py-[8px] pl-[16px] pr-[12px]">
+      <h3 id="composer-guests-heading" class="text-[14px] font-medium leading-[20px] text-gray-900" data-testid="composer-guests-count">{{ countLabel() }}</h3>
+      @if (showAcceptanceSummary()) {
+        <!-- role="note" so the aria-label is announced; a bare span drops it. -->
+        <span
+          class="cursor-help text-[12px] leading-[16px] text-gray-500"
+          role="note"
+          tabindex="0"
+          [attr.aria-label]="acceptanceLabel()"
+          [lfxUiTooltip]="acceptanceBreakdown()"
+          data-testid="composer-guests-acceptance">
+          · {{ acceptanceSummary() }}
+        </span>
+      }
+      <span class="flex-1"></span>
+      @if (canAddSelf()) {
+        <lfx-ui-button variant="tertiary-accent" size="small" icon="fa-light fa-plus" (click)="onAddSelf()" data-testid="composer-guest-add-self">
+          Add me
+        </lfx-ui-button>
+      }
+      @if (showFilter()) {
+        <lfx-ui-search-input
+          class="w-full min-w-0 sm:w-[200px]"
+          placeholder="Filter guests"
+          ariaLabel="Filter invited people"
+          [value]="guestFilter()"
+          (valueChange)="onFilterChange($event)"
+          data-testid="composer-guests-filter" />
+      }
+    </div>
+
+    @if (undoBatch()) {
+      <div class="flex items-center gap-[8px] border-t border-gray-200 bg-gray-50 py-[4px] pl-[16px] pr-[8px]" data-testid="composer-guest-undo">
+        <p class="min-w-0 flex-1 truncate text-[13px] text-gray-700" [attr.title]="undoMessage()" data-testid="composer-guest-undo-message">
+          {{ undoMessage() }}
+        </p>
+        <lfx-ui-button variant="tertiary-accent" size="small" (click)="onUndoRemove()" data-testid="composer-guest-undo-button">Undo</lfx-ui-button>
+        <lfx-ui-button
+          variant="tertiary"
+          size="small"
+          icon="fa-light fa-xmark"
+          iconOnly
+          ariaLabel="Dismiss undo"
+          (click)="onDismissUndo()"
+          data-testid="composer-guest-undo-dismiss" />
+      </div>
+    }
+
+    @if (formService.guestsLoading()) {
+      <p class="border-t border-gray-200 px-[16px] py-[20px] text-center text-[13px] text-gray-500" data-testid="composer-guests-loading">Loading guests…</p>
+    } @else {
+      @if (formService.guestsLoadFailed()) {
+        <div class="border-t border-gray-200 p-[12px]">
+          <lfx-ui-note variant="error" size="small" data-testid="composer-guests-load-error">
+            <div class="flex flex-col gap-[8px]">
+              <span>We couldn't load the guests already invited to this meeting.</span>
+              @if (formService.hasUnreconciledGroupSelection()) {
+                <span data-testid="composer-guests-group-blocked">
+                  A group is waiting on that list, so saving now would attach the group without inviting its members. Try again before saving.
+                </span>
+              } @else {
+                <span>Anyone you add here will still be invited on save.</span>
+              }
+              <lfx-ui-button
+                class="self-start"
+                variant="secondary"
+                size="small"
+                (click)="formService.retryLoadGuests()"
+                data-testid="composer-guests-load-retry">
+                Try again
+              </lfx-ui-button>
+            </div>
+          </lfx-ui-note>
+        </div>
+      }
+
+      @if (guestCount() === 0) {
+        <div class="border-t border-gray-200">
+          <lfx-ui-empty-state
+            size="small"
+            icon="fa-light fa-user-group"
+            heading="No guests yet"
+            [description]="
+              isOccurrenceEdit() ? 'Search for people to invite to this occurrence only.' : 'Search for people or add a group to invite everyone at once.'
+            "
+            data-testid="composer-guests-empty" />
+        </div>
+      } @else if (rows().length === 0) {
+        <p class="border-t border-gray-200 px-[16px] py-[20px] text-center text-[12px] leading-[16px] text-gray-500" data-testid="composer-guests-filter-empty">
+          No guests match “{{ guestFilter() }}”.
+        </p>
+      } @else {
+        <ul
+          class="m-0 flex max-h-[392px] list-none flex-col divide-y divide-gray-200 overflow-y-auto border-t border-gray-200 p-0"
+          data-testid="composer-guests-list">
+          @for (row of rows(); track row.trackId) {
+            <li class="flex min-h-[56px] items-center gap-[12px] py-[8px] pl-[16px] pr-[12px]" [attr.data-testid]="'composer-guest-row-' + row.trackId">
+              <lfx-ui-avatar class="flex-none" decorative [size]="32" [name]="row.displayName" [src]="row.guest.avatar_url ?? ''" [initials]="row.initials" />
+              <div class="flex min-w-0 flex-1 flex-col">
+                <div class="flex min-w-0 items-center gap-[6px]">
+                  <span class="min-w-0 truncate text-[14px] font-medium leading-[20px] text-gray-900" [attr.title]="row.displayName || row.guest.email">{{
+                    row.displayName || row.guest.email
+                  }}</span>
+                  @if (row.isSelf) {
+                    <lfx-ui-badge class="flex-none" variant="outline" size="sm" data-testid="composer-guest-you">You</lfx-ui-badge>
+                  }
+                  @if (row.guest.host) {
+                    <lfx-ui-badge class="flex-none" tone="accent" size="sm" data-testid="composer-guest-host">Host</lfx-ui-badge>
+                  }
+                </div>
+                <span
+                  class="truncate text-[12px] leading-[16px] text-gray-500"
+                  [attr.title]="row.subline"
+                  [attr.data-testid]="'composer-guest-subline-' + row.trackId"
+                  >{{ row.subline }}</span
+                >
+              </div>
+              <!-- Native buttons: Remove, Undo and dismiss hand focus to a row's remove button through its test id. -->
+              <div class="flex flex-none items-center gap-[4px]">
+                @if (row.canResend) {
+                  <button
+                    type="button"
+                    class="inline-flex h-[24px] w-[24px] items-center justify-center rounded-[8px] text-[12px] text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500 disabled:opacity-50"
+                    [attr.aria-label]="'Resend invite to ' + (row.displayName || row.guest.email || 'guest')"
+                    lfxUiTooltip="Resend invite"
+                    [disabled]="row.resending"
+                    (click)="onRequestResendInvite(row.guest)"
+                    [attr.data-testid]="'composer-guest-resend-' + row.trackId">
+                    <i class="fa-light fa-paper-plane" aria-hidden="true"></i>
+                  </button>
+                }
+                @if (row.removable) {
+                  <button
+                    type="button"
+                    class="inline-flex h-[24px] w-[24px] items-center justify-center rounded-[8px] text-[12px] hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+                    [class]="row.guest.host ? 'text-blue-600' : 'text-gray-400 hover:text-gray-900'"
+                    [attr.aria-label]="row.hostLabel"
+                    [attr.aria-pressed]="!!row.guest.host"
+                    [lfxUiTooltip]="row.hostTooltip"
+                    (click)="onToggleHost(row.guest)"
+                    [attr.data-testid]="'composer-guest-host-toggle-' + row.trackId">
+                    <i class="fa-light fa-user-shield" aria-hidden="true"></i>
+                  </button>
+                  <button
+                    type="button"
+                    class="inline-flex h-[24px] w-[24px] items-center justify-center rounded-[8px] text-[12px] text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-500"
+                    [attr.aria-label]="row.removeLabel"
+                    lfxUiTooltip="Remove"
+                    (click)="onRemoveGuest(row.guest)"
+                    [attr.data-testid]="'composer-guest-remove-' + row.trackId">
+                    <i class="fa-light fa-xmark" aria-hidden="true"></i>
+                  </button>
+                }
+              </div>
+            </li>
+          }
+        </ul>
+      }
+    }
+  </section>
+
+  @if (!isOccurrenceEdit()) {
+    <hr class="m-0 border-0 border-t border-gray-200" />
+    <div class="flex min-w-0 flex-col gap-[8px]" role="group" aria-label="Groups" data-testid="composer-guests-groups">
+      <lfx-composer-group-picker
+        [selectedCommittees]="selectedCommittees()"
+        [allowRestrictedAttendees]="true"
+        [form]="form()"
+        [savedAttendeeVisibility]="savedAttendeeVisibility()"
+        [committeeContext]="formService.committeeContext()"
+        [contextLoading]="formService.committeeContextLoading()"
+        [contextFailed]="formService.committeeContextFailed()"
+        (committeeMembersChange)="onCommitteeMembersChange($event)"
+        (committeeMembersResolvedChange)="formService.setResolvedCommitteeUids($event)"
+        (retryContext)="formService.retryLoadCommitteeContext()" />
+    </div>
+
+    <hr class="m-0 border-0 border-t border-gray-200" />
+    <div class="flex items-center justify-between gap-[16px]" [attr.data-testid]="'feature-' + showMeetingAttendeesFeature.key">
+      <div class="flex min-w-0 flex-col gap-[2px]">
+        <span class="text-[14px] font-medium leading-[20px] text-gray-900">{{ showMeetingAttendeesFeature.title }}</span>
+        <span class="text-[12px] leading-[16px] text-gray-500">{{ showMeetingAttendeesFeature.description }}</span>
+        @if (showAttendeesToggleNote(); as note) {
+          <span
+            class="flex items-center gap-[4px] text-[12px] leading-[16px] text-gray-500"
+            [attr.data-testid]="'feature-note-' + showMeetingAttendeesFeature.key">
+            <i class="fa-light fa-lock text-[10px]" aria-hidden="true"></i>{{ note }}
+          </span>
+        }
+      </div>
+      <lfx-ui-toggle
+        class="flex-none"
+        size="medium"
+        [formControl]="showAttendeesControl()"
+        [ariaLabel]="showAttendeesAriaLabel()"
+        [attr.data-testid]="'toggle-' + showMeetingAttendeesFeature.key" />
+    </div>
+  }
+</div>
+
+<p-confirmDialog></p-confirmDialog>

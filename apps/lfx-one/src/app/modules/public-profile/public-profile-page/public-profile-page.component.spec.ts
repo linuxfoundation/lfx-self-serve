@@ -5,10 +5,11 @@ import { PLATFORM_ID, signal, TransferState } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap } from '@angular/router';
-import { PUBLIC_PROFILE_SECTION_COPY } from '@lfx-one/shared/constants';
+import { PUBLIC_PROFILE_SECTION_COPY, PUBLIC_PROFILE_THEME_STORAGE_KEY } from '@lfx-one/shared/constants';
 import { PublicProfile } from '@lfx-one/shared/interfaces';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { TranscendService } from '@services/transcend.service';
+import { UserService } from '@services/user.service';
 import { PROFILE_REDESIGN_KEY } from '@shared/utils/profile-redesign.util';
 import { of } from 'rxjs';
 import { describe, expect, it } from 'vitest';
@@ -21,12 +22,16 @@ const PROFILE: PublicProfile = {
   basic: { Name: 'Ada Lovelace', Title: 'Engineer' },
   badges: [{ Image: 'https://images.example/badge.png', Url: 'https://www.credly.example/badges/b1' }],
   technical_contribution: { projects: [] },
-  certification_activities: [],
-  training_activities: [],
+  certification_activities: [{ Name: 'Kubernetes Admin' }],
+  training_activities: [{ Name: 'Intro to Linux' }],
 } as PublicProfile;
 
 describe('PublicProfilePageComponent', () => {
-  async function render(redesign: boolean, profile: PublicProfile = PROFILE) {
+  async function render(
+    redesign: boolean,
+    profile: PublicProfile = PROFILE,
+    viewer: { signedIn: boolean; username: string | null } = { signedIn: true, username: 'grace' }
+  ) {
     TestBed.configureTestingModule({
       providers: [
         provideNoopAnimations(),
@@ -35,6 +40,7 @@ describe('PublicProfilePageComponent', () => {
         { provide: PublicProfileService, useValue: { getPublicProfile: () => of(profile) } },
         { provide: TranscendService, useValue: { preferencesAvailable: false, showPreferences: () => undefined } },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: () => signal(false) } },
+        { provide: UserService, useValue: { authenticated: signal(viewer.signedIn), viewerUsername: signal(viewer.username) } },
       ],
     });
     // As the route guard leaves it after the server answered for this render.
@@ -59,7 +65,7 @@ describe('PublicProfilePageComponent', () => {
     expect(query('public-profile-redesign')).not.toBeNull();
     expect(query('public-profile-recognitions-title')?.textContent?.trim()).toBe(PUBLIC_PROFILE_SECTION_COPY.recognitions);
     expect(query('public-profile-recognitions-description')?.textContent).toContain('this person');
-    // The block's own heading gives way to the section header.
+    // The section header names the block; the Recognitions grid carries no heading of its own.
     expect(query('public-profile-badges')?.querySelector('h2')).toBeNull();
     expect(query('public-profile-footer')?.className).toContain('mt-[64px]');
   });
@@ -69,16 +75,57 @@ describe('PublicProfilePageComponent', () => {
 
     expect(query('public-profile-involvement')).toBeNull();
     expect(query('public-profile-blocks')?.children).toHaveLength(1);
+    // Certifications and Training enrollment have no place in the redesign (#6092).
+    expect(query('public-profile-certifications')).toBeNull();
+    expect(query('public-profile-trainings')).toBeNull();
   });
 
-  it('keeps the involvement block’s year select on the right once its heading gives way to the section header', async () => {
+  it('shows the projects as involvement pills under the section header, with no year select or list rows (#6093)', async () => {
     const year = (n: number) => ({ year: n, commits: 1, deleted: 0, added: 1, prs: 0, issues: 0 });
     const project = { Name: 'Kube', commits: 2, deleted: 0, added: 2, prs: 0, issues: 0, years: [year(2024), year(2025)] };
     const { query } = await render(true, { ...PROFILE, technical_contribution: { projects: [project] } } as PublicProfile);
-    const row = query('contributions-year-select')?.parentElement;
 
     expect(query('public-profile-involvement-title')?.textContent?.trim()).toBe(PUBLIC_PROFILE_SECTION_COPY.involvement);
-    expect(row?.classList).toContain('justify-end');
-    expect(row?.classList).not.toContain('justify-between');
+    expect(query('public-profile-project-0-name')?.textContent?.trim()).toBe('Kube');
+    expect(query('contributions-year-select')).toBeNull();
+    expect(query('contribution-project')).toBeNull();
+  });
+
+  it('renders the redesign light, then in the dark theme a visitor chose before', async () => {
+    let { query } = await render(true);
+    expect(query('public-profile-redesign')?.getAttribute('data-theme')).toBe('light');
+
+    TestBed.resetTestingModule();
+    localStorage.setItem(PUBLIC_PROFILE_THEME_STORAGE_KEY, 'dark');
+    try {
+      ({ query } = await render(true));
+      expect(query('public-profile-redesign')?.getAttribute('data-theme')).toBe('dark');
+    } finally {
+      localStorage.removeItem(PUBLIC_PROFILE_THEME_STORAGE_KEY);
+    }
+  });
+
+  it('offers a visitor Sign in and Create LFX account, both returning to this profile', async () => {
+    const { query } = await render(true, PROFILE, { signedIn: false, username: null });
+
+    expect(query('topbar-sign-in')?.querySelector('a')?.getAttribute('href')).toBe('/login?returnTo=%2Fu%2Fada');
+    expect(query('topbar-create-account')?.querySelector('a')?.getAttribute('href')).toBe('/login?returnTo=%2Fu%2Fada');
+    expect(query('topbar-manage')).toBeNull();
+  });
+
+  it('offers a signed-in viewer who isn’t the owner neither sign-in nor Manage my profile', async () => {
+    const { query } = await render(true);
+
+    expect(query('topbar-sign-in')).toBeNull();
+    expect(query('topbar-manage')).toBeNull();
+    expect(query('topbar-theme')).not.toBeNull();
+  });
+
+  it('offers the owner Manage my profile and speaks to them in the section copy', async () => {
+    const { query } = await render(true, PROFILE, { signedIn: true, username: 'ADA' });
+
+    expect(query('topbar-manage')?.querySelector('a')?.getAttribute('href')).toBe('/profile');
+    expect(query('topbar-sign-in')).toBeNull();
+    expect(query('public-profile-recognitions-description')?.textContent).toContain('you’ve earned');
   });
 });

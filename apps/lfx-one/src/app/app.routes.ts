@@ -58,6 +58,7 @@ import { voteAnonymousSsrMatchGuard } from './shared/guards/vote-anonymous-ssr-m
 import { voteTokenMatchGuard } from './shared/guards/vote-token-match.guard';
 import { votePresenterGuard } from './shared/guards/vote-presenter.guard';
 import { meetingPageRedesignGuard } from './shared/guards/meeting-page-redesign.guard';
+import { publicCalendarRedesignGuard } from './shared/guards/public-calendar-redesign.guard';
 import { AccountContextService } from './shared/services/account-context.service';
 
 const loadOrgProfilePage = () => import('./modules/dashboards/org/org-profile/org-profile.component').then((m) => m.OrgProfileComponent);
@@ -1120,7 +1121,14 @@ export const routes: Routes = [
     loadComponent: () => import('./modules/groups/public-project-groups/public-project-groups.component').then((m) => m.PublicProjectGroupsComponent),
   },
   // Public project calendar — month/week calendar of a project's public meetings, optionally scoped
-  // to a single committee via ?committee=<uid> (no auth required).
+  // to a single committee via ?committee=<uid> (no auth required). Paired like `meetings/:id`: the redesign when
+  // `publicCalendarRedesignGuard` matches, else the legacy page below.
+  {
+    path: 'projects/:projectSlug/calendar',
+    title: 'Calendar',
+    canMatch: [publicCalendarRedesignGuard],
+    loadComponent: () => import('./modules/meetings/public-calendar-page/public-calendar-page.component').then((m) => m.PublicCalendarPageComponent),
+  },
   {
     path: 'projects/:projectSlug/calendar',
     title: 'Calendar',

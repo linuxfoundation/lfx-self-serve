@@ -1,0 +1,195 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-7" [formGroup]="form()" data-testid="composer-platform-features">
+  <div class="flex flex-col gap-2">
+    <span class="flex items-center gap-1.5 text-sm font-medium text-gray-900"> Platform <span class="text-red-600" aria-hidden="true">*</span> </span>
+    <!-- Design: segments wrap on narrow screens, each 34px tall. -->
+    <lfx-ui-switch
+      class="flex [&_[data-testid=ui-switch-option-segment]]:min-h-[34px] [&_[role=radiogroup]]:h-auto [&_[role=radiogroup]]:flex-wrap"
+      ariaLabel="Platform"
+      name="composer-platform"
+      formControlName="platform"
+      data-testid="composer-platform-chips">
+      @for (platform of platforms; track platform.value) {
+        <lfx-ui-switch-option
+          [value]="platform.value"
+          [label]="platform.label"
+          [icon]="platform.icon"
+          [disabled]="!platform.available"
+          [attr.data-testid]="'composer-platform-' + platform.value" />
+      }
+    </lfx-ui-switch>
+    @if (platformError()) {
+      <lfx-ui-error size="field" data-testid="composer-platform-required-error">Please select a meeting platform</lfx-ui-error>
+    }
+  </div>
+
+  <div class="flex flex-col gap-3">
+    <div class="flex flex-col gap-1">
+      <span class="text-sm font-medium text-gray-900">Meeting features</span>
+      <p class="text-xs text-gray-500">
+        Open source thrives on transparency and accessibility. Recording meetings, generating transcripts, and enabling features helps include community members
+        who can't attend live and creates valuable documentation.
+      </p>
+    </div>
+
+    <div class="flex flex-col divide-y divide-gray-200 overflow-hidden rounded-xl border border-gray-200 bg-white" data-testid="composer-feature-list">
+      <ng-template #row let-key="key" let-icon="icon" let-title="title" let-description="description" let-recommended="recommended" let-note="note">
+        <div class="flex items-center gap-3">
+          <!-- Design: 13px feature glyph. -->
+          <span
+            class="grid h-8 w-8 flex-none place-items-center rounded-lg border border-gray-100 bg-gray-50 text-[13px] text-gray-700"
+            [class.opacity-60]="note"
+            [class.grayscale]="note">
+            <i [class]="icon" aria-hidden="true"></i>
+          </span>
+          <span class="flex min-w-0 flex-1 flex-col gap-0.5">
+            <span class="flex flex-wrap items-center gap-2 text-sm font-medium" [class.text-gray-900]="!note" [class.text-gray-500]="note">
+              {{ title }}
+              @if (recommended) {
+                <lfx-ui-badge tone="accent" size="sm">Recommended</lfx-ui-badge>
+              }
+            </span>
+            <span class="text-xs text-gray-500">{{ description }}</span>
+            @if (note) {
+              <span class="mt-0.5 flex items-center gap-1.5 text-xs text-gray-500" [attr.data-testid]="'composer-feature-note-' + key">
+                <i class="fa-light fa-circle-info" aria-hidden="true"></i>{{ note }}
+              </span>
+            }
+          </span>
+          <lfx-ui-toggle size="medium" [ariaLabel]="title" [formControlName]="key" [attr.data-testid]="'composer-feature-' + key" />
+        </div>
+      </ng-template>
+
+      <div class="flex flex-col px-4 py-3">
+        <ng-container
+          *ngTemplateOutlet="
+            row;
+            context: {
+              key: 'recording_enabled',
+              icon: 'fa-light fa-video',
+              title: 'Enable recording',
+              description: 'Record the meeting for those who cannot attend live',
+              recommended: true,
+            }
+          " />
+      </div>
+
+      <div class="flex flex-col px-4 py-3">
+        <ng-container
+          *ngTemplateOutlet="
+            row;
+            context: {
+              key: 'zoom_ai_enabled',
+              icon: 'fa-light fa-microchip-ai',
+              title: 'AI meeting summary',
+              description: 'Generate key takeaways and action items automatically',
+              recommended: true,
+            }
+          " />
+        @if (zoomAiEnabled()) {
+          <div class="ml-11 mt-3 border-t border-gray-100 pt-3">
+            <lfx-ui-checkbox
+              label="Requires host approval before sharing with guests"
+              formControlName="require_ai_summary_approval"
+              data-testid="composer-ai-approval-checkbox" />
+          </div>
+        }
+      </div>
+
+      <div class="flex flex-col px-4 py-3">
+        <ng-container
+          *ngTemplateOutlet="
+            row;
+            context: {
+              key: 'transcript_enabled',
+              icon: 'fa-light fa-file-lines',
+              title: 'Generate transcripts',
+              description: 'Automatically create searchable text transcripts',
+              note: recordingNote(),
+            }
+          " />
+      </div>
+
+      <div class="flex flex-col px-4 py-3">
+        <ng-container
+          *ngTemplateOutlet="
+            row;
+            context: {
+              key: 'youtube_upload_enabled',
+              icon: 'fa-light fa-upload',
+              title: 'YouTube auto-upload',
+              description: 'Automatically publish recordings to your project’s YouTube channel',
+              note: recordingNote(),
+            }
+          " />
+        @if (youtubeUploadEnabled() && titleMaxlengthError()) {
+          <div class="ml-11 mt-3 flex flex-col gap-1 rounded-lg border border-amber-300 bg-amber-50 p-3" data-testid="composer-youtube-title-warning">
+            <p class="text-sm font-semibold text-amber-800">Meeting title too long for YouTube</p>
+            <p class="text-sm text-amber-700">
+              The meeting date is appended to the video title on upload, so the title must be {{ youtubeTitleLimit }} characters or fewer. The current title has
+              {{ titleLength() }} characters.
+            </p>
+            <button
+              type="button"
+              class="self-start text-sm font-medium text-amber-800 underline hover:text-amber-900"
+              (click)="goToTitleSection.emit()"
+              data-testid="composer-youtube-title-fix-button">
+              Go back to Details &amp; Access to shorten the title
+            </button>
+          </div>
+        }
+      </div>
+
+      <div class="flex flex-col px-4 py-3">
+        <ng-container
+          *ngTemplateOutlet="
+            row;
+            context: {
+              key: 'auto_email_reminder_enabled',
+              icon: 'fa-light fa-bell',
+              title: 'Send reminder email to participants',
+              description: 'Automatically send a reminder email to all participants before the meeting starts',
+            }
+          " />
+        @if (emailReminderEnabled()) {
+          <div class="ml-11 mt-3 flex flex-col gap-2 border-t border-gray-100 pt-3" data-testid="composer-reminder">
+            <div class="flex flex-wrap items-center gap-2 text-sm text-gray-900">
+              <lfx-ui-input
+                class="w-16"
+                inputmode="numeric"
+                size="small"
+                ariaLabel="Hours"
+                formControlName="reminderHours"
+                data-testid="composer-reminder-hours" />
+              <span>hours</span>
+              <lfx-ui-input
+                class="w-16"
+                inputmode="numeric"
+                size="small"
+                ariaLabel="Minutes"
+                formControlName="reminderMinutes"
+                data-testid="composer-reminder-minutes" />
+              <span>minutes before the meeting starts</span>
+            </div>
+            @if (reminderError()) {
+              <lfx-ui-error size="field" data-testid="composer-reminder-error">{{ reminderError() }}</lfx-ui-error>
+            }
+          </div>
+        }
+      </div>
+    </div>
+  </div>
+
+  @if (showArtifactVisibility()) {
+    <div class="flex flex-col gap-2 min-[641px]:w-[calc(50%-8px)]">
+      <span class="text-sm font-medium text-gray-900" data-testid="composer-artifact-visibility-label">{{ artifactVisibilityLabel() }}</span>
+      <lfx-ui-select formControlName="artifact_visibility" [ariaLabel]="artifactVisibilityLabel()" data-testid="composer-artifact-visibility-select">
+        @for (option of artifactVisibilityOptions; track option.value) {
+          <lfx-ui-option [value]="option.value" [label]="option.label" />
+        }
+      </lfx-ui-select>
+    </div>
+  }
+</div>

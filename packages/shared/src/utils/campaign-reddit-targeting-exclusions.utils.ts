@@ -1,0 +1,275 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import {
+  ASSIGNED_COUNTRY_CODES,
+  REDDIT_SUBREDDIT_NAME_PATTERN,
+  REDDIT_TARGETING_EXCLUSION_KEYS,
+  REDDIT_TARGETING_EXCLUSION_LIMITS,
+} from '../constants/campaign.constants';
+import type {
+  CampaignRedditTargetingExclusionsBlock,
+  RedditConfigRefusal,
+  RedditTargetedLists,
+  RedditTargetingExclusionKey,
+  RedditTargetingExclusionsBlockInput,
+  RedditTargetingExclusionsDraft,
+} from '../interfaces/campaign.interface';
+import { googleAdsToUpperCode } from './campaign-google-assets.utils';
+import { redditTargetingListFromDraft } from './campaign-reddit-targeting-lists.utils';
+import { foldKey } from './campaign-linkedin-config.utils';
+import { goTrimSpace } from './campaign-linkedin.utils';
+
+/**
+ * Reddit targeting exclusions (#6108 row 3), mirroring campaign-service's `checkRedditExclusionsShape` and
+ * `checkRedditTargetingExclusions` (`internal/dispatch/reddit_targeting_exclusions.go`) and `NormalizeTargetingExclusions`
+ * (`internal/platform/reddit/targeting_exclusions.go`, #549), so a create campaign-service would refuse is refused here
+ * first, with the field to point at. `ASSIGNED_COUNTRY_CODES` holds the same 249 codes as campaign-service's
+ * `iso3166Alpha2`.
+ */
+
+function plainRecord(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+}
+
+/**
+ * The value campaign-service decodes for `key`. Its create path re-marshals the config (`marshalAny` in
+ * `internal/service/brief.go`), so the keys reach the decoder sorted by byte order. Go's `encoding/json` then assigns
+ * every key equal to `key` ignoring case (Unicode folds included: `foldKey`), exact spelling or not, in that order, so
+ * the last such key in byte order wins. The keys the exclusions are compared against (`subreddits`, `geoTargets`,
+ * `subCountryGeoTargets`) are read this way, so a case variant of one cannot make the comparison differ from
+ * campaign-service's. JavaScript's `<` compares UTF-16 code units, which orders BMP keys as their UTF-8 bytes do, and
+ * every fold variant of these ASCII names (`ſ`, the Kelvin sign) is in the BMP.
+ */
+function decodedValue(config: Record<string, unknown>, key: string): unknown {
+  let last: string | undefined;
+  for (const k of Object.keys(config)) {
+    if (foldKey(k) === foldKey(key) && (last === undefined || k > last)) last = k;
+  }
+  return last === undefined ? undefined : config[last];
+}
+
+function fieldOf(key: RedditTargetingExclusionKey): string {
+  return `redditConfig.${key}`;
+}
+
+/** A list as campaign-service decodes it: absent and `null` are empty, anything but an array of strings is refused. */
+function stringList(value: unknown): string[] | null {
+  if (value === undefined || value === null) return [];
+  return Array.isArray(value) && value.every((entry) => typeof entry === 'string') ? value : null;
+}
+
+/**
+ * A subreddit name as campaign-service reads it: trimmed, an `r/` or `R/` prefix removed (`stripSubredditPrefix`), then
+ * trimmed again. `/r/` is not a prefix there, so it is not here either.
+ */
+function subredditName(raw: string): string {
+  const trimmed = goTrimSpace(raw);
+  return goTrimSpace(/^[rR]\//.test(trimmed) ? trimmed.slice(2) : trimmed);
+}
+
+/**
+ * The country codes the create would target, campaign-service's `effectiveGeoSet`: the trimmed non-blank
+ * `geoTargets`, upper-cased as Go does (`googleAdsToUpperCode`: `ß` stays `ß`), or `US` when there are none and no
+ * sub-country locations replace the default.
+ */
+function effectiveGeoSet(config: Record<string, unknown>): Set<string> {
+  const targeted = new Set((stringList(decodedValue(config, 'geoTargets')) ?? []).map((g) => googleAdsToUpperCode(goTrimSpace(g))).filter((g) => g !== ''));
+  const subCountry = stringList(decodedValue(config, 'subCountryGeoTargets')) ?? [];
+  if (targeted.size === 0 && subCountry.length === 0) targeted.add('US');
+  return targeted;
+}
+
+function subredditRefusal(excluded: string[], config: Record<string, unknown>): RedditConfigRefusal | null {
+  const field = fieldOf('excludedSubreddits');
+  const max = REDDIT_TARGETING_EXCLUSION_LIMITS.excludedSubreddits;
+  if (excluded.length > max) return { field, message: `Exclude at most ${max} subreddits.` };
+  const targeted = new Set(
+    (stringList(decodedValue(config, 'subreddits')) ?? [])
+      .map(subredditName)
+      .filter((name) => name !== '')
+      .map((name) => name.toLowerCase())
+  );
+  for (const [i, raw] of excluded.entries()) {
+    const name = subredditName(raw);
+    if (name === '') return { field, message: `Excluded subreddit ${i + 1} is blank.` };
+    if (!REDDIT_SUBREDDIT_NAME_PATTERN.test(name)) {
+      return { field, message: `Excluded subreddit ${i + 1} is not a subreddit name: 2 to 21 letters, digits or underscores, optionally after r/.` };
+    }
+    if (targeted.has(name.toLowerCase())) {
+      return { field, message: `Excluded subreddit ${i + 1} is also targeted. A community cannot be both targeted and excluded.` };
+    }
+  }
+  return null;
+}
+
+function geoRefusal(excluded: string[], config: Record<string, unknown>): RedditConfigRefusal | null {
+  const field = fieldOf('excludedGeoTargets');
+  const max = REDDIT_TARGETING_EXCLUSION_LIMITS.excludedGeoTargets;
+  if (excluded.length > max) return { field, message: `Exclude at most ${max} countries.` };
+  if (excluded.length === 0) return null;
+  const targeted = effectiveGeoSet(config);
+  for (const [i, raw] of excluded.entries()) {
+    const code = googleAdsToUpperCode(goTrimSpace(raw));
+    if (code === '') return { field, message: `Excluded country ${i + 1} is blank.` };
+    if (!/^[A-Z]{2}$/.test(code) || !ASSIGNED_COUNTRY_CODES.has(code)) {
+      return { field, message: `Excluded country ${i + 1} is not an ISO 3166-1 alpha-2 country code.` };
+    }
+    if (targeted.has(code)) {
+      return {
+        field,
+        message: `Excluded country ${i + 1} is also targeted (the geo targets, or the US default when there are none). A country cannot be both targeted and excluded.`,
+      };
+    }
+  }
+  return null;
+}
+
+/**
+ * Why `raw`'s targeting exclusions cannot be sent, or `null` (#6108 row 3). Typed runtime checks, since the create route
+ * forwards `redditConfig` as it comes. In campaign-service's order:
+ *
+ * - a case variant of either key (campaign-service decodes keys ignoring case, Unicode folds included: `foldKey`),
+ *   whatever the flag;
+ * - a list that is not an array of strings (`null` is absent, as campaign-service reads it);
+ * - either list non-empty while this deployment cannot send it (`enabled`): refused, never dropped, since the legacy
+ *   creator ignores it and campaign-service refuses it while `REDDIT_TARGETING_EXCLUSIONS_ENABLED` is off;
+ * - subreddits: more than 100, a blank entry, a name that is not 2–21 letters, digits or underscores once an `r/` prefix
+ *   is removed, or one also in `subreddits` (case-insensitive);
+ * - countries: more than 50, a blank entry, a code that is not an assigned ISO 3166-1 alpha-2 code once trimmed and
+ *   upper-cased as Go does (`googleAdsToUpperCode`, so `ß` is not `SS`), or one also targeted (`geoTargets`, or the US
+ *   default when neither `geoTargets` nor `subCountryGeoTargets` is given).
+ *
+ * Duplicates are not refused: campaign-service drops them. Messages name entries by position and never echo a caller value.
+ */
+export function redditTargetingExclusionsRefusal(raw: unknown, enabled: boolean): RedditConfigRefusal | null {
+  const config = plainRecord(raw);
+  if (!config) return null;
+  for (const key of REDDIT_TARGETING_EXCLUSION_KEYS) {
+    if (Object.keys(config).some((k) => k !== key && foldKey(k) === foldKey(key))) {
+      return { field: fieldOf(key), message: `Send it as "${key}", spelled exactly.` };
+    }
+  }
+  const lists = {} as Record<RedditTargetingExclusionKey, string[]>;
+  for (const key of REDDIT_TARGETING_EXCLUSION_KEYS) {
+    const list = stringList(config[key]);
+    if (list === null) return { field: fieldOf(key), message: 'Send it as a list of text entries.' };
+    lists[key] = list;
+  }
+  const set = REDDIT_TARGETING_EXCLUSION_KEYS.find((key) => lists[key].length > 0);
+  if (set === undefined) return null;
+  if (!enabled) {
+    return { field: fieldOf(set), message: 'Reddit targeting exclusions are not enabled on this deployment. Remove them and create again.' };
+  }
+  return subredditRefusal(lists.excludedSubreddits, config) ?? geoRefusal(lists.excludedGeoTargets, config);
+}
+
+/** Whether the Implement tab offers the exclusion boxes and sends the lists: only on an explicit yes, so an unanswered (`null`) read withholds them like a no. */
+export function redditTargetingExclusionsCapability(enabled: boolean | null): boolean {
+  return enabled === true;
+}
+
+/** Whether the draft holds any entry in either list. */
+export function redditTargetingExclusionsPicked(exclusions: RedditTargetingExclusionsDraft): boolean {
+  return exclusions.excludedSubreddits.length + exclusions.excludedGeoTargets.length > 0;
+}
+
+/**
+ * The `redditConfig` keys a create carries: each list only when the capability is an explicit yes and the list holds an
+ * entry, so an empty list is never sent. Entries the capability does not confirm are held by
+ * {@link redditTargetingExclusionsBlock} instead, never dropped here unseen.
+ */
+export function redditTargetingExclusionsField(
+  exclusions: RedditTargetingExclusionsDraft,
+  enabled: boolean | null
+): Partial<Record<RedditTargetingExclusionKey, string[]>> {
+  if (!redditTargetingExclusionsCapability(enabled)) return {};
+  const field: Partial<Record<RedditTargetingExclusionKey, string[]>> = {};
+  for (const key of REDDIT_TARGETING_EXCLUSION_KEYS) {
+    if (exclusions[key].length > 0) field[key] = [...exclusions[key]];
+  }
+  return field;
+}
+
+/**
+ * Why the held lists break campaign-service's rules against the targeting the create sends, or `null`:
+ * {@link redditTargetingExclusionsRefusal} with the flag on. A geo target or subreddit changed after an entry was added
+ * can make it overlap, which is caught here rather than when it was added.
+ */
+export function redditTargetingExclusionsDraftRefusal(exclusions: RedditTargetingExclusionsDraft, targeted: RedditTargetedLists): string | null {
+  const config = { subreddits: targeted.subreddits, geoTargets: targeted.geoTargets, ...redditTargetingExclusionsField(exclusions, true) };
+  return redditTargetingExclusionsRefusal(config, true)?.message ?? null;
+}
+
+/** A typed or picked entry as the list holds it: a subreddit without its `r/` prefix, or a country code trimmed and upper-cased as Go does. */
+export function redditTargetingExclusionEntry(key: RedditTargetingExclusionKey, raw: string): string {
+  return key === 'excludedSubreddits' ? subredditName(raw) : googleAdsToUpperCode(goTrimSpace(raw));
+}
+
+/** The country codes a create targets, which no excluded country may repeat: the geo targets as sent, or `US` when there are none. */
+export function redditTargetedGeoCodes(targeted: RedditTargetedLists): Set<string> {
+  return effectiveGeoSet({ geoTargets: targeted.geoTargets });
+}
+
+/** Whether `list` already holds `entry`: subreddits compared ignoring case, as campaign-service drops repeats that way; codes exactly. */
+export function redditTargetingExclusionHeld(exclusions: RedditTargetingExclusionsDraft, key: RedditTargetingExclusionKey, entry: string): boolean {
+  if (key === 'excludedGeoTargets') return exclusions.excludedGeoTargets.includes(entry);
+  const name = entry.toLowerCase();
+  return exclusions.excludedSubreddits.some((held) => held.toLowerCase() === name);
+}
+
+/**
+ * Why an entry ({@link redditTargetingExclusionEntry}) is not added to its list, or `null`: blank, one a create would
+ * refuse, one the campaign targets, or a full list. An entry the list already holds is not an error (adding it again
+ * changes nothing).
+ */
+export function redditTargetingExclusionAddRefusal(
+  exclusions: RedditTargetingExclusionsDraft,
+  key: RedditTargetingExclusionKey,
+  entry: string,
+  targeted: RedditTargetedLists
+): string | null {
+  const max = REDDIT_TARGETING_EXCLUSION_LIMITS[key];
+  const full = !redditTargetingExclusionHeld(exclusions, key, entry) && exclusions[key].length >= max;
+  if (key === 'excludedSubreddits') {
+    if (entry === '') return 'Enter a subreddit name.';
+    if (!REDDIT_SUBREDDIT_NAME_PATTERN.test(entry)) return 'Enter a subreddit name: 2 to 21 letters, digits or underscores, optionally after r/.';
+    const targetedNames = new Set(targeted.subreddits.map(subredditName).map((name) => name.toLowerCase()));
+    if (targetedNames.has(entry.toLowerCase())) return `r/${entry} is targeted. A community cannot be both targeted and excluded.`;
+    return full ? `Exclude at most ${max} subreddits.` : null;
+  }
+  if (entry === '') return 'Enter a country.';
+  if (!/^[A-Z]{2}$/.test(entry) || !ASSIGNED_COUNTRY_CODES.has(entry)) return 'Pick a country, or enter its two-letter ISO country code.';
+  if (redditTargetedGeoCodes(targeted).has(entry)) {
+    return `${entry} is targeted (the geo targets, or the US default when there are none). A country cannot be both targeted and excluded.`;
+  }
+  return full ? `Exclude at most ${max} countries.` : null;
+}
+
+/**
+ * Why Create is held for Reddit exclusions the draft holds but the request cannot carry, or `null`. Held rather than
+ * dropped, because they change who the campaign reaches. An explicit no (`restricted`: the deployment) leaves the
+ * entries listed with Remove; while the answer is out or failed, Create waits or offers Retry, as
+ * `redditCustomAudiencesBlock` does.
+ */
+export function redditTargetingExclusionsBlock(input: RedditTargetingExclusionsBlockInput): CampaignRedditTargetingExclusionsBlock | null {
+  if (!redditTargetingExclusionsPicked(input.exclusions) || redditTargetingExclusionsCapability(input.enabled)) return null;
+  if (input.enabled === false) {
+    return { kind: 'restricted', message: 'Excluded communities and countries are not on for Reddit on this deployment. Remove them to create the campaign.' };
+  }
+  if (input.createCapabilityRead === 'pending') {
+    return { kind: 'pending', message: 'Checking whether Reddit exclusions can be sent. Create waits so they are not dropped.' };
+  }
+  if (!input.briefId) {
+    return { kind: 'unsaved', message: "Reddit exclusions can't be checked until this brief is saved. Save the brief, or remove them." };
+  }
+  return {
+    kind: 'failed',
+    message: 'Could not confirm that Reddit exclusions can be sent, so Create waits rather than dropping them. Retry the check, or remove them.',
+  };
+}
+
+/** A stored draft list as the boxes hold it: the strings of an array, else `undefined` (the reset empty list stands). */
+export function redditTargetingExclusionsFromDraft(value: unknown): string[] | undefined {
+  return redditTargetingListFromDraft(value);
+}

@@ -1,0 +1,9 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<lfx-ui-modal [heading]="heading" [subtitle]="subtitle" [width]="440" data-testid="meeting-composer-discard-dialog">
+  <ng-container modalActions>
+    <lfx-ui-button data-autofocus variant="secondary" data-testid="meeting-composer-discard-keep" (click)="keepEditing()">Keep editing</lfx-ui-button>
+    <lfx-ui-button variant="danger" data-testid="meeting-composer-discard-confirm" (click)="discard()">Discard</lfx-ui-button>
+  </ng-container>
+</lfx-ui-modal>

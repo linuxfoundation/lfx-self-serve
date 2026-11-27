@@ -286,6 +286,7 @@ describe('CommitteeMembersManagerComponent', () => {
       ...REQUEST,
       email: ` PERSON${index}@EXAMPLE.COM `,
       createOptions: { skipNotification: index % 2 === 0 },
+      importSource: 'csv' as const,
     }));
     committeeService.getCommitteeInvites.mockReturnValue(
       of(
@@ -315,6 +316,7 @@ describe('CommitteeMembersManagerComponent', () => {
         organization: { name: 'Example Org', website: 'https://org.example' },
         createOptions: { skipNotification: index % 2 === 0 },
         pendingInviteUids: [`invite-${index}-a`, `invite-${index}-b`],
+        importSource: 'csv',
       });
     }
     expect(committeeService.createCommitteeMember).not.toHaveBeenCalled();
@@ -412,7 +414,7 @@ describe('CommitteeMembersManagerComponent', () => {
     await setup();
     committeeService.getCommitteeInvites.mockReturnValue(of([{ uid: 'invite-1', invitee_email: REQUEST.email, status: 'pending' }]));
     component.openImportMembersDialog();
-    dialogClose.next([{ ...REQUEST, createOptions: { skipNotification }, pendingInviteUids: ['invite-1'] }]);
+    dialogClose.next([{ ...REQUEST, createOptions: { skipNotification }, pendingInviteUids: ['invite-1'], importSource: 'csv' }]);
     const pending = updates.at(-1)!;
     fixture.destroy();
     TestBed.resetTestingModule();
@@ -423,10 +425,12 @@ describe('CommitteeMembersManagerComponent', () => {
       first_name: 'Changed',
       createOptions: { skipNotification },
       pendingInviteUids: ['invite-1'],
+      importSource: 'csv',
     });
     component.handleMemberUpdate({ id: staged.tempId!, data: { ...staged, email: 'different@example.com' } });
     expect(updates.at(-1)?.toAdd[0].createOptions).toEqual({ skipNotification });
     expect(updates.at(-1)?.toAdd[0].pendingInviteUids).toEqual([]);
+    expect(updates.at(-1)?.toAdd[0].importSource).toBe('csv');
     expect(committeeService.createCommitteeMember).not.toHaveBeenCalled();
   });
 
@@ -480,7 +484,7 @@ describe('CommitteeMembersManagerComponent', () => {
       ])
     );
     component.openImportMembersDialog();
-    dialogClose.next([{ ...REQUEST, createOptions: { skipNotification: true }, pendingInviteUids: ['old-address'] }]);
+    dialogClose.next([{ ...REQUEST, createOptions: { skipNotification: true }, pendingInviteUids: ['old-address'], importSource: 'csv' }]);
     const pending = updates.at(-1)!;
     expect(pending.importInvites?.map((invite) => invite.uid)).toEqual(['old-address', 'corrected-1', 'corrected-2']);
     fixture.destroy();
@@ -497,6 +501,24 @@ describe('CommitteeMembersManagerComponent', () => {
     component.handleMemberUpdate({ id: staged.tempId!, data: { ...staged, email: 'uninvited@example.com' } });
     expect(updates.at(-1)?.toAdd[0].pendingInviteUids).toEqual([]);
     expect(committeeService.createCommitteeMember).not.toHaveBeenCalled();
+  });
+
+  it('re-matches only CSV-imported rows against the invitation snapshot', async () => {
+    await setup();
+    committeeService.getCommitteeInvites.mockReturnValue(of([{ uid: 'corrected-1', invitee_email: 'corrected@example.com', status: 'pending' }]));
+    component.openImportMembersDialog();
+    dialogClose.next([
+      { ...REQUEST, createOptions: { skipNotification: true }, pendingInviteUids: ['original'] },
+      { ...REQUEST, email: 'csv@example.com', createOptions: { skipNotification: true }, importSource: 'csv' },
+    ]);
+    const [notImported, imported] = component.membersWithState().filter((member) => member.state === 'new');
+    component.handleMemberUpdate({ id: notImported.tempId!, data: { ...notImported, email: 'corrected@example.com' } });
+    component.handleMemberUpdate({ id: imported.tempId!, data: { ...imported, email: 'corrected@example.com' } });
+
+    const [first, second] = updates.at(-1)!.toAdd;
+    expect(first.importSource).toBeUndefined();
+    expect(first.pendingInviteUids).toBeUndefined();
+    expect(second).toMatchObject({ importSource: 'csv', pendingInviteUids: ['corrected-1'] });
   });
 
   describe('Add myself', () => {

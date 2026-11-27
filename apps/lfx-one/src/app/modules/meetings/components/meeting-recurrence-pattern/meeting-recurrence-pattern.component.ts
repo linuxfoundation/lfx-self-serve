@@ -25,6 +25,8 @@ export class MeetingRecurrencePatternComponent implements OnInit {
   private readonly destroyRef = inject(DestroyRef);
 
   public readonly form = input.required<FormGroup>();
+  /** Where the selects render their panels; `self` keeps them inside a CDK modal. */
+  public readonly appendTo = input<'body' | 'self'>('body');
 
   // UI state signals that react to form changes
   public readonly patternType = signal<string>('weekly');

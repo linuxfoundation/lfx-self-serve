@@ -32,7 +32,8 @@ vi.mock('./microservice-proxy.service', () => ({
   },
 }));
 
-vi.mock('../helpers/query-service.helper', () => ({
+vi.mock('../helpers/query-service.helper', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../helpers/query-service.helper')>()),
   fetchAllQueryResources: fetchAllQueryResourcesMock,
 }));
 
@@ -44,7 +45,12 @@ vi.mock('./logger.service', () => ({
   logger: { debug: vi.fn(), info: vi.fn(), warning: vi.fn(), error: vi.fn() },
 }));
 
+import { MicroserviceError } from '../errors';
 import { DocumentService } from './document.service';
+import { logger } from './logger.service';
+
+const UNSATISFIABLE_GROUPSIO_MESSAGE = 'tag prefix "committee_uid:" is not carried by any indexed groupsio_artifact document';
+const unsatisfiable = (message = UNSATISFIABLE_GROUPSIO_MESSAGE) => new MicroserviceError(message, 400, 'BAD_REQUEST', { errorBody: { message } });
 
 describe('DocumentService.getMyDocuments — committee-scoped request from a non-member', () => {
   const req = { bearerToken: 'user-token' } as unknown as Request;
@@ -155,6 +161,31 @@ describe('DocumentService.getCommitteeDocumentCount', () => {
 
     await expect(new DocumentService().getCommitteeDocumentCount(req, COMMITTEE_UID)).resolves.toBe(0);
   });
+
+  it('counts a source rejected as an unsatisfiable filter as zero and sums the rest (#6184)', async () => {
+    proxyRequestMock.mockImplementation(async (_req: Request, _service: string, _path: string, _method: string, params: Record<string, unknown>) => {
+      if (params['type'] === 'groupsio_artifact') throw unsatisfiable();
+      return { count: 2, has_more: false };
+    });
+
+    await expect(new DocumentService().getCommitteeDocumentCount(req, COMMITTEE_UID)).resolves.toBe(14);
+    expect(logger.warning).not.toHaveBeenCalled();
+  });
+
+  it('returns zero when every source is rejected as an unsatisfiable filter', async () => {
+    proxyRequestMock.mockRejectedValue(unsatisfiable());
+
+    await expect(new DocumentService().getCommitteeDocumentCount(req, COMMITTEE_UID)).resolves.toBe(0);
+  });
+
+  it('still throws on a 400 that is not an unsatisfiable filter', async () => {
+    proxyRequestMock.mockImplementation(async (_req: Request, _service: string, _path: string, _method: string, params: Record<string, unknown>) => {
+      if (params['type'] === 'groupsio_artifact') throw unsatisfiable('at least one search parameter must be provided');
+      return { count: 2, has_more: false };
+    });
+
+    await expect(new DocumentService().getCommitteeDocumentCount(req, COMMITTEE_UID)).rejects.toThrow('at least one search parameter must be provided');
+  });
 });
 
 describe('DocumentService.getMyDocuments — meeting summaries', () => {
@@ -240,5 +271,75 @@ describe('DocumentService.getMyDocuments — mailing list documents', () => {
     const unresolved = documents.find((doc) => doc.id === 'groupsio_artifact:a2');
     expect(unresolved?.groupOrMeetingName).toBe('');
     expect(unresolved?.mailingListUid).toBeUndefined();
+  });
+
+  it('lists no mailing list documents, without a warning, when the committee filter is unsatisfiable (#6184)', async () => {
+    fetchAllQueryResourcesMock.mockImplementation(async (_req: Request, fetchPage: (pageToken?: string) => Promise<{ type?: string }>) => {
+      const { type } = await fetchPage();
+      if (type === 'groupsio_artifact') throw unsatisfiable();
+      return [];
+    });
+
+    const documents = await new DocumentService().getMyDocuments(req, { committee_uid: COMMITTEE_UID });
+
+    expect(documents.some((doc) => doc.id.startsWith('groupsio_artifact:'))).toBe(false);
+    expect(logger.warning).not.toHaveBeenCalledWith(expect.anything(), 'get_my_documents', 'Failed to fetch groupsio artifacts', expect.anything());
+  });
+});
+
+describe('DocumentService.getMyDocuments — committee parent ref documents', () => {
+  const req = { bearerToken: 'user-token' } as unknown as Request;
+  const unsatisfiableParent = (type: string) => unsatisfiable(`parent kind "committee:" is not carried by any indexed ${type} document`);
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getMyCommitteesMock.mockResolvedValue([]);
+    getPastMeetingOccurrenceIdsMock.mockResolvedValue([]);
+    proxyRequestMock.mockImplementation(async (_req: Request, _service: string, _path: string, _method: string, params: Record<string, unknown>) => ({
+      resources: [],
+      type: params['type'],
+    }));
+  });
+
+  it('lists no meeting documents, without a warning, when the committee parent filter is unsatisfiable (#6184)', async () => {
+    const parentTypes = [
+      'v1_meeting_attachment',
+      'v1_past_meeting_attachment',
+      'v1_past_meeting_recording',
+      'v1_past_meeting_transcript',
+      'v1_past_meeting_summary',
+    ];
+    fetchAllQueryResourcesMock.mockImplementation(async (_req: Request, fetchPage: (pageToken?: string) => Promise<{ type?: string }>) => {
+      const { type } = await fetchPage();
+      if (type && parentTypes.includes(type)) throw unsatisfiableParent(type);
+      return [];
+    });
+
+    const documents = await new DocumentService().getMyDocuments(req, { committee_uid: COMMITTEE_UID });
+
+    expect(documents).toEqual([]);
+    expect(logger.warning).not.toHaveBeenCalledWith(
+      expect.anything(),
+      'get_my_documents',
+      expect.stringContaining('by committee parent ref'),
+      expect.anything()
+    );
+  });
+
+  it('still warns when a committee parent ref fetch fails for another reason', async () => {
+    fetchAllQueryResourcesMock.mockImplementation(async (_req: Request, fetchPage: (pageToken?: string) => Promise<{ type?: string }>) => {
+      const { type } = await fetchPage();
+      if (type === 'v1_past_meeting_summary') throw new MicroserviceError('upstream unavailable', 503, 'SERVICE_UNAVAILABLE');
+      return [];
+    });
+
+    await new DocumentService().getMyDocuments(req, { committee_uid: COMMITTEE_UID });
+
+    expect(logger.warning).toHaveBeenCalledWith(
+      expect.anything(),
+      'get_my_documents',
+      'Failed to fetch past meeting summaries by committee parent ref',
+      expect.objectContaining({ committee_uid: COMMITTEE_UID })
+    );
   });
 });

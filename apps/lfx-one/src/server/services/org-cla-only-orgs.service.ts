@@ -131,7 +131,8 @@ export class OrgClaOnlyOrgsService {
    */
   public async resolveOrg(req: Request, uid: string): Promise<OrgResolveResponse | null> {
     try {
-      const uids = await this.scopes.getCompanySfids(req);
+      const cached = await this.scopes.getCompanySfids(req);
+      const uids = cached.has(uid) ? cached : await this.scopes.refreshCompanySfids(req);
       if (!uids.has(uid)) return null;
       const org = await this.lookupCompany(req, uid);
       return org ? { uid: org.uid, slug: null, name: org.name, claOnly: true } : null;

@@ -338,6 +338,33 @@ export enum ServerFeatureFlag {
   CampaignServiceRedditCustomAudiences = 'LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_CUSTOM_AUDIENCES',
 
   /**
+   * Reddit targeting exclusions (#6108 row 3, linuxfoundation/lfx-v2-campaign-service#549): accept
+   * `redditConfig.excludedSubreddits` and `redditConfig.excludedGeoTargets`, the ad group's excluded communities and
+   * countries.
+   *
+   * A CAPABILITY flag of the Bidding kind: REQUIRES campaign-service DEPLOYED with `REDDIT_TARGETING_EXCLUSIONS_ENABLED`
+   * on, since campaign-service refuses the fields with a 400 otherwise, and is only meaningful on the campaign-service
+   * create path (`cutoverOwnsCreate`): the legacy creator ignores them. Off (the default), the create route refuses them
+   * with a 400, never dropping them. Keep it off until campaign-service's flag is on and probed. Request fields only, so
+   * flipping it back strands nothing. Same accepted values as the flags above.
+   */
+  CampaignServiceRedditTargetingExclusions = 'LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_TARGETING_EXCLUSIONS',
+
+  /**
+   * Reddit community and interest resolution (#6108 row 4, linuxfoundation/lfx-v2-campaign-service#573): campaign-service
+   * resolves `redditConfig.subreddits` and `interests` to Reddit's own names and ids before anything is created, and
+   * refuses an unknown one with a 400. Off there, Reddit refuses interest labels and the create quietly retries without
+   * communities AND interests.
+   *
+   * A CAPABILITY flag that follows campaign-service's `REDDIT_TARGETING_RESOLUTION_ENABLED`: it changes no request field.
+   * It is served as `redditTargetingResolutionEnabled`, which the Implement tab reads to offer the two lists for editing,
+   * since an edit is only kept when campaign-service resolves it. While off (the default), the lists stay the brief's,
+   * read-only, and edits a draft kept are not sent. Keep it off
+   * until campaign-service's flag is on and probed. Same accepted values as the flags above.
+   */
+  CampaignServiceRedditTargetingResolution = 'LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_TARGETING_RESOLUTION',
+
+  /**
    * Offers a stored-image LIBRARY in each Google creative image slot — upload an image into the
    * brief's library, or pick a stored one that fits the slot — sent as `{ imageAssetId }` entries in
    * the slot's own array beside any pasted image URLs (`demandGenCreative.logoImages`,
@@ -551,6 +578,19 @@ export enum ServerFeatureFlag {
    * the flags above.
    */
   CampaignServiceLinkedInDocument = 'LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_DOCUMENT',
+
+  /**
+   * Boosting an existing LinkedIn organization post (linuxfoundation/lfx-v2-campaign-service#673): accept
+   * `linkedInConfig.format` `boost` with `linkedInConfig.boostPost` (`urn:li:share:<id>` or `urn:li:ugcPost:<id>`).
+   *
+   * A CAPABILITY flag of the Bidding kind: REQUIRES a campaign-service release carrying #673 (after v1.0.44) DEPLOYED with
+   * `LINKEDIN_ADS_BOOST_POST_ENABLED` on, since campaign-service refuses the fields with a 400 otherwise, and is only
+   * meaningful on the campaign-service create path (`cutoverOwnsCreate`): the legacy creator would make a single-image
+   * campaign instead. Off (the default), the create route refuses the fields with a 400, never dropping them. Keep it off
+   * until campaign-service's paused boost probe has passed. Request fields only, so flipping it back strands nothing. Same
+   * accepted values as the flags above.
+   */
+  CampaignServiceLinkedInBoost = 'LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_BOOST',
 
   /**
    * Offers Meta ad set audience targeting on the Implement tab (#5905), sent as `metaConfig.targeting`:
