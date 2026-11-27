@@ -46,4 +46,16 @@ describe('MetaCarouselEditorComponent', () => {
     expect(all('meta-carousel-editor-image-url-')).toBe(2);
     expect(all('meta-carousel-editor-upload')).toBeGreaterThan(0);
   });
+
+  it('offers no upload or stored image until the brief is saved, and says to save it', () => {
+    const all = (testId: string): number => f.nativeElement.querySelectorAll(`[data-testid^="${testId}"]`).length;
+    f.componentRef.setInput('briefId', '');
+    f.componentRef.setInput('uploadAvailable', true);
+    f.componentRef.setInput('urlAvailable', true);
+    f.detectChanges();
+    expect(all('meta-carousel-editor-upload')).toBe(0);
+    expect(all('meta-carousel-editor-image-url-')).toBe(2);
+    expect(all('meta-carousel-editor-image-')).toBe(2);
+    expect(f.nativeElement.querySelector('[data-testid="meta-carousel-editor-images-note"]')?.textContent).toContain('Save the brief');
+  });
 });

@@ -128,7 +128,10 @@ describe('the Implement tab carousel', () => {
     status: 'ready',
     assets: [{ id: 'img-1', projectId: 'p', briefId: 'b1', mimeType: 'image/png', byteSize: 1, checksum: 'c', width: 1080, height: 1080 }],
   };
-  const ready = [draft('card-1', { imageAssetId: 'img-1', imageAssetBriefId: 'b1', headline: 'Keynotes' }), draft('card-2', { imageUrl: 'https://cdn/b.png' })];
+  const ready = [
+    draft('card-1', { imageAssetId: 'img-1', imageAssetBriefId: 'b1', headline: 'Keynotes' }),
+    draft('card-2', { imageUrl: 'https://cdn/b.png', headline: 'Workshops' }),
+  ];
 
   it.each([
     ['carousel', true, true, false],
@@ -169,7 +172,7 @@ describe('the Implement tab carousel', () => {
     const cards = [...ready, draft('card-3', { imageAssetId: 'img-1', imageAssetBriefId: 'b1', imageUrl: 'https://cdn/c.png', description: ' Talks ' })];
     expect(metaCarouselVariantsForCreate(cards, ' Join us ', ctx)).toEqual([
       { primaryText: 'Join us', headline: 'Keynotes', imageAssetId: 'img-1' },
-      { primaryText: '', headline: '', imageUrl: 'https://cdn/b.png' },
+      { primaryText: '', headline: 'Workshops', imageUrl: 'https://cdn/b.png' },
       { primaryText: '', headline: '', description: 'Talks', imageAssetId: 'img-1' },
     ]);
   });
@@ -188,7 +191,33 @@ describe('the Implement tab carousel', () => {
     ['ready cards', ready, 'Join us', null, null],
     ['no message', ready, ' ', null, "card 1's primary text, which is required"],
     ['one card', ready.slice(0, 1), 'Join us', null, '2 to 10 variants'],
-    ['a card with no image', [ready[0], draft('card-2')], 'Join us', null, 'Card 2 of a carousel needs an image.'],
+    ['a card with no image', [ready[0], draft('card-2', { headline: 'Workshops' })], 'Join us', null, 'Card 2 of a carousel needs an image.'],
+    // campaign-service's CreateCampaign: every card's headline, after the carousel's own rules.
+    ['a blank headline', [ready[0], draft('card-2', { imageUrl: 'https://cdn/b.png', headline: '  ' })], 'Join us', null, 'Meta Ads: give card 2 a headline.'],
+    ['a headline of 40 characters', [ready[0], draft('card-2', { imageUrl: 'https://cdn/b.png', headline: 'x'.repeat(40) })], 'Join us', null, null],
+    [
+      'a headline over 40 characters',
+      [ready[0], draft('card-2', { imageUrl: 'https://cdn/b.png', headline: 'x'.repeat(41) })],
+      'Join us',
+      null,
+      "Meta Ads: keep card 2's headline to 40 characters.",
+    ],
+    ['a message of 125 characters', ready, 'm'.repeat(125), null, null],
+    ['a message over 125 characters', ready, 'm'.repeat(126), null, 'Meta Ads: keep the message to 125 characters.'],
+    [
+      'a description of 30 characters',
+      [ready[0], draft('card-2', { imageUrl: 'https://cdn/b.png', headline: 'Talks', description: 'd'.repeat(30) })],
+      'Join us',
+      null,
+      null,
+    ],
+    [
+      'a description over 30 characters',
+      [ready[0], draft('card-2', { imageUrl: 'https://cdn/b.png', headline: 'Talks', description: 'd'.repeat(31) })],
+      'Join us',
+      null,
+      "Meta Ads: keep card 2's description to 30 characters.",
+    ],
     ['a lead form', ready, 'Join us', '123', 'cannot use a lead form'],
     [
       'an image stored for another brief',
@@ -209,6 +238,20 @@ describe('the Implement tab carousel', () => {
     if (expected === null) expect(refusal).toBeNull();
     else expect(refusal).toContain(expected);
     if (expected !== null) expect(refusal?.startsWith('Meta Ads: ')).toBe(true);
+  });
+
+  // Uploads off: only each card's URL is sent and the picker is hidden, so a stored pick is never the reason.
+  it.each([
+    ['another brief, with a URL', draft('card-2', { imageAssetId: 'x', imageAssetBriefId: 'b2', imageUrl: 'https://cdn/b.png', headline: 'W' }), null],
+    [
+      'gone from the library, with a URL',
+      draft('card-2', { imageAssetId: 'gone', imageAssetBriefId: 'b1', imageUrl: 'https://cdn/b.png', headline: 'W' }),
+      null,
+    ],
+    ['another brief, no URL', draft('card-2', { imageAssetId: 'x', imageAssetBriefId: 'b2', headline: 'W' }), 'Meta Ads: Card 2 of a carousel needs an image.'],
+  ])('with uploads off, holds Create for a stored image from %s as the URL-only request: %s', (_name, second, expected) => {
+    const first = draft('card-1', { imageUrl: 'https://cdn/a.png', headline: 'Keynotes' });
+    expect(metaCarouselCreateRefusal([first, second], 'Join us', library, { ...ctx, uploadAvailable: false }, null)).toBe(expected);
   });
 
   it('shows each card with its position, its image problem and its picker', () => {

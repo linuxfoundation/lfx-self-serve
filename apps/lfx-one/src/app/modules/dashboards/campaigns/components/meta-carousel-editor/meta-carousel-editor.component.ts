@@ -41,6 +41,12 @@ export class MetaCarouselEditorComponent {
   protected readonly maxCards = META_CAROUSEL_MAX_CARDS;
   protected readonly imageAccept = CREATIVE_ASSET_MIME_TYPES.join(',');
   protected readonly views = computed<MetaCarouselCardView[]>(() => metaCarouselCardViews(this.cards(), this.library(), this.briefId()));
+  /**
+   * Whether the upload and the stored-image pickers are shown: uploads offered AND a saved brief to store into, as the
+   * LinkedIn carousel's. Before the brief is saved the parent could not queue a chosen file, so none is offered.
+   */
+  protected readonly canUpload = computed(() => this.uploadAvailable() && this.briefId() !== '');
+  /** While uploads are offered, the library's state, including "save the brief" before there is one. */
   protected readonly imagesNote = computed(() => (this.uploadAvailable() ? linkedInCarouselImagesNote(this.library()) : ''));
 
   protected onTextChange(key: string, field: 'headline' | 'description' | 'imageUrl', value: string): void {

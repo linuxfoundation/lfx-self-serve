@@ -14,7 +14,7 @@
     hint="Shown once, above the cards."
     data-testid="meta-carousel-editor-message" />
 
-  @if (uploadAvailable()) {
+  @if (canUpload()) {
     <div class="flex flex-col gap-1" data-testid="meta-carousel-editor-upload">
       <label class="text-xs font-medium text-gray-700" for="meta-carousel-image-files">Upload images to the brief's library</label>
       <input
@@ -28,15 +28,15 @@
         data-testid="meta-carousel-editor-upload-files" />
       <p id="meta-carousel-upload-hint" class="text-xs text-gray-500">PNG or JPEG, up to 10 MB. Offered to every card once stored.</p>
     </div>
-    @if (imagesNote()) {
-      <p class="text-xs text-gray-500" data-testid="meta-carousel-editor-images-note">{{ imagesNote() }}</p>
-    }
+  }
+  @if (imagesNote()) {
+    <p class="text-xs text-gray-500" data-testid="meta-carousel-editor-images-note">{{ imagesNote() }}</p>
   }
 
   @for (view of views(); track view.key; let i = $index; let last = $last) {
     <fieldset class="flex flex-col gap-3 rounded-md border border-gray-200 bg-gray-50 p-3" [attr.data-testid]="'meta-carousel-editor-card-' + i">
       <legend class="float-left text-xs font-medium text-gray-700">Card {{ view.position }}</legend>
-      @if (uploadAvailable()) {
+      @if (canUpload()) {
         <lfx-ui-select
           label="Stored image"
           size="small"
@@ -57,7 +57,7 @@
           placeholder="https://example.org/card.png"
           [value]="view.imageUrl"
           (valueChange)="onTextChange(view.key, 'imageUrl', $event)"
-          [hint]="uploadAvailable() ? 'Used when no stored image is chosen.' : ''"
+          [hint]="canUpload() ? 'Used when no stored image is chosen.' : ''"
           [attr.data-testid]="'meta-carousel-editor-image-url-' + i" />
       }
       <lfx-ui-input

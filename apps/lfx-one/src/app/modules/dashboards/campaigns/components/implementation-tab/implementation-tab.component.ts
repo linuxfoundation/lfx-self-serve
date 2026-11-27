@@ -654,6 +654,7 @@ import {
   metaImageDraftRestore,
   metaImageField,
   metaImageFileRefusal,
+  metaImageUploadHoldsCreate,
   metaImageUploadStatusMessage,
   metaImageUrlWithheld,
   metaInstagramDsaFields,
@@ -1386,9 +1387,9 @@ export class ImplementationTabComponent implements OnInit {
 
   /** Whether the Meta section offers carousel ads (`CampaignListResult.metaCarouselEnabled`, #6331). */
   public readonly metaCarouselEnabled = input<boolean | null>(null);
-  /** @see metaCarouselEnabled — an explicit yes, never a `null`. */
   /** @see metaCarouselOffered — the carousel capability and the image capability together (#6331). */
   protected readonly metaCarouselOfferedState = computed<boolean | null>(() => metaCarouselOffered(this.metaCarouselEnabled(), this.metaCreativeEnabled()));
+  /** Whether a carousel is offered: an explicit yes from {@link metaCarouselOfferedState}, never a `null`. */
   protected readonly metaCarouselAvailable = computed<boolean>(() => this.metaCarouselOfferedState() === true);
 
   /**
@@ -4810,8 +4811,15 @@ export class ImplementationTabComponent implements OnInit {
       })
     )
       return 'Waiting for the Reddit Ads image upload to finish.';
-    // Meta's sibling of the hold above, on the same terms.
-    if (this.showMetaSection() && this.metaAssetUploadAvailable() && this.metaImageUploadStatus() === 'uploading')
+    // Meta's sibling of the hold above, on the same terms; not while a carousel hides the one image's upload (#6331).
+    if (
+      metaImageUploadHoldsCreate({
+        showMetaSection: this.showMetaSection(),
+        uploadAvailable: this.metaAssetUploadAvailable(),
+        carouselSelected: this.metaCarouselSelected(),
+        uploadStatus: this.metaImageUploadStatus(),
+      })
+    )
       return 'Waiting for the Meta Ads image upload to finish.';
     // And Google's, for an upload into an image slot of a section still on screen — an upload for a
     // section the operator un-ticked would not be sent, and its Cancel has gone with the section.

@@ -1,7 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { META_AD_FORMATS, META_CAROUSEL_MAX_CARDS, META_CAROUSEL_MIN_CARDS, META_CAROUSEL_OFF_MESSAGE } from '../constants/campaign.constants';
+import {
+  META_AD_FORMATS,
+  META_CAROUSEL_MAX_CARDS,
+  META_CAROUSEL_MIN_CARDS,
+  META_CAROUSEL_OFF_MESSAGE,
+  META_CHAR_LIMITS,
+} from '../constants/campaign.constants';
 import type {
   CreativeAssetLibraryState,
   LinkedInCarouselImageOption,
@@ -187,8 +193,12 @@ export function metaCarouselVariantsForCreate(cards: readonly MetaCarouselCardDr
 }
 
 /**
- * Why a carousel create waits, or `null`: a picked image that cannot be sent (the message is under the card), then the
- * request the tab would send, with the lead form it would carry, checked by `metaCarouselRefusal` as the create route will.
+ * Why a carousel create waits, or `null`: a picked image that cannot be sent (the message is under the card), only while
+ * stored images can be sent at all; then the request the tab would send, with the lead form it would carry, checked by
+ * `metaCarouselRefusal` as the create route will; then, as campaign-service's `CreateCampaign` checks every variant after
+ * the carousel's own rules (`internal/platform/meta/client.go`, v1.0.44), each card's headline (required), then each
+ * card's lengths in order: the message (`META_CHAR_LIMITS.primaryText`, card 1's), headline and description. A card is
+ * named by its position only.
  */
 export function metaCarouselCreateRefusal(
   cards: readonly MetaCarouselCardDraft[],
@@ -197,11 +207,25 @@ export function metaCarouselCreateRefusal(
   context: MetaCarouselImageContext,
   leadFormId: string | null
 ): string | null {
-  const misfit = metaCarouselCardViews(cards, library, context.briefId).find((view) => view.imageProblem !== '');
+  // Without uploads only a card's URL is sent, and its picker is hidden: a stored pick is not a reason to wait.
+  const misfit = context.uploadAvailable ? metaCarouselCardViews(cards, library, context.briefId).find((view) => view.imageProblem !== '') : undefined;
   if (misfit) return `Meta Ads: choose another image for card ${misfit.position}.`;
-  const request = { format: 'carousel', variants: metaCarouselVariantsForCreate(cards, message, context), ...(leadFormId ? { leadFormId } : {}) };
+  const variants = metaCarouselVariantsForCreate(cards, message, context);
+  const request = { format: 'carousel', variants, ...(leadFormId ? { leadFormId } : {}) };
   const refused = metaCarouselRefusal(request, true);
-  return refused === null ? null : `Meta Ads: ${refused.message}`;
+  if (refused !== null) return `Meta Ads: ${refused.message}`;
+  const blank = variants.findIndex((variant) => variant.headline === '');
+  if (blank !== -1) return `Meta Ads: give card ${blank + 1} a headline.`;
+  // Then each card's copy lengths, counted by code point (Go's RuneCountInString), in campaign-service's order.
+  for (const [index, variant] of variants.entries()) {
+    const card = index + 1;
+    if ([...variant.primaryText].length > META_CHAR_LIMITS.primaryText) return `Meta Ads: keep the message to ${META_CHAR_LIMITS.primaryText} characters.`;
+    if ([...variant.headline].length > META_CHAR_LIMITS.headline) return `Meta Ads: keep card ${card}'s headline to ${META_CHAR_LIMITS.headline} characters.`;
+    if ([...(variant.description ?? '')].length > META_CHAR_LIMITS.description) {
+      return `Meta Ads: keep card ${card}'s description to ${META_CHAR_LIMITS.description} characters.`;
+    }
+  }
+  return null;
 }
 
 /** A stored draft's format, or `undefined` for none or one this tab does not know. */

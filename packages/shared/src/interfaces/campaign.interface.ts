@@ -9771,6 +9771,18 @@ export interface CampaignMetaImageAssetBlock {
 /** The image a Meta create puts on every variant: an uploaded asset, a pasted URL, or none. Never both. */
 export type MetaImageField = { imageAssetId: string } | { imageUrl: string } | Record<string, never>;
 
+/** What `metaImageUploadHoldsCreate` (`campaign-meta-image.utils.ts`) reads, as plain values. */
+export interface MetaImageUploadHoldInput {
+  /** Whether the Meta section is shown (Meta is a selected platform). */
+  showMetaSection: boolean;
+  /** Whether Meta image uploads are offered: an explicit yes from the upload capability. */
+  uploadAvailable: boolean;
+  /** Whether a carousel is chosen (#6331): it hides the one image's upload control and does not send it. */
+  carouselSelected: boolean;
+  /** The one image's upload status. */
+  uploadStatus: CreativeAssetUploadStatus;
+}
+
 /** The Meta image state `metaImageAssetBlock` (`campaign-meta-image.utils.ts`) reads, as plain values. */
 export interface MetaImageBlockInput {
   /** Whether the Meta section is shown (Meta is a selected platform). */
