@@ -103,7 +103,10 @@ export class MktgFamilyExportActionsComponent {
   protected readonly lookupRetrying = signal(false);
   protected readonly retryingText = MKTG_POLL_RETRYING_TEXT;
   protected readonly phase = signal<MktgSlidesExportPhase>('idle');
+  /** What this card's own Slides run said when it failed. The run sets it; a new start or another project or family clears it. */
   protected readonly message = signal('');
+  /** Why the PDF could not be prepared. Only the PDF's preparation and its retry click write it, so no Slides read erases it or the retry. */
+  protected readonly pdfError = signal('');
   protected readonly partialLink = signal<string | null>(null);
   protected readonly completed = signal<MktgFamilyExportRecord | null>(null);
   protected readonly printing = signal(false);
@@ -131,6 +134,12 @@ export class MktgFamilyExportActionsComponent {
   protected readonly followingLead = this.initFollowingLead();
   /** One export of a family at a time: while another holds it, a start would only be refused. The PDF is unaffected. */
   protected readonly canExportSlides = computed(() => this.canExport() && !this.following());
+  /**
+   * This card's own run's outcome (the chooser, its ready line, its failure and incomplete deck) gives way to an
+   * export it follows and to that export's end. It is derived, never erased: the run's signals stay the run's.
+   */
+  protected readonly superseded = computed(() => !!this.following() || !!this.followedNote());
+  protected readonly shownPhase = computed<MktgSlidesExportPhase>(() => (this.superseded() ? 'idle' : this.phase()));
   protected readonly last = computed(() => this.lookup()?.last ?? this.completed());
   protected readonly memberVersions = this.initMemberVersions();
   protected readonly skipped = this.initSkipped();
@@ -211,13 +220,14 @@ export class MktgFamilyExportActionsComponent {
       return;
     }
     this.printing.set(true);
-    this.message.set('');
+    this.pdfError.set('');
     this.pdfRetry.next();
   }
 
   /** Prepare independently of busy(): finishing a fetch must never trigger another fetch or print. */
   private initPdf(): void {
-    // Who is exporting to Slides is not part of the PDF's scope: another writer's export never re-prepares this card's PDF.
+    // Who is exporting (`running`) is not part of the PDF's scope, so following an export does not prepare the PDF
+    // again. The rest of the lookup is: a new last export still does, when the followed export ends with a deck.
     const scope = computed(() => {
       const lookup = this.lookup();
       return { target: this.target(), writer: this.writer(), lookup: lookup && { ...lookup, running: null }, checking: this.checking() };
@@ -232,6 +242,7 @@ export class MktgFamilyExportActionsComponent {
           this.pdfScope = '';
           this.pdfPreparedScope.set('');
           this.printing.set(false);
+          this.pdfError.set('');
           if (!target || !writer || checking || !lookup?.currentMembers.length) return of(null);
           const key = JSON.stringify([target, lookup.currentMembers]);
           return this.pdfRetry.pipe(
@@ -249,7 +260,7 @@ export class MktgFamilyExportActionsComponent {
                 }),
                 catchError((error: unknown) => {
                   console.error('[mktg-family-export] PDF could not be prepared', error);
-                  this.message.set('The approved family could not be prepared for PDF. Check the current approvals and try again.');
+                  this.pdfError.set('The approved family could not be prepared for PDF. Check the current approvals and try again.');
                   return of(null);
                 })
               );
@@ -299,7 +310,7 @@ export class MktgFamilyExportActionsComponent {
   }
 
   private initCanPrint(): Signal<boolean> {
-    return computed(() => this.canExport() && !this.pdfPending() && (this.pdfReady() || !!this.message()));
+    return computed(() => this.canExport() && !this.pdfPending() && (this.pdfReady() || !!this.pdfError()));
   }
 
   private initFollowingLead(): Signal<string> {
@@ -453,10 +464,14 @@ export class MktgFamilyExportActionsComponent {
 
   /**
    * Follow an export this card did not start (another writer's, or this writer's from another tab or before a
-   * reload), by the server's answer alone. While the answer names one the card shows who and since when instead of
-   * its own controls' states, and the lookup is read again until it names none. Then the card says how it ended: its
-   * deck is the family's last export (a different export than when following began, or one made after that start),
-   * or nothing was kept. This card's own run is never followed: it reports itself.
+   * reload), by the server's answer alone. While the answer names one the card shows who and since when, and the
+   * lookup is read again until it names none. Then the card says how it ended: its deck is the family's last export
+   * (a different export than when following began, or one made after that start), or nothing was kept. This card's
+   * own run is never followed: it reports itself.
+   *
+   * It runs on every read of the lookup, the follow poll's included, so it writes follow state only (`followed`,
+   * `followedNote`). What the run and the PDF preparation set (`phase`, `message`, `partialLink`, `pdfError`) is
+   * theirs alone; the card hides the run's outcome while it is `superseded`.
    */
   private trackFollow(next: MktgFamilyExportLastResponse | null): void {
     const running = this.phase() === 'running' ? null : (next?.running ?? null);
@@ -468,10 +483,6 @@ export class MktgFamilyExportActionsComponent {
           until: Date.now() + MKTG_FAMILY_EXPORT_ACTIVE_TTL_MS,
         };
       }
-      // The chooser, an earlier failure and an earlier outcome give way to the export that holds the family.
-      this.phase.set('idle');
-      this.message.set('');
-      this.partialLink.set(null);
       this.followedNote.set('');
       return;
     }
@@ -507,6 +518,8 @@ export class MktgFamilyExportActionsComponent {
           this.message.set(result.message);
           this.partialLink.set(result.deckLink);
           this.lookup.update((value) => (value ? { ...value, running: null } : value));
+          // As on `ready`: a read that left while this export still held the family is dropped, and `last` is read again.
+          this.retry.next(true);
         }
       },
       error: (error: unknown) => {

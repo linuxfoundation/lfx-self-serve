@@ -494,7 +494,7 @@ describe('Family export slot', () => {
     fail(new Error('Synthetic font preparation failure'));
     await Promise.resolve();
     await fixture.whenStable();
-    expect(root.querySelector('[data-testid="family-export-error"]')?.textContent).toContain('could not be prepared for PDF');
+    expect(root.querySelector('[data-testid="family-export-pdf-error"]')?.textContent).toContain('could not be prepared for PDF');
     expect(root.querySelector('[data-testid="family-export-loading"]')).toBeNull();
     expect(root.querySelector('[data-testid="family-export-pdf-ready"]')).toBeNull();
     expect(button('pdf')?.disabled).toBe(false);
@@ -504,7 +504,7 @@ describe('Family export slot', () => {
     print.prepare.mockReturnValue(new Promise<void>((resolve) => (ready = resolve)));
     button('pdf')?.click();
     await fixture.whenStable();
-    expect(root.querySelector('[data-testid="family-export-error"]')).toBeNull();
+    expect(root.querySelector('[data-testid="family-export-pdf-error"]')).toBeNull();
     expect(root.querySelector('[data-testid="family-export-loading"]')).not.toBeNull();
     expect(button('pdf')?.disabled).toBe(true);
     expect(button('pdf')?.textContent?.trim()).toBe('Download PDF');
@@ -957,6 +957,91 @@ describe('Family export slot', () => {
       expect(followed(root)).toBeNull();
       expect(button('slides')?.disabled).toBe(false);
       vi.useRealTimers();
+    });
+
+    it('keeps a PDF preparation failure and its retry through the follow poll, which writes follow state only', async () => {
+      pollClock();
+      vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      api.printView.mockReturnValue(throwError(() => new Error('Changed approval')));
+      api.last.mockReturnValue(of({ ...lookup(), running: other }));
+      const { fixture, root, button } = await setup();
+      const pdfError = () => root.querySelector('[data-testid="family-export-pdf-error"]')?.textContent ?? null;
+      expect(following(root)).not.toBeNull();
+      expect(pdfError()).toContain('could not be prepared for PDF');
+      const reads = api.last.mock.calls.length;
+      await tick(fixture);
+      await tick(fixture);
+      expect(api.last).toHaveBeenCalledTimes(reads + 2);
+      // The poll's reads erase neither the line nor the way to try again.
+      expect(pdfError()).toContain('could not be prepared for PDF');
+      expect(button('pdf')?.disabled).toBe(false);
+      const prepared = api.printView.mock.calls.length;
+      button('pdf')?.click();
+      await fixture.whenStable();
+      expect(api.printView).toHaveBeenCalledTimes(prepared + 1);
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    });
+
+    it('drops a read that left during its own run and lands after the run failed: the failure stays and last is read again', async () => {
+      const { fixture, root, button } = await setup();
+      button('slides')?.click();
+      run.next({ mode: 'create', logoNote: null, skippedMembers: [], result: null });
+      await fixture.whenStable();
+      // A wake read leaves while this card's export still holds the family.
+      const early = new Subject<MktgFamilyExportLastResponse>();
+      api.last.mockClear();
+      api.last.mockReturnValueOnce(early);
+      window.dispatchEvent(new Event('focus'));
+      await fixture.whenStable();
+      expect(api.last).toHaveBeenCalledTimes(1);
+      const link = familyExportRecord().link;
+      run.next({
+        mode: 'create',
+        skippedMembers: [],
+        logoNote: null,
+        result: { status: 'failed', failure: 'google', message: 'Synthetic export failure.', deckLink: link },
+      });
+      await fixture.whenStable();
+      // The run's end reads `last` again; the earlier read's answer, which still names this export, changes nothing.
+      expect(api.last).toHaveBeenCalledTimes(2);
+      expect(api.last).toHaveBeenLastCalledWith(expect.anything(), true);
+      early.next({ ...lookup(), running: { startedBy: null, startedByViewer: true, startedAt: STARTED_AT } });
+      early.complete();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(following(root)).toBeNull();
+      expect(followed(root)).toBeNull();
+      expect(root.querySelector('[data-testid="family-export-error"]')?.textContent).toBe('Synthetic export failure.');
+      expect(root.querySelector('[data-testid="family-export-partial"]')?.getAttribute('href')).toBe(link);
+      expect(button('slides')?.disabled).toBe(false);
+    });
+
+    it('hides its own failure behind an export it then follows and that export’s end, without erasing what the run left', async () => {
+      const { fixture, root, button } = await setup();
+      button('slides')?.click();
+      const link = familyExportRecord().link;
+      run.next({
+        mode: 'create',
+        skippedMembers: [],
+        logoNote: null,
+        result: { status: 'failed', failure: 'google', message: 'Synthetic export failure.', deckLink: link },
+      });
+      await fixture.whenStable();
+      const shown = () => [root.querySelector('[data-testid="family-export-error"]'), root.querySelector('[data-testid="family-export-partial"]')];
+      expect(shown()).not.toContain(null);
+      for (const answer of [{ ...lookup(), running: other }, lookup()]) {
+        api.last.mockReturnValue(of(answer));
+        window.dispatchEvent(new Event('focus'));
+        await fixture.whenStable();
+        fixture.detectChanges();
+        expect(shown()).toEqual([null, null]);
+        expect(root.textContent).not.toContain('Try exporting again');
+        expect(fixture.componentInstance['phase']()).toBe('failed');
+        expect(fixture.componentInstance['message']()).toBe('Synthetic export failure.');
+        expect(fixture.componentInstance['partialLink']()).toBe(link);
+      }
+      expect(followed(root)).toBe(MKTG_FAMILY_EXPORT_FOLLOWED_MESSAGES.ended);
     });
   });
 

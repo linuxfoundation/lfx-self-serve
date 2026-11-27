@@ -184,7 +184,14 @@ and a body that does not validate names nobody until the next read. When the fol
 export ends the card says, in `family-export-followed`, that its deck is the last
 export below (a different last export than when following began, or one made after
 that start) or that nothing was kept; the next export clears the line. The card's own
-run is never followed: it reports itself, and its end re-reads `last`.
+run is never followed: it reports itself, and its end (ready, failed or an error)
+re-reads `last`, which also drops a read that left while that run still held the family.
+
+Each state has one writer. The lookup's reads, the follow poll's included, write follow
+state only. The run writes `phase`, `message` and `partialLink`; the card hides that
+outcome (`superseded`) while it follows an export and after that export's end, and
+erases nothing. The PDF preparation writes `pdfError`, shown on its own line
+(`family-export-pdf-error`), so a Slides read never removes it or its retry.
 
 `lfx-mktg-family-details` collapses Where it comes from to its validated source-read count and inline singular/plural failure count; Show/Hide uses native button aria-expanded/controls. Sign-off collapses to **Sign-off · roadmap: two-role sign-off arrives in November**, with Show/Hide preserving the full existing explainer. The only required framework row reason is **· after the framework is approved** (write-access wording is unchanged). Family-only source
 read stays unchanged: It reads only the framework row's latest document revision via the existing endpoint,
