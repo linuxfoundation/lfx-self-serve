@@ -191,11 +191,9 @@ export function combineDateTime(date: Date, time: string, timezone?: string): st
  * Adds minutes to an ISO date string and returns a new Date.
  * Defaults to 60 minutes when the value is null or undefined.
  */
-export const addMinutesToDate = (isoDate: string, minutes: number | null | undefined): Date => {
-  const d = new Date(isoDate);
-  d.setMinutes(d.getMinutes() + (minutes ?? 60));
-  return d;
-};
+export const addMinutesToDate = (isoDate: string, minutes: number | null | undefined): Date =>
+  // Elapsed time, not local setMinutes, so a span across a DST change keeps its length in any time zone.
+  new Date(new Date(isoDate).getTime() + (minutes ?? 60) * 60_000);
 
 // ============================================================================
 // Time Formatting
