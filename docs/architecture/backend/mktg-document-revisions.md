@@ -620,7 +620,8 @@ new send is admitted in this order, each a read-only check:
    holds any of the same comments returns 409 `MKTG_REDRAFT_COMMENTS_BUSY` with
    response-only `sentBy` (the sender's directory display name, or null when there
    is none or the sender is the caller), `sentByViewer`, `sentAt` (that send's
-   reservation time) and `runId` (its opaque run hash, null until bound). The name
+   reservation time) and `runId` (its opaque run hash, null until that send is
+   `started`: a bound hash has no run record to open yet). The name
    is resolved only on this conflict and is never stored or logged; an email or the
    subject itself is never returned as a name. The reservation repeats this check
    inside its conditional write, so a send that loses the race there gets the same

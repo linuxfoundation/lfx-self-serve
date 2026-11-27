@@ -622,6 +622,17 @@ describe('private field comment store', () => {
       expect((error as ConflictError).message).toBe('Some comments are already reserved for another send.');
     }
     expect(flows.user).toHaveBeenCalledWith(second, 'opaque-user-one');
+    // Bound but still reserved: the run record is not published yet, so there is no run to open.
+    flows.subject.mockReturnValue('opaque-user-one');
+    await store.bindRun(req, project, type, 'living', 'send-one', runId);
+    expect(record().submissions[0]).toMatchObject({ state: 'reserved', runId });
+    flows.subject.mockReturnValue('opaque-user-two');
+    for (const refused of [
+      () => store.admit({} as Request, project, type, 'living', other),
+      () => store.reserve({} as Request, project, type, 'living', other),
+    ]) {
+      await expect(refused()).rejects.toSatisfy((error: ConflictError) => error.toResponse()['runId'] === null && error.toResponse()['sentAt'] === sentAt);
+    }
     flows.subject.mockReturnValue('opaque-user-one');
     await store.bindRun(req, project, type, 'living', 'send-one', runId, true);
     flows.subject.mockReturnValue('opaque-user-two');

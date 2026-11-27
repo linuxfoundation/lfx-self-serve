@@ -78,7 +78,7 @@ export interface MktgRedraftBusyConflict {
   sentByViewer: boolean;
   /** When that send was reserved (ISO). */
   sentAt: string;
-  /** The redraft's opaque run id once bound; null while that send is still starting. */
+  /** The redraft's opaque run id once its run record is published (the send is `started`); null while that send is still starting, bound or not. */
   runId: string | null;
 }
 

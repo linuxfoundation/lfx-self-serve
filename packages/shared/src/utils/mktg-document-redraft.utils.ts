@@ -36,6 +36,7 @@ import { validateFaqEnvelope } from './faq.utils';
 import { guardBrandKitText, validateBrandKitEnvelope } from './brand-kit.utils';
 import { guardBoilerplatesText, validateBoilerplatesEnvelope } from './boilerplates.utils';
 import { guardFoundationMessageText, validateFoundationMessageEnvelope } from './foundation-message.utils';
+import { isMktgDisplayName } from './mktg-document-store.utils';
 
 function record(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
@@ -163,7 +164,7 @@ export function readMktgRedraftBusyConflict(value: unknown): MktgRedraftBusyConf
   return {
     code: MKTG_REDRAFT_COMMENTS_BUSY,
     // A display name only: an email, subject or markup-like value is never shown.
-    sentBy: name && !/[<>@|:]/.test(name) ? name : null,
+    sentBy: isMktgDisplayName(name) ? name : null,
     sentByViewer: value['sentByViewer'],
     sentAt: value['sentAt'],
     runId: value['runId'],

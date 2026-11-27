@@ -41,6 +41,7 @@ import type {
 import {
   readMktgRedraftRequest,
   validateMktgRedraftResult,
+  isMktgDisplayName,
   isMktgRedraftSubmissionBusy,
   mktgRedraftSentElsewhereNotice,
   findMktgDocumentType,
@@ -411,11 +412,12 @@ export class MktgDocumentCommentsService {
     const name = author?.name?.trim();
     const conflict: MktgRedraftBusyConflict = {
       code: MKTG_REDRAFT_COMMENTS_BUSY,
-      // Never an identifier in place of a display name; the same characters the client refuses to show.
-      sentBy: name && !/[<>@|:]/.test(name) && name !== holder.requestedBy ? name : null,
+      // Never an identifier in place of a display name: the shared policy the client applies, plus the stored subject only the server knows.
+      sentBy: isMktgDisplayName(name) && name !== holder.requestedBy ? name : null,
       sentByViewer,
       sentAt: holder.createdAt,
-      runId: holder.runId,
+      // Bound is not published: the run record exists only once the send is started, and a run page opened before it reads as landed.
+      runId: holder.state === 'started' ? holder.runId : null,
     };
     const { code, ...details } = conflict;
     return new ConflictError('Some comments are already reserved for another send.', code, {
