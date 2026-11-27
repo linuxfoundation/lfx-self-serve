@@ -1,0 +1,101 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-3" data-testid="reddit-demographics">
+  <lfx-ui-select label="Gender" size="small" [value]="demographics().gender" (valueChange)="onGenderChange($event)" data-testid="reddit-demographics-gender">
+    <lfx-ui-option value="" label="Every gender" />
+    @for (gender of genders; track gender) {
+      <lfx-ui-option [value]="gender" [label]="genderLabels[gender]" />
+    }
+  </lfx-ui-select>
+  <div class="flex flex-col gap-1">
+    <lfx-ui-multi-select
+      label="Languages"
+      size="small"
+      [values]="demographics().languages"
+      (valuesChange)="onLanguagesChange($event)"
+      data-testid="reddit-demographics-languages">
+      @for (language of languages; track language) {
+        <lfx-ui-option [value]="language" [label]="languageLabels[language]" />
+      }
+    </lfx-ui-multi-select>
+    <p class="text-xs text-gray-500" data-testid="reddit-demographics-languages-hint">With no language picked, the ads reach every language.</p>
+  </div>
+  <fieldset class="flex flex-col gap-2" aria-describedby="reddit-demographics-schedule-hint" data-testid="reddit-demographics-schedule">
+    <legend class="float-left text-xs font-medium text-gray-700">Schedule ({{ demographics().schedule.length }}/{{ maxWindows }})</legend>
+    <p id="reddit-demographics-schedule-hint" class="text-xs text-gray-500">
+      With no window, the ads run at any time. Otherwise they run only inside the windows, in the campaign's time zone. A window runs straight through from its
+      start to its end, so for the same hours on several days, add one window per day.
+    </p>
+    @for (window of demographics().schedule; track $index; let i = $index) {
+      <fieldset class="flex flex-col gap-2 rounded-md border border-gray-200 bg-gray-50 p-3" [attr.data-testid]="'reddit-demographics-window-' + i">
+        <legend class="float-left text-xs font-medium text-gray-700">Window {{ i + 1 }}</legend>
+        <div class="grid grid-cols-2 gap-2 md:grid-cols-4">
+          <lfx-ui-select
+            label="Start day"
+            size="small"
+            [value]="'' + window.startDay"
+            (valueChange)="onWindowChange(i, 'startDay', $event)"
+            [attr.data-testid]="'reddit-demographics-window-' + i + '-start-day'">
+            @for (option of dayOptions; track option.value) {
+              <lfx-ui-option [value]="option.value" [label]="option.label" />
+            }
+          </lfx-ui-select>
+          <lfx-ui-select
+            label="Start time"
+            size="small"
+            [value]="'' + window.startHour"
+            (valueChange)="onWindowChange(i, 'startHour', $event)"
+            [attr.data-testid]="'reddit-demographics-window-' + i + '-start-hour'">
+            @for (option of hourOptions; track option.value) {
+              <lfx-ui-option [value]="option.value" [label]="option.label" />
+            }
+          </lfx-ui-select>
+          <lfx-ui-select
+            label="End day"
+            size="small"
+            [value]="'' + window.endDay"
+            (valueChange)="onWindowChange(i, 'endDay', $event)"
+            [attr.data-testid]="'reddit-demographics-window-' + i + '-end-day'">
+            @for (option of dayOptions; track option.value) {
+              <lfx-ui-option [value]="option.value" [label]="option.label" />
+            }
+          </lfx-ui-select>
+          <lfx-ui-select
+            label="End time"
+            size="small"
+            [value]="'' + window.endHour"
+            (valueChange)="onWindowChange(i, 'endHour', $event)"
+            [attr.data-testid]="'reddit-demographics-window-' + i + '-end-hour'">
+            @for (option of hourOptions; track option.value) {
+              <lfx-ui-option [value]="option.value" [label]="option.label" />
+            }
+          </lfx-ui-select>
+        </div>
+        <lfx-ui-button
+          class="self-start"
+          variant="secondary"
+          size="small"
+          icon="fa-light fa-trash"
+          [ariaLabel]="'Remove window ' + (i + 1)"
+          (click)="removeWindow(i)"
+          [attr.data-testid]="'reddit-demographics-window-' + i + '-remove'">
+          Remove window
+        </lfx-ui-button>
+      </fieldset>
+    }
+    <lfx-ui-button
+      class="self-start"
+      variant="secondary"
+      size="small"
+      icon="fa-light fa-plus"
+      [disabled]="demographics().schedule.length >= maxWindows"
+      (click)="addWindow()"
+      data-testid="reddit-demographics-add-window">
+      Add window
+    </lfx-ui-button>
+  </fieldset>
+  @if (refusal(); as refused) {
+    <p role="alert" class="text-xs text-red-600" data-testid="reddit-demographics-error">{{ refused }}</p>
+  }
+</div>

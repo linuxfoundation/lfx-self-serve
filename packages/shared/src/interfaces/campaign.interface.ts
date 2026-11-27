@@ -529,6 +529,8 @@ export interface RedditCreateRefusalInput {
   subCountryGeoRefusal: string | null;
   /** Why the placements or devices cannot be sent (`redditDeliveryRefusal`), or `null`. */
   deliveryRefusal: string | null;
+  /** Why the gender, languages or schedule break campaign-service's rules (`redditDemographicsDraftRefusal`, #6108 row 9), or `null`. */
+  demographicsRefusal: string | null;
   /** Why the variants break campaign-service's one ad per variant rules (`redditAdPerVariantRefusal`), or `null`. */
   variantsRefusal: string | null;
 }
@@ -1571,6 +1573,11 @@ export interface CampaignImplementationDraft {
    * Kept whatever the capability says, and carried only when non-empty; only the REQUEST is gated on the capability.
    */
   redditSubCountryGeoTargets?: string[];
+  /**
+   * The Reddit gender, languages and schedule (#6108 row 9). Kept whatever the capability says, and carried only once one
+   * is set; only the REQUEST is gated on the capability.
+   */
+  redditDemographics?: RedditDemographicsDraft;
   /**
    * The Reddit subreddits and interests as the operator edited them (#6108 row 4). Carried once they gained an editor,
    * as `linkedInVariants` is: restored over the brief's seed. Absent (an older draft), the brief's seed stands. Not the
@@ -4067,6 +4074,7 @@ export type RedditDraftSnapshot = Pick<
   | 'redditExcludedSubreddits'
   | 'redditExcludedGeoTargets'
   | 'redditSubCountryGeoTargets'
+  | 'redditDemographics'
   | 'redditEditedSubreddits'
   | 'redditEditedInterests'
   | 'redditEditedVariants'
@@ -4099,6 +4107,8 @@ export interface RedditDraftState {
   targetingExclusions: RedditTargetingExclusionsDraft;
   /** The regions, cities and DMAs to target (#6108 row 7), kept whatever the capability says. */
   subCountryGeoTargets: string[];
+  /** The gender, languages and schedule (#6108 row 9), kept whatever the capability says. */
+  demographics: RedditDemographicsDraft;
   /** The subreddits and interests once the operator edited them, else `null`: an unedited list stays the brief's, out of the draft. */
   editedTargetingLists: RedditTargetingListsDraft | null;
   delivery: RedditDeliveryDraft;
@@ -4127,6 +4137,8 @@ export interface RedditDraftRestore {
   targetingExclusions?: RedditTargetingExclusionsDraft;
   /** The regions, cities and DMAs (#6108 row 7); absent when the draft carries none. */
   subCountryGeoTargets?: string[];
+  /** The gender, languages and schedule (#6108 row 9); absent when the draft carries none. */
+  demographics?: RedditDemographicsDraft;
   /** Both lists as edited, set over the brief's seed; absent when the draft carries neither. */
   editedTargetingLists?: RedditTargetingListsDraft;
   /** The budget type, placements, devices and expansion; absent when the draft carries none of them. */
@@ -4157,6 +4169,8 @@ export interface RedditBriefReset extends RedditBriefSeed {
   customAudiences: RedditCustomAudiencesDraft;
   targetingExclusions: RedditTargetingExclusionsDraft;
   subCountryGeoTargets: string[];
+  /** Every gender, every language, any time (#6108 row 9). */
+  demographics: RedditDemographicsDraft;
   delivery: RedditDeliveryDraft;
   budgetUsd: number;
 }
@@ -4263,6 +4277,31 @@ export interface RedditScheduleWindow {
   endDay: number;
   endHour: number;
 }
+
+/** One field of a {@link RedditScheduleWindow} (`REDDIT_SCHEDULE_WINDOW_KEYS`). */
+export type RedditScheduleWindowKey = keyof RedditScheduleWindow;
+
+/** One day or hour a schedule window's select offers (#6108 row 9): the number as text, and how it reads. */
+export interface RedditScheduleOption {
+  value: string;
+  label: string;
+}
+
+/**
+ * The Reddit gender, language and dayparting choices on the Implement tab (#6108 row 9), kept whatever the capability
+ * says; only the request is gated (`redditDemographicsField`). Each starts on its default, which sends nothing.
+ */
+export interface RedditDemographicsDraft {
+  /** `''` targets every gender. */
+  gender: RedditGender | '';
+  /** Empty targets every language. */
+  languages: RedditLanguage[];
+  /** Empty runs the ads at any time. */
+  schedule: RedditScheduleWindow[];
+}
+
+/** The `redditConfig` keys the gender, language and dayparting choices add to a create (#6108 row 9), each only when set. */
+export type RedditDemographicsField = Pick<RedditCampaignCreateRequest, 'gender' | 'languages' | 'schedule'>;
 
 /** One conversion pixel on the Reddit ad account, for the `conversionPixelId` picker (#6108 row 5). */
 export interface RedditPixelOption {

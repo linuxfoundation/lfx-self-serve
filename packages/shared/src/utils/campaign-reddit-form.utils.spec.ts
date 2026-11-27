@@ -131,6 +131,7 @@ describe('redditCreateRefusal', () => {
     targetingExclusionsRefusal: null,
     subCountryGeoRefusal: null,
     deliveryRefusal: null,
+    demographicsRefusal: null,
     variantsRefusal: null,
   };
 
@@ -155,6 +156,9 @@ describe('redditCreateRefusal', () => {
     ['refused locations', { subCountryGeoRefusal: 'Location 1 is blank.' }, 'Reddit Ads: Location 1 is blank.'],
     ['refused locations, after refused exclusions', { targetingExclusionsRefusal: 'Excluded.', subCountryGeoRefusal: 'Location.' }, 'Reddit Ads: Excluded.'],
     ['refused locations, before delivery', { subCountryGeoRefusal: 'Location.', deliveryRefusal: 'Placement.' }, 'Reddit Ads: Location.'],
+    ['a refused schedule', { demographicsRefusal: 'Window 1 repeats an earlier window.' }, 'Reddit Ads: Window 1 repeats an earlier window.'],
+    ['a refused schedule, after delivery', { deliveryRefusal: 'Placement.', demographicsRefusal: 'Window.' }, 'Reddit Ads: Placement.'],
+    ['a refused schedule, before variants', { demographicsRefusal: 'Window.', variantsRefusal: 'Variant.' }, 'Reddit Ads: Window.'],
   ])('%s', (_name, over, expected) => {
     expect(redditCreateRefusal({ ...ok, ...over })).toBe(expected);
   });

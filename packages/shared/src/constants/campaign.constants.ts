@@ -93,7 +93,11 @@ import type {
   RedditCustomAudienceListView,
   RedditDeliveryDraft,
   RedditDevicePlatform,
+  RedditGender,
+  RedditLanguage,
   RedditPlacement,
+  RedditScheduleOption,
+  RedditScheduleWindow,
   RedditCustomAudiencesDraft,
   RedditTargetingExclusionListView,
   RedditTargetingExclusionsDraft,
@@ -5057,6 +5061,48 @@ export const REDDIT_SCHEDULE_WINDOW_KEYS = ['startDay', 'startHour', 'endDay', '
  * its stored PNG or JPEG thumbnail (`internal/dispatch/reddit_video.go`, #549).
  */
 export const REDDIT_VIDEO_KEYS = ['videoAssetId', 'thumbnailAssetId'] as const;
+
+/** What the Implement tab calls each Reddit gender target (#6108 row 9). */
+export const REDDIT_GENDER_LABELS: Readonly<Record<RedditGender, string>> = { FEMALE: 'Female', MALE: 'Male' };
+
+/** What the Implement tab calls each Reddit language target (#6108 row 9), by its ISO 639-1 code. */
+export const REDDIT_LANGUAGE_LABELS: Readonly<Record<RedditLanguage, string>> = {
+  AR: 'Arabic',
+  CS: 'Czech',
+  DA: 'Danish',
+  DE: 'German',
+  EL: 'Greek',
+  EN: 'English',
+  ES: 'Spanish',
+  FI: 'Finnish',
+  FR: 'French',
+  HU: 'Hungarian',
+  IT: 'Italian',
+  JA: 'Japanese',
+  KO: 'Korean',
+  NL: 'Dutch',
+  NO: 'Norwegian',
+  PL: 'Polish',
+  PT: 'Portuguese',
+  RO: 'Romanian',
+  SV: 'Swedish',
+  VI: 'Vietnamese',
+  ZH: 'Chinese',
+};
+
+/** The days a Reddit schedule window offers (#6108 row 9), Reddit's day numbers: 0 is Sunday, 6 is Saturday. */
+export const REDDIT_SCHEDULE_DAY_OPTIONS: readonly RedditScheduleOption[] = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map(
+  (label, day) => ({ value: String(day), label })
+);
+
+/** The hours a Reddit schedule window offers (#6108 row 9), 0 to 23, shown on a 24-hour clock. */
+export const REDDIT_SCHEDULE_HOUR_OPTIONS: readonly RedditScheduleOption[] = Array.from({ length: 24 }, (_unused, hour) => ({
+  value: String(hour),
+  label: `${String(hour).padStart(2, '0')}:00`,
+}));
+
+/** The window a Reddit schedule starts from (#6108 row 9): Monday 09:00 to Monday 17:00. Each added window moves one day on. */
+export const DEFAULT_REDDIT_SCHEDULE_WINDOW: Readonly<RedditScheduleWindow> = { startDay: 1, startHour: 9, endDay: 1, endHour: 17 };
 
 /** A Reddit pixel id campaign-service offers (`ValidPixelID`): 1 to 64 letters, digits or underscores. */
 export const REDDIT_PIXEL_ID_PATTERN = /^[A-Za-z0-9_]{1,64}$/;

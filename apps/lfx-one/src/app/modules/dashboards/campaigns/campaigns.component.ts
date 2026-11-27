@@ -1221,6 +1221,8 @@ export class CampaignsComponent {
   protected readonly briefCampaignsRedditTargetingExclusionsEnabled = signal<boolean | null>(null);
   /** `CampaignListResult.redditSubCountryGeoEnabled` (#6108 row 7): whether a Reddit create may target regions, cities and DMAs. */
   protected readonly briefCampaignsRedditSubCountryGeoEnabled = signal<boolean | null>(null);
+  /** `CampaignListResult.redditDemographicsEnabled` (#6108 row 9): whether a Reddit create may target a gender, languages and a schedule. */
+  protected readonly briefCampaignsRedditDemographicsEnabled = signal<boolean | null>(null);
   /** `CampaignListResult.redditPlacementsEnabled`, `redditBudgetTypeEnabled` and `redditPixelListEnabled` (#6108 row 5): Reddit placements, devices and expansion; the budget type; the pixel list. */
   protected readonly briefCampaignsRedditPlacementsEnabled = signal<boolean | null>(null);
   protected readonly briefCampaignsRedditBudgetTypeEnabled = signal<boolean | null>(null);
@@ -3472,6 +3474,7 @@ export class CampaignsComponent {
         this.briefCampaignsRedditCustomAudiencesEnabled.set(null);
         this.briefCampaignsRedditTargetingExclusionsEnabled.set(null);
         this.briefCampaignsRedditSubCountryGeoEnabled.set(null);
+        this.briefCampaignsRedditDemographicsEnabled.set(null);
         this.briefCampaignsRedditPlacementsEnabled.set(null);
         this.briefCampaignsRedditBudgetTypeEnabled.set(null);
         this.briefCampaignsRedditPixelListEnabled.set(null);
@@ -6586,6 +6589,7 @@ export class CampaignsComponent {
           this.briefCampaignsRedditCustomAudiencesEnabled.set(result.redditCustomAudiencesEnabled ?? null);
           this.briefCampaignsRedditTargetingExclusionsEnabled.set(result.redditTargetingExclusionsEnabled ?? null);
           this.briefCampaignsRedditSubCountryGeoEnabled.set(result.redditSubCountryGeoEnabled ?? null);
+          this.briefCampaignsRedditDemographicsEnabled.set(result.redditDemographicsEnabled ?? null);
           this.briefCampaignsRedditPlacementsEnabled.set(result.redditPlacementsEnabled ?? null);
           this.briefCampaignsRedditBudgetTypeEnabled.set(result.redditBudgetTypeEnabled ?? null);
           this.briefCampaignsRedditPixelListEnabled.set(result.redditPixelListEnabled ?? null);
@@ -6662,6 +6666,7 @@ export class CampaignsComponent {
           this.briefCampaignsRedditCustomAudiencesEnabled.set(null);
           this.briefCampaignsRedditTargetingExclusionsEnabled.set(null);
           this.briefCampaignsRedditSubCountryGeoEnabled.set(null);
+          this.briefCampaignsRedditDemographicsEnabled.set(null);
           this.briefCampaignsRedditPlacementsEnabled.set(null);
           this.briefCampaignsRedditBudgetTypeEnabled.set(null);
           this.briefCampaignsRedditPixelListEnabled.set(null);
@@ -6783,6 +6788,7 @@ export class CampaignsComponent {
       this.briefCampaignsRedditCustomAudiencesEnabled.set(null);
       this.briefCampaignsRedditTargetingExclusionsEnabled.set(null);
       this.briefCampaignsRedditSubCountryGeoEnabled.set(null);
+      this.briefCampaignsRedditDemographicsEnabled.set(null);
       this.briefCampaignsRedditPlacementsEnabled.set(null);
       this.briefCampaignsRedditBudgetTypeEnabled.set(null);
       this.briefCampaignsRedditPixelListEnabled.set(null);
@@ -6874,6 +6880,7 @@ export class CampaignsComponent {
             this.briefCampaignsRedditCustomAudiencesEnabled.set(result.redditCustomAudiencesEnabled ?? null);
             this.briefCampaignsRedditTargetingExclusionsEnabled.set(result.redditTargetingExclusionsEnabled ?? null);
             this.briefCampaignsRedditSubCountryGeoEnabled.set(result.redditSubCountryGeoEnabled ?? null);
+            this.briefCampaignsRedditDemographicsEnabled.set(result.redditDemographicsEnabled ?? null);
             this.briefCampaignsRedditPlacementsEnabled.set(result.redditPlacementsEnabled ?? null);
             this.briefCampaignsRedditBudgetTypeEnabled.set(result.redditBudgetTypeEnabled ?? null);
             this.briefCampaignsRedditPixelListEnabled.set(result.redditPixelListEnabled ?? null);
@@ -6948,6 +6955,7 @@ export class CampaignsComponent {
             this.briefCampaignsRedditCustomAudiencesEnabled.set(null);
             this.briefCampaignsRedditTargetingExclusionsEnabled.set(null);
             this.briefCampaignsRedditSubCountryGeoEnabled.set(null);
+            this.briefCampaignsRedditDemographicsEnabled.set(null);
             this.briefCampaignsRedditPlacementsEnabled.set(null);
             this.briefCampaignsRedditBudgetTypeEnabled.set(null);
             this.briefCampaignsRedditPixelListEnabled.set(null);

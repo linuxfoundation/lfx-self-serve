@@ -411,6 +411,7 @@ import type {
   RedditBudgetCopy,
   RedditDeliveryCapabilities,
   RedditDeliveryDraft,
+  RedditDemographicsDraft,
   RedditTargetedLists,
   RedditTargetingExclusionsDraft,
   RedditTargetingListsDraft,
@@ -587,6 +588,9 @@ import {
   redditSubCountryGeoCapability,
   redditSubCountryGeoDraftRefusal,
   redditSubCountryGeoField,
+  redditDemographicsCapability,
+  redditDemographicsDraftRefusal,
+  redditDemographicsField,
   redditBudgetCopy,
   redditDeliveryField,
   redditDeliveryRefusal,
@@ -719,6 +723,7 @@ import { MetaAudienceTargetingComponent } from '../meta-audience-targeting/meta-
 import { RedditCustomAudiencesComponent } from '../reddit-custom-audiences/reddit-custom-audiences.component';
 import { RedditTargetingExclusionsComponent } from '../reddit-targeting-exclusions/reddit-targeting-exclusions.component';
 import { RedditSubCountryGeoComponent } from '../reddit-subcountry-geo/reddit-subcountry-geo.component';
+import { RedditDemographicsComponent } from '../reddit-demographics/reddit-demographics.component';
 import { RedditTargetingListsComponent } from '../reddit-targeting-lists/reddit-targeting-lists.component';
 import { RedditDeliveryComponent } from '../reddit-delivery/reddit-delivery.component';
 import { RedditAdVariantsComponent } from '../reddit-ad-variants/reddit-ad-variants.component';
@@ -815,6 +820,7 @@ let linkedInVariantKeySequence = 0;
     RedditCustomAudiencesComponent,
     RedditTargetingExclusionsComponent,
     RedditSubCountryGeoComponent,
+    RedditDemographicsComponent,
     RedditTargetingListsComponent,
     RedditDeliveryComponent,
     RedditAdVariantsComponent,
@@ -1093,6 +1099,13 @@ export class ImplementationTabComponent implements OnInit {
   public readonly redditSubCountryGeoEnabled = input<boolean | null>(null);
   /** @see redditSubCountryGeoEnabled — an explicit yes, never a `null`. */
   protected readonly redditSubCountryGeoAvailable = computed<boolean>(() => redditSubCountryGeoCapability(this.redditSubCountryGeoEnabled()));
+  /**
+   * Whether this deployment sends Reddit gender, language and dayparting targeting (`CampaignListResult.redditDemographicsEnabled`,
+   * #6108 row 9). `null` until the parent has an answer, which hides the editor and sends none of the three.
+   */
+  public readonly redditDemographicsEnabled = input<boolean | null>(null);
+  /** @see redditDemographicsEnabled — an explicit yes, never a `null`. */
+  protected readonly redditDemographicsAvailable = computed<boolean>(() => redditDemographicsCapability(this.redditDemographicsEnabled()));
   /**
    * Whether campaign-service resolves Reddit subreddits and interests before creating anything
    * (`CampaignListResult.redditTargetingResolutionEnabled`, #6108 row 4), so the two lists are offered for editing.
@@ -2478,6 +2491,12 @@ export class ImplementationTabComponent implements OnInit {
       this.redditSentExcludedGeoTargets(),
       this.redditSubCountryGeoEnabled()
     )
+  );
+  /** The Reddit gender, languages and schedule (#6108 row 9), kept whatever the capability says; only the request is gated. */
+  protected readonly redditDemographics = signal<RedditDemographicsDraft>(redditBriefReset().demographics);
+  /** Why the gender, languages or schedule would be refused (`redditDemographicsDraftRefusal`), or `null`; holds Create. */
+  protected readonly redditDemographicsRefusal = computed<string | null>(() =>
+    redditDemographicsDraftRefusal(this.redditDemographics(), this.redditDemographicsEnabled())
   );
   /** The targeting a Reddit create sends, which the exclusions must not overlap. */
   protected readonly redditTargetedLists = computed<RedditTargetedLists>(() => ({
@@ -4791,6 +4810,7 @@ export class ImplementationTabComponent implements OnInit {
           targetingExclusionsBlock: this.redditTargetingExclusionsBlock()?.message ?? null,
           targetingExclusionsRefusal: redditTargetingExclusionsDraftRefusal(this.redditTargetingExclusions(), this.redditTargetedLists()),
           deliveryRefusal: redditDeliveryRefusal(this.redditDelivery(), this.redditDeliveryCapabilities()),
+          demographicsRefusal: this.redditDemographicsRefusal(),
           variantsRefusal:
             redditAdPerVariantRefusal(this.redditAdVariantsConfig(), this.redditAdVariantsAvailable())?.message ??
             redditAdVariantsFirstHeadlineRefusal(this.redditAdVariants(), this.redditAdVariantsCheck()),
@@ -6075,6 +6095,12 @@ export class ImplementationTabComponent implements OnInit {
   /** The regions, cities and DMAs, kept in the draft (#6108 row 7). */
   protected onRedditSubCountryGeoChange(locations: string[]): void {
     this.redditSubCountryGeoTargets.set(locations);
+    this.emitDraft();
+  }
+
+  /** The gender, languages and schedule, kept in the draft (#6108 row 9). */
+  protected onRedditDemographicsChange(demographics: RedditDemographicsDraft): void {
+    this.redditDemographics.set(demographics);
     this.emitDraft();
   }
 
@@ -7986,6 +8012,8 @@ export class ImplementationTabComponent implements OnInit {
               ...redditTargetingExclusionsField(this.redditTargetingExclusions(), this.redditTargetingExclusionsEnabled()),
               // The regions, cities and DMAs, only on an explicit yes and once one is added (#6108 row 7).
               ...redditSubCountryGeoField(this.redditSubCountryGeoTargets(), this.redditSubCountryGeoEnabled()),
+              // The gender, languages and schedule, only on an explicit yes and each only once set (#6108 row 9).
+              ...redditDemographicsField(this.redditDemographics(), this.redditDemographicsEnabled()),
               // Only what differs from campaign-service's default, and nothing a capability does not confirm (#6108 row 5).
               ...redditDeliveryField(this.redditDelivery(), this.redditDeliveryCapabilities()),
               // Omitted when blank rather than sent empty: upstream treats an empty `postUrl` as
@@ -10276,6 +10304,7 @@ export class ImplementationTabComponent implements OnInit {
     if (redditRestore.customAudiences !== undefined) this.redditCustomAudiences.set(redditRestore.customAudiences);
     if (redditRestore.targetingExclusions !== undefined) this.redditTargetingExclusions.set(redditRestore.targetingExclusions);
     if (redditRestore.subCountryGeoTargets !== undefined) this.redditSubCountryGeoTargets.set(redditRestore.subCountryGeoTargets);
+    if (redditRestore.demographics !== undefined) this.redditDemographics.set(redditRestore.demographics);
     if (redditRestore.delivery !== undefined) this.redditDelivery.set(redditRestore.delivery);
     if (redditRestore.editedTargetingLists !== undefined) this.redditEditedTargetingLists.set(redditRestore.editedTargetingLists);
     if (redditRestore.editedVariants !== undefined) this.redditEditedVariants.set(redditRestore.editedVariants);
@@ -10868,6 +10897,7 @@ export class ImplementationTabComponent implements OnInit {
         customAudiences: this.redditCustomAudiences(),
         targetingExclusions: this.redditTargetingExclusions(),
         subCountryGeoTargets: this.redditSubCountryGeoTargets(),
+        demographics: this.redditDemographics(),
         editedTargetingLists: this.redditEditedTargetingLists(),
         delivery: this.redditDelivery(),
         editedVariants: this.redditEditedVariants(),
@@ -10930,6 +10960,7 @@ export class ImplementationTabComponent implements OnInit {
     this.redditCustomAudiences.set(redditReset.customAudiences);
     this.redditTargetingExclusions.set(redditReset.targetingExclusions);
     this.redditSubCountryGeoTargets.set(redditReset.subCountryGeoTargets);
+    this.redditDemographics.set(redditReset.demographics);
     this.redditDelivery.set(redditReset.delivery);
     this.redditEditedTargetingLists.set(null);
     this.redditEditedVariants.set(null);

@@ -30,6 +30,7 @@ describe('redditDraftFields', () => {
     customAudiences: { customAudienceIds: ['aud_in'], excludedCustomAudienceIds: ['aud_out'] },
     targetingExclusions: { excludedSubreddits: ['politics'], excludedGeoTargets: ['CA'] },
     subCountryGeoTargets: ['US-CA', '662'],
+    demographics: { gender: 'FEMALE', languages: ['EN'], schedule: [{ startDay: 1, startHour: 9, endDay: 1, endHour: 17 }] },
     editedTargetingLists: { subreddits: ['kubernetes'], interests: ['technology_v3'] },
     delivery: { budgetType: 'daily', placements: ['FEED'], platforms: ['DESKTOP', 'MOBILE_WEB'], expandTargeting: false },
     editedVariants: [{ headline: 'Edited headline', body: 'Brief body' }, { headline: 'Second' }],
@@ -58,6 +59,7 @@ describe('redditDraftFields', () => {
       redditExcludedSubreddits: ['politics'],
       redditExcludedGeoTargets: ['CA'],
       redditSubCountryGeoTargets: ['US-CA', '662'],
+      redditDemographics: { gender: 'FEMALE', languages: ['EN'], schedule: [{ startDay: 1, startHour: 9, endDay: 1, endHour: 17 }] },
       redditEditedSubreddits: ['kubernetes'],
       redditEditedInterests: ['technology_v3'],
       redditBudgetType: 'daily',
@@ -89,6 +91,10 @@ describe('redditDraftFields', () => {
 
   it('leaves the regions, cities and DMAs out until one is added, so an unused draft is unchanged', () => {
     expect(redditDraftFields({ ...state, subCountryGeoTargets: [] })).not.toHaveProperty('redditSubCountryGeoTargets');
+  });
+
+  it('leaves the gender, languages and schedule out until one is set, so an unused draft is unchanged', () => {
+    expect(redditDraftFields({ ...state, demographics: { gender: '', languages: [], schedule: [] } })).not.toHaveProperty('redditDemographics');
   });
 });
 
@@ -235,6 +241,15 @@ describe('redditDraftRestore: regions, cities and DMAs', () => {
   });
 });
 
+describe('redditDraftRestore: gender, languages and schedule', () => {
+  it.each<[string, unknown, unknown]>([
+    ['no key (an older draft), so the defaults stand', undefined, undefined],
+    ['the choices as stored', { gender: 'MALE', languages: ['DE'], schedule: [] }, { gender: 'MALE', languages: ['DE'], schedule: [] }],
+  ])('restores %s', (_name, stored, expected) => {
+    expect(redditDraftRestore(draft({ redditDemographics: stored } as RedditDraftSnapshot)).demographics).toEqual(expected);
+  });
+});
+
 describe('redditDraftRestore: edited subreddits and interests', () => {
   it.each<[string, unknown, unknown, unknown]>([
     ['both lists', ['kubernetes'], ['technology_v3'], { subreddits: ['kubernetes'], interests: ['technology_v3'] }],
@@ -292,6 +307,7 @@ describe('redditBriefReset', () => {
       customAudiences: { customAudienceIds: [], excludedCustomAudienceIds: [] },
       targetingExclusions: { excludedSubreddits: [], excludedGeoTargets: [] },
       subCountryGeoTargets: [],
+      demographics: { gender: '', languages: [], schedule: [] },
       delivery: { budgetType: 'lifetime', placements: ['FEED', 'COMMENTS_PAGE'], platforms: ['DESKTOP', 'MOBILE_NATIVE', 'MOBILE_WEB'], expandTargeting: true },
       budgetUsd: DEFAULT_REDDIT_BUDGET_USD,
       variants: [],
