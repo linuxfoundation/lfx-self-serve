@@ -36,7 +36,7 @@ apps/lfx-one/
 │   └── .auth/user.json              # auth state produced by global-setup (gitignored)
 ├── scripts/
 │   └── check-e2e-collection.mjs     # CI collection-integrity guard (see below)
-└── playwright.config.ts             # dev server + 3 browser projects
+└── playwright.config.ts             # dev server + 5 browser projects
 ```
 
 Run the suite:
@@ -185,13 +185,24 @@ test('filter button aria-label updates when a filter is active', async ({ page }
 
 ## Browser Projects
 
-`playwright.config.ts` defines three projects, all sharing the saved auth state under `playwright/.auth/user.json`:
+`playwright.config.ts` defines five projects, all sharing the saved auth state under `playwright/.auth/user.json`:
 
-| Project         | Device          | Workers            | Notes                                            |
-| --------------- | --------------- | ------------------ | ------------------------------------------------ |
-| `chromium`      | Desktop Chrome  | default (parallel) | Primary dev target.                              |
-| `firefox`       | Desktop Firefox | default (parallel) | Increased `actionTimeout` / `navigationTimeout`. |
-| `mobile-chrome` | Pixel 5 (touch) | 1                  | Single worker to avoid resource contention.      |
+| Project         | Device            | Workers            | Specs               | Notes                                                 |
+| --------------- | ----------------- | ------------------ | ------------------- | ----------------------------------------------------- |
+| `chromium`      | Desktop Chrome    | default (parallel) | all                 | Primary dev target.                                   |
+| `firefox`       | Desktop Firefox   | default (parallel) | all                 | Increased `actionTimeout` / `navigationTimeout`.      |
+| `webkit`        | Desktop Safari    | 1                  | `**/mktg-*.spec.ts` | Marketing OS only. Stands in for Safari on macOS.     |
+| `mobile-chrome` | Pixel 5 (touch)   | 1                  | all                 | Single worker to avoid resource contention.           |
+| `mobile-safari` | iPhone 14 (touch) | 1                  | `**/mktg-*.spec.ts` | Marketing OS only. WebKit with the iPhone descriptor. |
+
+The two WebKit projects run only the Marketing OS specs (`e2e/mktg-*.spec.ts`); both take the glob from the `MKTG_OS_SPECS` constant in the config, so they always cover the same files. A Marketing OS spec must keep the `mktg-` prefix to be picked up. Install the browser once with `yarn playwright install webkit` (from `apps/lfx-one`; Chromium must be installed too, because global setup signs in with it), then:
+
+```bash
+yarn playwright test --project=webkit          # desktop Safari
+yarn playwright test --project=mobile-safari   # iPhone emulation
+```
+
+`mobile-safari` is WebKit with the iPhone 14 user agent, touch and scale factor. The iPhone viewport applies only to a spec that does not set its own: a spec-level `viewport` or `page.setViewportSize(...)` overrides the project's device, and most Marketing OS specs pin a desktop width (1280 or 1440), so they run the desktop layout here. A green `mobile-safari` run is therefore not "green at phone width" for those specs. It is not the phone either: the native print sheet and AirPrint are checked by hand in Safari on iOS. A plain `yarn e2e` runs every project, the two WebKit ones included.
 
 Parallelism is on by default (`fullyParallel: true`). CI caps workers to 1 and enables 2 retries.
 
