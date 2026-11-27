@@ -22,6 +22,7 @@ import { linkedInConfigNamesConversions, linkedInConversionRules, linkedInObject
 import { linkedInTargetingNamesSegments, linkedInTargetingRefusal } from '@lfx-one/shared/utils/campaign-linkedin-targeting.utils';
 import { redditConversionEventRefusal } from '@lfx-one/shared/utils/campaign-reddit-conversion-event.utils';
 import { redditTargetingExclusionsRefusal } from '@lfx-one/shared/utils/campaign-reddit-targeting-exclusions.utils';
+import { redditSubCountryGeoRefusal } from '@lfx-one/shared/utils/campaign-reddit-subcountry-geo.utils';
 import { redditAdPerVariantRefusal } from '@lfx-one/shared/utils/campaign-reddit-ad-variants.utils';
 import { redditBudgetTypeRefusal, redditPlacementsRefusal } from '@lfx-one/shared/utils/campaign-reddit-delivery.utils';
 import { redditPixelsFromPayload } from '@lfx-one/shared/utils/campaign-reddit-pixels.utils';
@@ -500,6 +501,7 @@ import {
   canSetRedditConversionEvent,
   canSetRedditCustomAudiences,
   canSetRedditTargetingExclusions,
+  canSetRedditSubCountryGeo,
   canSetRedditPlacements,
   canSetRedditBudgetType,
   canSetRedditAdPerVariant,
@@ -1488,6 +1490,19 @@ export class CampaignController {
       const redditTargetingExclusionsRefused = redditTargetingExclusionsRefusal(body?.redditConfig, canSetRedditTargetingExclusions());
       if (redditTargetingExclusionsRefused !== null) {
         throw ServiceValidationError.forField(redditTargetingExclusionsRefused.field, redditTargetingExclusionsRefused.message, {
+          operation: 'campaign_create',
+          service: 'campaign_controller',
+        });
+      }
+      // Reddit regions, cities and DMAs (#6108 row 7): refused, never dropped, while this deployment cannot send them, and
+      // held to campaign-service's rules (`checkRedditSubCountryGeo`), whose gate and value rules it runs after the
+      // exclusions' and before the placements' (it type-checks every field first, so a mistyped later field may be named
+      // there instead; either way nothing is created). Whether Reddit can target an id is campaign-service's own read. See
+      // `redditSubCountryGeoRefusal`. Only for a Reddit create: campaign-service runs the Reddit pre-check only for the
+      // platforms selected, so a `redditConfig` beside other platforms is never judged there.
+      const redditSubCountryGeoRefused = platforms.includes('reddit-ads') ? redditSubCountryGeoRefusal(body?.redditConfig, canSetRedditSubCountryGeo()) : null;
+      if (redditSubCountryGeoRefused !== null) {
+        throw ServiceValidationError.forField(redditSubCountryGeoRefused.field, redditSubCountryGeoRefused.message, {
           operation: 'campaign_create',
           service: 'campaign_controller',
         });

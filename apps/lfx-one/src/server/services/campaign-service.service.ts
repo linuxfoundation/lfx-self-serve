@@ -12,6 +12,7 @@ import {
   CAMPAIGN_SERVICE_MULTI_CAMPAIGN_CAPABLE_PLATFORMS,
   CAMPAIGN_TACTIC_OPTIONS,
   CAMPAIGN_SERVICE_BIDDING_REFUSAL_PATTERN,
+  CAMPAIGN_SERVICE_REDDIT_SUBCOUNTRY_GEO_REFUSAL_PATTERN,
   CAMPAIGN_SERVICE_REDDIT_TARGETING_REFUSAL_PATTERN,
   CAMPAIGN_SERVICE_STALE_BRIEF_REFUSAL_PATTERN,
   CAMPAIGN_GOALS,
@@ -761,6 +762,16 @@ export function canSetRedditTargetingExclusions(): boolean {
 }
 
 /**
+ * Whether a Reddit create may carry `subCountryGeoTargets` (#6108 row 7, campaign-service #549). Needs the
+ * campaign-service create path AND `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_SUBCOUNTRY_GEO`, which follows campaign-service's
+ * own `REDDIT_SUBCOUNTRY_GEO_ENABLED`: campaign-service refuses the field while that is off, and the legacy creator
+ * ignores it.
+ */
+export function canSetRedditSubCountryGeo(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceRedditSubCountryGeo);
+}
+
+/**
  * Whether campaign-service resolves a Reddit create's `subreddits` and `interests` before creating anything (#6108 row 4,
  * campaign-service #573), so the Implement tab may offer them for editing. Needs the campaign-service create path AND
  * `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_TARGETING_RESOLUTION`, which follows campaign-service's own
@@ -1400,6 +1411,7 @@ export class CampaignServiceClient {
         redditConversionPixelEnabled: canSetRedditConversionPixel(),
         redditConversionEventEnabled: canSetRedditConversionEvent(),
         redditTargetingExclusionsEnabled: canSetRedditTargetingExclusions(),
+        redditSubCountryGeoEnabled: canSetRedditSubCountryGeo(),
         redditTargetingResolutionEnabled: canResolveRedditTargeting(),
         redditPlacementsEnabled: canSetRedditPlacements(),
         redditBudgetTypeEnabled: canSetRedditBudgetType(),
@@ -1505,6 +1517,7 @@ export class CampaignServiceClient {
       redditConversionPixelEnabled: canSetRedditConversionPixel(),
       redditConversionEventEnabled: canSetRedditConversionEvent(),
       redditTargetingExclusionsEnabled: canSetRedditTargetingExclusions(),
+      redditSubCountryGeoEnabled: canSetRedditSubCountryGeo(),
       redditTargetingResolutionEnabled: canResolveRedditTargeting(),
       redditPlacementsEnabled: canSetRedditPlacements(),
       redditBudgetTypeEnabled: canSetRedditBudgetType(),
@@ -2694,12 +2707,15 @@ export class CampaignServiceClient {
         ) {
           return { enabled: true, jobId: null, error: CAMPAIGN_CREATE_STALE_BRIEF_MESSAGE };
         }
-        // The refusals worth naming: an invalid bid (#3299), and a Reddit community or interest Reddit does
-        // not know (#6108 row 4). Matched on the service's own wording, so nothing else upstream sends is
-        // rendered — see `CAMPAIGN_SERVICE_BIDDING_REFUSAL_PATTERN` and `CAMPAIGN_SERVICE_REDDIT_TARGETING_REFUSAL_PATTERN`.
+        // The refusals worth naming: an invalid bid (#3299), a Reddit community or interest Reddit does not know
+        // (#6108 row 4), and a Reddit region, city or DMA Reddit cannot target (row 7). Matched on the service's own
+        // wording, so nothing else upstream sends is rendered — see `CAMPAIGN_SERVICE_BIDDING_REFUSAL_PATTERN`,
+        // `CAMPAIGN_SERVICE_REDDIT_TARGETING_REFUSAL_PATTERN` and `CAMPAIGN_SERVICE_REDDIT_SUBCOUNTRY_GEO_REFUSAL_PATTERN`.
         const namedRefusal =
           error instanceof MicroserviceError && error.statusCode === 400
-            ? (CAMPAIGN_SERVICE_BIDDING_REFUSAL_PATTERN.exec(error.message) ?? CAMPAIGN_SERVICE_REDDIT_TARGETING_REFUSAL_PATTERN.exec(error.message))
+            ? (CAMPAIGN_SERVICE_BIDDING_REFUSAL_PATTERN.exec(error.message) ??
+              CAMPAIGN_SERVICE_REDDIT_TARGETING_REFUSAL_PATTERN.exec(error.message) ??
+              CAMPAIGN_SERVICE_REDDIT_SUBCOUNTRY_GEO_REFUSAL_PATTERN.exec(error.message))
             : null;
         if (namedRefusal !== null) {
           return { enabled: true, jobId: null, error: `Campaign creation was rejected and nothing was created: ${namedRefusal[0]}` };

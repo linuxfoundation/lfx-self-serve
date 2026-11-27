@@ -41,7 +41,7 @@ function plainRecord(value: unknown): Record<string, unknown> | null {
  * campaign-service's. JavaScript's `<` compares UTF-16 code units, which orders BMP keys as their UTF-8 bytes do, and
  * every fold variant of these ASCII names (`ſ`, the Kelvin sign) is in the BMP.
  */
-function decodedValue(config: Record<string, unknown>, key: string): unknown {
+export function redditDecodedConfigValue(config: Record<string, unknown>, key: string): unknown {
   let last: string | undefined;
   for (const k of Object.keys(config)) {
     if (foldKey(k) === foldKey(key) && (last === undefined || k > last)) last = k;
@@ -74,8 +74,10 @@ function subredditName(raw: string): string {
  * sub-country locations replace the default.
  */
 function effectiveGeoSet(config: Record<string, unknown>): Set<string> {
-  const targeted = new Set((stringList(decodedValue(config, 'geoTargets')) ?? []).map((g) => googleAdsToUpperCode(goTrimSpace(g))).filter((g) => g !== ''));
-  const subCountry = stringList(decodedValue(config, 'subCountryGeoTargets')) ?? [];
+  const targeted = new Set(
+    (stringList(redditDecodedConfigValue(config, 'geoTargets')) ?? []).map((g) => googleAdsToUpperCode(goTrimSpace(g))).filter((g) => g !== '')
+  );
+  const subCountry = stringList(redditDecodedConfigValue(config, 'subCountryGeoTargets')) ?? [];
   if (targeted.size === 0 && subCountry.length === 0) targeted.add('US');
   return targeted;
 }
@@ -85,7 +87,7 @@ function subredditRefusal(excluded: string[], config: Record<string, unknown>): 
   const max = REDDIT_TARGETING_EXCLUSION_LIMITS.excludedSubreddits;
   if (excluded.length > max) return { field, message: `Exclude at most ${max} subreddits.` };
   const targeted = new Set(
-    (stringList(decodedValue(config, 'subreddits')) ?? [])
+    (stringList(redditDecodedConfigValue(config, 'subreddits')) ?? [])
       .map(subredditName)
       .filter((name) => name !== '')
       .map((name) => name.toLowerCase())

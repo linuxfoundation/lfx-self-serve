@@ -351,6 +351,19 @@ export enum ServerFeatureFlag {
   CampaignServiceRedditTargetingExclusions = 'LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_TARGETING_EXCLUSIONS',
 
   /**
+   * Reddit regions, cities and DMAs (#6108 row 7, linuxfoundation/lfx-v2-campaign-service#549): accept
+   * `redditConfig.subCountryGeoTargets`, Reddit geolocation ids such as `US-CA` (region), `CA:6167865` (city) and `662`
+   * (DMA), sent beside the countries in the ad group's targeting.
+   *
+   * A CAPABILITY flag of the Bidding kind: REQUIRES campaign-service DEPLOYED with `REDDIT_SUBCOUNTRY_GEO_ENABLED` on,
+   * since campaign-service refuses the field with a 400 otherwise, and is only meaningful on the campaign-service create
+   * path (`cutoverOwnsCreate`): the legacy creator ignores it. Off (the default), the create route refuses it with a 400,
+   * never dropping it. Keep it off until campaign-service's flag is on and probed. A request field only, so flipping it
+   * back strands nothing. Same accepted values as the flags above.
+   */
+  CampaignServiceRedditSubCountryGeo = 'LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_SUBCOUNTRY_GEO',
+
+  /**
    * Reddit community and interest resolution (#6108 row 4, linuxfoundation/lfx-v2-campaign-service#573): campaign-service
    * resolves `redditConfig.subreddits` and `interests` to Reddit's own names and ids before anything is created, and
    * refuses an unknown one with a 400. Off there, Reddit refuses interest labels and the create quietly retries without

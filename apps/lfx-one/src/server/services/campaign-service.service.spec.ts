@@ -2452,7 +2452,20 @@ describe('CampaignServiceClient.createCampaigns', () => {
     expect(res.error).toBe(`Campaign creation was rejected and nothing was created: ${message}`);
   });
 
+  /** A Reddit region, city or DMA Reddit refused in campaign-service's live check (#6108 row 7) names the location to fix. */
+  it('names a Reddit location campaign-service could not validate', async () => {
+    const message = 'invalid campaign config: redditConfig.subCountryGeoTargets: entry 2 ("US-ZZ") is not a targetable Reddit geolocation';
+    bothFlagsOn();
+    proxyRequestWithResponse.mockRejectedValueOnce(new MicroserviceError(message, 400, 'campaign_service'));
+
+    const res = await new CampaignServiceClient().createCampaigns(req, 'b-1', 'tlf', ['reddit-ads'], { redditConfig: { budget: 100 } });
+
+    expect(res.error).toBe(`Campaign creation was rejected and nothing was created: ${message}`);
+  });
+
   it.each([
+    // The sub-country cap names no entry, and the create route refuses it before campaign-service sees it.
+    ['the sub-country cap', 400, 'invalid campaign config: redditConfig.subCountryGeoTargets: at most 50 geolocation ids, got 51'],
     ['another reddit field', 400, 'invalid campaign config: redditConfig.keywords: entry 1 is blank'],
     ['another config field', 400, 'invalid campaign config: metaConfig.budget: must be positive'],
     ['a googleAdsConfig bidding refusal', 400, 'invalid campaign config: googleAdsConfig.bidding: use googleAdsConfig.biddingStrategy'],
@@ -4958,6 +4971,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       redditConversionPixelEnabled: false,
       redditConversionEventEnabled: false,
       redditTargetingExclusionsEnabled: false,
+      redditSubCountryGeoEnabled: false,
       redditTargetingResolutionEnabled: false,
       redditPlacementsEnabled: false,
       redditBudgetTypeEnabled: false,
@@ -5702,8 +5716,9 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
     }
   });
 
-  /** Reddit placements, budget type and pixel list (#6108 row 5) and one ad per variant (row 6): the cutover and each one's own flag. */
+  /** Reddit placements, budget type and pixel list (#6108 row 5), one ad per variant (row 6), and regions, cities and DMAs (row 7): the cutover and each one's own flag. */
   it.each([
+    ['redditSubCountryGeoEnabled', ServerFeatureFlag.CampaignServiceRedditSubCountryGeo],
     ['redditPlacementsEnabled', ServerFeatureFlag.CampaignServiceRedditPlacements],
     ['redditBudgetTypeEnabled', ServerFeatureFlag.CampaignServiceRedditDailyBudget],
     ['redditPixelListEnabled', ServerFeatureFlag.CampaignServiceRedditPixelList],
@@ -5949,6 +5964,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       redditConversionPixelEnabled: false,
       redditConversionEventEnabled: false,
       redditTargetingExclusionsEnabled: false,
+      redditSubCountryGeoEnabled: false,
       redditTargetingResolutionEnabled: false,
       redditPlacementsEnabled: false,
       redditBudgetTypeEnabled: false,

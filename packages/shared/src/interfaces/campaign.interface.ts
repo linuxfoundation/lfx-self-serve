@@ -3157,6 +3157,13 @@ export interface RedditCampaignCreateRequest {
   excludedSubreddits?: string[];
   excludedGeoTargets?: string[];
   /**
+   * Regions, cities and DMAs the ad group targets beside its countries (#6108 row 7, campaign-service #549): Reddit
+   * geolocation ids such as `US-CA` (region), `CA:6167865` (city) and `662` (DMA). None may lie inside a country
+   * `geoTargets` targets or `excludedGeoTargets` excludes. Only while `CampaignListResult.redditSubCountryGeoEnabled`: the
+   * create route refuses it otherwise, never dropping it.
+   */
+  subCountryGeoTargets?: string[];
+  /**
    * Where the ads run, on which devices, and whether Reddit may widen the audience (#6108 row 5, campaign-service #549).
    * An omitted or empty list means every placement (`FEED` and `COMMENTS_PAGE`) or every device; `ALL` is not a device
    * value, omit the list for it. `expandTargeting` omitted means `true`. Only while
@@ -9096,6 +9103,12 @@ export interface CampaignListResult {
    * campaign-service's own `REDDIT_TARGETING_EXCLUSIONS_ENABLED`. Optional, so a BFF that predates it reads as unanswered.
    */
   redditTargetingExclusionsEnabled?: boolean;
+  /**
+   * Whether a Reddit create may carry `redditConfig.subCountryGeoTargets` (#6108 row 7): the campaign-service create path
+   * AND `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_SUBCOUNTRY_GEO`, which follows campaign-service's own
+   * `REDDIT_SUBCOUNTRY_GEO_ENABLED`. Optional, so a BFF that predates it reads as unanswered.
+   */
+  redditSubCountryGeoEnabled?: boolean;
   /**
    * Whether campaign-service resolves a Reddit create's `subreddits` and `interests` before creating anything (#6108 row 4):
    * the campaign-service create path AND `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_TARGETING_RESOLUTION`, which follows
