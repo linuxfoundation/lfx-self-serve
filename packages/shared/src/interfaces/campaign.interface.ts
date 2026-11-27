@@ -6899,7 +6899,6 @@ export type CampaignServiceMonitorPriority = 'HIGH' | 'MED' | 'LOW';
 /** The X monitor's 409 `reason`, forwarded to the client as `upstreamCode`. */
 export type AccountMonitorConflictReason = (typeof ACCOUNT_MONITOR_CONFLICT_REASONS)[number];
 
-/** campaign-service `account-monitor-campaign`. */
 /**
  * The account-monitor scope campaign-service is asked for (linuxfoundation/lfx-v2-campaign-service#672).
  * `account` returns every campaign on the shared ad account, whoever created it, and only
@@ -6912,6 +6911,7 @@ export interface MonitorResponseWithCampaigns {
   campaigns: { campaignId: string; recordedProjectId?: string | null }[];
 }
 
+/** campaign-service `account-monitor-campaign`. */
 export interface CampaignServiceAccountMonitorCampaign {
   platform_campaign_id: string;
   name: string;

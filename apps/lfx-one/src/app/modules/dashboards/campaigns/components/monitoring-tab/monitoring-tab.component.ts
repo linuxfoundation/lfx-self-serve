@@ -534,7 +534,7 @@ export class MonitoringTabComponent implements OnInit {
     const days = this.selectedDays();
 
     this.monitorSub = this.campaignService
-      .getMonitorData(this.activeFoundationSlug(), days)
+      .getMonitorData(this.activeFoundationSlug(), days, true)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (data) => {
@@ -683,7 +683,7 @@ export class MonitoringTabComponent implements OnInit {
     const request: Observable<ReportBackedMonitorResponse> =
       platform === 'microsoft'
         ? this.campaignService.getMicrosoftMonitorData(this.activeFoundationSlug(), accountId, this.selectedDays())
-        : this.campaignService.getTwitterMonitorData(this.activeFoundationSlug(), accountId, this.selectedDays());
+        : this.campaignService.getTwitterMonitorData(this.activeFoundationSlug(), accountId, this.selectedDays(), true);
     this.reportBackedSub = request.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
         this.setMetricsDisabled(platform, false);
@@ -762,7 +762,7 @@ export class MonitoringTabComponent implements OnInit {
     this.togglePlatform(this.systemAccountRefusedPlatforms, 'linkedin', false);
     const accountSource = this.monitorAccountSource();
     this.linkedInSub = this.campaignService
-      .getLinkedInMonitorData(this.activeFoundationSlug(), accountKey || null, this.selectedDays(), accountSource)
+      .getLinkedInMonitorData(this.activeFoundationSlug(), accountKey || null, this.selectedDays(), accountSource, true)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (data) => {
@@ -820,7 +820,7 @@ export class MonitoringTabComponent implements OnInit {
     this.setRestricted('reddit', false);
     this.togglePlatform(this.systemAccountRefusedPlatforms, 'reddit', false);
     this.redditSub = this.campaignService
-      .getRedditMonitorData(this.activeFoundationSlug(), accountKey || null, this.selectedDays(), this.monitorAccountSource())
+      .getRedditMonitorData(this.activeFoundationSlug(), accountKey || null, this.selectedDays(), this.monitorAccountSource(), true)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (data) => {
@@ -878,7 +878,7 @@ export class MonitoringTabComponent implements OnInit {
     this.togglePlatform(this.systemAccountRefusedPlatforms, 'meta', false);
     const accountSource = this.monitorAccountSource();
     this.metaSub = this.campaignService
-      .getMetaMonitorData(this.activeFoundationSlug(), accountKey || null, this.selectedDays(), accountSource)
+      .getMetaMonitorData(this.activeFoundationSlug(), accountKey || null, this.selectedDays(), accountSource, true)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (data) => {

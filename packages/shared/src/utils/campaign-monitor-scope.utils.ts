@@ -1,15 +1,16 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CampaignServiceAccountMonitor, CampaignServiceMonitorScope } from '../interfaces/campaign.interface';
+import { CampaignServiceAccountMonitorCampaign, CampaignServiceMonitorScope } from '../interfaces/campaign.interface';
 
 /**
  * Which scope to ask for (#6209): `account` only while `LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR_ACCOUNT_SCOPE`
- * is on AND the caller's project `global_marketing_ops` check came back granted. Anything else —
- * flag off, a denial, or a check that could not be made — keeps the project-scoped read, the narrower view.
+ * is on, the request opted in (the Monitor tab's `accountWide=true`; the Optimize tab never does), AND the
+ * caller's project `global_marketing_ops` check came back granted. Anything else — flag off, no opt-in, a
+ * denial, or a check that could not be made — keeps the project-scoped read, the narrower view.
  */
-export function campaignMonitorScope(flagOn: boolean, marketingOps: 'granted' | 'denied' | 'unverified'): CampaignServiceMonitorScope {
-  return flagOn && marketingOps === 'granted' ? 'account' : undefined;
+export function campaignMonitorScope(flagOn: boolean, requested: boolean, marketingOps: 'granted' | 'denied' | 'unverified'): CampaignServiceMonitorScope {
+  return flagOn && requested && marketingOps === 'granted' ? 'account' : undefined;
 }
 
 /**
@@ -19,7 +20,7 @@ export function campaignMonitorScope(flagOn: boolean, marketingOps: 'granted' | 
  */
 export function withRecordedProjects<R extends { campaignId: string; recordedProjectId?: string | null }, T extends { campaigns: R[] }>(
   response: T,
-  payload: CampaignServiceAccountMonitor
+  payload: { campaigns?: Pick<CampaignServiceAccountMonitorCampaign, 'platform_campaign_id' | 'recorded_project_id'>[] }
 ): T {
   const owners = new Map((payload.campaigns ?? []).map((row) => [row.platform_campaign_id, row.recorded_project_id]));
   return {

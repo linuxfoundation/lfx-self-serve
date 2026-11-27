@@ -32,6 +32,7 @@ import {
   MONITOR_ACCOUNT_SOURCE_CONNECTION,
   MONITOR_ACCOUNT_SOURCE_LEGACY,
   MONITOR_ACCOUNT_SOURCE_PARAM,
+  MONITOR_ACCOUNT_WIDE_PARAM,
   CAMPAIGN_NEWSLETTER_CACHE_TTL_MS,
 } from '@lfx-one/shared/constants';
 import {
@@ -700,8 +701,13 @@ export class CampaignService {
     );
   }
 
-  public getMonitorData(projectSlug: string, days: number = 30): Observable<CampaignMonitorResponse> {
-    return this.http.get<CampaignMonitorResponse>('/api/campaigns/monitor', { params: { project: projectSlug, days } });
+  /**
+   * `accountWide` asks for every campaign on the account (#6209). Only the Monitor tab sends it; the server honours it
+   * only behind its flag and for a caller holding `global_marketing_ops` on the project, and the Optimize tab, whose
+   * levers act on the project's own campaigns, never does. The same holds for the LinkedIn, Reddit, Meta and X reads.
+   */
+  public getMonitorData(projectSlug: string, days: number = 30, accountWide = false): Observable<CampaignMonitorResponse> {
+    return this.http.get<CampaignMonitorResponse>('/api/campaigns/monitor', { params: { project: projectSlug, days, ...this.accountWideParam(accountWide) } });
   }
 
   public getLinkedInAccounts(projectSlug: string): Observable<LinkedInAccount[]> {
@@ -740,10 +746,17 @@ export class CampaignService {
     projectSlug: string,
     accountKey: string | null,
     days: number = 30,
-    accountSource: MonitorAccountSource | null = null
+    accountSource: MonitorAccountSource | null = null,
+    accountWide = false
   ): Observable<LinkedInMonitorResponse> {
     return this.http.get<LinkedInMonitorResponse>('/api/campaigns/linkedin/monitor', {
-      params: { project: projectSlug, days, ...(accountKey ? { accountKey } : {}), ...this.monitorAccountSource(accountSource) },
+      params: {
+        project: projectSlug,
+        days,
+        ...(accountKey ? { accountKey } : {}),
+        ...this.monitorAccountSource(accountSource),
+        ...this.accountWideParam(accountWide),
+      },
     });
   }
 
@@ -755,10 +768,17 @@ export class CampaignService {
     projectSlug: string,
     accountKey: string | null,
     days: number = 30,
-    accountSource: MonitorAccountSource | null = null
+    accountSource: MonitorAccountSource | null = null,
+    accountWide = false
   ): Observable<RedditMonitorResponse> {
     return this.http.get<RedditMonitorResponse>('/api/campaigns/reddit/monitor', {
-      params: { project: projectSlug, days, ...(accountKey ? { accountKey } : {}), ...this.monitorAccountSource(accountSource) },
+      params: {
+        project: projectSlug,
+        days,
+        ...(accountKey ? { accountKey } : {}),
+        ...this.monitorAccountSource(accountSource),
+        ...this.accountWideParam(accountWide),
+      },
     });
   }
 
@@ -955,10 +975,17 @@ export class CampaignService {
     projectSlug: string,
     accountKey: string | null,
     days: number = 30,
-    accountSource: MonitorAccountSource | null = null
+    accountSource: MonitorAccountSource | null = null,
+    accountWide = false
   ): Observable<MetaMonitorResponse> {
     return this.http.get<MetaMonitorResponse>('/api/campaigns/meta/monitor', {
-      params: { project: projectSlug, days, ...(accountKey ? { accountKey } : {}), ...this.monitorAccountSource(accountSource) },
+      params: {
+        project: projectSlug,
+        days,
+        ...(accountKey ? { accountKey } : {}),
+        ...this.monitorAccountSource(accountSource),
+        ...this.accountWideParam(accountWide),
+      },
     });
   }
 
@@ -984,9 +1011,9 @@ export class CampaignService {
   }
 
   /** X (Twitter) Ads account monitor — the Microsoft one's sibling, plus a 409 for an account it cannot monitor. */
-  public getTwitterMonitorData(projectSlug: string, accountId: string, days: number = 30): Observable<ReportBackedMonitorResponse> {
+  public getTwitterMonitorData(projectSlug: string, accountId: string, days: number = 30, accountWide = false): Observable<ReportBackedMonitorResponse> {
     return this.http.get<ReportBackedMonitorResponse>('/api/campaigns/twitter/monitor', {
-      params: { project: projectSlug, days, accountKey: accountId, ...this.monitorAccountSource('connection') },
+      params: { project: projectSlug, days, accountKey: accountId, ...this.monitorAccountSource('connection'), ...this.accountWideParam(accountWide) },
     });
   }
 
@@ -1597,6 +1624,10 @@ export class CampaignService {
    * (`MONITOR_CUTOVER_MISMATCH` / `MONITOR_CUTOVER_LEGACY_MISMATCH`) instead of misserving it; see
    * `MONITOR_ACCOUNT_SOURCE_PARAM`. `null` sends no marker: the Optimize tab's reads, unchanged.
    */
+  private accountWideParam(accountWide: boolean): Record<string, string> {
+    return accountWide ? { [MONITOR_ACCOUNT_WIDE_PARAM]: 'true' } : {};
+  }
+
   private monitorAccountSource(source: MonitorAccountSource | null): Record<string, string> {
     return source ? { [MONITOR_ACCOUNT_SOURCE_PARAM]: source === 'connection' ? MONITOR_ACCOUNT_SOURCE_CONNECTION : MONITOR_ACCOUNT_SOURCE_LEGACY } : {};
   }

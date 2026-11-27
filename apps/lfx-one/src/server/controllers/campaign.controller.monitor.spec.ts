@@ -861,7 +861,7 @@ describe('CampaignController.getTwitterMonitor conflict', () => {
     );
     const next = vi.fn();
 
-    await new CampaignController().getTwitterMonitor(buildReq({ accountKey: '18ce54d4x5t', project: 'tlf' }), buildRes(), next);
+    await new CampaignController().getTwitterMonitor(buildReq({ accountKey: '18ce54d4x5t', project: 'tlf', accountWide: 'true' }), buildRes(), next);
 
     const response = (nextError(next) as MicroserviceError).toResponse();
     expect(response['upstreamCode']).toBe('account_too_many_active_campaigns');
@@ -1579,7 +1579,7 @@ describe('shared-account monitor access (lfx-self-serve-ops#54)', () => {
     flag(on);
     const next = vi.fn();
 
-    await new CampaignController().getTwitterMonitor(buildReq({ accountKey: '18ce54d4x5t', project: 'tlf' }), buildRes(), next);
+    await new CampaignController().getTwitterMonitor(buildReq({ accountKey: '18ce54d4x5t', project: 'tlf', accountWide: 'true' }), buildRes(), next);
 
     expectRestricted(next);
     expect(svcTwitter).not.toHaveBeenCalled();
@@ -1749,7 +1749,7 @@ describe('account-wide monitor scope', () => {
     svcMeta.mockResolvedValueOnce(labeledPayload());
     const res = buildRes();
 
-    await new CampaignController().getMetaMonitor(buildReq({ accountKey: META_ACCOUNT, project: 'tlf' }), res, vi.fn());
+    await new CampaignController().getMetaMonitor(buildReq({ accountKey: META_ACCOUNT, project: 'tlf', accountWide: 'true' }), res, vi.fn());
 
     expect(checkProjectGlobalMarketingOpsStrict).toHaveBeenCalledWith(expect.anything(), 'tlf');
     expect(svcMeta).toHaveBeenCalledWith(expect.anything(), 'tlf', META_ACCOUNT, 30, 'account');
@@ -1769,18 +1769,28 @@ describe('account-wide monitor scope', () => {
     svcMeta.mockResolvedValueOnce(monitorPayload());
     const res = buildRes();
 
-    await new CampaignController().getMetaMonitor(buildReq({ accountKey: META_ACCOUNT, project: 'tlf' }), res, vi.fn());
+    await new CampaignController().getMetaMonitor(buildReq({ accountKey: META_ACCOUNT, project: 'tlf', accountWide: 'true' }), res, vi.fn());
 
     expect(svcMeta).toHaveBeenCalledWith(expect.anything(), 'tlf', META_ACCOUNT, 30, undefined);
     const rows = (vi.mocked(res.json).mock.calls[0][0] as { campaigns: Record<string, unknown>[] }).campaigns;
     expect(rows[0]).not.toHaveProperty('recordedProjectId');
   });
 
+  it('keeps the project-scoped read, checking no role, when the request does not opt in (the Optimize tab)', async () => {
+    flags(true);
+    svcMeta.mockResolvedValueOnce(monitorPayload());
+
+    await new CampaignController().getMetaMonitor(buildReq({ accountKey: META_ACCOUNT, project: 'tlf' }), buildRes(), vi.fn());
+
+    expect(checkProjectGlobalMarketingOpsStrict).not.toHaveBeenCalled();
+    expect(svcMeta).toHaveBeenCalledWith(expect.anything(), 'tlf', META_ACCOUNT, 30, undefined);
+  });
+
   it('does not check the role while the flag is off', async () => {
     flags(false);
     svcMeta.mockResolvedValueOnce(monitorPayload());
 
-    await new CampaignController().getMetaMonitor(buildReq({ accountKey: META_ACCOUNT, project: 'tlf' }), buildRes(), vi.fn());
+    await new CampaignController().getMetaMonitor(buildReq({ accountKey: META_ACCOUNT, project: 'tlf', accountWide: 'true' }), buildRes(), vi.fn());
 
     expect(checkProjectGlobalMarketingOpsStrict).not.toHaveBeenCalled();
     expect(svcMeta).toHaveBeenCalledWith(expect.anything(), 'tlf', META_ACCOUNT, 30, undefined);
@@ -1792,7 +1802,7 @@ describe('account-wide monitor scope', () => {
     svcTwitter.mockResolvedValueOnce(labeledPayload());
     const res = buildRes();
 
-    await new CampaignController().getTwitterMonitor(buildReq({ accountKey: '18ce54d4x5t', project: 'tlf' }), res, vi.fn());
+    await new CampaignController().getTwitterMonitor(buildReq({ accountKey: '18ce54d4x5t', project: 'tlf', accountWide: 'true' }), res, vi.fn());
 
     expect(svcTwitter).toHaveBeenCalledWith(expect.anything(), 'tlf', '18ce54d4x5t', 30, 'account');
     const rows = (vi.mocked(res.json).mock.calls[0][0] as { campaigns: { recordedProjectId?: string | null }[] }).campaigns;

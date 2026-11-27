@@ -3,17 +3,17 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { CampaignServiceAccountMonitor } from '../interfaces/campaign.interface';
 import { campaignMonitorProvenance, campaignMonitorScope, withRecordedProjects } from './campaign-monitor-scope.utils';
 
 describe('campaignMonitorScope', () => {
   it.each([
-    [true, 'granted', 'account'],
-    [true, 'denied', undefined],
-    [true, 'unverified', undefined],
-    [false, 'granted', undefined],
-  ] as const)('flag %s, role %s -> %s', (flagOn, access, want) => {
-    expect(campaignMonitorScope(flagOn, access)).toBe(want);
+    [true, true, 'granted', 'account'],
+    [true, true, 'denied', undefined],
+    [true, true, 'unverified', undefined],
+    [true, false, 'granted', undefined],
+    [false, true, 'granted', undefined],
+  ] as const)('flag %s, opted in %s, role %s -> %s', (flagOn, requested, access, want) => {
+    expect(campaignMonitorScope(flagOn, requested, access)).toBe(want);
   });
 });
 
@@ -24,7 +24,7 @@ describe('withRecordedProjects', () => {
       { platform_campaign_id: 'b' },
       { platform_campaign_id: 'c', recorded_project_id: ' ' },
     ],
-  } as unknown as CampaignServiceAccountMonitor;
+  };
 
   it('labels each row by campaign id: the recording project, or null when none records it', () => {
     const got = withRecordedProjects<

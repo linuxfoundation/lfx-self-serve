@@ -380,6 +380,7 @@ import {
   MONITOR_ACCOUNT_SOURCE_CONNECTION,
   MONITOR_ACCOUNT_SOURCE_LEGACY,
   MONITOR_ACCOUNT_SOURCE_PARAM,
+  MONITOR_ACCOUNT_WIDE_PARAM,
   MONITOR_CONNECTION_PROVIDERS,
   MONITOR_CUTOVER_LEGACY_MISMATCH_CODE,
   MONITOR_CUTOVER_MISMATCH_CODE,
@@ -7221,16 +7222,18 @@ export class CampaignController {
   /**
    * The scope of a campaign-service account-monitor read (#6209): `account` — every campaign on the shared ad
    * account, whoever created it (linuxfoundation/lfx-v2-campaign-service#672) — only while
-   * `LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR_ACCOUNT_SCOPE` is on and the caller holds `global_marketing_ops` on the
-   * project, the relation campaign-service admits it on. Anything else, a check that could not be made
-   * included, keeps the project-scoped read: the narrower view, never an error.
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR_ACCOUNT_SCOPE` is on, the request opts in (`accountWide=true`, sent by the
+   * Monitor tab only: the Optimize tab reads these same routes and its levers act on the project's own campaigns),
+   * and the caller holds `global_marketing_ops` on the project, the relation campaign-service admits it on. Anything
+   * else, a check that could not be made included, keeps the project-scoped read: the narrower view, never an error.
    */
   private async accountMonitorScope(req: Request, projectSlug: string, operation: string): Promise<CampaignServiceMonitorScope> {
     const flagOn = isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMonitorAccountScope);
-    if (!flagOn) {
+    const requested = req.query[MONITOR_ACCOUNT_WIDE_PARAM] === 'true';
+    if (!flagOn || !requested) {
       return undefined;
     }
-    return campaignMonitorScope(flagOn, await this.googleMarketingOpsAccess(req, projectSlug, operation, 'the account-wide monitor read'));
+    return campaignMonitorScope(flagOn, requested, await this.googleMarketingOpsAccess(req, projectSlug, operation, 'the account-wide monitor read'));
   }
 
   /**
