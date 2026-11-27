@@ -25,6 +25,7 @@ import { redditDeliveryDraftFields, redditDeliveryFromDraft } from './campaign-r
 import { redditSubCountryGeoFromDraft } from './campaign-reddit-subcountry-geo.utils';
 import { redditTargetingExclusionsFromDraft } from './campaign-reddit-targeting-exclusions.utils';
 import { redditTargetingListFromDraft } from './campaign-reddit-targeting-lists.utils';
+import { redditVideoPostFromDraft, redditVideoPostHeld } from './campaign-reddit-video.utils';
 
 /**
  * The Implement tab's Reddit draft rules (#5980): what the draft carries, what a restore sets, what a brief switch resets
@@ -52,6 +53,8 @@ export function redditDraftFields(state: RedditDraftState): RedditDraftSnapshot 
     redditImageUploadFailedMessage: state.uploadFailedBriefId ? state.uploadError : '',
     redditImageUploadFailedBriefId: state.uploadFailedBriefId,
     redditVideoGoal: state.videoGoal,
+    // Only once the video or its thumbnail is picked (#6108 row 8), so a draft that never used them is unchanged.
+    ...(redditVideoPostHeld(state.videoPost) ? { redditVideoPost: { ...state.videoPost } } : {}),
     redditConversionEvent: state.conversionEvent,
     redditCustomAudienceIds: [...state.customAudiences.customAudienceIds],
     redditExcludedCustomAudienceIds: [...state.customAudiences.excludedCustomAudienceIds],
@@ -100,6 +103,9 @@ export function redditDraftRestore(draft: RedditDraftSnapshot): RedditDraftResto
     restore.pendingUpload = { name: draft.redditImageUploadPendingName, briefId: draft.redditImageUploadPendingBriefId ?? '' };
   }
   if (draft.redditVideoGoal !== undefined) restore.videoGoal = draft.redditVideoGoal;
+  // The stored video post (#6108 row 8) when it is an object, each field that is not text read as blank.
+  const videoPost = redditVideoPostFromDraft(draft.redditVideoPost);
+  if (videoPost !== undefined) restore.videoPost = videoPost;
   const conversionEvent = redditConversionEventFromDraft(draft.redditConversionEvent);
   if (conversionEvent !== undefined) restore.conversionEvent = conversionEvent;
   const customAudienceIds = redditCustomAudienceIdsFromDraft(draft.redditCustomAudienceIds);
