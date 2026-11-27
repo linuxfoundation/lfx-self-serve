@@ -467,8 +467,9 @@ export class AeoGeoRunComponent {
             this.openDocument(run);
             return EMPTY;
           }
-          if (refused) {
+          if (refused && error.error?.code === MKTG_RUN_CLOSED) {
             // The server closed this run (discarded, or replaced by a newer audit): nothing here can continue it.
+            // Any other 409 does not close it and falls through to the recheck, which keeps this browser's capability.
             this.failRun(run, 'This audit was closed. Start a new audit.');
             return EMPTY;
           }

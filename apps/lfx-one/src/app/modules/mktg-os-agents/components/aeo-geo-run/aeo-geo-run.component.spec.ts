@@ -500,6 +500,22 @@ describe('AeoGeoRunComponent', () => {
       expect(query('mktg-aeo-run-form')).not.toBeNull();
     }
   });
+  it('keeps the capability on a 409 that does not close this run (MKTG_RUN_ACTIVE): a recheck, never the closed line', async () => {
+    const questions = aeoGeoRunQuestions(aeoGeoQuestionsFixture());
+    poll.mockReturnValue(of({ status: 'questions', questions, questionsId: 'questions-1' }));
+    await render();
+    query('mktg-aeo-run-submit').click();
+    await fixture.whenStable();
+    clear.mockClear();
+    answerQuestions.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 409, error: { code: 'MKTG_RUN_ACTIVE' } })));
+    fixture.componentInstance['onAnswers']([{ key: questions[0].key, text: 'An answer.', origin: 'edited' }]);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    // Another audit holding the creator's slot does not close this one: the owner capability stays, and the run is re-read.
+    expect(clear).not.toHaveBeenCalled();
+    expect(poll.mock.calls.length).toBeGreaterThan(1);
+    expect(fixture.nativeElement.textContent).not.toContain('This audit was closed.');
+  });
   it('resumes questions on reload without starting a second session', async () => {
     loadActive.mockReturnValue(run());
     poll.mockReturnValue(of({ status: 'questions', questions: aeoGeoRunQuestions(aeoGeoQuestionsFixture()), questionsId: 'questions-1' }));
