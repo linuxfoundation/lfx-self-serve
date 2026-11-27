@@ -4,6 +4,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  addMinutesToDate,
   dateOnlyToUtcMidnightIso,
   daysUntilInTimezone,
   detectBrowserTimezoneOption,
@@ -35,6 +36,31 @@ import {
  * `YYYY-MM-DD` date comes back untouched, so bad warehouse data reads as obviously broken rather
  * than as a plausible wrong date. Each case below is a way `Date.UTC` will happily invent one.
  */
+describe('addMinutesToDate', () => {
+  const originalTz = process.env['TZ'];
+
+  afterEach(() => {
+    // Assigning undefined would set the literal string "undefined".
+    if (originalTz === undefined) {
+      delete process.env['TZ'];
+    } else {
+      process.env['TZ'] = originalTz;
+    }
+  });
+
+  it('adds the minutes, defaulting to 60', () => {
+    expect(addMinutesToDate('2030-01-08T15:00:00Z', 45).toISOString()).toBe('2030-01-08T15:45:00.000Z');
+    expect(addMinutesToDate('2030-01-08T15:00:00Z', null).toISOString()).toBe('2030-01-08T16:00:00.000Z');
+  });
+
+  it('keeps the length across a fall-back DST change in the viewer time zone', () => {
+    process.env['TZ'] = 'America/New_York';
+
+    // 1:30 EDT on the night clocks go back; 60 minutes later is 1:30 EST, 06:30Z.
+    expect(addMinutesToDate('2027-11-07T05:30:00Z', 60).toISOString()).toBe('2027-11-07T06:30:00.000Z');
+  });
+});
+
 describe('formatIsoDateLabel', () => {
   it('formats a real date', () => {
     expect(formatIsoDateLabel('2026-07-14')).toBe('Jul 14, 2026');
