@@ -829,6 +829,22 @@ export enum ServerFeatureFlag {
   CampaignServiceMetaCarousel = 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_CAROUSEL',
 
   /**
+   * Meta video ads (#6332): a create's `metaConfig.variants[].videoAssetId` (a stored video/mp4), and the creative-asset
+   * upload takes an MP4 for it.
+   *
+   * CAPABILITY flag of the Bidding kind: REQUIRES campaign-service v1.0.44 DEPLOYED with `META_VIDEO_ENABLED` on
+   * (linuxfoundation/lfx-v2-campaign-service#550 gap 9, #653), since campaign-service refuses the field with a 400
+   * otherwise. The video is a stored asset whose bytes campaign-service uploads to the ad account, so it is only
+   * meaningful together with `CampaignServiceMetaAssets` on the campaign-service create path; `canSetMetaVideo` needs all
+   * three. Off (the default), the create route refuses the field, never drops it, and a create that does not select Meta
+   * never forwards it. On, it refuses what campaign-service would: an id that is not a UUID, a video beside `imageUrl` or
+   * `imageAssetId` on its variant, and a video on a create with a `leadFormId`. campaign-service waits at most 60 s for
+   * Meta to process the video during the create (`defaultVideoReadyWait`), so pass its paused staging probe with a 20 to
+   * 30 MiB MP4 first. A request field only, so flipping it back strands nothing. Same accepted values as the flags above.
+   */
+  CampaignServiceMetaVideo = 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_VIDEO',
+
+  /**
    * Offers an image UPLOAD in the Microsoft section of the create flow, sent as
    * `microsoftConfig.imageAssetId`.
    *

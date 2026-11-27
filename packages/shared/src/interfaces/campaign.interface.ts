@@ -3269,6 +3269,14 @@ export interface MetaAdVariant {
    */
   imageUrl?: string;
   imageAssetId?: string;
+  /**
+   * A video ad (#6332; campaign-service#550 gap 9): the UUID of a `video/mp4` creative asset uploaded to the brief, which
+   * campaign-service uploads to the ad account and waits for Meta to process during the create. A video variant carries
+   * no `imageUrl` or `imageAssetId` (Meta uses one of the video's own thumbnails), never rides on a create with a
+   * `leadFormId`, and is never a carousel card. Sent ONLY when `CampaignListResult.metaVideoEnabled` is a yes; the create
+   * route refuses it with a 400 otherwise.
+   */
+  videoAssetId?: string;
 }
 
 /** One Meta carousel card as the Implement tab edits it (#6331). `key` is the tab's own and is never sent. */
@@ -9381,6 +9389,12 @@ export interface CampaignListResult {
    * `cutoverOwnsCreate()` AND `LFX_CUTOVER_CAMPAIGN_SERVICE_META_CAROUSEL`. Deployment-wide.
    */
   metaCarouselEnabled?: boolean;
+  /**
+   * Whether a Meta variant may carry `videoAssetId`, a video ad (#6332; campaign-service#550 gap 9): the Meta creative
+   * asset path (`cutoverOwnsCreate()` AND `LFX_CUTOVER_CAMPAIGN_SERVICE_META_ASSETS`) AND
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_META_VIDEO`. Deployment-wide.
+   */
+  metaVideoEnabled?: boolean;
   /**
    * Whether THIS caller may offer the `leads` objective with an Instant Form, through
    * `GET /api/campaigns/meta/lead-forms`, and send `metaConfig.leadFormId` (#5940): `cutoverOwnsCreate()` AND

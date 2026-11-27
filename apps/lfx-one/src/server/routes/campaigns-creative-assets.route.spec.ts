@@ -227,9 +227,24 @@ describe('POST /api/campaigns/brief/creative-assets', () => {
       expect(uploadCreativeAsset.mock.calls[0][3]).toBe('video/mp4');
     });
 
-    it('refuses an MP4 while LinkedIn video ads and Reddit video posts are off without reading it, so even one over the limit is a 415', async () => {
+    // A Meta video ad (#6332) uses the same upload too.
+    it('forwards an MP4 while only Meta video ads are on', async () => {
       isServerFeatureEnabled.mockImplementation(
         (flag) => flag !== ServerFeatureFlag.CampaignServiceLinkedInVideo && flag !== ServerFeatureFlag.CampaignServiceRedditVideo
+      );
+      uploadCreativeAsset.mockResolvedValue({ ...ASSET, mimeType: 'video/mp4' });
+
+      const response = await upload(Buffer.concat([MP4, Buffer.alloc(CREATIVE_ASSET_MAX_BYTES)]), 'video/mp4');
+
+      expect(response.status).toBe(201);
+    });
+
+    it('refuses an MP4 while LinkedIn, Reddit and Meta video are off without reading it, so even one over the limit is a 415', async () => {
+      isServerFeatureEnabled.mockImplementation(
+        (flag) =>
+          flag !== ServerFeatureFlag.CampaignServiceLinkedInVideo &&
+          flag !== ServerFeatureFlag.CampaignServiceRedditVideo &&
+          flag !== ServerFeatureFlag.CampaignServiceMetaVideo
       );
 
       const response = await upload(Buffer.concat([MP4, Buffer.alloc(CREATIVE_ASSET_VIDEO_MAX_BYTES)]), 'video/mp4');
