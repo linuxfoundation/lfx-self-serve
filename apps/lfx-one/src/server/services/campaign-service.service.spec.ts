@@ -4996,6 +4996,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       linkedInDocumentEnabled: false,
       linkedInBoostEnabled: false,
       linkedInDeliveryOptionsEnabled: false,
+      linkedInTrafficManualBidEnabled: false,
       microsoftAssetUploadEnabled: false,
       // OFF with every flag off: bidding needs the create cutover AND its own flag (#3299).
       biddingEnabled: false,
@@ -5879,6 +5880,23 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
     }
   });
 
+  /** LinkedIn traffic with a manual bid (campaign-service#676): the create cutover and its own flag. */
+  it.each([
+    [{ cutover: true, flag: true }, true],
+    [{ cutover: true, flag: false }, false],
+    [{ cutover: false, flag: true }, false],
+  ])('reports LinkedIn traffic with a manual bid (%o) as %s', async (flags, expected) => {
+    isServerFeatureEnabled.mockImplementation((flag: unknown) =>
+      flag === ServerFeatureFlag.CampaignServiceLinkedInTrafficManualBid ? flags.flag : flags.cutover
+    );
+    proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+    try {
+      expect((await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1')).linkedInTrafficManualBidEnabled).toBe(expected);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
   /** The LinkedIn daily-cap capability (#5774): the create cutover alone, like the targeting edit above. */
   it.each([
     [{ create: true, briefs: true, jobs: true, others: false }, true],
@@ -5994,6 +6012,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       linkedInDocumentEnabled: false,
       linkedInBoostEnabled: false,
       linkedInDeliveryOptionsEnabled: false,
+      linkedInTrafficManualBidEnabled: false,
       microsoftAssetUploadEnabled: false,
       // OFF with every flag off: bidding needs the create cutover AND its own flag (#3299).
       biddingEnabled: false,

@@ -671,6 +671,19 @@ export enum ServerFeatureFlag {
   CampaignServiceLinkedInDeliveryOptions = 'LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_DELIVERY_OPTIONS',
 
   /**
+   * LinkedIn Website visits with a manual CPC bid (linuxfoundation/lfx-v2-campaign-service#676): accept
+   * `linkedInConfig.objective: "traffic"` with a manual `bidding`, which campaign-service creates as `WEBSITE_VISIT` with
+   * `costType` CPC, `optimizationTargetType` NONE and the bid as `unitCost`.
+   *
+   * A CAPABILITY flag of the Bidding kind: REQUIRES a campaign-service release carrying #676 DEPLOYED with
+   * `LINKEDIN_ADS_TRAFFIC_MANUAL_BID_ENABLED` on, since campaign-service refuses traffic with a manual bid with a 400
+   * otherwise, and is only meaningful on the campaign-service create path (`cutoverOwnsCreate`). Off (the default), the
+   * create route refuses traffic with a manual bid with a 400, as before. Request fields only, so flipping it back
+   * strands nothing. Same accepted values as the flags above.
+   */
+  CampaignServiceLinkedInTrafficManualBid = 'LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_TRAFFIC_MANUAL_BID',
+
+  /**
    * Offers Meta ad set audience targeting on the Implement tab (#5905), sent as `metaConfig.targeting`:
    * age range, gender and Advantage+ audience to every campaign manager, and included/excluded custom
    * audiences (picked from `GET /api/campaigns/meta/custom-audiences`) only to a caller holding

@@ -1009,6 +1009,18 @@ environment:
   LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_DELIVERY_OPTIONS:
     value:
 
+  # LinkedIn Website visits with a manual CPC bid (linuxfoundation/lfx-v2-campaign-service#676): accepts
+  # `linkedInConfig.objective: "traffic"` with a manual `bidding`, created as WEBSITE_VISIT with costType CPC,
+  # optimizationTargetType NONE and the bid as unitCost. An omitted objective with a manual bid is still Website
+  # conversions.
+  #
+  # A CAPABILITY flag of the Bidding kind: REQUIRES a campaign-service release carrying #676 DEPLOYED with
+  # `LINKEDIN_ADS_TRAFFIC_MANUAL_BID_ENABLED` on, and the create pipeline on. Off (the default), the create route refuses
+  # traffic with a manual bid with a 400, as before. Fields only, so turning it back off strands nothing.
+  # Order: set campaign-service's flag and pass its paused probe, THEN this. Same accepted values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_TRAFFIC_MANUAL_BID:
+    value:
+
   # Offers Meta ad set audience targeting on the Implement tab (#5905), sent as
   # `metaConfig.targeting`: age range, gender and Advantage+ audience for every campaign manager, and
   # included/excluded custom audiences (picked from `GET /api/campaigns/meta/custom-audiences`) only for

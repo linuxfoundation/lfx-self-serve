@@ -2798,7 +2798,8 @@ export interface LinkedInCampaignCreateRequest {
   targeting?: LinkedInTargeting;
   /**
    * The campaign's goal (#5764 row 2, campaign-service #582). Omitted lets `bidding` decide. `'conversions'` on automatic
-   * bidding needs `conversions`; `'traffic'` takes automatic bidding only. Only while `linkedInConversionsEnabled`.
+   * bidding needs `conversions`; `'traffic'` takes automatic bidding, or a manual CPC bid only while
+   * `linkedInTrafficManualBidEnabled` (campaign-service#676). Only while `linkedInConversionsEnabled`.
    */
   objective?: LinkedInObjective | LinkedInLeadGenObjective;
   /**
@@ -2991,6 +2992,8 @@ export interface LinkedInObjectiveCreateInput {
   leadGenAvailable?: boolean;
   /** The `format` the create sends, if any: a lead gen create cannot be Text Ads. */
   format?: string;
+  /** `linkedInTrafficManualBidEnabled` is an explicit yes (campaign-service#676): traffic may take a manual bid. */
+  trafficManualBidAvailable?: boolean;
 }
 
 /** Which of a LinkedIn variant's optional fields this deployment sends (#5764 rows 16–17). */
@@ -9102,6 +9105,13 @@ export interface CampaignListResult {
    */
   linkedInDeliveryOptionsEnabled: boolean;
   /**
+   * Whether a LinkedIn create may pair the `traffic` objective with a manual bid: a Website visits campaign with a manual
+   * CPC (linuxfoundation/lfx-v2-campaign-service#676). Needs the campaign-service create path AND
+   * `LFX_CUTOVER_CAMPAIGN_SERVICE_LINKEDIN_TRAFFIC_MANUAL_BID`, which follows campaign-service's own
+   * `LINKEDIN_ADS_TRAFFIC_MANUAL_BID_ENABLED`.
+   */
+  linkedInTrafficManualBidEnabled: boolean;
+  /**
    * Whether the Microsoft section may offer an image UPLOAD, sent as
    * `MicrosoftCampaignCreateRequest.imageAssetId` and attached as an image ad extension.
    *
@@ -9926,6 +9936,8 @@ export interface CampaignBiddingControlView {
   value: CampaignBiddingDraft;
   /** Why the choice cannot be sent, or `null` when it can. Blocks the create. */
   error: string | null;
+  /** What Manual creates, when the platform's other choices change it from `CampaignBiddingPlatformRule.manualDescription`. */
+  manualDescription?: string;
 }
 
 // ---------------------------------------------------------------------------

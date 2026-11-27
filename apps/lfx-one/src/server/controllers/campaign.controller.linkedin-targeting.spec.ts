@@ -364,11 +364,18 @@ describe('CampaignController LinkedIn objective and conversions (#5764)', () => 
     expect(legacyCreate).not.toHaveBeenCalled();
   });
 
-  it('holds the objective to the bidding it is sent with', async () => {
-    const { next } = await create({ targetingProfile: 'cloud-native', objective: 'traffic', bidding: { strategy: 'manual', bidAmount: 4.5 } });
-
-    expect(refusal(next).field).toBe('linkedInConfig.objective');
+  it('holds traffic with a manual bid to its own flag (campaign-service#676)', async () => {
+    const trafficManual = { targetingProfile: 'cloud-native', objective: 'traffic', bidding: { strategy: 'manual', bidAmount: 45 } };
+    isServerFeatureEnabled.mockImplementation((flag) => flag !== ServerFeatureFlag.CampaignServiceLinkedInTrafficManualBid);
+    expect(refusal((await create(trafficManual)).next).field).toBe('linkedInConfig.objective');
     expect(createCampaigns).not.toHaveBeenCalled();
+    expect(legacyCreate).not.toHaveBeenCalled();
+
+    isServerFeatureEnabled.mockImplementation(() => true);
+    const { next } = await create(trafficManual);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(sentLinkedInConfig()).toMatchObject({ objective: 'traffic', bidding: { strategy: 'manual', bidAmount: 45 } });
   });
 
   it('refuses conversions from a caller without global_marketing_ops (403) or when it cannot be checked (503), creating nothing', async () => {

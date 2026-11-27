@@ -526,6 +526,7 @@ import {
   emptyLinkedInTargetingDraft,
   emptyLinkedInObjectiveDraft,
   linkedInLeadGenChosen,
+  linkedInManualBidDescription,
   linkedInObjectiveCreateRefusal,
   linkedInObjectiveFieldsForCreate,
   linkedInObjectiveShown,
@@ -1203,6 +1204,15 @@ export class ImplementationTabComponent implements OnInit {
    * (`CampaignListResult.linkedInDeliveryOptionsEnabled`, linuxfoundation/lfx-v2-campaign-service#667).
    */
   public readonly linkedInDeliveryOptionsEnabled = input<boolean | null>(null);
+
+  /**
+   * Whether a LinkedIn traffic create may take a manual bid, a Website visits campaign with a manual CPC
+   * (`CampaignListResult.linkedInTrafficManualBidEnabled`, linuxfoundation/lfx-v2-campaign-service#676).
+   */
+  public readonly linkedInTrafficManualBidEnabled = input<boolean | null>(null);
+
+  /** @see linkedInTrafficManualBidEnabled — an explicit yes, never a `null`. */
+  protected readonly linkedInTrafficManualBidAvailable = computed<boolean>(() => this.linkedInTrafficManualBidEnabled() === true);
 
   /** The calls to action the variant editor offers. */
   protected readonly linkedInCallToActionOptions = LINKEDIN_CALL_TO_ACTION_OPTIONS;
@@ -9543,6 +9553,7 @@ export class ImplementationTabComponent implements OnInit {
         bidding: this.biddingField('linkedin-ads').bidding,
         leadGenAvailable: this.linkedInLeadGenAvailable(),
         format: this.linkedInFormatSent(),
+        trafficManualBidAvailable: this.linkedInTrafficManualBidAvailable(),
       }),
       // The target cost (campaign-service#674): held while offered and refused; hidden, it is not sent and holds nothing.
       targetCostRefusal: linkedInTargetCostCreateRefusal(
@@ -12811,6 +12822,13 @@ export class ImplementationTabComponent implements OnInit {
         const value = drafts[platform] ?? defaultCampaignBiddingDraft();
         views[platform] = { platform, value, error: campaignBiddingError(platform, value, this.biddingContext(platform)) };
       }
+      // LinkedIn's Manual is a Website visits campaign while traffic is chosen and both the objective and its manual bid
+      // are offered (campaign-service#676); a held traffic choice that cannot be sent keeps the usual text.
+      const linkedInManual = linkedInManualBidDescription(
+        this.linkedInObjectiveDraft().objective,
+        this.linkedInConversionsAvailable() && this.linkedInTrafficManualBidAvailable()
+      );
+      if (linkedInManual !== null) views['linkedin-ads'] = { ...views['linkedin-ads'], manualDescription: linkedInManual };
       return views;
     });
   }

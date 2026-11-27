@@ -35,7 +35,7 @@
       label="Manual max CPC bid"
       [inputId]="ids().manual"
       [attr.data-testid]="'implementation-bidding-' + view().platform + '-manual'" />
-    <p class="ml-7 text-xs text-gray-500">{{ rule().manualDescription }}</p>
+    <p class="ml-7 text-xs text-gray-500">{{ view().manualDescription ?? rule().manualDescription }}</p>
   </div>
 
   @if (isManual()) {
