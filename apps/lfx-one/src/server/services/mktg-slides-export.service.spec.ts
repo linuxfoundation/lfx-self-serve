@@ -182,7 +182,7 @@ import type { Request } from 'express';
 import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
 import { isMktgSlidesExportStale } from '../../../../../packages/shared/src/utils/mktg-slides-export.utils';
 import { MKTG_SLIDES_EXPORT_DEFAULT_FOLDER_ID } from '../constants';
-import { ConflictError } from '../errors';
+import { ConflictError, MicroserviceError } from '../errors';
 import { brandKitIconSvg } from '../utils/mktg-brand-kit-icons.util';
 import { rasterizeLogoSvg } from '../utils/mktg-logo-png.util';
 import { recolourLogoPngSvg } from '../utils/mktg-logo-variants.util';
@@ -828,13 +828,38 @@ describe('MktgSlidesExportService', () => {
         await approveNewest(documentStore, FRAMEWORK);
         await expect(service.startFamilyExport(req, { ...familyInput, mode: 'update' })).rejects.toMatchObject({ code: 'NO_DECK_TO_UPDATE' });
         expect(await running(other)).toBeNull();
-        // Guild down.
-        guildMocks.createSession.mockRejectedValueOnce(new Error('guild unavailable'));
-        await expect(service.startFamilyExport(req, familyInput)).rejects.toThrow('guild unavailable');
+        // A storage failure before anything was sent.
+        const read = vi.spyOn(MktgDocumentStoreService.prototype, 'readExportRevision').mockRejectedValueOnce(new Error('bucket unavailable'));
+        await expect(service.startFamilyExport(req, familyInput)).rejects.toThrow('bucket unavailable');
+        read.mockRestore();
+        expect(await running(other)).toBeNull();
+        // Guild refuses the session: a status that proves it accepted nothing.
+        const refusal = MicroserviceError.fromMicroserviceResponse(403, 'Forbidden', {}, 'guild', '/sessions', 'guild_create_session');
+        guildMocks.createSession.mockRejectedValueOnce(refusal);
+        await expect(service.startFamilyExport(req, familyInput)).rejects.toBe(refusal);
         expect(await running(other)).toBeNull();
         // Each time the next start, by anyone, goes through.
         await expect(service.startFamilyExport(other, familyInput)).resolves.toMatchObject({ sessionId: 'session-1' });
         expect(guildMocks.createSession).toHaveBeenCalledTimes(2);
+      });
+
+      it('keeps the family held when Guild may have accepted a start it never answered, to the deadline of an export sent then', async () => {
+        await seedFramework(documentStore);
+        const guild = { service: 'guild', operation: 'guild_create_session' };
+        for (const error of [
+          new MicroserviceError('Guild API request timed out.', 504, 'guild_timeout', guild),
+          new MicroserviceError('Guild session response did not include a session id.', 502, 'guild_invalid_response', guild),
+        ]) {
+          guildMocks.createSession.mockRejectedValueOnce(error);
+          await expect(service.startFamilyExport(req, familyInput)).rejects.toBe(error);
+          // Held by the start's claim with no session to follow, and shorter than a fresh claim: the start's own work is done.
+          expect(marker()).toMatchObject({ sessionId: null, expiresAt: Date.now() + MKTG_SLIDES_EXPORT_POLL.timeoutMs });
+          await expect(service.startFamilyExport(other, familyInput)).rejects.toMatchObject({ code: MKTG_FAMILY_EXPORT_ACTIVE });
+          vi.setSystemTime(Date.now() + MKTG_SLIDES_EXPORT_POLL.timeoutMs);
+          expect(await running(other)).toBeNull();
+        }
+        expect(guildMocks.createSession).toHaveBeenCalledTimes(2);
+        await expect(service.startFamilyExport(other, familyInput)).resolves.toMatchObject({ sessionId: 'session-1' });
       });
 
       it('frees the family when the export fails, and when its deck can never be recorded', async () => {
@@ -971,6 +996,25 @@ describe('MktgSlidesExportService', () => {
         store.failReplaceKeys = [];
         vi.setSystemTime(Date.now() + MKTG_FAMILY_EXPORT_ACTIVE_TTL_MS);
         expect(await running(other)).toBeNull();
+      });
+
+      it('keeps the family held when the deck’s record cannot be written, and frees it once a later poll keeps the record', async () => {
+        await seedFramework(documentStore);
+        const started = await service.startFamilyExport(req, familyInput);
+        guildMocks.getRawEventPayloads.mockResolvedValue([outputEvent()]);
+        const write = vi.spyOn(ObjectStoreService.prototype, 'putContentAddressedObject').mockRejectedValueOnce(new Error('bucket unavailable'));
+        // Never ready-and-released: the last-export read would say nothing is running with no deck, and the next start would make a second one.
+        const poll = service.getFamilyResult(req, started.sessionId, started.snapshot);
+        await expect(poll).rejects.toMatchObject({ statusCode: 503, code: 'MKTG_FAMILY_EXPORT_RECORD_NOT_KEPT' });
+        expect(records()).toHaveLength(0);
+        expect(await running(other)).not.toBeNull();
+        await expect(service.startFamilyExport(other, familyInput)).rejects.toMatchObject({ code: MKTG_FAMILY_EXPORT_ACTIVE });
+        // This server's own poll goes on, writes the record and only then frees the family.
+        await vi.advanceTimersByTimeAsync(MKTG_SLIDES_EXPORT_POLL.intervalMs);
+        await settle();
+        write.mockRestore();
+        expect(await service.getFamilyLast(other, PROJECT, familyInput.familyId)).toMatchObject({ running: null, last: { deckId: DECK_ID } });
+        expect(vi.getTimerCount()).toBe(0);
       });
     });
   });

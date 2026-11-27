@@ -214,11 +214,19 @@ the opaque effective subject; the name is resolved only for a response and is
 neither stored nor logged, and an email or the subject is never returned as a name.
 
 The marker is released, by setting its deadline to 0 over the version read, on every
-way an export ends: a start refused later (nothing approved, no deck to update, an
-unreadable asset) or whose session Guild did not create; a result that is ready
-(after its record is kept), failed, or whose signed revisions are gone; and this
-server's own poll giving up at its deadline. A pending result, or a poll that throws
-on something the next one may read, keeps it. A result poll releases by the session
+way an export ends with a known outcome: a start that fails before anything is sent
+(nothing approved, no deck to update, an unreadable asset, a storage failure) or
+that Guild refused (`redraftWasNotAccepted`: a 4xx other than 408 and 429, a 501, a
+refused connection); a result that is ready (after its record is kept), failed, or
+whose signed revisions are gone; and this server's own poll giving up at its
+deadline. A pending result, or a poll that throws on something the next one may
+read, keeps it. So does a ready result whose record could not be written: the poll
+answers 503 `MKTG_FAMILY_EXPORT_RECORD_NOT_KEPT`, which the browser's and the
+server's polls retry, and the marker goes only once a poll keeps the record. A send
+with no certain outcome (a timeout, a 2xx without a session id, a 5xx) may be an
+export Guild accepted that nobody can follow: the start still answers the error, and
+its marker is kept, cut to the poll deadline of an export sent then
+(`MKTG_SLIDES_EXPORT_POLL.timeoutMs`). A result poll releases by the session
 id bound to the marker once the session exists, so any replica can; the server that
 started the export also holds the start's claim, for a marker that could not be
 bound. A release never frees a newer export's marker and never fails a response.
