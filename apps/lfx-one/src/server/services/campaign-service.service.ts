@@ -791,6 +791,16 @@ export function canSetRedditBudgetType(): boolean {
 }
 
 /**
+ * Whether a Reddit create that authors its post makes one ad per variant (#6108 row 6, campaign-service #549). Needs the
+ * campaign-service create path AND `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_AD_PER_VARIANT`, which follows campaign-service's
+ * own `REDDIT_AD_PER_VARIANT_ENABLED`: only then does campaign-service read more than the first variant, and refuse more
+ * than 5 or a blank or over-long headline.
+ */
+export function canSetRedditAdPerVariant(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceRedditAdPerVariant);
+}
+
+/**
  * Whether the Reddit pixel picker's read is served (#6108 row 5, campaign-service #549). Needs the campaign-service create
  * path AND `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_PIXEL_LIST`, which follows campaign-service's own
  * `REDDIT_PIXEL_LIST_ENABLED`: campaign-service refuses the read while that is off. The caller also needs
@@ -1393,6 +1403,7 @@ export class CampaignServiceClient {
         redditTargetingResolutionEnabled: canResolveRedditTargeting(),
         redditPlacementsEnabled: canSetRedditPlacements(),
         redditBudgetTypeEnabled: canSetRedditBudgetType(),
+        redditAdPerVariantEnabled: canSetRedditAdPerVariant(),
         redditPixelListEnabled: canListRedditPixels(),
         googleAssetUploadEnabled: canUseGoogleCreativeAssets(),
         metaCreativeEnabled: cutoverOwnsCreate(),
@@ -1497,6 +1508,7 @@ export class CampaignServiceClient {
       redditTargetingResolutionEnabled: canResolveRedditTargeting(),
       redditPlacementsEnabled: canSetRedditPlacements(),
       redditBudgetTypeEnabled: canSetRedditBudgetType(),
+      redditAdPerVariantEnabled: canSetRedditAdPerVariant(),
       redditPixelListEnabled: canListRedditPixels(),
       googleAssetUploadEnabled: canUseGoogleCreativeAssets(),
       metaCreativeEnabled: cutoverOwnsCreate(),

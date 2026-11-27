@@ -3044,6 +3044,13 @@ export interface RedditCampaignCreateRequest {
   subreddits: string[];
   interests: string[];
   keywords: string[];
+  /**
+   * The ad copy. Only `headline` reaches Reddit; campaign-service never reads `body`. One ad is made from `variants[0]`,
+   * unless campaign-service's `REDDIT_AD_PER_VARIANT_ENABLED` is on: then a create that authors its post (`imageUrl` or
+   * `imageAssetId`, no `postUrl`) with 2 to 5 variants makes one promoted post and one ad per variant (#6108 row 6). With
+   * `CampaignListResult.redditAdPerVariantEnabled`, the create route refuses such a create with more than 5 variants or a
+   * blank or over-300-character headline (`redditAdPerVariantRefusal`).
+   */
   variants: RedditAdVariant[];
   project?: string;
   objective?: RedditObjective;
@@ -9080,6 +9087,13 @@ export interface CampaignListResult {
    * `redditConversionPixelEnabled`. Optional, so a BFF that predates it reads as unanswered.
    */
   redditPixelListEnabled?: boolean;
+  /**
+   * Whether a Reddit create that authors its post makes one ad per variant (#6108 row 6): the campaign-service create path
+   * AND `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_AD_PER_VARIANT`, which follows campaign-service's own
+   * `REDDIT_AD_PER_VARIANT_ENABLED`. On, the variants' headlines may be edited and the create route holds them to
+   * campaign-service's rules. Optional, so a BFF that predates it reads as unanswered.
+   */
+  redditAdPerVariantEnabled?: boolean;
   /**
    * Whether a Meta create may carry `metaConfig.callToAction`, `conversionEvent` and `optimizationGoal`
    * (#5934), one flag each: `cutoverOwnsCreate()` AND `LFX_CUTOVER_CAMPAIGN_SERVICE_META_CALL_TO_ACTION`,

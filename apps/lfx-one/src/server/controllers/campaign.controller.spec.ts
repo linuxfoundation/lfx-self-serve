@@ -13180,6 +13180,58 @@ describe('CampaignController.createCampaign Reddit placements and budget type', 
 });
 
 /**
+ * `redditConfig.variants` under one ad per variant (#6108 row 6): never refused while the flag is off, since creates
+ * already carry the brief's variants, and held to campaign-service's rules once it is on. The rules are table rows in
+ * `campaign-reddit-ad-variants.utils.spec.ts`.
+ */
+describe('CampaignController.createCampaign Reddit one ad per variant', () => {
+  let controller: CampaignController;
+  let res: Response;
+  let next: NextFunction;
+  const variants = ['a', 'b', 'c', 'd', 'e', 'f'].map((headline) => ({ headline, body: 'preview' }));
+  const redditConfig = { budgetUsd: 50, imageUrl: 'https://img.example/a.png', variants };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new CampaignController();
+    res = buildRes();
+    next = vi.fn();
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+  });
+
+  it('forwards six variants untouched while the flag is off', async () => {
+    isServerFeatureEnabled.mockImplementation((flag) => flag !== ServerFeatureFlag.CampaignServiceRedditAdPerVariant);
+
+    await controller.createCampaign(buildReq({ platforms: ['reddit-ads'], redditConfig }, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    const envelope = createCampaigns.mock.calls[0][4] as Record<string, Record<string, unknown>>;
+    expect(envelope['redditConfig']['variants']).toEqual(variants);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('leaves an unused redditConfig alone when Reddit is not selected, flag on', async () => {
+    isServerFeatureEnabled.mockImplementation(() => true);
+
+    await controller.createCampaign(buildReq({ platforms: ['meta-ads'], redditConfig }, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('refuses six variants once the flag is on, creating nothing', async () => {
+    isServerFeatureEnabled.mockImplementation(() => true);
+
+    await controller.createCampaign(buildReq({ platforms: ['reddit-ads'], redditConfig }, { project: 'tlf', brief_id: 'b-1' }), res, next);
+
+    expect(createCampaigns).not.toHaveBeenCalled();
+    const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
+    expect(error.toResponse()['errors']).toEqual([
+      { field: 'redditConfig.variants', message: expect.stringContaining('at most 5'), code: 'FIELD_VALIDATION_ERROR' },
+    ]);
+  });
+});
+
+/**
  * `redditConfig.customAudienceIds` / `excludedCustomAudienceIds` (#6108 row 1): refused, never dropped, while this
  * deployment cannot send them; named only by a caller holding `global_marketing_ops` on the project; forwarded as typed
  * otherwise. Wiring only: the rules themselves are table rows in `campaign-reddit-custom-audiences.utils.spec.ts`.

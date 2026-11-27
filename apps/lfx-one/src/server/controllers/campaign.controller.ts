@@ -22,6 +22,7 @@ import { linkedInConfigNamesConversions, linkedInConversionRules, linkedInObject
 import { linkedInTargetingNamesSegments, linkedInTargetingRefusal } from '@lfx-one/shared/utils/campaign-linkedin-targeting.utils';
 import { redditConversionEventRefusal } from '@lfx-one/shared/utils/campaign-reddit-conversion-event.utils';
 import { redditTargetingExclusionsRefusal } from '@lfx-one/shared/utils/campaign-reddit-targeting-exclusions.utils';
+import { redditAdPerVariantRefusal } from '@lfx-one/shared/utils/campaign-reddit-ad-variants.utils';
 import { redditBudgetTypeRefusal, redditPlacementsRefusal } from '@lfx-one/shared/utils/campaign-reddit-delivery.utils';
 import { redditPixelsFromPayload } from '@lfx-one/shared/utils/campaign-reddit-pixels.utils';
 import {
@@ -500,6 +501,7 @@ import {
   canSetRedditTargetingExclusions,
   canSetRedditPlacements,
   canSetRedditBudgetType,
+  canSetRedditAdPerVariant,
   canListRedditPixels,
   canSetRedditConversionPixel,
   canUseGoogleCreativeAssets,
@@ -1496,6 +1498,18 @@ export class CampaignController {
         redditPlacementsRefusal(body?.redditConfig, canSetRedditPlacements()) ?? redditBudgetTypeRefusal(body?.redditConfig, canSetRedditBudgetType());
       if (redditDeliveryRefused !== null) {
         throw ServiceValidationError.forField(redditDeliveryRefused.field, redditDeliveryRefused.message, {
+          operation: 'campaign_create',
+          service: 'campaign_controller',
+        });
+      }
+      // Reddit one ad per variant (#6108 row 6): while this deployment offers it, an authored-post create's variants are
+      // held to campaign-service's rules (`checkRedditAdPerVariant`), which campaign-service checks after every other
+      // config refusal; never refused while off, since creates already carry the brief's variants. See
+      // `redditAdPerVariantRefusal`. Only when Reddit is selected: campaign-service checks only the selected platforms, so
+      // unused Reddit copy must not block another platform's create.
+      const redditAdPerVariantRefused = platforms.includes('reddit-ads') ? redditAdPerVariantRefusal(body?.redditConfig, canSetRedditAdPerVariant()) : null;
+      if (redditAdPerVariantRefused !== null) {
+        throw ServiceValidationError.forField(redditAdPerVariantRefused.field, redditAdPerVariantRefused.message, {
           operation: 'campaign_create',
           service: 'campaign_controller',
         });
