@@ -51,6 +51,7 @@ describe('Family export slot', () => {
     currentMembers: [familyExportMember()],
     skippedMembers: ['brand-kit', 'boilerplates', 'faq'],
     stale: false,
+    running: null,
   });
   const api = { last: vi.fn(), running: vi.fn(), run: vi.fn(), printView: vi.fn() };
   const print = { prepare: vi.fn(), printNow: vi.fn(), clear: vi.fn(), ensureFontStylesheet: vi.fn() };

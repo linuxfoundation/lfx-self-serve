@@ -3,7 +3,15 @@
 
 import { MKTG_ARTIFACT_PARTITION_REGEX } from '../constants/mktg-artifact.constants';
 import { MKTG_LIVING_DOCUMENT_ID, MKTG_REVISION_ID_REGEX } from '../constants/mktg-document-store.constants';
-import { MKTG_FAMILY_EXPORT_KINDS, MKTG_FAMILY_EXPORT_SCHEMA } from '../constants/mktg-family-export.constants';
+import {
+  MKTG_FAMILY_EXPORT_ACTIVE,
+  MKTG_FAMILY_EXPORT_ACTIVE_KEY_PREFIX,
+  MKTG_FAMILY_EXPORT_ACTIVE_TTL_MS,
+  MKTG_FAMILY_EXPORT_KINDS,
+  MKTG_FAMILY_EXPORT_MARKER_SCHEMA,
+  MKTG_FAMILY_EXPORT_SCHEMA,
+  MKTG_FAMILY_EXPORT_UNNAMED_STARTER,
+} from '../constants/mktg-family-export.constants';
 import { MKTG_KIT_FAMILIES } from '../constants/mktg-kit.constants';
 import {
   MKTG_SLIDES_EXPORT_ASSET_KINDS,
@@ -12,12 +20,16 @@ import {
   MKTG_SLIDES_EXPORT_SHA256_REGEX,
 } from '../constants/mktg-slides-export.constants';
 import type {
+  MktgFamilyExportActiveConflict,
   MktgFamilyExportAgentKey,
+  MktgFamilyExportMarker,
   MktgFamilyExportMember,
   MktgFamilyExportRecord,
+  MktgFamilyExportRunning,
   MktgFamilyExportSnapshot,
   MktgFamilyExportTarget,
 } from '../interfaces/mktg-family-export.interface';
+import { isMktgDisplayName } from './mktg-document-store.utils';
 import { buildMktgSlidesExportTimedRecordKey, isMktgSlidesExportDeckRecord, isMktgSlidesExportDriveId } from './mktg-slides-export.utils';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -138,4 +150,70 @@ export function readMktgFamilyExportRecord(value: unknown): MktgFamilyExportReco
   )
     return null;
   return { ...value, familyId: value['familyId'], members: value['members'] };
+}
+
+/** The key of the family's one in-flight marker, outside the records' prefix. */
+export function buildMktgFamilyExportActiveKey(project: string, familyId: string): string {
+  return `${MKTG_FAMILY_EXPORT_ACTIVE_KEY_PREFIX}/${project}/${familyId}.json`;
+}
+
+/**
+ * The stored marker of exactly this family, or null. Anything else holds nothing: bytes that are not a marker, a
+ * marker filed under another family, or one whose deadline is later than its start allows.
+ */
+export function readMktgFamilyExportMarker(body: string, project: string, familyId: string): MktgFamilyExportMarker | null {
+  let value: unknown;
+  try {
+    value = JSON.parse(body);
+  } catch {
+    return null;
+  }
+  if (!isRecord(value) || value['schema'] !== MKTG_FAMILY_EXPORT_MARKER_SCHEMA || value['project'] !== project || value['familyId'] !== familyId) return null;
+  const { claim, creatorSubject, startedAt, expiresAt, sessionId } = value;
+  if (
+    typeof claim !== 'string' ||
+    !claim ||
+    typeof creatorSubject !== 'string' ||
+    !creatorSubject ||
+    typeof startedAt !== 'string' ||
+    !Number.isFinite(Date.parse(startedAt)) ||
+    typeof expiresAt !== 'number' ||
+    !Number.isFinite(expiresAt) ||
+    expiresAt > Date.parse(startedAt) + MKTG_FAMILY_EXPORT_ACTIVE_TTL_MS ||
+    (sessionId !== null && (typeof sessionId !== 'string' || !sessionId))
+  )
+    return null;
+  return { schema: MKTG_FAMILY_EXPORT_MARKER_SCHEMA, project, familyId, claim, creatorSubject, startedAt, expiresAt, sessionId };
+}
+
+/** Who is exporting and since when, as a card may show it: a name that is not a display name is dropped, never shown. */
+export function readMktgFamilyExportRunning(value: unknown): MktgFamilyExportRunning | null {
+  if (
+    !isRecord(value) ||
+    typeof value['startedAt'] !== 'string' ||
+    !Number.isFinite(Date.parse(value['startedAt'])) ||
+    typeof value['startedByViewer'] !== 'boolean'
+  )
+    return null;
+  const name = typeof value['startedBy'] === 'string' ? value['startedBy'].trim() : null;
+  return { startedBy: isMktgDisplayName(name) ? name : null, startedByViewer: value['startedByViewer'], startedAt: value['startedAt'] };
+}
+
+/** The refused start's facts, validated before a card names anyone; any other body names nobody. */
+export function readMktgFamilyExportActiveConflict(value: unknown): MktgFamilyExportActiveConflict | null {
+  if (!isRecord(value) || value['code'] !== MKTG_FAMILY_EXPORT_ACTIVE) return null;
+  const running = readMktgFamilyExportRunning(value);
+  return running ? { code: MKTG_FAMILY_EXPORT_ACTIVE, ...running } : null;
+}
+
+/** Who is exporting, as the card's one line opens: the viewer's own export elsewhere, a named writer, or nobody in particular. */
+export function describeMktgFamilyExportRunning(running: MktgFamilyExportRunning): string {
+  return running.startedByViewer
+    ? 'Your export of this family to Google Slides is running'
+    : `${running.startedBy ?? MKTG_FAMILY_EXPORT_UNNAMED_STARTER} is exporting this family to Google Slides`;
+}
+
+/** One export of a family, told apart from the one before it: an update keeps the deck and changes the time. */
+export function mktgFamilyExportIdentity(record: MktgFamilyExportRecord | null): string {
+  return record ? `${record.deckId}|${record.exportedAt}` : '';
 }
