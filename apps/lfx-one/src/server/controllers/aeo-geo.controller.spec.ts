@@ -25,6 +25,7 @@ vi.mock('@lfx-one/shared/constants', async () => ({
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/aeo-geo.constants')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-artifact.constants')),
   ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-document-store.constants')),
+  ...(await vi.importActual<object>('../../../../../packages/shared/src/constants/mktg-run.constants')),
   AEO_GEO_INTAKE: { agentId: 'aeo-geo' },
   MKTG_AGENTS: [{ id: 'aeo-geo', status: 'active', guildAgentHandle: 'catalog-audit-handle' }],
 }));

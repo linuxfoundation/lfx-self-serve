@@ -1,9 +1,15 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MKTG_ANSWERS_INCOMPLETE_MESSAGE, MKTG_RUN_QUESTIONS_ID_REGEX } from '@lfx-one/shared/constants/mktg-run.constants';
-
-import { AEO_GEO_INTAKE, AEO_GEO_QUESTION_KEY_PREFIX, MKTG_AGENTS, MKTG_ARTIFACT_PARTITION_REGEX, MKTG_DOCUMENT_ID_REGEX } from '@lfx-one/shared/constants';
+import {
+  AEO_GEO_INTAKE,
+  AEO_GEO_QUESTION_KEY_PREFIX,
+  MKTG_AGENTS,
+  MKTG_ANSWERS_INCOMPLETE_MESSAGE,
+  MKTG_ARTIFACT_PARTITION_REGEX,
+  MKTG_DOCUMENT_ID_REGEX,
+  MKTG_RUN_QUESTIONS_ID_REGEX,
+} from '@lfx-one/shared/constants';
 import { MktgRunAnswer, Project } from '@lfx-one/shared/interfaces';
 import { isAeoGeoSubmittedAnswers, validateAeoGeoIntakeAnswers } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
