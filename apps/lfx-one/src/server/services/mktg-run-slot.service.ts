@@ -1,9 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MKTG_RUN_SLOT_CLAIM_ATTEMPTS, MKTG_RUN_SLOT_SCHEMA, MKTG_RUN_SLOT_TTL_MS } from '@lfx-one/shared/constants/mktg-run.constants';
+import { MKTG_RUN_SLOT_CLAIM_ATTEMPTS, MKTG_RUN_SLOT_SCHEMA, MKTG_RUN_SLOT_TTL_MS } from '@lfx-one/shared/constants';
 import type { MktgRunSlot, MktgRunSlotClaim, MktgRunSlotMarker, ObjectStorePutInput } from '@lfx-one/shared/interfaces';
-import { buildMktgRunSlotKey, readMktgRunSlotMarker } from '@lfx-one/shared/utils/mktg-run-active.utils';
+import { buildMktgRunSlotKey, readMktgRunSlotMarker } from '@lfx-one/shared/utils';
 import type { Request } from 'express';
 import { randomUUID } from 'node:crypto';
 import { logger } from './logger.service';
