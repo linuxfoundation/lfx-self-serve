@@ -25,7 +25,13 @@ import {
   MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE,
   parseCampaignName,
 } from '@lfx-one/shared/constants';
-import { formatPercent } from '@lfx-one/shared/utils';
+import {
+  campaignMonitorGoogleAccountNote,
+  campaignMonitorManagedElsewhere,
+  campaignMonitorProvenance,
+  campaignMonitorSystemAccountNote,
+  formatPercent,
+} from '@lfx-one/shared/utils';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 
@@ -307,16 +313,13 @@ export class MonitoringTabComponent implements OnInit {
   /** True when the Google amounts on screen are in the read account's own, unnamed currency. */
   protected readonly googleCurrencyNote = computed(() => this.monitorData()?.amountsInAccountCurrency === true);
   /**
-   * Which Google Ads account was read, when campaign-service chose it (#5622): the project has no
-   * connection with an account bound of its own, so the read is of the customer its campaigns were created under.
-   * NULL when the account came from the project's own connection, or the read named none.
+   * Which Google Ads account was read, when it was not the project's own connection's: the customer its campaigns
+   * were created under (#5622), or the LF shared account an account-wide read named (#6209). NULL when the account
+   * came from the project's own connection, or the read named none.
    */
   protected readonly googleRecordedAccountNote = computed((): string | null => {
     const data = this.monitorData();
-    if (data?.googleAccountOrigin !== 'recorded_campaigns' || !data.accountId) {
-      return null;
-    }
-    return `Read from Google Ads account ${data.accountId}, the account this project's campaigns were created under. This project has no Google Ads account bound of its own.`;
+    return campaignMonitorGoogleAccountNote(data?.googleAccountOrigin, data?.accountId, data?.accountWide === true);
   });
   /** The empty state's text: the read's own explanation when it gave one (#5622), else the default. */
   protected readonly googleEmptyMessage = computed(() => this.monitorData()?.message ?? 'No active campaigns found for the selected date range.');
@@ -534,7 +537,7 @@ export class MonitoringTabComponent implements OnInit {
     const days = this.selectedDays();
 
     this.monitorSub = this.campaignService
-      .getMonitorData(this.activeFoundationSlug(), days)
+      .getMonitorData(this.activeFoundationSlug(), days, true)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (data) => {
@@ -683,7 +686,7 @@ export class MonitoringTabComponent implements OnInit {
     const request: Observable<ReportBackedMonitorResponse> =
       platform === 'microsoft'
         ? this.campaignService.getMicrosoftMonitorData(this.activeFoundationSlug(), accountId, this.selectedDays())
-        : this.campaignService.getTwitterMonitorData(this.activeFoundationSlug(), accountId, this.selectedDays());
+        : this.campaignService.getTwitterMonitorData(this.activeFoundationSlug(), accountId, this.selectedDays(), true);
     this.reportBackedSub = request.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (data) => {
         this.setMetricsDisabled(platform, false);
@@ -762,7 +765,7 @@ export class MonitoringTabComponent implements OnInit {
     this.togglePlatform(this.systemAccountRefusedPlatforms, 'linkedin', false);
     const accountSource = this.monitorAccountSource();
     this.linkedInSub = this.campaignService
-      .getLinkedInMonitorData(this.activeFoundationSlug(), accountKey || null, this.selectedDays(), accountSource)
+      .getLinkedInMonitorData(this.activeFoundationSlug(), accountKey || null, this.selectedDays(), accountSource, true)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (data) => {
@@ -820,7 +823,7 @@ export class MonitoringTabComponent implements OnInit {
     this.setRestricted('reddit', false);
     this.togglePlatform(this.systemAccountRefusedPlatforms, 'reddit', false);
     this.redditSub = this.campaignService
-      .getRedditMonitorData(this.activeFoundationSlug(), accountKey || null, this.selectedDays(), this.monitorAccountSource())
+      .getRedditMonitorData(this.activeFoundationSlug(), accountKey || null, this.selectedDays(), this.monitorAccountSource(), true)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (data) => {
@@ -878,7 +881,7 @@ export class MonitoringTabComponent implements OnInit {
     this.togglePlatform(this.systemAccountRefusedPlatforms, 'meta', false);
     const accountSource = this.monitorAccountSource();
     this.metaSub = this.campaignService
-      .getMetaMonitorData(this.activeFoundationSlug(), accountKey || null, this.selectedDays(), accountSource)
+      .getMetaMonitorData(this.activeFoundationSlug(), accountKey || null, this.selectedDays(), accountSource, true)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (data) => {
@@ -1149,6 +1152,7 @@ export class MonitoringTabComponent implements OnInit {
           pacingBarClass: pacingKnown ? this.pacingClass(campaign) : 'bg-gray-300',
           pacingBarWidth: pacingKnown ? Math.min(campaign.pacingPct, 100) : 0,
           pacingText,
+          provenance: campaignMonitorProvenance(campaign.recordedProjectId),
         };
       });
     });
@@ -1253,6 +1257,10 @@ export class MonitoringTabComponent implements OnInit {
         // A failed row's budget was not read either (it arrives as 0), so it is a dash, not 0.00.
         budget: camp.fetchFailed ? '—' : formats.currency(camp.totalBudget || camp.dailyBudget),
         creatives: null,
+        // Account-wide reads only (#6209): which project recorded it, or that it was created outside LFX.
+        provenance: campaignMonitorProvenance(camp.recordedProjectId),
+        // A row another project manages keeps no levers here: they would resolve it within this project.
+        managedUnder: campaignMonitorManagedElsewhere(camp.recordedProjectId, this.activeFoundationSlug()),
       };
       // Metrics that could not be read are not zeros: every metric cell is a dash.
       const extension = extendRow?.(camp) ?? {};
@@ -1483,13 +1491,11 @@ export class MonitoringTabComponent implements OnInit {
 
   /**
    * The note under a panel read through the LF system account (#5889): which ad account campaign-service
-   * read, and why only this project's campaigns are shown. NULL on a read through the project's own
-   * connection, on the legacy path, and when the read named no account (nothing recorded yet).
+   * read, and which campaigns are shown (only this project's, or every one on an account-wide read). NULL on a
+   * read through the project's own connection, on the legacy path, and when the read named no account.
    */
   private systemAccountNote(panel: MonitorConnectionPlatform, read: MonitorSystemAccountRead | undefined): string | null {
-    if (!read?.accountId) return null;
-    const label = this.paidPanelLabel(panel);
-    return `Read from ${label} account ${read.accountId} through the LF system account. This project has no ${label} account bound of its own, so only the campaigns created for it are shown.`;
+    return campaignMonitorSystemAccountNote(this.paidPanelLabel(panel), read);
   }
 
   /** Records whether a panel's failed read was a role refusal, for `refusedReads`. */

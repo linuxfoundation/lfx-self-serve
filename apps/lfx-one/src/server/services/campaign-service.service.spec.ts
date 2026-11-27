@@ -6679,6 +6679,24 @@ describe('CampaignServiceClient account monitors', () => {
     expect(proxyRequest.mock.calls[0]).toHaveLength(5);
   });
 
+  it.each([
+    ['getGoogleAdsAccountMonitor', 'google-ads', '8666746580'],
+    ['getLinkedInAdsAccountMonitor', 'linkedin-ads', '512345678'],
+    ['getMetaAdsAccountMonitor', 'meta-ads', 'act_100000000000001'],
+    ['getRedditAdsAccountMonitor', 'reddit-ads', 't2_abc123'],
+    ['getTwitterAdsAccountMonitor', 'twitter-ads', '18ce54d4x5t'],
+  ] as const)('%s sends scope=account when asked (campaign-service#672)', async (method, provider, accountId) => {
+    proxyRequest.mockResolvedValueOnce(monitor);
+
+    await new CampaignServiceClient()[method](req, 'cncf', accountId, 14, 'account');
+
+    expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_CAMPAIGN_SERVICE', `/projects/cncf/connection-${provider}/account-monitor`, 'GET', {
+      account_id: accountId,
+      days: 14,
+      scope: 'account',
+    });
+  });
+
   it('omits account_id for a Google Ads monitor read with no account, so campaign-service picks it (#5622)', async () => {
     proxyRequest.mockResolvedValueOnce(monitor);
 

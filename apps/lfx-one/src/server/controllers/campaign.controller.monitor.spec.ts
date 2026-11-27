@@ -35,6 +35,8 @@ const {
   svcAudience,
   checkRootWriter,
   checkRootCampaignManager,
+  checkProjectGlobalMarketingOpsStrict,
+  linkedInConfig,
   isServerFeatureEnabled,
   logger,
 } = vi.hoisted(() => ({
@@ -58,6 +60,12 @@ const {
   svcAudience: vi.fn(),
   checkRootWriter: vi.fn<(req: unknown) => Promise<boolean>>(),
   checkRootCampaignManager: vi.fn<(req: unknown) => Promise<boolean>>(),
+  checkProjectGlobalMarketingOpsStrict: vi.fn<(req: unknown, projectSlug: string) => Promise<boolean>>(),
+  linkedInConfig: vi.fn(() => ({
+    accounts: [{ accountId: '512345678', label: 'LF LinkedIn', orgId: '1' }],
+    targetingProfiles: [],
+    defaultAccountId: '',
+  })),
   isServerFeatureEnabled: vi.fn<(flag: unknown) => boolean>(() => false),
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn() },
 }));
@@ -104,10 +112,10 @@ vi.mock('../services/campaign-metrics.service', () => ({
   },
 }));
 vi.mock('../services/linkedin-ads.service', () => ({
-  getLinkedInConfig: () => ({ accounts: [{ accountId: '512345678', label: 'LF LinkedIn', orgId: '1' }], targetingProfiles: [] }),
+  getLinkedInConfig: () => linkedInConfig(),
 }));
 vi.mock('../services/logger.service', () => ({ logger }));
-vi.mock('../utils/persona-helper', () => ({ personaDetectionService: { checkRootWriter, checkRootCampaignManager } }));
+vi.mock('../utils/persona-helper', () => ({ personaDetectionService: { checkRootWriter, checkRootCampaignManager, checkProjectGlobalMarketingOpsStrict } }));
 vi.mock('../utils/shutdown', () => ({ addShutdownHook: vi.fn(), isShuttingDown: () => false }));
 
 import { CampaignController } from './campaign.controller';
@@ -169,6 +177,11 @@ function nonRoot(): void {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  linkedInConfig.mockImplementation(() => ({
+    accounts: [{ accountId: '512345678', label: 'LF LinkedIn', orgId: '1' }],
+    targetingProfiles: [],
+    defaultAccountId: '',
+  }));
   flag(false);
   // Root by default, so the account-monitor specs below exercise the arms the gate lets through.
   checkRootWriter.mockResolvedValue(true);
@@ -200,7 +213,7 @@ describe.each([
     await new CampaignController()[name](buildReq({ accountKey: account, days: '365', project: ' tlf ' }), res, vi.fn());
 
     expect(legacy).not.toHaveBeenCalled();
-    expect(svc).toHaveBeenCalledWith(expect.anything(), 'tlf', account, 90);
+    expect(svc).toHaveBeenCalledWith(expect.anything(), 'tlf', account, 90, undefined);
     const body = vi.mocked(res.json).mock.calls[0][0] as Record<string, unknown>;
     expect(body['accountLabel']).toBe(label);
     expect(body['dateRange']).toEqual({ mode: 'last_90_days' });
@@ -220,7 +233,7 @@ describe.each([
 
     await new CampaignController()[name](buildReq({ accountKey: offList, project: 'tlf' }), res, vi.fn());
 
-    expect(svc).toHaveBeenCalledWith(expect.anything(), 'tlf', offList, 30);
+    expect(svc).toHaveBeenCalledWith(expect.anything(), 'tlf', offList, 30, undefined);
     expect((vi.mocked(res.json).mock.calls[0][0] as Record<string, unknown>)['accountLabel']).toBe(offList);
   });
 
@@ -314,7 +327,7 @@ describe.each([
     await new CampaignController()[name](buildReq({ days: '14', project: 'tlf', accountSource: 'connection' }), res, vi.fn());
 
     expect(svcConnection).toHaveBeenCalledWith(expect.anything(), 'tlf', provider);
-    expect(svc).toHaveBeenCalledWith(expect.anything(), 'tlf', fallback, 14);
+    expect(svc).toHaveBeenCalledWith(expect.anything(), 'tlf', fallback, 14, undefined);
     const body = vi.mocked(res.json).mock.calls[0][0] as Record<string, unknown>;
     expect(body['accountLabel']).toBe(label);
     expect(body['systemAccountRead']).toEqual({
@@ -330,7 +343,7 @@ describe.each([
 
     await new CampaignController()[name](buildReq({ accountKey: '  ', project: 'tlf' }), buildRes(), vi.fn());
 
-    expect(svc).toHaveBeenCalledWith(expect.anything(), 'tlf', fallback, 30);
+    expect(svc).toHaveBeenCalledWith(expect.anything(), 'tlf', fallback, 30, undefined);
   });
 
   it('names no account when campaign-service read none, so the panel shows that nothing is recorded', async () => {
@@ -355,7 +368,7 @@ describe.each([
 
     await new CampaignController()[name](buildReq({ project: 'tlf' }), res, vi.fn());
 
-    expect(svc).toHaveBeenCalledWith(expect.anything(), 'tlf', own, 30);
+    expect(svc).toHaveBeenCalledWith(expect.anything(), 'tlf', own, 30, undefined);
     expect(vi.mocked(res.json).mock.calls[0][0]).not.toHaveProperty('systemAccountRead');
   });
 
@@ -477,7 +490,7 @@ describe('CampaignController.getMonitorData (Google Ads, #4526)', () => {
     await new CampaignController().getMonitorData(buildReq({ days: '365', project: ' tlf ' }), res, vi.fn());
 
     expect(svcConnection).toHaveBeenCalledWith(expect.anything(), 'tlf', 'google-ads');
-    expect(svcGoogle).toHaveBeenCalledWith(expect.anything(), 'tlf', GOOGLE_ACCOUNT, 90);
+    expect(svcGoogle).toHaveBeenCalledWith(expect.anything(), 'tlf', GOOGLE_ACCOUNT, 90, undefined);
     expect(legacyGoogle).not.toHaveBeenCalled();
     const body = vi.mocked(res.json).mock.calls[0][0] as Record<string, unknown>;
     expect(body['dateRange']).toEqual({ mode: 'last_90_days' });
@@ -499,7 +512,7 @@ describe('CampaignController.getMonitorData (Google Ads, #4526)', () => {
 
     await new CampaignController().getMonitorData(buildReq({ days: '14', project: 'tlf' }), res, vi.fn());
 
-    expect(svcGoogle).toHaveBeenCalledWith(expect.anything(), 'tlf', undefined, 14);
+    expect(svcGoogle).toHaveBeenCalledWith(expect.anything(), 'tlf', undefined, 14, undefined);
     expect(legacyGoogle).not.toHaveBeenCalled();
     const body = vi.mocked(res.json).mock.calls[0][0] as Record<string, unknown>;
     expect(body['accountId']).toBe(GOOGLE_ACCOUNT);
@@ -515,7 +528,7 @@ describe('CampaignController.getMonitorData (Google Ads, #4526)', () => {
 
     await new CampaignController().getMonitorData(buildReq({ project: 'tlf' }), res, vi.fn());
 
-    expect(svcGoogle).toHaveBeenCalledWith(expect.anything(), 'tlf', undefined, expect.any(Number));
+    expect(svcGoogle).toHaveBeenCalledWith(expect.anything(), 'tlf', undefined, expect.any(Number), undefined);
     expect((vi.mocked(res.json).mock.calls[0][0] as Record<string, unknown>)['googleAccountOrigin']).toBe('recorded_campaigns');
   });
 
@@ -685,7 +698,7 @@ describe('CampaignController.getMonitorData (Google Ads, #4526)', () => {
 
     await new CampaignController().getMonitorData(buildReq({ project: 'tlf' }), buildRes(), next);
 
-    expect(svcGoogle).toHaveBeenCalledWith(expect.anything(), 'tlf', undefined, expect.any(Number));
+    expect(svcGoogle).toHaveBeenCalledWith(expect.anything(), 'tlf', undefined, expect.any(Number), undefined);
     const error = nextError(next) as MicroserviceError;
     expect(error.statusCode).toBe(403);
     expect(error.toResponse()['error']).toBe(
@@ -735,9 +748,10 @@ describe('CampaignController.getMonitorData (Google Ads, #4526)', () => {
 });
 
 describe.each([
-  { name: 'getMicrosoftMonitor', svc: svcMicrosoft, good: '187654321', bad: '0187654321' },
-  { name: 'getTwitterMonitor', svc: svcTwitter, good: '18ce54d4x5t', bad: '18ce-54d4' },
-] as const)('CampaignController.$name', ({ name, svc, good, bad }) => {
+  // `scopeArgs`: what the read passes after `days` — X's monitor takes the account-wide scope (#6209), here none.
+  { name: 'getMicrosoftMonitor', svc: svcMicrosoft, good: '187654321', bad: '0187654321', scopeArgs: [] },
+  { name: 'getTwitterMonitor', svc: svcTwitter, good: '18ce54d4x5t', bad: '18ce-54d4', scopeArgs: [undefined] },
+] as const)('CampaignController.$name', ({ name, svc, good, bad, scopeArgs }) => {
   it('answers 404 while the flag is off, without calling campaign-service', async () => {
     const next = vi.fn();
 
@@ -761,7 +775,7 @@ describe.each([
 
     await new CampaignController()[name](buildReq({ accountKey: good, project: 'tlf' }), res, vi.fn());
 
-    expect(svc).toHaveBeenCalledWith(expect.anything(), 'tlf', good, 30);
+    expect(svc).toHaveBeenCalledWith(expect.anything(), 'tlf', good, 30, ...scopeArgs);
     const body = vi.mocked(res.json).mock.calls[0][0] as Record<string, unknown>;
     expect(body).toMatchObject({
       accountId: good,
@@ -836,7 +850,7 @@ describe('CampaignController.getLinkedInMonitor account resolution', () => {
 
     await new CampaignController().getLinkedInMonitor(buildReq({ accountKey: '512345678', project: 'tlf', days: '7' }), res, vi.fn());
 
-    expect(svcLinkedIn).toHaveBeenCalledWith(expect.anything(), 'tlf', '512345678', 7);
+    expect(svcLinkedIn).toHaveBeenCalledWith(expect.anything(), 'tlf', '512345678', 7, undefined);
     const body = vi.mocked(res.json).mock.calls[0][0] as { accountLabel: string; campaigns: { creatives: unknown[]; eventName: string }[] };
     expect(body.accountLabel).toBe('LF LinkedIn');
     expect(body.campaigns[0].creatives).toEqual([]);
@@ -858,7 +872,7 @@ describe('CampaignController.getTwitterMonitor conflict', () => {
     );
     const next = vi.fn();
 
-    await new CampaignController().getTwitterMonitor(buildReq({ accountKey: '18ce54d4x5t', project: 'tlf' }), buildRes(), next);
+    await new CampaignController().getTwitterMonitor(buildReq({ accountKey: '18ce54d4x5t', project: 'tlf', accountWide: 'true' }), buildRes(), next);
 
     const response = (nextError(next) as MicroserviceError).toResponse();
     expect(response['upstreamCode']).toBe('account_too_many_active_campaigns');
@@ -1425,7 +1439,7 @@ describe('CampaignController monitor reads during a mixed rollout', () => {
 
     await new CampaignController().getRedditMonitor(buildReq({ accountKey: 't2_offlist', project: 'tlf', accountSource: 'connection' }), res, vi.fn());
 
-    expect(svcReddit).toHaveBeenCalledWith(expect.anything(), 'tlf', 't2_offlist', 30);
+    expect(svcReddit).toHaveBeenCalledWith(expect.anything(), 'tlf', 't2_offlist', 30, undefined);
     expect(res.json).toHaveBeenCalledTimes(1);
   });
 
@@ -1471,7 +1485,7 @@ describe('CampaignController monitor reads during a mixed rollout', () => {
 
     await new CampaignController().getLinkedInMonitor(buildReq({ accountKey: '512345678', project: 'tlf' }), res, vi.fn());
 
-    expect(svcLinkedIn).toHaveBeenCalledWith(expect.anything(), 'tlf', '512345678', 30);
+    expect(svcLinkedIn).toHaveBeenCalledWith(expect.anything(), 'tlf', '512345678', 30, undefined);
     expect(res.json).toHaveBeenCalledTimes(1);
   });
 
@@ -1550,7 +1564,7 @@ describe('shared-account monitor access (lfx-self-serve-ops#54)', () => {
 
     expect(next).not.toHaveBeenCalled();
     expect(svcConnection).toHaveBeenCalledWith(expect.anything(), 'tlf', 'google-ads');
-    expect(svcGoogle).toHaveBeenCalledWith(expect.anything(), 'tlf', '8666746580', 30);
+    expect(svcGoogle).toHaveBeenCalledWith(expect.anything(), 'tlf', '8666746580', 30, undefined);
     expect(res.json).toHaveBeenCalledTimes(1);
     expect(checkRootWriter).not.toHaveBeenCalled();
     expect(checkRootCampaignManager).not.toHaveBeenCalled();
@@ -1576,7 +1590,7 @@ describe('shared-account monitor access (lfx-self-serve-ops#54)', () => {
     flag(on);
     const next = vi.fn();
 
-    await new CampaignController().getTwitterMonitor(buildReq({ accountKey: '18ce54d4x5t', project: 'tlf' }), buildRes(), next);
+    await new CampaignController().getTwitterMonitor(buildReq({ accountKey: '18ce54d4x5t', project: 'tlf', accountWide: 'true' }), buildRes(), next);
 
     expectRestricted(next);
     expect(svcTwitter).not.toHaveBeenCalled();
@@ -1600,7 +1614,7 @@ describe('shared-account monitor access (lfx-self-serve-ops#54)', () => {
 
     await new CampaignController().getLinkedInMonitor(buildReq({ accountKey: '512345678', project: 'tlf' }), res, vi.fn());
 
-    expect(svcLinkedIn).toHaveBeenCalledWith(expect.anything(), 'tlf', '512345678', 30);
+    expect(svcLinkedIn).toHaveBeenCalledWith(expect.anything(), 'tlf', '512345678', 30, undefined);
     expect(res.json).toHaveBeenCalledTimes(1);
   });
 
@@ -1718,5 +1732,192 @@ describe.each([
     expect(checkRootCampaignManager).not.toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledTimes(1);
     expect(next).not.toHaveBeenCalled();
+  });
+});
+
+// The account-wide read (#6209, campaign-service#672): with LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR_ACCOUNT_SCOPE on,
+// a caller holding the project's global_marketing_ops reads every campaign on the account, each row labeled.
+describe('account-wide monitor scope', () => {
+  function flags(accountScope: boolean): void {
+    isServerFeatureEnabled.mockImplementation(
+      (f) => f === ServerFeatureFlag.CampaignServiceMonitor || (accountScope && f === ServerFeatureFlag.CampaignServiceMonitorAccountScope)
+    );
+  }
+  function labeledPayload(): CampaignServiceAccountMonitor {
+    const base = monitorPayload();
+    return {
+      ...base,
+      campaigns: [
+        { ...base.campaigns[0], platform_campaign_id: '1', recorded_project_id: 'cncf' },
+        { ...base.campaigns[0], platform_campaign_id: '2' },
+      ],
+    };
+  }
+
+  it('asks for scope=account and labels each row for a global_marketing_ops caller', async () => {
+    flags(true);
+    checkProjectGlobalMarketingOpsStrict.mockResolvedValueOnce(true);
+    svcMeta.mockResolvedValueOnce(labeledPayload());
+    const res = buildRes();
+
+    await new CampaignController().getMetaMonitor(buildReq({ accountKey: META_ACCOUNT, project: 'tlf', accountWide: 'true' }), res, vi.fn());
+
+    expect(checkProjectGlobalMarketingOpsStrict).toHaveBeenCalledWith(expect.anything(), 'tlf');
+    expect(svcMeta).toHaveBeenCalledWith(expect.anything(), 'tlf', META_ACCOUNT, 30, 'account');
+    const rows = (vi.mocked(res.json).mock.calls[0][0] as { campaigns: { campaignId: string; recordedProjectId?: string | null }[] }).campaigns;
+    expect(rows.map((r) => [r.campaignId, r.recordedProjectId])).toEqual([
+      ['1', 'cncf'],
+      ['2', null],
+    ]);
+  });
+
+  it.each([
+    { name: 'a denial', check: () => checkProjectGlobalMarketingOpsStrict.mockResolvedValueOnce(false) },
+    { name: 'a check that fails', check: () => checkProjectGlobalMarketingOpsStrict.mockRejectedValueOnce(new Error('fga down')) },
+  ])('keeps the project-scoped, unlabeled read on $name', async ({ check }) => {
+    flags(true);
+    check();
+    svcMeta.mockResolvedValueOnce(monitorPayload());
+    const res = buildRes();
+
+    await new CampaignController().getMetaMonitor(buildReq({ accountKey: META_ACCOUNT, project: 'tlf', accountWide: 'true' }), res, vi.fn());
+
+    expect(svcMeta).toHaveBeenCalledWith(expect.anything(), 'tlf', META_ACCOUNT, 30, undefined);
+    const rows = (vi.mocked(res.json).mock.calls[0][0] as { campaigns: Record<string, unknown>[] }).campaigns;
+    expect(rows[0]).not.toHaveProperty('recordedProjectId');
+  });
+
+  it('keeps the project-scoped read, checking no role, when the request does not opt in (the Optimize tab)', async () => {
+    flags(true);
+    svcMeta.mockResolvedValueOnce(monitorPayload());
+
+    await new CampaignController().getMetaMonitor(buildReq({ accountKey: META_ACCOUNT, project: 'tlf' }), buildRes(), vi.fn());
+
+    expect(checkProjectGlobalMarketingOpsStrict).not.toHaveBeenCalled();
+    expect(svcMeta).toHaveBeenCalledWith(expect.anything(), 'tlf', META_ACCOUNT, 30, undefined);
+  });
+
+  it('does not check the role while the flag is off', async () => {
+    flags(false);
+    svcMeta.mockResolvedValueOnce(monitorPayload());
+
+    await new CampaignController().getMetaMonitor(buildReq({ accountKey: META_ACCOUNT, project: 'tlf', accountWide: 'true' }), buildRes(), vi.fn());
+
+    expect(checkProjectGlobalMarketingOpsStrict).not.toHaveBeenCalled();
+    expect(svcMeta).toHaveBeenCalledWith(expect.anything(), 'tlf', META_ACCOUNT, 30, undefined);
+  });
+
+  it.each([
+    { name: 'getLinkedInMonitor', svc: svcLinkedIn, account: '512345678' },
+    { name: 'getRedditMonitor', svc: svcReddit, account: REDDIT_ACCOUNT },
+  ] as const)('forwards scope=account from $name', async ({ name, svc, account }) => {
+    flags(true);
+    checkProjectGlobalMarketingOpsStrict.mockResolvedValueOnce(true);
+    svc.mockResolvedValueOnce(labeledPayload());
+
+    await new CampaignController()[name](buildReq({ accountKey: account, project: 'tlf', accountWide: 'true' }), buildRes(), vi.fn());
+
+    expect(svc).toHaveBeenCalledWith(expect.anything(), 'tlf', account, 30, 'account');
+  });
+
+  it('forwards scope=account from the Google monitor, naming the configured LF customer when the project has no account', async () => {
+    flags(true);
+    vi.stubEnv('GADS_CUSTOMER_ID', '866-674-6580');
+    checkProjectGlobalMarketingOpsStrict.mockResolvedValueOnce(true);
+    svcConnection.mockRejectedValueOnce(
+      MicroserviceError.fromMicroserviceResponse(404, 'Not Found', { code: '404', message: 'not found' }, 'LFX_V2_CAMPAIGN_SERVICE', '/p')
+    );
+    svcGoogle.mockResolvedValueOnce(labeledPayload());
+
+    const res = buildRes();
+    await new CampaignController().getMonitorData(buildReq({ project: 'tlf', accountWide: 'true' }), res, vi.fn());
+
+    expect(svcGoogle).toHaveBeenCalledWith(expect.anything(), 'tlf', '8666746580', expect.any(Number), 'account');
+    // Labelled as the LF shared account, not as the account this project's campaigns were created under.
+    expect(vi.mocked(res.json).mock.calls[0][0]).toMatchObject({ accountId: '8666746580', googleAccountOrigin: 'shared_account' });
+    vi.unstubAllEnvs();
+  });
+
+  it('marks an account-wide Google read with no LF customer configured as account-wide, keeping its recorded origin', async () => {
+    flags(true);
+    vi.stubEnv('GADS_CUSTOMER_ID', '');
+    checkProjectGlobalMarketingOpsStrict.mockResolvedValueOnce(true);
+    svcConnection.mockRejectedValueOnce(
+      MicroserviceError.fromMicroserviceResponse(404, 'Not Found', { code: '404', message: 'not found' }, 'LFX_V2_CAMPAIGN_SERVICE', '/p')
+    );
+    svcGoogle.mockResolvedValueOnce({ ...labeledPayload(), account_id: '8666746580' });
+    const res = buildRes();
+
+    await new CampaignController().getMonitorData(buildReq({ project: 'tlf', accountWide: 'true' }), res, vi.fn());
+
+    expect(svcGoogle).toHaveBeenCalledWith(expect.anything(), 'tlf', undefined, expect.any(Number), 'account');
+    expect(vi.mocked(res.json).mock.calls[0][0]).toMatchObject({ googleAccountOrigin: 'recorded_campaigns', accountWide: true });
+    vi.unstubAllEnvs();
+  });
+
+  it("names LinkedIn's configured default account, not the first listed one, on an account-wide system-account read", async () => {
+    flags(true);
+    // Every read of the config in this request sees the two accounts (the route reads it too).
+    linkedInConfig.mockReturnValue({
+      accounts: [
+        { accountId: '500000001', label: 'Other', orgId: '2' },
+        { accountId: '512345678', label: 'LF LinkedIn', orgId: '1' },
+      ],
+      targetingProfiles: [],
+      defaultAccountId: '512345678',
+    });
+    checkProjectGlobalMarketingOpsStrict.mockResolvedValueOnce(true);
+    svcConnection.mockRejectedValueOnce(
+      MicroserviceError.fromMicroserviceResponse(404, 'Not Found', { code: '404', message: 'not found' }, 'LFX_V2_CAMPAIGN_SERVICE', '/p')
+    );
+    svcLinkedIn.mockResolvedValueOnce({ ...labeledPayload(), account_id: '512345678' });
+
+    await new CampaignController().getLinkedInMonitor(buildReq({ project: 'tlf', accountWide: 'true' }), buildRes(), vi.fn());
+
+    expect(svcLinkedIn).toHaveBeenCalledWith(expect.anything(), 'tlf', '512345678', 30, 'account');
+  });
+
+  it('prefers LINKEDIN_AD_ACCOUNT_ID over the configured default on an account-wide system-account read', async () => {
+    flags(true);
+    vi.stubEnv('LINKEDIN_AD_ACCOUNT_ID', '533333333');
+    checkProjectGlobalMarketingOpsStrict.mockResolvedValueOnce(true);
+    svcConnection.mockRejectedValueOnce(
+      MicroserviceError.fromMicroserviceResponse(404, 'Not Found', { code: '404', message: 'not found' }, 'LFX_V2_CAMPAIGN_SERVICE', '/p')
+    );
+    svcLinkedIn.mockResolvedValueOnce({ ...labeledPayload(), account_id: '533333333' });
+
+    await new CampaignController().getLinkedInMonitor(buildReq({ project: 'tlf', accountWide: 'true' }), buildRes(), vi.fn());
+
+    expect(svcLinkedIn).toHaveBeenCalledWith(expect.anything(), 'tlf', '533333333', 30, 'account');
+    vi.unstubAllEnvs();
+  });
+
+  it("names LinkedIn's configured LF account on an account-wide system-account read, and drops the project-only wording", async () => {
+    flags(true);
+    checkProjectGlobalMarketingOpsStrict.mockResolvedValueOnce(true);
+    svcConnection.mockRejectedValueOnce(
+      MicroserviceError.fromMicroserviceResponse(404, 'Not Found', { code: '404', message: 'not found' }, 'LFX_V2_CAMPAIGN_SERVICE', '/p')
+    );
+    svcLinkedIn.mockResolvedValueOnce({ ...labeledPayload(), account_id: '512345678' });
+    const res = buildRes();
+
+    await new CampaignController().getLinkedInMonitor(buildReq({ project: 'tlf', accountWide: 'true' }), res, vi.fn());
+
+    expect(svcLinkedIn).toHaveBeenCalledWith(expect.anything(), 'tlf', '512345678', 30, 'account');
+    const read = (vi.mocked(res.json).mock.calls[0][0] as { systemAccountRead: Record<string, unknown> }).systemAccountRead;
+    expect(read).toMatchObject({ accountId: '512345678', accountWide: true, emptyMessage: 'No active campaigns found on this account.' });
+  });
+
+  it("labels X's report-backed rows too", async () => {
+    flags(true);
+    checkProjectGlobalMarketingOpsStrict.mockResolvedValueOnce(true);
+    svcTwitter.mockResolvedValueOnce(labeledPayload());
+    const res = buildRes();
+
+    await new CampaignController().getTwitterMonitor(buildReq({ accountKey: '18ce54d4x5t', project: 'tlf', accountWide: 'true' }), res, vi.fn());
+
+    expect(svcTwitter).toHaveBeenCalledWith(expect.anything(), 'tlf', '18ce54d4x5t', 30, 'account');
+    const rows = (vi.mocked(res.json).mock.calls[0][0] as { campaigns: { recordedProjectId?: string | null }[] }).campaigns;
+    expect(rows.map((r) => r.recordedProjectId)).toEqual(['cncf', null]);
   });
 });

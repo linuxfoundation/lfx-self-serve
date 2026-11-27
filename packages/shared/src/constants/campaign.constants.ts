@@ -2158,6 +2158,12 @@ export const MONITOR_KEYWORD_PAGE_SIZE = 10;
  * account (LinkedIn's default) or refuse it as off the allowlist (Reddit, Meta).
  */
 export const MONITOR_ACCOUNT_SOURCE_PARAM = 'accountSource';
+
+/**
+ * The monitor-read query parameter the Monitor tab sends, as `true`, to ask for every campaign on the account
+ * (#6209). The Optimize tab never sends it, so its levers only ever see the project's own campaigns.
+ */
+export const MONITOR_ACCOUNT_WIDE_PARAM = 'accountWide';
 export const MONITOR_ACCOUNT_SOURCE_CONNECTION = 'connection';
 /**
  * The inverse marker: the Monitor tab's read whose account came from a LEGACY picker, i.e. from a

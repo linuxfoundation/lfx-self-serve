@@ -311,6 +311,13 @@ describe('MonitoringTabComponent — keyword totals completeness', () => {
       expect(cells.slice(2)).toEqual(['$3,000.00', '$25.00', '1,000', '40', '4.0%', '$0.63', '12.5', '50%']);
     });
 
+    it('tags an account-wide Google row with its recording project, and a project-scoped one not at all (#6209)', () => {
+      renderRow({ recordedProjectId: 'cncf' });
+      expect(fixture.nativeElement.querySelector('[data-testid="monitoring-campaign-provenance"]')?.textContent?.trim()).toBe('LFX: cncf');
+      renderRow({});
+      expect(fixture.nativeElement.querySelector('[data-testid="monitoring-campaign-provenance"]')).toBeNull();
+    });
+
     it('renders every figure of an unread row as a dash', () => {
       const cells = renderRow({ fetchFailed: true, pacingPct: 0, spend: 0, impressions: 0, clicks: 0, ctr: 0, avgCpc: 0, conversions: 0 });
       expect(cells.slice(2)).toEqual(['—', '—', '—', '—', '—', '—', '—', '—']);
@@ -599,6 +606,12 @@ describe.each(['linkedin', 'reddit', 'meta'] as const)('MonitoringTabComponent �
     expect(text(`${platform}-kpi-conversions`)).toBe('14');
     expect(el(`${platform}-campaign-fetch-failed`)).toBeNull();
     expect(el(`${platform}-totals-note`)).toBeNull();
+    expect(el(`${platform}-campaign-provenance`)).toBeNull();
+  });
+
+  it("tags an account-wide read's row with the project that recorded it, or as created outside LFX (#6209)", () => {
+    render([campaign({ campaignId: '1', recordedProjectId: null })]);
+    expect(text(`${platform}-campaign-provenance`)).toBe('Created outside LFX');
   });
 
   it.runIf(platform === 'linkedin')('shows the creative count as "Not read" when campaign-service did not read creatives', () => {
@@ -844,7 +857,7 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       select('linkedin');
 
       expect(options('linkedin-account-select')).toEqual(['512345678|LF LinkedIn (legacy)']);
-      expect(service['getLinkedInMonitorData']).toHaveBeenCalledWith('cncf', '512345678', 30, 'legacy');
+      expect(service['getLinkedInMonitorData']).toHaveBeenCalledWith('cncf', '512345678', 30, 'legacy', true);
       expect(el('linkedin-connection-notice')).toBeNull();
     });
   });
@@ -858,11 +871,11 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       expect(service['getRedditAccounts']).not.toHaveBeenCalled();
       expect(service['getMetaAccounts']).not.toHaveBeenCalled();
       expect(options('linkedin-account-select')).toEqual(['700000001|CNCF LinkedIn']);
-      expect(service['getLinkedInMonitorData']).toHaveBeenCalledWith('cncf', '700000001', 30, 'connection');
+      expect(service['getLinkedInMonitorData']).toHaveBeenCalledWith('cncf', '700000001', 30, 'connection', true);
 
       select('meta');
       expect(options('meta-account-select')).toEqual(['act_700000001|CNCF Meta']);
-      expect(service['getMetaMonitorData']).toHaveBeenCalledWith('cncf', 'act_700000001', 30, 'connection');
+      expect(service['getMetaMonitorData']).toHaveBeenCalledWith('cncf', 'act_700000001', 30, 'connection', true);
     });
 
     it('offers Microsoft Ads, X and HubSpot, X because it is monitorable although its create is disabled', async () => {
@@ -878,7 +891,7 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       await setup(allConnected);
       select('twitter');
 
-      expect(service['getTwitterMonitorData']).toHaveBeenCalledWith('cncf', '18ce54d4x5t', 30);
+      expect(service['getTwitterMonitorData']).toHaveBeenCalledWith('cncf', '18ce54d4x5t', 30, true);
       expect(el('twitter-monitor-panel')).not.toBeNull();
       expect(el('twitter-error')).toBeNull();
     });
@@ -950,7 +963,7 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
 
       expect(service['getMonitorConnections']).toHaveBeenCalledTimes(2);
       expect(el('linkedin-connection-notice')).toBeNull();
-      expect(service['getLinkedInMonitorData']).toHaveBeenCalledWith('cncf', '700000001', 30, 'connection');
+      expect(service['getLinkedInMonitorData']).toHaveBeenCalledWith('cncf', '700000001', 30, 'connection', true);
     });
 
     it('shows "metrics not enabled" instead of an error for the 400 the BFF marks so', async () => {
@@ -1012,7 +1025,7 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       await setup(allConnected);
       select('reddit');
 
-      expect(service['getRedditMonitorData']).toHaveBeenCalledWith('cncf', 't2_cncf', 30, 'connection');
+      expect(service['getRedditMonitorData']).toHaveBeenCalledWith('cncf', 't2_cncf', 30, 'connection', true);
     });
 
     /**
@@ -1042,7 +1055,7 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
 
       expect(service['getMonitorConnections']).toHaveBeenCalledTimes(2);
       expect(service['getLinkedInAccounts']).toHaveBeenCalledWith('cncf');
-      expect(service['getLinkedInMonitorData']).toHaveBeenLastCalledWith('cncf', '512345678', 30, 'legacy');
+      expect(service['getLinkedInMonitorData']).toHaveBeenLastCalledWith('cncf', '512345678', 30, 'legacy', true);
       expect(el('linkedin-error')).toBeNull();
       expect(options('linkedin-account-select')).toEqual(['512345678|LF LinkedIn (legacy)']);
     });
@@ -1066,7 +1079,7 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
         throwError(() => new HttpErrorResponse({ status: 400, error: { error: 'connection is not bound to this account' } }))
       );
       select('linkedin');
-      expect(service['getLinkedInMonitorData']).toHaveBeenCalledWith('cncf', '512345678', 30, 'legacy');
+      expect(service['getLinkedInMonitorData']).toHaveBeenCalledWith('cncf', '512345678', 30, 'legacy', true);
       expect(text('linkedin-error')).toContain('connection is not bound to this account');
 
       service['getMonitorConnections'].mockReturnValue(of(allConnected));
@@ -1075,7 +1088,7 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       fixture.detectChanges();
 
       expect(service['getMonitorConnections']).toHaveBeenCalledTimes(2);
-      expect(service['getLinkedInMonitorData']).toHaveBeenLastCalledWith('cncf', '700000001', 30, 'connection');
+      expect(service['getLinkedInMonitorData']).toHaveBeenLastCalledWith('cncf', '700000001', 30, 'connection', true);
       expect(el('linkedin-error')).toBeNull();
       expect(options('linkedin-account-select')).toEqual(['700000001|CNCF LinkedIn']);
       expect(el('platform-microsoft')).not.toBeNull();
@@ -1092,7 +1105,7 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       fixture.detectChanges();
 
       expect(service['getMonitorConnections']).toHaveBeenCalledTimes(2);
-      expect(service['getLinkedInMonitorData']).toHaveBeenLastCalledWith('cncf', '512345678', 30, 'legacy');
+      expect(service['getLinkedInMonitorData']).toHaveBeenLastCalledWith('cncf', '512345678', 30, 'legacy', true);
       expect(el('linkedin-error')).toBeNull();
       expect(el('platform-microsoft')).toBeNull();
     });
@@ -1263,7 +1276,7 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       await setup({ viaCampaignService: false, platforms: {} });
       select('meta');
 
-      expect(service['getMetaMonitorData']).toHaveBeenCalledWith('cncf', 'act_1', 30, 'legacy');
+      expect(service['getMetaMonitorData']).toHaveBeenCalledWith('cncf', 'act_1', 30, 'legacy', true);
     });
 
     it.each([
@@ -1283,7 +1296,7 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       fixture.detectChanges();
 
       expect(service['getMonitorConnections']).toHaveBeenCalledTimes(2);
-      expect(service[read]).toHaveBeenLastCalledWith('cncf', connectionAccount, 30, 'connection');
+      expect(service[read]).toHaveBeenLastCalledWith('cncf', connectionAccount, 30, 'connection', true);
       expect(el(`${platform}-error`)).toBeNull();
       expect(el('platform-microsoft')).not.toBeNull();
     });
@@ -1299,7 +1312,7 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       fixture.detectChanges();
 
       expect(service['getMonitorConnections']).toHaveBeenCalledTimes(2);
-      expect(service['getRedditMonitorData']).toHaveBeenLastCalledWith('cncf', 't2_legacy', 30, 'legacy');
+      expect(service['getRedditMonitorData']).toHaveBeenLastCalledWith('cncf', 't2_legacy', 30, 'legacy', true);
       expect(el('reddit-error')).toBeNull();
     });
   });
@@ -1513,6 +1526,22 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       );
     });
 
+    it('withholds the levers on an account-wide row another project manages, naming it, and keeps them for one created outside LFX (#6209)', async () => {
+      await setup(allConnected);
+      const base = reportBacked().campaigns[0];
+      const rows = [
+        { ...base, campaignId: 'other', recordedProjectId: 'tlf' },
+        { ...base, campaignId: 'external', recordedProjectId: null },
+      ];
+      service['getTwitterMonitorData'].mockReturnValue(of(reportBacked({ campaigns: rows })));
+      select('twitter');
+
+      expect(text('twitter-campaign-provenance')).toBe('LFX: tlf');
+      expect(text('twitter-campaign-managed-under')).toBe('Managed under tlf');
+      expect(el('monitor-act-twitter-ads-other')).toBeNull();
+      expect(el('monitor-act-twitter-ads-external')).not.toBeNull();
+    });
+
     it.each([
       ['monitor-act-toggle-1a2b3c', 'pause_resume', 'Pause or resume: KubeCon NA 2026 - Search'],
       ['monitor-act-budget-1a2b3c', 'budget', 'Budget: KubeCon NA 2026 - Search'],
@@ -1603,7 +1632,7 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       expect(el('linkedin-campaign-row-0')).toBeNull();
       expect(el('linkedin-loading')).not.toBeNull();
       expect(options('linkedin-account-select')).toEqual(['700000002|CNCF LinkedIn B']);
-      expect(service['getLinkedInMonitorData']).toHaveBeenLastCalledWith('cncf', '700000002', 30, 'connection');
+      expect(service['getLinkedInMonitorData']).toHaveBeenLastCalledWith('cncf', '700000002', 30, 'connection', true);
 
       accountB.next(adPanel('Account B campaign'));
       fixture.detectChanges();
@@ -1959,7 +1988,7 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       service[method].mockReturnValue(of(systemPanel([row], accountId, label)));
       select(platform);
 
-      expect(service[method]).toHaveBeenCalledWith('cncf', null, 30, 'connection');
+      expect(service[method]).toHaveBeenCalledWith('cncf', null, 30, 'connection', true);
       expect(el(`${platform}-connection-notice`)).toBeNull();
       expect(el(`${platform}-account-select`)).toBeNull();
       expect(text(`${platform}-system-account-note`)).toBe(

@@ -4471,6 +4471,11 @@ export type MetaPacingLabel = 'underspending' | 'normal' | 'constrained' | 'over
 export type MetaActionPriority = 'HIGH' | 'MED' | 'LOW';
 
 export interface MetaCampaignMetrics {
+  /**
+   * Account-wide reads only (#6209): the project campaign-service records the campaign for, or `null`
+   * when it was created outside LFX. ABSENT on a project-scoped read, whose rows are all the project's.
+   */
+  recordedProjectId?: string | null;
   campaignId: string;
   campaignName: string;
   status: string;
@@ -6611,6 +6616,11 @@ export type PacingLabel = 'underspending' | 'normal' | 'constrained' | 'overspen
 export type ActionPriority = 'HIGH' | 'MED' | 'LOW';
 
 export interface CampaignMetrics {
+  /**
+   * Account-wide reads only (#6209): the project campaign-service records the campaign for, or `null`
+   * when it was created outside LFX. ABSENT on a project-scoped read, whose rows are all the project's.
+   */
+  recordedProjectId?: string | null;
   name: string;
   shortName: string;
   eventName: string;
@@ -6697,11 +6707,15 @@ export interface CampaignMonitorResponse {
    * the project's own Google Ads connection; `recorded_campaigns` means the project has no connection
    * with an account bound of its own and campaign-service read the customer its campaigns were
    * created under, through the LF system account when needed (#5622, campaign-service #592).
+   * `shared_account` means an account-wide read (#6209) of the LF shared account, named because the
+   * project has neither an account of its own nor campaigns recorded to take one from.
    *
    * Unrelated to the `MonitorAccountSource` request marker (`accountSource`), which says where a
    * client's account picker got its account; that marker is never set from this field.
    */
-  googleAccountOrigin?: 'connection' | 'recorded_campaigns';
+  googleAccountOrigin?: 'connection' | 'recorded_campaigns' | 'shared_account';
+  /** True on an account-wide read (#6209): every campaign on the account is listed, not only the project's. */
+  accountWide?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -7039,6 +7053,18 @@ export type CampaignServiceMonitorPriority = 'HIGH' | 'MED' | 'LOW';
 /** The X monitor's 409 `reason`, forwarded to the client as `upstreamCode`. */
 export type AccountMonitorConflictReason = (typeof ACCOUNT_MONITOR_CONFLICT_REASONS)[number];
 
+/**
+ * The account-monitor scope campaign-service is asked for (linuxfoundation/lfx-v2-campaign-service#672).
+ * `account` returns every campaign on the shared ad account, whoever created it, and only
+ * `global_marketing_ops` on the project may ask for it; `undefined` is the project-scoped read.
+ */
+export type CampaignServiceMonitorScope = 'account' | undefined;
+
+/** Any mapped account-monitor response: its rows carry the platform campaign id an account-wide read labels by. */
+export interface MonitorResponseWithCampaigns {
+  campaigns: { campaignId: string; recordedProjectId?: string | null }[];
+}
+
 /** campaign-service `account-monitor-campaign`. */
 export interface CampaignServiceAccountMonitorCampaign {
   platform_campaign_id: string;
@@ -7066,6 +7092,11 @@ export interface CampaignServiceAccountMonitorCampaign {
   /** A placeholder `normal` when `pacing_unknown` or `fetch_failed` is true. */
   pacing_label: CampaignServiceMonitorPacingLabel;
   campaign_url?: string;
+  /**
+   * `scope=account` reads only (linuxfoundation/lfx-v2-campaign-service#672): the project campaign-service
+   * records this campaign for; absent when none does (created outside LFX).
+   */
+  recorded_project_id?: string;
 }
 
 /** campaign-service `account-monitor-action-item`, shared by the ad monitors and the HubSpot one. */
@@ -7436,6 +7467,8 @@ export interface MonitorSystemAccountRead {
   accountId: string | null;
   /** The panel's empty state when no campaign came back: no campaigns are recorded for the project yet. */
   emptyMessage: string;
+  /** True when the read was account-wide (#6209): every campaign on the account, not only the project's. */
+  accountWide?: boolean;
 }
 
 /**
@@ -7607,6 +7640,10 @@ export interface AccountMonitorPanelReadState {
 
 /** One campaign row of an ad-platform panel. Every metric cell is a dash when `fetchFailed`. */
 export interface AccountMonitorCampaignRowView {
+  /** Account-wide reads only: the other project this row is managed under, whose levers the tab withholds; null otherwise. */
+  managedUnder: string | null;
+  /** The account-wide read's provenance tag ("Created outside LFX", or the recording project); null otherwise. */
+  provenance: string | null;
   campaignId: string;
   /** The row's heading: the event name on LinkedIn, the campaign name elsewhere. */
   title: string;
@@ -7646,6 +7683,8 @@ export interface GoogleMonitorKpisView {
 
 /** One row of the Google Ads campaign table. */
 export interface GoogleMonitorCampaignRowView {
+  /** The account-wide read's provenance tag ("Created outside LFX", or the recording project); null otherwise. */
+  provenance: string | null;
   campaignId: string;
   title: string;
   /** The full campaign name, copied by the row's copy button. */
@@ -7898,6 +7937,11 @@ export interface LinkedInCreativeMetrics {
 }
 
 export interface LinkedInCampaignMetrics {
+  /**
+   * Account-wide reads only (#6209): the project campaign-service records the campaign for, or `null`
+   * when it was created outside LFX. ABSENT on a project-scoped read, whose rows are all the project's.
+   */
+  recordedProjectId?: string | null;
   campaignId: string;
   campaignName: string;
   eventName: string;
@@ -7971,6 +8015,11 @@ export type RedditPacingLabel = 'underspending' | 'normal' | 'constrained' | 'ov
 export type RedditActionPriority = 'HIGH' | 'MED' | 'LOW';
 
 export interface RedditCampaignMetrics {
+  /**
+   * Account-wide reads only (#6209): the project campaign-service records the campaign for, or `null`
+   * when it was created outside LFX. ABSENT on a project-scoped read, whose rows are all the project's.
+   */
+  recordedProjectId?: string | null;
   campaignId: string;
   campaignName: string;
   status: string;

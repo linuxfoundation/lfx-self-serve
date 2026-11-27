@@ -156,6 +156,7 @@ export * from './org-training-stats.utils';
 export * from './gw-embed.utils';
 export * from './credential-redaction.utils';
 export * from './campaign-bidding.utils';
+export * from './campaign-monitor-scope.utils';
 export * from './campaign-twitter.utils';
 export * from './campaign-linkedin.utils';
 export * from './campaign-reddit-conversion-event.utils';
