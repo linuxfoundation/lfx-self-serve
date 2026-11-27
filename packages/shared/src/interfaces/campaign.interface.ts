@@ -38,6 +38,8 @@ import type {
   REDDIT_CALL_TO_ACTIONS,
   REDDIT_CONVERSION_EVENTS,
   REDDIT_DEVICE_PLATFORMS,
+  REDDIT_GENDERS,
+  REDDIT_LANGUAGES,
   REDDIT_PLACEMENTS,
   REDDIT_SELECTABLE_OBJECTIVES,
   REDDIT_VIDEO_GOALS,
@@ -3209,6 +3211,16 @@ export interface RedditCampaignCreateRequest {
    * `lifetime` included, never dropping it (`redditBudgetTypeRefusal`).
    */
   budgetType?: RedditBudgetType;
+  /**
+   * Gender, language and dayparting targeting (#6108 row 9, campaign-service #549). `gender` omitted is every gender;
+   * `languages` omitted or empty is every language; `schedule` omitted or empty is any time, and otherwise replaces every
+   * ad group's schedule (at most `REDDIT_MAX_SCHEDULE_WINDOWS` windows, in the campaign's time zone). Only while
+   * `CampaignListResult.redditDemographicsEnabled`: the create route refuses all three otherwise, never dropping them
+   * (`redditDemographicsRefusal`).
+   */
+  gender?: RedditGender;
+  languages?: RedditLanguage[];
+  schedule?: RedditScheduleWindow[];
   /** Optional bidding choice (#3299) — see {@link CampaignBiddingConfig}. Omitted means automatic. */
   bidding?: CampaignBiddingConfig;
 }
@@ -4084,6 +4096,24 @@ export type RedditDevicePlatform = (typeof REDDIT_DEVICE_PLATFORMS)[number];
 
 /** How a Reddit budget is spent (`REDDIT_BUDGET_TYPES`, #6108 row 5): over the flight or per day. */
 export type RedditBudgetType = (typeof REDDIT_BUDGET_TYPES)[number];
+
+/** A Reddit gender target (`REDDIT_GENDERS`, #6108 row 9). Omit `redditConfig.gender` for every gender. */
+export type RedditGender = (typeof REDDIT_GENDERS)[number];
+
+/** A Reddit language target, an upper-case ISO 639-1 code (`REDDIT_LANGUAGES`, #6108 row 9). */
+export type RedditLanguage = (typeof REDDIT_LANGUAGES)[number];
+
+/**
+ * One recurring weekly delivery window of `redditConfig.schedule` (#6108 row 9): days 0 (Sunday) to 6 (Saturday), hours
+ * 0 to 23, every field required. A window may wrap the week and may overlap another, but may not start where it ends or
+ * repeat another exactly.
+ */
+export interface RedditScheduleWindow {
+  startDay: number;
+  startHour: number;
+  endDay: number;
+  endHour: number;
+}
 
 /** One conversion pixel on the Reddit ad account, for the `conversionPixelId` picker (#6108 row 5). */
 export interface RedditPixelOption {
@@ -9234,6 +9264,13 @@ export interface CampaignListResult {
    * Optional, so a BFF that predates it reads as unanswered.
    */
   redditBudgetTypeEnabled?: boolean;
+  /**
+   * Whether a Reddit create may carry `redditConfig.gender`, `languages` and `schedule` (#6108 row 9): the
+   * campaign-service create path AND `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_GENDER_LANGUAGE_DAYPARTING`, which follows
+   * campaign-service's own `REDDIT_GENDER_LANGUAGE_DAYPARTING_ENABLED`. Optional, so a BFF that predates it reads as
+   * unanswered.
+   */
+  redditDemographicsEnabled?: boolean;
   /**
    * Whether `GET /api/campaigns/reddit/pixels` is served (#6108 row 5): the campaign-service create path AND
    * `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_PIXEL_LIST`, which follows campaign-service's own `REDDIT_PIXEL_LIST_ENABLED`.

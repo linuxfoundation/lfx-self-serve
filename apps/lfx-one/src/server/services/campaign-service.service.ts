@@ -813,6 +813,16 @@ export function canSetRedditAdPerVariant(): boolean {
 }
 
 /**
+ * Whether a Reddit create may carry `gender` / `languages` / `schedule` (#6108 row 9, campaign-service #549). Needs the
+ * campaign-service create path AND `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_GENDER_LANGUAGE_DAYPARTING`, which follows
+ * campaign-service's own `REDDIT_GENDER_LANGUAGE_DAYPARTING_ENABLED`: campaign-service refuses all three while that is
+ * off, and the legacy creator ignores them.
+ */
+export function canSetRedditDemographics(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceRedditGenderLanguageDayparting);
+}
+
+/**
  * Whether a Reddit create may carry `videoAssetId` and `thumbnailAssetId`, a video post from stored assets (#6108 row 8,
  * campaign-service #549). Needs the Reddit creative asset path (`canUseRedditCreativeAssets`, which includes the
  * campaign-service create path and says URL signing is configured), since Reddit fetches the video and its thumbnail
@@ -1444,6 +1454,7 @@ export class CampaignServiceClient {
         redditPlacementsEnabled: canSetRedditPlacements(),
         redditBudgetTypeEnabled: canSetRedditBudgetType(),
         redditAdPerVariantEnabled: canSetRedditAdPerVariant(),
+        redditDemographicsEnabled: canSetRedditDemographics(),
         redditVideoEnabled: canSetRedditVideo(),
         redditPixelListEnabled: canListRedditPixels(),
         googleAssetUploadEnabled: canUseGoogleCreativeAssets(),
@@ -1553,6 +1564,7 @@ export class CampaignServiceClient {
       redditPlacementsEnabled: canSetRedditPlacements(),
       redditBudgetTypeEnabled: canSetRedditBudgetType(),
       redditAdPerVariantEnabled: canSetRedditAdPerVariant(),
+      redditDemographicsEnabled: canSetRedditDemographics(),
       redditVideoEnabled: canSetRedditVideo(),
       redditPixelListEnabled: canListRedditPixels(),
       googleAssetUploadEnabled: canUseGoogleCreativeAssets(),

@@ -417,6 +417,21 @@ export enum ServerFeatureFlag {
   CampaignServiceRedditAdPerVariant = 'LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_AD_PER_VARIANT',
 
   /**
+   * Reddit gender, language and dayparting (#6108 row 9, linuxfoundation/lfx-v2-campaign-service#549): accept
+   * `redditConfig.gender` (`FEMALE` or `MALE`), `redditConfig.languages` (ISO 639-1 codes from Reddit's list) and
+   * `redditConfig.schedule` (weekly `{startDay, startHour, endDay, endHour}` windows, at most 50), the ad group's gender
+   * and language targeting and the campaign's delivery schedule.
+   *
+   * A CAPABILITY flag of the Bidding kind: REQUIRES campaign-service DEPLOYED with
+   * `REDDIT_GENDER_LANGUAGE_DAYPARTING_ENABLED` on, since campaign-service refuses any of the three with a 400 otherwise
+   * (a blank gender included), and is only meaningful on the campaign-service create path (`cutoverOwnsCreate`): the
+   * legacy creator ignores them. Off (the default), the create route refuses them with a 400, never dropping them. Keep
+   * it off until campaign-service's flag is on and probed. Request fields only, so flipping it back strands nothing. Same
+   * accepted values as the flags above.
+   */
+  CampaignServiceRedditGenderLanguageDayparting = 'LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_GENDER_LANGUAGE_DAYPARTING',
+
+  /**
    * Reddit video posts (#6108 row 8, linuxfoundation/lfx-v2-campaign-service#549): a create may carry
    * `redditConfig.videoAssetId` (a stored video/mp4) and `thumbnailAssetId` (a stored PNG or JPEG), and the creative-asset
    * upload takes an MP4 for it.

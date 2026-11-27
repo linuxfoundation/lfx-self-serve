@@ -790,6 +790,17 @@ environment:
   LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_AD_PER_VARIANT:
     value:
 
+  # Reddit gender, language and dayparting (#6108 row 9, linuxfoundation/lfx-v2-campaign-service#549): accepts
+  # `redditConfig.gender` (FEMALE, MALE), `redditConfig.languages` (ISO 639-1 codes from Reddit's list) and
+  # `redditConfig.schedule` (weekly {startDay, startHour, endDay, endHour} windows, at most 50).
+  #
+  # A CAPABILITY flag of the Bidding kind: REQUIRES campaign-service DEPLOYED with
+  # `REDDIT_GENDER_LANGUAGE_DAYPARTING_ENABLED` on, and the create pipeline on. Off (the default), the create route
+  # refuses the fields with a 400, never dropping them. Fields only, so turning it back off strands nothing. Order: set
+  # campaign-service's flag and pass its live probe, THEN this. Same accepted values as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_GENDER_LANGUAGE_DAYPARTING:
+    value:
+
   # Reddit video posts (#6108 row 8, linuxfoundation/lfx-v2-campaign-service#549): accepts `redditConfig.videoAssetId`
   # (a stored MP4) and `thumbnailAssetId` (a stored PNG or JPEG), and lets the creative-asset upload take an MP4 for it.
   #

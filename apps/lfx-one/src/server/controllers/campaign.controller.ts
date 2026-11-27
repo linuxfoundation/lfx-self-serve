@@ -26,6 +26,7 @@ import { redditTargetingExclusionsRefusal } from '@lfx-one/shared/utils/campaign
 import { redditSubCountryGeoRefusal } from '@lfx-one/shared/utils/campaign-reddit-subcountry-geo.utils';
 import { redditAdPerVariantRefusal } from '@lfx-one/shared/utils/campaign-reddit-ad-variants.utils';
 import { redditBudgetTypeRefusal, redditPlacementsRefusal } from '@lfx-one/shared/utils/campaign-reddit-delivery.utils';
+import { redditDemographicsRefusal } from '@lfx-one/shared/utils/campaign-reddit-demographics.utils';
 import { redditVideoRefusal } from '@lfx-one/shared/utils/campaign-reddit-video.utils';
 import { redditPixelsFromPayload } from '@lfx-one/shared/utils/campaign-reddit-pixels.utils';
 import {
@@ -515,6 +516,7 @@ import {
   canSetRedditPlacements,
   canSetRedditBudgetType,
   canSetRedditAdPerVariant,
+  canSetRedditDemographics,
   canSetRedditVideo,
   canListRedditPixels,
   canSetRedditConversionPixel,
@@ -1518,11 +1520,17 @@ export class CampaignController {
           service: 'campaign_controller',
         });
       }
-      // Reddit placements, devices and expansion, and the budget type (#6108 row 5): refused, never dropped, while this
-      // deployment cannot send them, and held to campaign-service's rules (`checkRedditPlacementTargeting`,
-      // `checkRedditBudgetType`). See `redditPlacementsRefusal` and `redditBudgetTypeRefusal`.
+      // Reddit placements, devices and expansion, gender, languages and dayparting, and the budget type (#6108 rows 5
+      // and 9): refused, never dropped, while this deployment cannot send them, and held to campaign-service's rules
+      // (`checkRedditPlacementTargeting`, `checkRedditDemographicTargeting`, `checkRedditBudgetType`), feature by feature
+      // in its PreflightCreate order. campaign-service runs every shape check first, so when two features are both wrong
+      // it may name the other field; either way the create is refused. See `redditPlacementsRefusal`,
+      // `redditDemographicsRefusal` and `redditBudgetTypeRefusal`. The demographics only when Reddit is selected:
+      // campaign-service checks only the selected platforms, so an unused redditConfig must not block another create.
       const redditDeliveryRefused =
-        redditPlacementsRefusal(body?.redditConfig, canSetRedditPlacements()) ?? redditBudgetTypeRefusal(body?.redditConfig, canSetRedditBudgetType());
+        redditPlacementsRefusal(body?.redditConfig, canSetRedditPlacements()) ??
+        (platforms.includes('reddit-ads') ? redditDemographicsRefusal(body?.redditConfig, canSetRedditDemographics()) : null) ??
+        redditBudgetTypeRefusal(body?.redditConfig, canSetRedditBudgetType());
       if (redditDeliveryRefused !== null) {
         throw ServiceValidationError.forField(redditDeliveryRefused.field, redditDeliveryRefused.message, {
           operation: 'campaign_create',

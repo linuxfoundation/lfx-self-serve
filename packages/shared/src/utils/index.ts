@@ -166,6 +166,7 @@ export * from './campaign-reddit-subcountry-geo.utils';
 export * from './campaign-reddit-ad-variants.utils';
 export * from './campaign-reddit-video.utils';
 export * from './campaign-reddit-delivery.utils';
+export * from './campaign-reddit-demographics.utils';
 export * from './campaign-reddit-pixels.utils';
 export * from './campaign-reddit-targeting-lists.utils';
 export * from './campaign-reddit-draft.utils';
