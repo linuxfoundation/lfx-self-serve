@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { campaignMonitorProvenance, campaignMonitorScope, withRecordedProjects } from './campaign-monitor-scope.utils';
+import { campaignMonitorManagedElsewhere, campaignMonitorProvenance, campaignMonitorScope, withRecordedProjects } from './campaign-monitor-scope.utils';
 
 describe('campaignMonitorScope', () => {
   it.each([
@@ -42,5 +42,16 @@ describe('campaignMonitorProvenance', () => {
     ['cncf', 'LFX: cncf'],
   ] as const)('%s -> %s', (recorded, want) => {
     expect(campaignMonitorProvenance(recorded)).toBe(want);
+  });
+});
+
+describe('campaignMonitorManagedElsewhere', () => {
+  it.each([
+    [undefined, 'tlf', null],
+    [null, 'tlf', null],
+    ['tlf', 'tlf', null],
+    ['cncf', 'tlf', 'cncf'],
+  ] as const)('recorded %s, selected %s -> %s', (recorded, selected, want) => {
+    expect(campaignMonitorManagedElsewhere(recorded, selected)).toBe(want);
   });
 });

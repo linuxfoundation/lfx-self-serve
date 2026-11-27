@@ -956,7 +956,13 @@
                 }
                 @if (actPlatform) {
                   <td class="px-4 py-3">
-                    <ng-container *ngTemplateOutlet="actCell; context: { platform: actPlatform, id: row.campaignId, name: row.campaignName }" />
+                    @if (row.managedUnder) {
+                      <p class="text-right text-xs text-gray-500" [attr.data-testid]="panel + '-campaign-managed-under'">
+                        Managed under {{ row.managedUnder }}
+                      </p>
+                    } @else {
+                      <ng-container *ngTemplateOutlet="actCell; context: { platform: actPlatform, id: row.campaignId, name: row.campaignName }" />
+                    }
                   </td>
                 }
               </tr>

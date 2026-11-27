@@ -25,7 +25,7 @@ import {
   MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE,
   parseCampaignName,
 } from '@lfx-one/shared/constants';
-import { campaignMonitorProvenance, formatPercent } from '@lfx-one/shared/utils';
+import { campaignMonitorManagedElsewhere, campaignMonitorProvenance, formatPercent } from '@lfx-one/shared/utils';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 
@@ -1256,6 +1256,8 @@ export class MonitoringTabComponent implements OnInit {
         creatives: null,
         // Account-wide reads only (#6209): which project recorded it, or that it was created outside LFX.
         provenance: campaignMonitorProvenance(camp.recordedProjectId),
+        // A row another project manages keeps no levers here: they would resolve it within this project.
+        managedUnder: campaignMonitorManagedElsewhere(camp.recordedProjectId, this.activeFoundationSlug()),
       };
       // Metrics that could not be read are not zeros: every metric cell is a dash.
       const extension = extendRow?.(camp) ?? {};

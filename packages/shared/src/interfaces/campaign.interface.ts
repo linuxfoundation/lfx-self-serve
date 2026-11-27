@@ -7484,6 +7484,8 @@ export interface AccountMonitorPanelReadState {
 
 /** One campaign row of an ad-platform panel. Every metric cell is a dash when `fetchFailed`. */
 export interface AccountMonitorCampaignRowView {
+  /** Account-wide reads only: the other project this row is managed under, whose levers the tab withholds; null otherwise. */
+  managedUnder: string | null;
   /** The account-wide read's provenance tag ("Created outside LFX", or the recording project); null otherwise. */
   provenance: string | null;
   campaignId: string;

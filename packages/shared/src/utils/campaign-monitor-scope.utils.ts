@@ -33,6 +33,16 @@ export function withRecordedProjects<R extends { campaignId: string; recordedPro
 }
 
 /**
+ * The project an account-wide row is managed under when that is NOT the selected project, else `null` (#6209).
+ * Such a row's levers (pause/resume, budget, bid) resolve the campaign within the SELECTED project and would offer to
+ * adopt a campaign LFX already manages, so the tab withholds them and says where it is managed. A row created outside
+ * LFX (`null`) keeps them, adoption included, and a project-scoped row (`undefined`) is unchanged.
+ */
+export function campaignMonitorManagedElsewhere(recordedProjectId: string | null | undefined, selectedProject: string): string | null {
+  return typeof recordedProjectId === 'string' && recordedProjectId !== selectedProject ? recordedProjectId : null;
+}
+
+/**
  * The Monitor row's provenance tag: `null` on a project-scoped row (no tag), "Created outside LFX"
  * when no project records it, otherwise the project it was created or adopted under.
  */

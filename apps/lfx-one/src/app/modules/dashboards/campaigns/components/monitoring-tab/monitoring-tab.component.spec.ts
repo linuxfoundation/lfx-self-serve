@@ -1519,6 +1519,21 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       );
     });
 
+    it('withholds the levers on an account-wide row another project manages, naming it, and keeps them for one created outside LFX (#6209)', async () => {
+      await setup(allConnected);
+      const base = reportBacked().campaigns[0];
+      const rows = [
+        { ...base, campaignId: 'other', recordedProjectId: 'tlf' },
+        { ...base, campaignId: 'external', recordedProjectId: null },
+      ];
+      service['getTwitterMonitorData'].mockReturnValue(of(reportBacked({ campaigns: rows })));
+      select('twitter');
+
+      expect(text('twitter-campaign-managed-under')).toBe('Managed under tlf');
+      expect(el('monitor-act-twitter-ads-other')).toBeNull();
+      expect(el('monitor-act-twitter-ads-external')).not.toBeNull();
+    });
+
     it.each([
       ['monitor-act-toggle-1a2b3c', 'pause_resume', 'Pause or resume: KubeCon NA 2026 - Search'],
       ['monitor-act-budget-1a2b3c', 'budget', 'Budget: KubeCon NA 2026 - Search'],
