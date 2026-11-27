@@ -776,7 +776,7 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
 
   // Reddit gender, languages and dayparting (#6108 row 9): the rules are in `campaign-reddit-demographics.utils.spec.ts`; this
   // tests the wiring, driven through the editor's binding so a handler that never emits fails here.
-  it('carries gender, languages and a schedule through a tab round-trip into the request, sends none once off, and clears them on a brief switch', async () => {
+  it('carries gender, languages and a schedule through a tab round-trip into the request, holds a Reddit create once off, and clears them on a brief switch', async () => {
     const mountWithDemographics = async (draft: CampaignImplementationDraft | null, enabled: boolean) => {
       const mounted = await mount(draft);
       mounted.fixture.componentRef.setInput('redditDemographicsEnabled', enabled);
@@ -801,8 +801,16 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     second.fixture.destroy();
     createCampaign.mockClear();
 
+    // Off, saved choices hold a Reddit create rather than being dropped, never another platform's; Remove clears them.
     const off = (await mountWithDemographics(draft, false)).fixture;
     expect(off.nativeElement.querySelector('lfx-reddit-demographics')).toBeNull();
+    makeSubmittable(off);
+    expect(at(off).createBlockedReason()).toMatch(/^Reddit Ads: Gender, language and dayparting targeting is not on/);
+    at(off).selectedPlatforms.set(['meta-ads']);
+    expect(at(off).createBlockedReason() ?? '').not.toMatch(/^Reddit Ads/);
+    at(off).selectedPlatforms.set(['reddit-ads']);
+    off.detectChanges();
+    off.debugElement.query(By.css('[data-testid="implementation-reddit-demographics-block-remove"]')).triggerEventHandler('click');
     const sent = submitReddit(off);
     for (const key of ['gender', 'languages', 'schedule']) expect(sent).not.toHaveProperty(key);
   });

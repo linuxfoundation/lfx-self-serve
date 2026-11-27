@@ -530,10 +530,28 @@ export interface RedditCreateRefusalInput {
   subCountryGeoRefusal: string | null;
   /** Why the placements or devices cannot be sent (`redditDeliveryRefusal`), or `null`. */
   deliveryRefusal: string | null;
+  /** Why the gender, languages or schedule cannot be sent yet (`redditDemographicsBlock`, #6108 row 9), or `null`. */
+  demographicsBlock: string | null;
   /** Why the gender, languages or schedule break campaign-service's rules (`redditDemographicsDraftRefusal`, #6108 row 9), or `null`. */
   demographicsRefusal: string | null;
   /** Why the variants break campaign-service's one ad per variant rules (`redditAdPerVariantRefusal`), or `null`. */
   variantsRefusal: string | null;
+}
+
+/**
+ * Whether this deployment can send each Reddit create field the create route holds to campaign-service's rules
+ * (`redditCreateConfigRefusal`, #6108 rows 1-3 and 5-9), one flag read each.
+ */
+export interface RedditCreateConfigCapabilities {
+  conversionEvent: boolean;
+  customAudiences: boolean;
+  targetingExclusions: boolean;
+  subCountryGeo: boolean;
+  placements: boolean;
+  demographics: boolean;
+  budgetType: boolean;
+  video: boolean;
+  adPerVariant: boolean;
 }
 
 /** The three inputs needed to author a promoted post, once a creator has decided to author one. */
@@ -4359,6 +4377,25 @@ export interface RedditDemographicsDraft {
 
 /** The `redditConfig` keys the gender, language and dayparting choices add to a create (#6108 row 9), each only when set. */
 export type RedditDemographicsField = Pick<RedditCampaignCreateRequest, 'gender' | 'languages' | 'schedule'>;
+
+/**
+ * Why Create is held for Reddit gender, language or dayparting choices the draft holds but the request cannot carry
+ * (#6108 row 9), as `CampaignRedditTargetingExclusionsBlock` is for exclusions. `restricted` when the deployment says no
+ * (`redditDemographicsEnabled === false`), and the capability read's own states while it is unanswered.
+ */
+export interface CampaignRedditDemographicsBlock {
+  kind: 'pending' | 'failed' | 'unsaved' | 'restricted';
+  message: string;
+}
+
+/** The state `redditDemographicsBlock` (`campaign-reddit-demographics.utils.ts`) reads, as plain values. */
+export interface RedditDemographicsBlockInput {
+  demographics: RedditDemographicsDraft;
+  enabled: boolean | null;
+  createCapabilityRead: CampaignCapabilityReadState;
+  /** The open brief's id, or `null` while the brief is unsaved. */
+  briefId: string | null;
+}
 
 /** One conversion pixel on the Reddit ad account, for the `conversionPixelId` picker (#6108 row 5). */
 export interface RedditPixelOption {

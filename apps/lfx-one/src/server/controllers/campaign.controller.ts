@@ -21,19 +21,12 @@ import {
 import { linkedInConfigNamesLeadGenForm, linkedInLeadForms, linkedInLeadGenRefusal } from '@lfx-one/shared/utils/campaign-linkedin-lead-gen.utils';
 import { linkedInConfigNamesConversions, linkedInConversionRules, linkedInObjectiveRefusal } from '@lfx-one/shared/utils/campaign-linkedin-objective.utils';
 import { linkedInTargetingNamesSegments, linkedInTargetingRefusal } from '@lfx-one/shared/utils/campaign-linkedin-targeting.utils';
-import { redditConversionEventRefusal } from '@lfx-one/shared/utils/campaign-reddit-conversion-event.utils';
-import { redditTargetingExclusionsRefusal } from '@lfx-one/shared/utils/campaign-reddit-targeting-exclusions.utils';
-import { redditSubCountryGeoRefusal } from '@lfx-one/shared/utils/campaign-reddit-subcountry-geo.utils';
-import { redditAdPerVariantRefusal } from '@lfx-one/shared/utils/campaign-reddit-ad-variants.utils';
-import { redditBudgetTypeRefusal, redditPlacementsRefusal } from '@lfx-one/shared/utils/campaign-reddit-delivery.utils';
-import { redditDemographicsRefusal } from '@lfx-one/shared/utils/campaign-reddit-demographics.utils';
-import { redditVideoRefusal } from '@lfx-one/shared/utils/campaign-reddit-video.utils';
+import { redditCreateConfigRefusal } from '@lfx-one/shared/utils/campaign-reddit-create.utils';
 import { redditPixelsFromPayload } from '@lfx-one/shared/utils/campaign-reddit-pixels.utils';
 import {
   redditConfigNamesCustomAudiences,
   redditCustomAudienceQuery,
   redditCustomAudiencesFromPayload,
-  redditCustomAudiencesRefusal,
 } from '@lfx-one/shared/utils/campaign-reddit-custom-audiences.utils';
 import { linkedInTextAdAssetField, linkedInTextAdsRefusal } from '@lfx-one/shared/utils/campaign-linkedin-text-ads.utils';
 import { compactLinkedInVariantFields, linkedInVariantFieldsRefusal } from '@lfx-one/shared/utils/campaign-linkedin-variant-fields.utils';
@@ -1477,90 +1470,25 @@ export class CampaignController {
         return;
       }
 
-      // The Reddit conversion event (#6108 row 2): refused, never dropped, while this deployment cannot send it, and held
-      // to campaign-service's rules (`checkRedditConversionEvent`). See `redditConversionEventRefusal`.
-      const redditConversionEventRefused = redditConversionEventRefusal(body?.redditConfig, canSetRedditConversionEvent());
-      if (redditConversionEventRefused !== null) {
-        next(
-          ServiceValidationError.forField(redditConversionEventRefused.field, redditConversionEventRefused.message, {
-            operation: 'campaign_create',
-            service: 'campaign_controller',
-          })
-        );
-        return;
-      }
-      // Reddit custom audiences (#6108 row 1): refused, never dropped, while this deployment cannot send them, and held
-      // to campaign-service's rules (`checkRedditCustomAudiences`). See `redditCustomAudiencesRefusal`. They live on the
-      // ad account every foundation shares: named only by a caller holding `global_marketing_ops` on the project, as
-      // campaign-service requires (403), and never on a check that failed (503).
-      const redditCustomAudiencesRefused = redditCustomAudiencesRefusal(body?.redditConfig, canSetRedditCustomAudiences());
-      if (redditCustomAudiencesRefused !== null) {
-        throw ServiceValidationError.forField(redditCustomAudiencesRefused.field, redditCustomAudiencesRefused.message, {
-          operation: 'campaign_create',
-          service: 'campaign_controller',
-        });
-      }
-      // Reddit targeting exclusions (#6108 row 3): refused, never dropped, while this deployment cannot send them, and held
-      // to campaign-service's rules (`checkRedditTargetingExclusions`). See `redditTargetingExclusionsRefusal`.
-      const redditTargetingExclusionsRefused = redditTargetingExclusionsRefusal(body?.redditConfig, canSetRedditTargetingExclusions());
-      if (redditTargetingExclusionsRefused !== null) {
-        throw ServiceValidationError.forField(redditTargetingExclusionsRefused.field, redditTargetingExclusionsRefused.message, {
-          operation: 'campaign_create',
-          service: 'campaign_controller',
-        });
-      }
-      // Reddit regions, cities and DMAs (#6108 row 7): refused, never dropped, while this deployment cannot send them, and
-      // held to campaign-service's rules (`checkRedditSubCountryGeo`), whose gate and value rules it runs after the
-      // exclusions' and before the placements' (it type-checks every field first, so a mistyped later field may be named
-      // there instead; either way nothing is created). Whether Reddit can target an id is campaign-service's own read. See
-      // `redditSubCountryGeoRefusal`. Only for a Reddit create: campaign-service runs the Reddit pre-check only for the
-      // platforms selected, so a `redditConfig` beside other platforms is never judged there.
-      const redditSubCountryGeoRefused = platforms.includes('reddit-ads') ? redditSubCountryGeoRefusal(body?.redditConfig, canSetRedditSubCountryGeo()) : null;
-      if (redditSubCountryGeoRefused !== null) {
-        throw ServiceValidationError.forField(redditSubCountryGeoRefused.field, redditSubCountryGeoRefused.message, {
-          operation: 'campaign_create',
-          service: 'campaign_controller',
-        });
-      }
-      // Reddit placements, devices and expansion, gender, languages and dayparting, and the budget type (#6108 rows 5
-      // and 9): refused, never dropped, while this deployment cannot send them, and held to campaign-service's rules
-      // (`checkRedditPlacementTargeting`, `checkRedditDemographicTargeting`, `checkRedditBudgetType`), feature by feature
-      // in its PreflightCreate order. campaign-service runs every shape check first, so when two features are both wrong
-      // it may name the other field; either way the create is refused. See `redditPlacementsRefusal`,
-      // `redditDemographicsRefusal` and `redditBudgetTypeRefusal`. The demographics only when Reddit is selected:
-      // campaign-service checks only the selected platforms, so an unused redditConfig must not block another create.
-      const redditDeliveryRefused =
-        redditPlacementsRefusal(body?.redditConfig, canSetRedditPlacements()) ??
-        (platforms.includes('reddit-ads') ? redditDemographicsRefusal(body?.redditConfig, canSetRedditDemographics()) : null) ??
-        redditBudgetTypeRefusal(body?.redditConfig, canSetRedditBudgetType());
-      if (redditDeliveryRefused !== null) {
-        throw ServiceValidationError.forField(redditDeliveryRefused.field, redditDeliveryRefused.message, {
-          operation: 'campaign_create',
-          service: 'campaign_controller',
-        });
-      }
-      // A Reddit video post (#6108 row 8): `videoAssetId` and `thumbnailAssetId` refused, never dropped, while this
-      // deployment cannot send them (`canSetRedditVideo`, which needs the Reddit assets flag too, so a stored video is
-      // refused wherever a stored image is), and held to campaign-service's rules (`checkRedditVideoChoice`), which it
-      // checks after the budget type. One ad per variant decides whether 2 or more variants may ride along. See
-      // `redditVideoRefusal`. Only when Reddit is selected, as below.
-      const redditVideoRefused = platforms.includes('reddit-ads')
-        ? redditVideoRefusal(body?.redditConfig, canSetRedditVideo(), canSetRedditAdPerVariant())
-        : null;
-      if (redditVideoRefused !== null) {
-        throw ServiceValidationError.forField(redditVideoRefused.field, redditVideoRefused.message, {
-          operation: 'campaign_create',
-          service: 'campaign_controller',
-        });
-      }
-      // Reddit one ad per variant (#6108 row 6): while this deployment offers it, an authored-post create's variants are
-      // held to campaign-service's rules (`checkRedditAdPerVariant`), which campaign-service checks after every other
-      // config refusal; never refused while off, since creates already carry the brief's variants. See
-      // `redditAdPerVariantRefusal`. Only when Reddit is selected: campaign-service checks only the selected platforms, so
-      // unused Reddit copy must not block another platform's create.
-      const redditAdPerVariantRefused = platforms.includes('reddit-ads') ? redditAdPerVariantRefusal(body?.redditConfig, canSetRedditAdPerVariant()) : null;
-      if (redditAdPerVariantRefused !== null) {
-        throw ServiceValidationError.forField(redditAdPerVariantRefused.field, redditAdPerVariantRefused.message, {
+      // Reddit's config refusals (#6108 rows 1-3 and 5-9): each feature refused, never dropped, while this deployment
+      // cannot send it, and held to campaign-service's rules, in its PreflightCreate order. Only for a create that
+      // selects Reddit: campaign-service pre-checks only the selected platforms, so a Reddit draft must never block
+      // another platform's create. The rules are table rows in `campaign-reddit-create.utils.spec.ts` and each
+      // feature's own spec. Custom audiences on the shared ad account are named only by a caller holding
+      // `global_marketing_ops` on the project, as campaign-service requires (403), and never on a check that failed (503).
+      const redditConfigRefused = redditCreateConfigRefusal(platforms, body?.redditConfig, {
+        conversionEvent: canSetRedditConversionEvent(),
+        customAudiences: canSetRedditCustomAudiences(),
+        targetingExclusions: canSetRedditTargetingExclusions(),
+        subCountryGeo: canSetRedditSubCountryGeo(),
+        placements: canSetRedditPlacements(),
+        demographics: canSetRedditDemographics(),
+        budgetType: canSetRedditBudgetType(),
+        video: canSetRedditVideo(),
+        adPerVariant: canSetRedditAdPerVariant(),
+      });
+      if (redditConfigRefused !== null) {
+        throw ServiceValidationError.forField(redditConfigRefused.field, redditConfigRefused.message, {
           operation: 'campaign_create',
           service: 'campaign_controller',
         });

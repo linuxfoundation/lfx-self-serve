@@ -6108,6 +6108,34 @@
                 (demographicsChange)="onRedditDemographicsChange($event)" />
             </div>
           }
+          <!-- Choices the deployment has not confirmed (#6108 row 9): held, never dropped. The editor is hidden
+               then, so Remove is offered here in every state, pending included: a read can stall. -->
+          @if (redditDemographicsBlock(); as block) {
+            <div
+              role="alert"
+              class="mb-4 flex flex-col items-start gap-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800"
+              [attr.data-testid]="'implementation-reddit-demographics-block-' + block.kind">
+              <p>{{ block.message }}</p>
+              <div class="flex items-center gap-2">
+                @if (block.kind === 'failed') {
+                  <lfx-ui-button
+                    variant="secondary"
+                    size="small"
+                    (click)="retryCreateCapabilities.emit()"
+                    data-testid="implementation-reddit-demographics-block-retry">
+                    Retry
+                  </lfx-ui-button>
+                }
+                <lfx-ui-button
+                  variant="tertiary"
+                  size="small"
+                  (click)="removeRedditDemographics()"
+                  data-testid="implementation-reddit-demographics-block-remove">
+                  Remove gender, language and dayparting choices
+                </lfx-ui-button>
+              </div>
+            </div>
+          }
 
           <!-- Subreddits and interests (#6108 row 4): editable while campaign-service resolves them, else the brief's, read-only. -->
           @if (redditTargetingListsAvailable()) {

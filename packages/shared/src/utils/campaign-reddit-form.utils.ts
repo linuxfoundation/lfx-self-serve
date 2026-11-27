@@ -106,6 +106,8 @@ export function redditCreateRefusal(input: RedditCreateRefusalInput): string | n
   if (input.subCountryGeoRefusal !== null) return `Reddit Ads: ${input.subCountryGeoRefusal}`;
   // At least one placement and one device (`redditDeliveryRefusal`, #6108 row 5).
   if (input.deliveryRefusal !== null) return `Reddit Ads: ${input.deliveryRefusal}`;
+  // Gender, languages or schedule the deployment has not confirmed: held, never dropped (`redditDemographicsBlock`).
+  if (input.demographicsBlock !== null) return `Reddit Ads: ${input.demographicsBlock}`;
   // Gender, languages and schedule campaign-service would refuse (`redditDemographicsDraftRefusal`, #6108 row 9), after
   // the placements as campaign-service checks them.
   if (input.demographicsRefusal !== null) return `Reddit Ads: ${input.demographicsRefusal}`;

@@ -172,6 +172,7 @@ export * from './campaign-reddit-targeting-lists.utils';
 export * from './campaign-reddit-draft.utils';
 export * from './campaign-reddit-form.utils';
 export * from './campaign-reddit-image.utils';
+export * from './campaign-reddit-create.utils';
 export * from './campaign-linkedin-config.utils';
 export * from './campaign-linkedin-geo.utils';
 export * from './campaign-linkedin-form.utils';

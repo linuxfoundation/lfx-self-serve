@@ -7,6 +7,7 @@ import type { RedditDemographicsDraft } from '../interfaces/campaign.interface';
 
 import { REDDIT_LANGUAGES, REDDIT_MAX_SCHEDULE_WINDOWS } from '../constants/campaign.constants';
 import {
+  redditDemographicsBlock,
   redditDemographicsCapability,
   redditDemographicsDraftRefusal,
   redditDemographicsField,
@@ -152,6 +153,24 @@ describe('redditDemographicsDraftRefusal', () => {
     const refusal = redditDemographicsDraftRefusal(draft, enabled);
     if (expected === null) expect(refusal).toBeNull();
     else expect(refusal).toContain(expected);
+  });
+});
+
+describe('redditDemographicsBlock', () => {
+  const NONE: RedditDemographicsDraft = { gender: '', languages: [], schedule: [] };
+  const HELD: RedditDemographicsDraft = { gender: '', languages: [], schedule: [monday] };
+  it.each<[string, RedditDemographicsDraft, boolean | null, 'ready' | 'pending' | 'failed', string | null, string | null]>([
+    ['nothing held, on a no', NONE, false, 'ready', 'b1', null],
+    ['nothing held, while the read is out', NONE, null, 'pending', 'b1', null],
+    ['held on an explicit yes', HELD, true, 'ready', 'b1', null],
+    ['held on a no', HELD, false, 'ready', 'b1', 'restricted'],
+    ['only a gender held on a no', { ...NONE, gender: 'MALE' }, false, 'ready', 'b1', 'restricted'],
+    ['only languages held on a no', { ...NONE, languages: ['EN'] }, false, 'ready', 'b1', 'restricted'],
+    ['held while the read is out', HELD, null, 'pending', 'b1', 'pending'],
+    ['held on an unsaved brief', HELD, null, 'failed', null, 'unsaved'],
+    ['held after a failed read', HELD, null, 'failed', 'b1', 'failed'],
+  ])('%s', (_name, demographics, enabled, createCapabilityRead, briefId, kind) => {
+    expect(redditDemographicsBlock({ demographics, enabled, createCapabilityRead, briefId })?.kind ?? null).toBe(kind);
   });
 });
 
