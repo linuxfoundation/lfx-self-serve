@@ -759,6 +759,19 @@ export enum ServerFeatureFlag {
   CampaignServiceMetaFrequencyCap = 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_FREQUENCY_CAP',
 
   /**
+   * Meta carousel ads (#6331): accept `metaConfig.format: 'carousel'` on create, ONE ad whose 2 to 10 image cards are the
+   * variants, with variant 1's primary text as its one message and never with a lead form.
+   *
+   * CAPABILITY flag of the Bidding kind: REQUIRES campaign-service v1.0.44 DEPLOYED with `META_CAROUSEL_ENABLED` on
+   * (linuxfoundation/lfx-v2-campaign-service#550 gap 10, #653), since campaign-service refuses any format but single with a
+   * 400 otherwise, and is only meaningful while the create cutover is on (`cutoverOwnsCreate`). Rollout order: set
+   * campaign-service's flag and pass its live probe, THEN this. Off (the default), the create route refuses any format
+   * but single with a 400, never dropping it, since dropping it would create one ad per card. A request field only, so
+   * flipping it back strands nothing. Same accepted values as the flags above.
+   */
+  CampaignServiceMetaCarousel = 'LFX_CUTOVER_CAMPAIGN_SERVICE_META_CAROUSEL',
+
+  /**
    * Offers an image UPLOAD in the Microsoft section of the create flow, sent as
    * `microsoftConfig.imageAssetId`.
    *

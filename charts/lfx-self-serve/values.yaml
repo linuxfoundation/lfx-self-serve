@@ -1111,6 +1111,17 @@ environment:
   LFX_CUTOVER_CAMPAIGN_SERVICE_META_FREQUENCY_CAP:
     value:
 
+  # Meta carousel ads (#6331): accepts `metaConfig.format: carousel`, ONE ad whose 2 to 10 image cards are the
+  # variants, with variant 1's primary text as its one message and never with a lead form.
+  #
+  # CAPABILITY flag of the Bidding kind: REQUIRES campaign-service v1.0.44 DEPLOYED with `META_CAROUSEL_ENABLED`
+  # on (linuxfoundation/lfx-v2-campaign-service#550 gap 10), and the create pipeline on. Off (the default), the
+  # create route refuses any format but single with a 400, never dropping it. A field only, so turning it back off
+  # strands nothing. Order: set campaign-service's flag and pass its live probe, THEN this. Same accepted values
+  # as the flags above.
+  LFX_CUTOVER_CAMPAIGN_SERVICE_META_CAROUSEL:
+    value:
+
   # Offers a PNG/JPEG image upload in the Microsoft section of the create flow, sent as
   # `microsoftConfig.imageAssetId`, which campaign-service attaches to the campaign as an image ad
   # extension. Microsoft accepts at most 76,800 bytes (40x20 to 2592x2048 pixels), far below the

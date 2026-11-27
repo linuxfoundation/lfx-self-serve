@@ -45,6 +45,8 @@ const META_CONFIG_EXACT_KEYS = [
   'bidding',
   'budget',
   'budgetUsd',
+  'format',
+  'variants',
 ] as const;
 /** The `metaConfig.placements` keys, which the device rules read by their exact spelling. */
 const META_PLACEMENT_KEYS = ['facebookFeed', 'instagramFeed', 'stories', 'reels', 'audienceNetwork', 'messengerInbox'] as const;

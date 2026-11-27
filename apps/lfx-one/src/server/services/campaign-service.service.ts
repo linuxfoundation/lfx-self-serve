@@ -981,6 +981,11 @@ export function canSetMetaAdSchedule(): boolean {
 export function canSetMetaFrequencyCap(): boolean {
   return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMetaFrequencyCap);
 }
+
+/** Whether a Meta create may carry `metaConfig.format: 'carousel'` (#6331; campaign-service#550 gap 10). */
+export function canSetMetaCarousel(): boolean {
+  return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMetaCarousel);
+}
 /** Whether `GET /api/campaigns/meta/targeting-search` answers: only while some list it fills can be sent. */
 export function canSearchMetaTargeting(): boolean {
   return canSetMetaInterestTargeting() || canSetMetaBehaviorTargeting() || canSetMetaLocaleTargeting() || canSetMetaRegionTargeting();
@@ -1441,6 +1446,7 @@ export class CampaignServiceClient {
         metaOsTargetingEnabled: canSetMetaOsTargeting(),
         metaAdScheduleEnabled: canSetMetaAdSchedule(),
         metaFrequencyCapEnabled: canSetMetaFrequencyCap(),
+        metaCarouselEnabled: canSetMetaCarousel(),
         // Per caller, so never granted here: `CampaignController.listBriefCampaigns` sets it.
         googleAudienceSegmentsEnabled: false,
         googleGeoSearchEnabled: canSearchGoogleGeoTargets(),
@@ -1546,6 +1552,7 @@ export class CampaignServiceClient {
       metaOsTargetingEnabled: canSetMetaOsTargeting(),
       metaAdScheduleEnabled: canSetMetaAdSchedule(),
       metaFrequencyCapEnabled: canSetMetaFrequencyCap(),
+      metaCarouselEnabled: canSetMetaCarousel(),
       // Per caller, so never granted here: `CampaignController.listBriefCampaigns` sets it.
       googleAudienceSegmentsEnabled: false,
       googleGeoSearchEnabled: canSearchGoogleGeoTargets(),

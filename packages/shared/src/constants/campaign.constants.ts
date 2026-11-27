@@ -1447,6 +1447,14 @@ export const META_MAX_LOCALES = 50;
 export const META_MAX_GEO_LOCATIONS = 25;
 /** The Meta location types the targeting search keeps and a create takes, each with its own `metaConfig.targeting` list. */
 export const META_LOCATION_TYPES = ['region', 'city'] as const;
+/**
+ * The Meta creative formats `metaConfig.format` takes (#6331; campaign-service#550 gap 10, `meta.NormalizeFormat`): `single`
+ * (one ad per variant, the default for an absent or blank format) or `carousel` (one ad whose cards are the variants).
+ */
+export const META_AD_FORMATS = ['single', 'carousel'] as const;
+/** A Meta carousel's card count, one card per variant (Meta `child_attachments`; campaign-service `MinCarouselCards`/`MaxCarouselCards`). */
+export const META_CAROUSEL_MIN_CARDS = 2;
+export const META_CAROUSEL_MAX_CARDS = 10;
 /** The Meta device platforms a create may name (#5904 row 6; campaign-service#612). */
 export const META_DEVICE_PLATFORMS = ['mobile', 'desktop'] as const;
 /** The device checkboxes the Implement tab offers, as a create sends them. */
@@ -2254,6 +2262,11 @@ export const META_DEVICE_TARGETING_OFF_MESSAGE = 'Meta device targeting is not a
 /** The 400 a create gets for Meta operating-system targeting while it is off on this deployment. */
 export const META_OS_TARGETING_OFF_MESSAGE =
   'Meta operating system targeting is not available on this deployment. Reload the page, then create again without it.';
+/**
+ * The 400 a create gets for a Meta `format` other than single while carousel ads are off on this deployment. It names no
+ * format, as campaign-service's own refusal, so it never advertises one the deployment cannot build.
+ */
+export const META_CAROUSEL_OFF_MESSAGE = 'This Meta ad format is not available on this deployment. Reload the page, then create again with single-image ads.';
 /** The 400 a create gets for a Meta ad schedule while scheduling is off on this deployment. */
 export const META_AD_SCHEDULE_OFF_MESSAGE = 'Meta ad scheduling is not available on this deployment. Reload the page, then create again without it.';
 /** The 400 a create gets for a Meta frequency cap while it is off on this deployment. */
