@@ -585,8 +585,8 @@ export class CampaignService {
 
   /**
    * Permanently delete one stored creative asset of the brief: a video (#5764 row 18) or a PDF (campaign-service#665) the
-   * library lists. campaign-service
-   * answers 409 `creative_asset_in_use` while a live campaign could still need it, with its own remedy text.
+   * library lists. campaign-service answers 409 `creative_asset_in_use` while a live campaign could still need it, with its
+   * own remedy text.
    *
    * While the request runs, `creativeVideoDeleting` names it, and it is cleared however the request ends, including a
    * caller that unsubscribes because it was destroyed. The Implement tab holds its video pickers on it, since an upload

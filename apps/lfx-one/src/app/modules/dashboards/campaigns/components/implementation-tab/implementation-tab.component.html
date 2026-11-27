@@ -4257,6 +4257,7 @@
               (documentChange)="onLinkedInDocumentChange($event)"
               [library]="googleCreativeLibrary()"
               [briefId]="briefPersistence().briefId ?? ''"
+              [deletingAssetId]="linkedInDocumentDeletingId()"
               [uploadAvailable]="linkedInAssetUploadAvailable() && !!briefPersistence().briefId"
               [gatedWarning]="linkedInDocumentGatedWarning()"
               (upload)="onLinkedInDocumentUpload($event)"

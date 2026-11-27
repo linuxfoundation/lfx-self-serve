@@ -2112,6 +2112,8 @@ export class ImplementationTabComponent implements OnInit {
       .map((variant) => variant.videoAssetId ?? '')
       .filter((id) => id !== '')
   );
+  /** The stored asset whose delete is running, `''` for none: the PDF picker does not offer it, and Create waits while the document ad names it. */
+  protected readonly linkedInDocumentDeletingId = computed<string>(() => this.campaignService.creativeVideoDeleting()?.id ?? '');
   /**
    * The stored PDF the LinkedIn document ad names (campaign-service#665), whatever the format: the library will not delete
    * it, so a create can never send a deleted asset. It offers "Remove from ad" (`onLibraryDocumentDeleted`).
@@ -9389,10 +9391,13 @@ export class ImplementationTabComponent implements OnInit {
               refusal:
                 this.briefSaveInFlight() || this.briefPersistence().status === 'saving'
                   ? null
-                  : linkedInDocumentCreateRefusal(this.linkedInDocument(), this.googleCreativeLibrary(), this.briefPersistence().briefId ?? '', {
-                      objective: this.linkedInObjectiveDraft().objective,
-                      bidding: this.biddingField('linkedin-ads').bidding,
-                    }),
+                  : linkedInDocumentCreateRefusal(
+                      this.linkedInDocument(),
+                      this.googleCreativeLibrary(),
+                      this.briefPersistence().briefId ?? '',
+                      { objective: this.linkedInObjectiveDraft().objective, bidding: this.biddingField('linkedin-ads').bidding },
+                      this.linkedInDocumentDeletingId()
+                    ),
             },
           }
         : {}),

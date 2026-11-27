@@ -46,6 +46,7 @@ describe('ImplementationTabComponent linkedin document', () => {
   });
   let createCampaign: ReturnType<typeof vi.fn>;
   let enqueueCreativeAssetUploads: ReturnType<typeof vi.fn>;
+  const deleting = signal<{ briefId: string; id: string } | null>(null);
 
   const brief = (): CampaignBriefOutput =>
     ({
@@ -84,6 +85,7 @@ describe('ImplementationTabComponent linkedin document', () => {
 
   beforeEach(async () => {
     createCampaign = vi.fn().mockReturnValue(of({ result: { campaigns: [], errors: [] } }));
+    deleting.set(null);
     enqueueCreativeAssetUploads = vi.fn();
     await TestBed.configureTestingModule({
       imports: [ImplementationTabComponent],
@@ -98,6 +100,7 @@ describe('ImplementationTabComponent linkedin document', () => {
           useValue: {
             createCampaign,
             enqueueCreativeAssetUploads,
+            creativeVideoDeleting: deleting.asReadonly(),
             getLinkedInAccounts: () => of([ACCOUNT]),
             getLinkedInTargetingProfiles: () => of([]),
             getLinkedInLeadForms: () => of({ accountId: '111', forms: [] }),
@@ -196,6 +199,12 @@ describe('ImplementationTabComponent linkedin document', () => {
     c(f)['onLibraryDocumentDeleted']('9a7b1c2d-3e4f-4a6b-8c1e-5d4a3f2b4e6f');
     expect(c(f)['linkedInDocument']().assetId).toBe(PDF);
     expect(c(f)['creativeLibraryRevision']()).toBe(revision + 1);
+
+    // While the held PDF's delete runs, Create waits; the rule and the picker's exclusion are rows in the utils spec.
+    c(f)['onLinkedInFormatSelect']('document');
+    deleting.set({ briefId: 'b-1', id: PDF });
+    expect(c(f)['createBlockedReason']()).toContain('is being deleted');
+    deleting.set(null);
 
     // Taken off the ad: cleared, with nothing re-read.
     c(f)['onLibraryDocumentReleased'](PDF);

@@ -64,6 +64,16 @@ describe('linkedInDocumentPdfOptions', () => {
     expect(linkedInDocumentPdfOptions(ready([]), OTHER).map((option) => option.value)).toEqual(['', OTHER]);
     expect(linkedInDocumentPdfOptions(ready([PDF]), PDF).map((option) => option.value)).toEqual(['', PDF]);
   });
+
+  // A PDF whose delete is running is not offered, so it cannot be picked for a create that would name it once gone.
+  it.each([
+    ['no delete running', '', '', [PDF, OTHER]],
+    ['the other PDF being deleted', '', OTHER, [PDF]],
+    ['an asset not listed being deleted', '', 'v-1', [PDF, OTHER]],
+    ['the held PDF being deleted, kept by id so it can be cleared', PDF, PDF, ['', PDF, OTHER]],
+  ])('offers PDFs with %s', (_label, held, deletingId, values) => {
+    expect(linkedInDocumentPdfOptions(ready([PDF, OTHER]), held, deletingId).map((option) => option.value)).toEqual(values);
+  });
 });
 
 describe('linkedInDocumentView', () => {
@@ -136,6 +146,17 @@ describe('linkedInDocumentCreateRefusal', () => {
     ['a manual bid', draft(), { bidding: { strategy: 'manual', bidAmount: 5 } }, 'b-1', 'automatic bidding only'],
   ])('judges %s', (_name, document, sent, briefId, expected) => {
     const refusal = linkedInDocumentCreateRefusal(document, ready(), briefId, sent);
+    if (expected === null) expect(refusal).toBeNull();
+    else expect(refusal).toContain(expected);
+  });
+
+  // Create waits while the picked PDF's delete runs: the create would name a PDF about to be gone.
+  it.each([
+    ['the picked PDF being deleted', PDF, 'is being deleted'],
+    ['another asset being deleted', OTHER, null],
+    ['no delete running', '', null],
+  ])('judges %s', (_name, deletingId, expected) => {
+    const refusal = linkedInDocumentCreateRefusal(draft(), ready([PDF, OTHER]), 'b-1', {}, deletingId);
     if (expected === null) expect(refusal).toBeNull();
     else expect(refusal).toContain(expected);
   });

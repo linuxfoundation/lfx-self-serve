@@ -34,5 +34,10 @@ describe('LinkedInDocumentEditorComponent', () => {
     f.detectChanges();
     expect(query('linkedin-document-editor-gated-warning')?.textContent).toContain('free preview page');
     expect(query('linkedin-document-editor-upload')).not.toBeNull();
+    // A delete running holds the upload, since identical bytes would answer with the asset being deleted.
+    f.componentRef.setInput('deletingAssetId', 'pdf-1');
+    f.detectChanges();
+    expect(query('linkedin-document-editor-upload')).toBeNull();
+    expect(query('linkedin-document-editor-upload-held')).not.toBeNull();
   });
 });
