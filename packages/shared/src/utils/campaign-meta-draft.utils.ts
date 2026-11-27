@@ -18,6 +18,7 @@ import { metaAcceptedGeos } from './campaign-meta-form.utils';
 import { copyMetaDeliveryDraft, metaDeliveryFromDraft } from './campaign-meta-delivery.utils';
 import { copyMetaDetailedTargetingPicks, metaDetailedTargetingPicksFromDraft } from './campaign-meta-detailed-targeting.utils';
 import { copyMetaDeviceOsDraft, metaDeviceOsFromDraft } from './campaign-meta-device-os.utils';
+import { metaCarouselCardsFromStored, metaFormatFromStored } from './campaign-meta-carousel.utils';
 import { metaLeadFormRestore } from './campaign-meta-lead-form.utils';
 
 /**
@@ -57,6 +58,9 @@ export function metaDraftFields(
   | 'metaAdOptionsProject'
   | 'metaLeadFormId'
   | 'metaLeadFormProject'
+  | 'metaFormat'
+  | 'metaCarouselCards'
+  | 'metaCarouselMessage'
   | 'metaBudgetUsd'
   | 'metaLifetimeBudget'
 > {
@@ -78,6 +82,10 @@ export function metaDraftFields(
     metaAdOptionsProject: s.foundation,
     metaLeadFormId: s.leadFormId,
     metaLeadFormProject: s.foundation,
+    // As edited, whether or not carousels are offered: the capability decides what is sent, not what is kept (#6331).
+    metaFormat: s.format,
+    metaCarouselCards: s.carouselCards.map((card) => ({ ...card })),
+    metaCarouselMessage: s.carouselMessage,
     metaBudgetUsd: s.budgetUsd,
     metaLifetimeBudget: s.lifetimeBudget,
   };
@@ -169,6 +177,17 @@ function deviceOsRestore(draft: MetaDraftSnapshot): Pick<MetaDraftRestore, 'devi
   return deviceOs === undefined ? {} : { deviceOs };
 }
 
+/** The ad format, cards and message a draft restores (#6331), each present-only; an unknown format restores none. */
+function carouselRestore(draft: MetaDraftSnapshot): Pick<MetaDraftRestore, 'format' | 'carouselCards' | 'carouselMessage'> {
+  const format = metaFormatFromStored(draft.metaFormat);
+  const cards = metaCarouselCardsFromStored(draft.metaCarouselCards);
+  return {
+    ...(format === undefined ? {} : { format }),
+    ...(cards === undefined ? {} : { carouselCards: cards }),
+    ...(typeof draft.metaCarouselMessage === 'string' ? { carouselMessage: draft.metaCarouselMessage } : {}),
+  };
+}
+
 /** The detailed targeting a draft restores, under any foundation (Meta's taxonomy is global), or nothing for a draft without it. */
 function detailedTargetingRestore(raw: unknown): Pick<MetaDraftRestore, 'detailedTargeting'> {
   const picks = metaDetailedTargetingPicksFromDraft(raw);
@@ -201,6 +220,7 @@ export function metaDraftRestore(draft: MetaDraftSnapshot, currentObjective: Met
       ? { adOptions: metaAdOptionsForObjective(compactMetaAdOptions(draft.metaAdOptions), objective) }
       : {}),
     leadFormId: leadForm.leadFormId,
+    ...carouselRestore(draft),
     ...(draft.metaGeoTargets !== undefined ? { geoTargets: metaAcceptedGeos(draft.metaGeoTargets) } : {}),
     ...(draft.metaBudgetUsd !== undefined ? { budgetUsd: draft.metaBudgetUsd } : {}),
     ...(draft.metaLifetimeBudget !== undefined ? { lifetimeBudget: draft.metaLifetimeBudget } : {}),

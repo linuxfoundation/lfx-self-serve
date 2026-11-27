@@ -394,7 +394,10 @@ import type {
   LinkedInDocumentDraft,
   LinkedInTextAdImageInput,
   LinkedInVariantView,
+  MetaAdFormat,
   MetaAdVariant,
+  MetaCarouselCardDraft,
+  MetaCarouselImageContext,
   MetaCampaignCreateRequest,
   MetaObjective,
   MetaPlacement,
@@ -668,6 +671,11 @@ import {
   metaRequiresPixel,
   metaUsesInstagram,
   metaVariantsWithImage,
+  metaCarouselChosen,
+  metaCarouselCreateRefusal,
+  metaCarouselSeed,
+  metaCarouselUnavailable,
+  metaCarouselVariantsForCreate,
   parseNegativeKeywordInput,
   resolveLinkedInTargetingProfileId,
   storedCreativeAssetLabel,
@@ -694,6 +702,7 @@ import { MetaDeliveryOptionsComponent } from '../meta-delivery-options/meta-deli
 import { MetaDeviceOsOptionsComponent } from '../meta-device-os-options/meta-device-os-options.component';
 import { MetaDetailedTargetingComponent } from '../meta-detailed-targeting/meta-detailed-targeting.component';
 import { MetaLeadFormPickerComponent } from '../meta-lead-form-picker/meta-lead-form-picker.component';
+import { MetaCarouselEditorComponent } from '../meta-carousel-editor/meta-carousel-editor.component';
 import { CampaignGoogleDemographicsPanelComponent } from '../campaign-google-demographics-panel/campaign-google-demographics-panel.component';
 import { CampaignGoogleExclusionsPanelComponent } from '../campaign-google-exclusions-panel/campaign-google-exclusions-panel.component';
 import { CampaignGoogleSearchAdsPanelComponent } from '../campaign-google-search-ads-panel/campaign-google-search-ads-panel.component';
@@ -786,6 +795,7 @@ let linkedInVariantKeySequence = 0;
     MetaDeliveryOptionsComponent,
     MetaDeviceOsOptionsComponent,
     MetaLeadFormPickerComponent,
+    MetaCarouselEditorComponent,
     CampaignGoogleDemographicsPanelComponent,
     CampaignGoogleExclusionsPanelComponent,
     CampaignGoogleSearchAdsPanelComponent,
@@ -1373,6 +1383,11 @@ export class ImplementationTabComponent implements OnInit {
   public readonly metaLeadFormsEnabled = input<boolean | null>(null);
   protected readonly metaLeadFormsAvailable = computed<boolean>(() => this.metaLeadFormsEnabled() === true);
 
+  /** Whether the Meta section offers carousel ads (`CampaignListResult.metaCarouselEnabled`, #6331). */
+  public readonly metaCarouselEnabled = input<boolean | null>(null);
+  /** @see metaCarouselEnabled — an explicit yes, never a `null`. */
+  protected readonly metaCarouselAvailable = computed<boolean>(() => this.metaCarouselEnabled() === true);
+
   /**
    * Whether this deployment sends Meta interests (#5904 row 4) — `CampaignListResult.metaInterestTargetingEnabled`,
    * behind `LFX_CUTOVER_CAMPAIGN_SERVICE_META_INTEREST_TARGETING`. Deployment-wide; `null` while unanswered.
@@ -1675,7 +1690,10 @@ export class ImplementationTabComponent implements OnInit {
    * map stays total over `MetaObjective` so restored objectives still render a name, and `leads` without a
    * form would run as traffic. See that constant for why.
    */
-  protected readonly metaObjectiveOptions = computed<MetaObjective[]>(() => metaObjectiveChoices(this.metaLeadFormsAvailable()));
+  protected readonly metaObjectiveOptions = computed<MetaObjective[]>(() =>
+    // Not while a carousel is chosen: a carousel carries no lead form (#6331).
+    metaObjectiveChoices(this.metaLeadFormsAvailable() && !this.metaCarouselSelected())
+  );
   /**
    * True when the restored objective is one the picker no longer offers — today only `leads`.
    *
@@ -2931,6 +2949,12 @@ export class ImplementationTabComponent implements OnInit {
     return [...this.googlePriceForm.controls.offerings.controls];
   });
   protected readonly metaVariants = signal<MetaAdVariant[]>([]);
+  /** The Meta ad format, the carousel's cards and its one message as edited (#6331), carried in the draft. */
+  protected readonly metaFormat = signal<MetaAdFormat>('single');
+  protected readonly metaCarouselCards = signal<MetaCarouselCardDraft[]>([]);
+  protected readonly metaCarouselMessage = signal('');
+  /** Whether this create is a carousel (#6331): chosen, and offered on an explicit yes. */
+  protected readonly metaCarouselSelected = computed<boolean>(() => metaCarouselChosen(this.metaFormat(), this.metaCarouselEnabled()));
   protected readonly metaGeoTargets = signal<string[]>([]);
   protected readonly metaBudgetUsd = signal(DEFAULT_META_BUDGET_USD);
   protected readonly metaLifetimeBudget = signal(false);
@@ -4653,6 +4677,21 @@ export class ImplementationTabComponent implements OnInit {
           adOptionsBlock: this.metaAdOptionsBlock()?.message ?? null,
           adOptionsError: this.metaAdOptionsError(),
           leadFormError: this.metaLeadFormError(),
+          // A carousel chosen but not offered is held, never sent (#6331); while chosen, its cards replace the variant check.
+          carouselUnavailable: metaCarouselUnavailable(this.metaFormat(), this.metaCarouselEnabled()),
+          ...(this.metaCarouselSelected()
+            ? {
+                carousel: {
+                  refusal: metaCarouselCreateRefusal(
+                    this.metaCarouselCards(),
+                    this.metaCarouselMessage(),
+                    this.googleCreativeLibrary(),
+                    this.metaCarouselImageContext(),
+                    this.metaLeadFormRequested() ? this.metaLeadFormId().trim() : null
+                  ),
+                },
+              }
+            : {}),
         })
       : null;
     if (metaRefusal !== null) return metaRefusal;
@@ -6604,6 +6643,38 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /** The lead form picked or typed in `lfx-meta-lead-form-picker` (#5940). Signal-backed like the other Meta fields, so it emits. */
+  /** The Meta ad format picker's value (#6331): anything else reads as single. The first switch to carousel seeds its cards from the brief's copy. */
+  protected onMetaFormatSelect(value: unknown): void {
+    const format: MetaAdFormat = value === 'carousel' ? 'carousel' : 'single';
+    this.metaFormat.set(format);
+    if (format === 'carousel' && this.metaCarouselCards().length === 0) {
+      const seed = metaCarouselSeed(this.metaVariants());
+      this.metaCarouselCards.set(seed.cards);
+      if (this.metaCarouselMessage() === '') this.metaCarouselMessage.set(seed.message);
+    }
+    this.emitDraft();
+  }
+
+  /** The carousel editor's cards as edited (#6331). */
+  protected onMetaCarouselCardsChange(cards: MetaCarouselCardDraft[]): void {
+    this.metaCarouselCards.set(cards);
+    this.emitDraft();
+  }
+
+  /** The carousel editor's one message as edited (#6331). */
+  protected onMetaCarouselMessageChange(message: string): void {
+    this.metaCarouselMessage.set(message);
+    this.emitDraft();
+  }
+
+  /** Images chosen in the carousel editor (#6331), queued into the brief's library as the LinkedIn carousel's are. */
+  protected onMetaCarouselUpload(files: File[]): void {
+    const briefId = this.briefPersistence().briefId ?? '';
+    const projectSlug = this.activeFoundationSlug();
+    if (!briefId || !projectSlug || !this.metaAssetUploadAvailable()) return;
+    this.campaignService.enqueueCreativeAssetUploads(files, projectSlug, briefId);
+  }
+
   protected onMetaLeadFormChange(leadFormId: string): void {
     this.pendingMetaDraft = null;
     this.metaLeadFormId.set(leadFormId);
@@ -7754,7 +7825,8 @@ export class ImplementationTabComponent implements OnInit {
               endDate: form.endDate,
               // The SAME value the preview renders — see `metaEffectiveGeoTargets`.
               geoTargets: this.metaEffectiveGeoTargets(),
-              variants: this.metaVariantsForCreate(),
+              // A carousel (#6331) sends its cards as the variants, in order, and `format`; else exactly as before, no `format`.
+              ...this.metaCreativesField(),
               objective: this.metaObjective(),
               placements: this.metaPlacementOverrides(),
               // Sent only under `conversions`. Under every other objective the promoted object is
@@ -8405,6 +8477,24 @@ export class ImplementationTabComponent implements OnInit {
     return metaVariantsWithImage(this.metaVariants(), this.metaImageField());
   }
 
+  /** The Meta creatives for the request: a carousel's cards and `format: 'carousel'` while chosen and offered (#6331), else the variants. */
+  private metaCreativesField(): { variants: MetaAdVariant[]; format?: MetaAdFormat } {
+    if (!this.metaCarouselSelected()) return { variants: this.metaVariantsForCreate() };
+    return {
+      format: 'carousel',
+      variants: metaCarouselVariantsForCreate(this.metaCarouselCards(), this.metaCarouselMessage(), this.metaCarouselImageContext()),
+    };
+  }
+
+  /** What a carousel card may send as its image: a stored one while uploads are offered, a URL while images are (#6331). */
+  private metaCarouselImageContext(): MetaCarouselImageContext {
+    return {
+      uploadAvailable: this.metaAssetUploadAvailable(),
+      creativeAvailable: this.metaCreativeAvailable(),
+      briefId: this.briefPersistence().briefId ?? '',
+    };
+  }
+
   private metaImageField(): MetaImageField {
     return metaImageField({
       uploadAvailable: this.metaAssetUploadAvailable(),
@@ -8429,7 +8519,8 @@ export class ImplementationTabComponent implements OnInit {
   private initMetaImageAssetBlock(): Signal<CampaignMetaImageAssetBlock | null> {
     return computed(() =>
       metaImageAssetBlock({
-        showMetaSection: this.showMetaSection(),
+        // Not while a carousel is chosen (#6331): its cards carry their own images, and the one image is not sent.
+        showMetaSection: this.showMetaSection() && !this.metaCarouselSelected(),
         briefId: this.briefPersistence().briefId,
         assetId: this.metaImageAssetId(),
         assetBriefId: this.metaImageAssetBriefId(),
@@ -9935,6 +10026,10 @@ export class ImplementationTabComponent implements OnInit {
     if (metaRestore.detailedTargeting !== undefined) this.metaDetailedTargeting.set(metaRestore.detailedTargeting);
     if (metaRestore.adOptions !== undefined) this.metaAdOptions.set(metaRestore.adOptions);
     if (metaRestore.leadFormId !== null) this.metaLeadFormId.set(metaRestore.leadFormId);
+    // The format, cards and message as edited (#6331), present-only; a carousel is sent only while offered.
+    if (metaRestore.format !== undefined) this.metaFormat.set(metaRestore.format);
+    if (metaRestore.carouselCards !== undefined) this.metaCarouselCards.set(metaRestore.carouselCards);
+    if (metaRestore.carouselMessage !== undefined) this.metaCarouselMessage.set(metaRestore.carouselMessage);
     if (metaRestore.geoTargets !== undefined) this.metaGeoTargets.set(metaRestore.geoTargets);
     if (metaRestore.budgetUsd !== undefined) this.metaBudgetUsd.set(metaRestore.budgetUsd);
     if (metaRestore.lifetimeBudget !== undefined) this.metaLifetimeBudget.set(metaRestore.lifetimeBudget);
@@ -10469,6 +10564,9 @@ export class ImplementationTabComponent implements OnInit {
         adOptions: this.metaAdOptions(),
         leadFormId: this.metaLeadFormId(),
         foundation: this.activeFoundationSlug(),
+        format: this.metaFormat(),
+        carouselCards: this.metaCarouselCards(),
+        carouselMessage: this.metaCarouselMessage(),
         budgetUsd: this.metaBudgetUsd(),
         lifetimeBudget: this.metaLifetimeBudget(),
       }),
@@ -10873,6 +10971,9 @@ export class ImplementationTabComponent implements OnInit {
     this.metaImageUrl.set('');
     this.metaGeoTargets.set([]);
     this.metaVariants.set([]);
+    this.metaFormat.set('single');
+    this.metaCarouselCards.set([]);
+    this.metaCarouselMessage.set('');
   }
 
   /**
@@ -11542,7 +11643,11 @@ export class ImplementationTabComponent implements OnInit {
         revision: this.creativeLibraryRevision(),
         // Also while a LinkedIn carousel or document is chosen (campaign-service#665): its cards and its PDF pick from the same library.
         wanted:
-          (this.googleAssetUploadAvailable() && this.googleCreativeSections().length > 0) || this.linkedInCarouselSelected() || this.linkedInDocumentSelected(),
+          (this.googleAssetUploadAvailable() && this.googleCreativeSections().length > 0) ||
+          this.linkedInCarouselSelected() ||
+          this.linkedInDocumentSelected() ||
+          // And a Meta carousel's cards (#6331), while stored images are offered.
+          (this.metaCarouselSelected() && this.metaAssetUploadAvailable()),
       }),
       {
         equal: (a, b) => a.projectSlug === b.projectSlug && a.briefId === b.briefId && a.revision === b.revision && a.wanted === b.wanted,

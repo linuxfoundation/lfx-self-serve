@@ -4,7 +4,17 @@
 import { describe, expect, it } from 'vitest';
 
 import { META_CAROUSEL_OFF_MESSAGE } from '../constants/campaign.constants';
-import { metaAdFormatToSend, metaCarouselRefusal } from './campaign-meta-carousel.utils';
+import type { CreativeAssetLibraryState, MetaCarouselCardDraft, MetaCarouselImageContext } from '../interfaces/campaign.interface';
+import {
+  metaAdFormatToSend,
+  metaCarouselCardViews,
+  metaCarouselChosen,
+  metaCarouselCreateRefusal,
+  metaCarouselRefusal,
+  metaCarouselSeed,
+  metaCarouselUnavailable,
+  metaCarouselVariantsForCreate,
+} from './campaign-meta-carousel.utils';
 
 const card = (extra: Record<string, unknown> = {}): Record<string, unknown> => ({
   primaryText: '',
@@ -99,5 +109,101 @@ describe('metaAdFormatToSend', () => {
     [undefined, null],
   ])('sends %j as %s', (raw, expected) => {
     expect(metaAdFormatToSend(raw)).toBe(expected);
+  });
+});
+
+describe('the Implement tab carousel', () => {
+  const draft = (key: string, extra: Partial<MetaCarouselCardDraft> = {}): MetaCarouselCardDraft => ({
+    key,
+    imageAssetId: '',
+    imageAssetBriefId: '',
+    imageUrl: '',
+    headline: '',
+    description: '',
+    ...extra,
+  });
+  const ctx: MetaCarouselImageContext = { uploadAvailable: true, creativeAvailable: true, briefId: 'b1' };
+  const library: CreativeAssetLibraryState = {
+    status: 'ready',
+    assets: [{ id: 'img-1', projectId: 'p', briefId: 'b1', mimeType: 'image/png', byteSize: 1, checksum: 'c', width: 1080, height: 1080 }],
+  };
+  const ready = [draft('card-1', { imageAssetId: 'img-1', imageAssetBriefId: 'b1', headline: 'Keynotes' }), draft('card-2', { imageUrl: 'https://cdn/b.png' })];
+
+  it.each([
+    ['carousel', true, true, false],
+    ['carousel', false, false, true],
+    // Not read yet: held, never sent.
+    ['carousel', null, false, true],
+    ['single', true, false, false],
+  ] as const)('format %s with the capability %s: chosen %s, unavailable %s', (format, enabled, chosen, unavailable) => {
+    expect(metaCarouselChosen(format, enabled)).toBe(chosen);
+    expect(metaCarouselUnavailable(format, enabled)).toBe(unavailable);
+  });
+
+  it.each([
+    ['no variants: two empty cards and no message', [], 2, ['', ''], ''],
+    ['one variant: its headline, then an empty card', [{ primaryText: 'Join', headline: 'A', description: 'd' }], 2, ['A', ''], 'Join'],
+    ['twelve variants: the first ten', Array.from({ length: 12 }, (_, i) => ({ primaryText: '', headline: `H${i}` })), 10, ['H0', 'H1'], ''],
+  ])('seeds %s', (_name, variants, count, headlines, message) => {
+    const seed = metaCarouselSeed(variants);
+    expect(seed.cards).toHaveLength(count);
+    expect(seed.cards.slice(0, 2).map((c) => c.headline)).toEqual(headlines);
+    expect(new Set(seed.cards.map((c) => c.key)).size).toBe(count);
+    expect(seed.message).toBe(message);
+  });
+
+  it('sends card 1 the message and later cards none, each with one image', () => {
+    const cards = [...ready, draft('card-3', { imageAssetId: 'img-1', imageAssetBriefId: 'b1', imageUrl: 'https://cdn/c.png', description: ' Talks ' })];
+    expect(metaCarouselVariantsForCreate(cards, ' Join us ', ctx)).toEqual([
+      { primaryText: 'Join us', headline: 'Keynotes', imageAssetId: 'img-1' },
+      { primaryText: '', headline: '', imageUrl: 'https://cdn/b.png' },
+      { primaryText: '', headline: '', description: 'Talks', imageAssetId: 'img-1' },
+    ]);
+  });
+
+  it.each([
+    ['uploads off: the URL only', { uploadAvailable: false }, [undefined, 'https://cdn/c.png']],
+    ['images off: the stored image only', { creativeAvailable: false }, ['img-1', undefined]],
+    ['another brief: the URL only', { briefId: 'b2' }, [undefined, 'https://cdn/c.png']],
+  ])('picks the image a card can send, %s', (_name, overrides, [assetId, url]) => {
+    const card = draft('card-1', { imageAssetId: 'img-1', imageAssetBriefId: 'b1', imageUrl: 'https://cdn/c.png' });
+    const [sent] = metaCarouselVariantsForCreate([card], 'm', { ...ctx, ...overrides });
+    expect([sent.imageAssetId, sent.imageUrl]).toEqual([assetId, url]);
+  });
+
+  it.each([
+    ['ready cards', ready, 'Join us', null, null],
+    ['no message', ready, ' ', null, "card 1's primary text, which is required"],
+    ['one card', ready.slice(0, 1), 'Join us', null, '2 to 10 variants'],
+    ['a card with no image', [ready[0], draft('card-2')], 'Join us', null, 'Card 2 of a carousel needs an image.'],
+    ['a lead form', ready, 'Join us', '123', 'cannot use a lead form'],
+    [
+      'an image stored for another brief',
+      [ready[0], draft('card-2', { imageAssetId: 'x', imageAssetBriefId: 'b2' })],
+      'Join us',
+      null,
+      'choose another image for card 2',
+    ],
+    [
+      'an image gone from the library',
+      [ready[0], draft('card-2', { imageAssetId: 'gone', imageAssetBriefId: 'b1' })],
+      'Join us',
+      null,
+      'choose another image for card 2',
+    ],
+  ])('holds Create for %s', (_name, cards, message, leadFormId, expected) => {
+    const refusal = metaCarouselCreateRefusal(cards, message, library, ctx, leadFormId);
+    if (expected === null) expect(refusal).toBeNull();
+    else expect(refusal).toContain(expected);
+    if (expected !== null) expect(refusal?.startsWith('Meta Ads: ')).toBe(true);
+  });
+
+  it('shows each card with its position, its image problem and its picker', () => {
+    const [first, second] = metaCarouselCardViews([ready[0], draft('card-2', { imageAssetId: 'gone', imageAssetBriefId: 'b1' })], library, 'b1');
+    expect(first).toMatchObject({ position: 1, imageProblem: '' });
+    expect(first.imageOptions.map((o) => o.value)).toEqual(['', 'img-1']);
+    expect(second.imageProblem).toContain('No longer');
+    expect(second.imageOptions.map((o) => o.value)).toEqual(['', 'gone', 'img-1']);
+    expect(metaCarouselCardViews([draft('card-1')], { status: 'loading', assets: [] }, 'b1')[0].imageOptions).toEqual([]);
   });
 });

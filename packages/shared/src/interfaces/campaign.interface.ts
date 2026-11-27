@@ -1404,6 +1404,13 @@ export interface CampaignImplementationDraft {
   /** The foundation slug {@link metaLeadFormId} was picked under: a form belongs to that foundation's Page, so restored only under the same one. */
   metaLeadFormProject?: string;
   /**
+   * The Meta ad format, carousel cards and the carousel's one message as edited (#6331). Restored only when present;
+   * the tab sends a carousel only while `metaCarouselEnabled` is on and the carousel format is chosen.
+   */
+  metaFormat?: MetaAdFormat;
+  metaCarouselCards?: MetaCarouselCardDraft[];
+  metaCarouselMessage?: string;
+  /**
    * The Meta budget and its mode, which `submit()` sends as `budgetUsd`/`lifetimeBudget`.
    *
    * Here for the same reason as the four above — signal-backed, so `campaignForm.valueChanges`
@@ -3231,6 +3238,34 @@ export interface MetaAdVariant {
   imageAssetId?: string;
 }
 
+/** One Meta carousel card as the Implement tab edits it (#6331). `key` is the tab's own and is never sent. */
+export interface MetaCarouselCardDraft {
+  key: string;
+  /** A stored image picked from the brief's library, `''` for none, and the brief it was picked for. */
+  imageAssetId: string;
+  imageAssetBriefId: string;
+  /** A pasted public image URL, `''` for none; a picked stored image wins over it. */
+  imageUrl: string;
+  /** The card's name on Meta. */
+  headline: string;
+  /** Optional; `''` sends none. */
+  description: string;
+}
+
+/** One Meta carousel card as the editor shows it: its 1-based position, why its picked image cannot be used, and its picker. */
+export interface MetaCarouselCardView extends MetaCarouselCardDraft {
+  position: number;
+  imageProblem: string;
+  imageOptions: LinkedInCarouselImageOption[];
+}
+
+/** What the Meta carousel request reads: the capabilities and the brief its stored images must belong to. */
+export interface MetaCarouselImageContext {
+  uploadAvailable: boolean;
+  creativeAvailable: boolean;
+  briefId: string;
+}
+
 export interface MetaBriefCopy {
   variants: MetaAdVariant[];
   recommendedGeos: string[];
@@ -3267,6 +3302,10 @@ export interface MetaCreateRefusalInput {
   adOptionsBlock: string | null;
   adOptionsError: string | null;
   leadFormError: string | null;
+  /** A carousel is chosen but this deployment no longer offers it (#6331). */
+  carouselUnavailable?: boolean;
+  /** Present only while a carousel is chosen (#6331): why its cards cannot be sent, or `null`. It replaces the variant check. */
+  carousel?: { refusal: string | null };
 }
 
 export type MetaObjective = 'awareness' | 'traffic' | 'engagement' | 'leads' | 'conversions';
@@ -3726,6 +3765,9 @@ export type MetaDraftSnapshot = Pick<
   | 'metaAdOptionsProject'
   | 'metaLeadFormId'
   | 'metaLeadFormProject'
+  | 'metaFormat'
+  | 'metaCarouselCards'
+  | 'metaCarouselMessage'
   | 'metaBudgetUsd'
   | 'metaLifetimeBudget'
   | 'metaImageUrl'
@@ -3755,6 +3797,10 @@ export interface MetaDraftState {
   leadFormId: string;
   /** The foundation the choices were made under; targeting, ad options and the lead form restore only under it. */
   foundation: string;
+  /** The ad format, the carousel cards and the carousel's one message (#6331). */
+  format: MetaAdFormat;
+  carouselCards: readonly MetaCarouselCardDraft[];
+  carouselMessage: string;
   budgetUsd: number;
   lifetimeBudget: boolean;
 }
@@ -3789,6 +3835,9 @@ export interface MetaDraftRestore {
   adOptions?: MetaAdOptions;
   /** `null` keeps the current form; `''` clears it. */
   leadFormId: string | null;
+  format?: MetaAdFormat;
+  carouselCards?: MetaCarouselCardDraft[];
+  carouselMessage?: string;
   geoTargets?: string[];
   budgetUsd?: number;
   lifetimeBudget?: boolean;

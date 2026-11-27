@@ -32,6 +32,9 @@ const state: MetaDraftState = {
   adOptions: { conversionEvent: 'LEAD' },
   leadFormId: '',
   foundation: 'tlf',
+  format: 'carousel',
+  carouselCards: [{ key: 'card-1', imageAssetId: 'img', imageAssetBriefId: 'b1', imageUrl: '', headline: 'Keynote', description: '' }],
+  carouselMessage: 'Meet the speakers',
   budgetUsd: 500,
   lifetimeBudget: true,
 };
@@ -57,6 +60,9 @@ describe('metaDraftFields', () => {
       metaAdOptionsProject: 'tlf',
       metaLeadFormId: '',
       metaLeadFormProject: 'tlf',
+      metaFormat: 'carousel',
+      metaCarouselCards: state.carouselCards,
+      metaCarouselMessage: 'Meet the speakers',
       metaBudgetUsd: 500,
       metaLifetimeBudget: true,
     });
@@ -72,6 +78,7 @@ describe('metaDraftFields', () => {
     expect(fields.metaDetailedTargeting?.interests).not.toBe(state.detailedTargeting.interests);
     expect(fields.metaAdSchedule?.days).not.toBe(state.delivery.adSchedule?.days);
     expect(fields.metaDevicePlatforms).not.toBe(state.deviceOs.devicePlatforms);
+    expect(fields.metaCarouselCards?.[0]).not.toBe(state.carouselCards[0]);
   });
 });
 
@@ -129,6 +136,9 @@ describe('metaDraftRestore', () => {
       deviceOs: { devicePlatforms: ['mobile'], userOs: ['iOS'] },
       adOptions: { conversionEvent: 'LEAD' },
       leadFormId: '',
+      format: 'carousel',
+      carouselCards: state.carouselCards,
+      carouselMessage: 'Meet the speakers',
       geoTargets: ['US', 'DE'],
       budgetUsd: 500,
       lifetimeBudget: true,
@@ -173,6 +183,26 @@ describe('metaDraftRestore', () => {
     const saved = draft({ metaAudienceTargeting: legacy, metaAudienceTargetingProject: 'tlf' });
     expect(metaDraftRestore(saved, 'traffic', 'tlf').audienceTargeting).toEqual({ ...DEFAULT_META_AUDIENCE_TARGETING, ageMin: 30 });
     expect(metaDraftRestore(saved, 'traffic', 'tlf').audienceTargeting?.genders).not.toBe(DEFAULT_META_AUDIENCE_TARGETING.genders);
+  });
+
+  it.each([
+    ['a carousel', { metaFormat: 'carousel' }, { format: 'carousel' }],
+    ['an unknown format', { metaFormat: 'slideshow' }, {}],
+    [
+      'cards whose fields are text, keeping the first of a repeated key',
+      { metaCarouselCards: [{ key: 'a', headline: 'H', imageUrl: 7 }, { key: 'a' }, null] },
+      { carouselCards: [{ key: 'a', imageAssetId: '', imageAssetBriefId: '', imageUrl: '', headline: 'H', description: '' }] },
+    ],
+    ['cards that are not a list', { metaCarouselCards: 'x' }, {}],
+    ['an empty message', { metaCarouselMessage: '' }, { carouselMessage: '' }],
+  ])('restores the stored carousel fields present-only: %s', (_name, stored, expected) => {
+    const restore = metaDraftRestore(draft(stored as MetaDraftSnapshot), 'traffic', 'tlf');
+    expect({ format: restore.format, carouselCards: restore.carouselCards, carouselMessage: restore.carouselMessage }).toEqual({
+      format: undefined,
+      carouselCards: undefined,
+      carouselMessage: undefined,
+      ...expected,
+    });
   });
 
   it('drops a restored geo Meta will not target', () => {
