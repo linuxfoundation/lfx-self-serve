@@ -4315,7 +4315,8 @@ export class ImplementationTabComponent implements OnInit {
    * Why Create is blocked for an uploaded LinkedIn image this tab still holds but cannot send, or
    * `null` — `metaImageAssetBlock`'s sibling, less the pasted URL LinkedIn does not have. The first
    * blocked variant's, or text ad's while Text Ads are chosen (#5764 row 19); each shows its own beside its picker. None
-   * while a carousel or a document is chosen (campaign-service#665): they pick stored assets, and the hidden variants send nothing.
+   * while a carousel or a document is chosen (campaign-service#665), since they pick stored assets, or while a boost is chosen
+   * (campaign-service#673), which uploads nothing; the hidden variants send nothing.
    */
   protected readonly linkedInImageAssetBlock: Signal<CampaignLinkedInImageAssetBlock | null> = computed(() => {
     if (this.linkedInCarouselSelected() || this.linkedInDocumentSelected() || this.linkedInBoostSelected()) return null;
@@ -6004,8 +6005,8 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /** The boost's post URN as typed (campaign-service#673). */
-  protected onLinkedInBoostPostInput(event: Event): void {
-    this.linkedInBoostPost.set((event.target as HTMLInputElement).value);
+  protected onLinkedInBoostPostChange(value: string): void {
+    this.linkedInBoostPost.set(value);
     this.emitDraft();
   }
 
@@ -9422,7 +9423,8 @@ export class ImplementationTabComponent implements OnInit {
    * The LinkedIn creatives for the request (#5764 row 19, campaign-service#665): `format: 'text'`, the text ads and no
    * variants while Text Ads are chosen and offered; `format: 'carousel'`, the cards, the intro text and no variants while a
    * carousel is chosen and offered; `format: 'document'`, the PDF, title, intro text and no variants while a document is
-   * chosen and offered; else the variants exactly as before (no `format` key), each with its video while video ads are chosen.
+   * chosen and offered; `format: 'boost'`, the post and no variants while a boost is chosen and offered (campaign-service#673);
+   * else the variants exactly as before (no `format` key), each with its video while video ads are chosen.
    */
   private linkedInCreativesField(): Pick<
     LinkedInCampaignCreateRequest,
@@ -9450,7 +9452,7 @@ export class ImplementationTabComponent implements OnInit {
     return { format: 'text', textAds, variants: [] };
   }
 
-  /** The request `format` the objective checks are run against: Text Ads, a carousel or a document while chosen and offered, else none. */
+  /** The request `format` the objective checks are run against: Text Ads, a carousel, a document or a boost while chosen and offered, else none. */
   private linkedInFormatSent(): 'text' | 'carousel' | 'document' | 'boost' | undefined {
     if (this.linkedInTextAdsSelected()) return 'text';
     if (this.linkedInDocumentSelected()) return 'document';

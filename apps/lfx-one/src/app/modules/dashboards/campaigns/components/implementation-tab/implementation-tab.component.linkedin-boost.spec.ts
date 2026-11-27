@@ -92,7 +92,7 @@ describe('ImplementationTabComponent linkedin boost', () => {
 
   const boost = (f: ComponentFixture<ImplementationTabComponent>, post: string): void => {
     c(f)['onLinkedInFormatSelect']('boost');
-    c(f)['onLinkedInBoostPostInput']({ target: { value: post } });
+    c(f)['onLinkedInBoostPostChange'](post);
   };
   const sent = (): Record<string, unknown> => createCampaign.mock.calls.at(-1)?.[0]['linkedInConfig'];
 
@@ -136,6 +136,6 @@ describe('ImplementationTabComponent linkedin boost', () => {
     f.detectChanges();
     expect(el.querySelector('[data-testid="implementation-linkedin-boost-post"]')).not.toBeNull();
     expect(el.querySelector('[data-testid="implementation-linkedin-variants"]')).toBeNull();
-    expect(el.querySelector('[data-testid="implementation-linkedin-boost-post-error"]')?.textContent).toContain('activity URN');
+    expect(el.querySelector('[data-testid="implementation-linkedin-boost-post"] [data-testid="ui-input-error"]')?.textContent).toContain('activity URN');
   });
 });

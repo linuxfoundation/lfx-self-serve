@@ -4304,24 +4304,15 @@
           } @else if (linkedInBoostSelected()) {
             <!-- A boost (campaign-service#673) sponsors a published post as it is: no ad copy, image or call to action of its own. -->
             <div class="flex flex-col gap-1" data-testid="implementation-linkedin-boost">
-              <label for="implementation-linkedin-boost-post" class="text-xs font-medium text-gray-700">Post to boost</label>
-              <input
-                id="implementation-linkedin-boost-post"
-                type="text"
-                [value]="linkedInBoostPost()"
-                (input)="onLinkedInBoostPostInput($event)"
+              <lfx-ui-input
+                label="Post to boost"
+                size="small"
                 placeholder="urn:li:share:7400000000000000000"
-                aria-describedby="implementation-linkedin-boost-post-hint"
-                [attr.aria-invalid]="linkedInBoostPostError() !== ''"
-                class="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                [value]="linkedInBoostPost()"
+                (valueChange)="onLinkedInBoostPostChange($event)"
+                [error]="linkedInBoostPostError()"
+                hint="A public post your company's LinkedIn page published. On the post, open the menu, choose &quot;Embed this post&quot;, and copy the urn:li:share:… or urn:li:ugcPost:… from the embed code."
                 data-testid="implementation-linkedin-boost-post" />
-              <span id="implementation-linkedin-boost-post-hint" class="text-xs text-gray-500">
-                A public post your company's LinkedIn page published. On the post, open the menu, choose "Embed this post", and copy the urn:li:share:… or
-                urn:li:ugcPost:… from the embed code.
-              </span>
-              @if (linkedInBoostPostError(); as error) {
-                <span class="text-xs text-red-600" role="alert" data-testid="implementation-linkedin-boost-post-error">{{ error }}</span>
-              }
             </div>
           } @else {
             <!-- Ad variants: each one is its own LinkedIn ad, with its own copy and, when uploads are on, its own image (#5547). -->
