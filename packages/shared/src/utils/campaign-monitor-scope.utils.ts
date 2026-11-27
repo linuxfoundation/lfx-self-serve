@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CampaignServiceAccountMonitorCampaign, CampaignServiceMonitorScope } from '../interfaces/campaign.interface';
+import { CampaignServiceAccountMonitorCampaign, CampaignServiceMonitorScope, MonitorSystemAccountRead } from '../interfaces/campaign.interface';
 
 /**
  * Which scope to ask for (#6209): `account` only while `LFX_CUTOVER_CAMPAIGN_SERVICE_MONITOR_ACCOUNT_SCOPE`
@@ -51,4 +51,29 @@ export function campaignMonitorProvenance(recordedProjectId: string | null | und
     return null;
   }
   return recordedProjectId === null ? 'Created outside LFX' : `LFX: ${recordedProjectId}`;
+}
+
+/**
+ * A system-account read (#5889) that was account-wide: its empty state and note must stop saying only the project's
+ * campaigns are shown. A response with no `systemAccountRead` is returned as is.
+ */
+export function withAccountWideSystemAccountRead<T extends { systemAccountRead?: MonitorSystemAccountRead }>(response: T): T {
+  if (!response.systemAccountRead) {
+    return response;
+  }
+  return { ...response, systemAccountRead: { ...response.systemAccountRead, accountWide: true, emptyMessage: 'No active campaigns found on this account.' } };
+}
+
+/**
+ * The note under a panel read through the LF system account (#5889): which ad account was read and which campaigns
+ * are shown. `null` when the read named no account (nothing recorded yet) or did not go through the system account.
+ */
+export function campaignMonitorSystemAccountNote(label: string, read: MonitorSystemAccountRead | undefined): string | null {
+  if (!read?.accountId) {
+    return null;
+  }
+  const shown = read.accountWide
+    ? 'Every campaign on the account is shown, tagged with the project that created it or as created outside LFX.'
+    : `This project has no ${label} account bound of its own, so only the campaigns created for it are shown.`;
+  return `Read from ${label} account ${read.accountId} through the LF system account. ${shown}`;
 }

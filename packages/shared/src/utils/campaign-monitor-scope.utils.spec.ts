@@ -3,7 +3,14 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { campaignMonitorManagedElsewhere, campaignMonitorProvenance, campaignMonitorScope, withRecordedProjects } from './campaign-monitor-scope.utils';
+import {
+  campaignMonitorManagedElsewhere,
+  campaignMonitorProvenance,
+  campaignMonitorScope,
+  campaignMonitorSystemAccountNote,
+  withAccountWideSystemAccountRead,
+  withRecordedProjects,
+} from './campaign-monitor-scope.utils';
 
 describe('campaignMonitorScope', () => {
   it.each([
@@ -53,5 +60,35 @@ describe('campaignMonitorManagedElsewhere', () => {
     ['cncf', 'tlf', 'cncf'],
   ] as const)('recorded %s, selected %s -> %s', (recorded, selected, want) => {
     expect(campaignMonitorManagedElsewhere(recorded, selected)).toBe(want);
+  });
+});
+
+describe('withAccountWideSystemAccountRead', () => {
+  it('marks a system-account read account-wide and replaces its project-only empty state', () => {
+    expect(withAccountWideSystemAccountRead({ systemAccountRead: { accountId: '1', emptyMessage: 'No campaigns for this project' } })).toEqual({
+      systemAccountRead: { accountId: '1', emptyMessage: 'No active campaigns found on this account.', accountWide: true },
+    });
+  });
+
+  it('leaves a response without one alone', () => {
+    const response: { campaigns: string[]; systemAccountRead?: { accountId: string | null; emptyMessage: string } } = { campaigns: [] };
+    expect(withAccountWideSystemAccountRead(response)).toBe(response);
+  });
+});
+
+describe('campaignMonitorSystemAccountNote', () => {
+  it.each([
+    [undefined, null],
+    [{ accountId: null, emptyMessage: '' }, null],
+    [
+      { accountId: '512', emptyMessage: '' },
+      'Read from LinkedIn account 512 through the LF system account. This project has no LinkedIn account bound of its own, so only the campaigns created for it are shown.',
+    ],
+    [
+      { accountId: '512', emptyMessage: '', accountWide: true },
+      'Read from LinkedIn account 512 through the LF system account. Every campaign on the account is shown, tagged with the project that created it or as created outside LFX.',
+    ],
+  ])('%j -> %s', (read, want) => {
+    expect(campaignMonitorSystemAccountNote('LinkedIn', read)).toBe(want);
   });
 });

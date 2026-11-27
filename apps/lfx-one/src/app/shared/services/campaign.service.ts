@@ -1617,6 +1617,11 @@ export class CampaignService {
     );
   }
 
+  /** `accountWide=true` on a monitor read (#6209), or nothing. Only the Monitor tab ever asks for it. */
+  private accountWideParam(accountWide: boolean): Record<string, string> {
+    return accountWide ? { [MONITOR_ACCOUNT_WIDE_PARAM]: 'true' } : {};
+  }
+
   /**
    * The marker a Monitor-tab read carries: `connection` when its account (or the panel itself) came
    * from the connection path, i.e. a pod with the monitor cutover ON, and `legacy` when it came from
@@ -1624,10 +1629,6 @@ export class CampaignService {
    * (`MONITOR_CUTOVER_MISMATCH` / `MONITOR_CUTOVER_LEGACY_MISMATCH`) instead of misserving it; see
    * `MONITOR_ACCOUNT_SOURCE_PARAM`. `null` sends no marker: the Optimize tab's reads, unchanged.
    */
-  private accountWideParam(accountWide: boolean): Record<string, string> {
-    return accountWide ? { [MONITOR_ACCOUNT_WIDE_PARAM]: 'true' } : {};
-  }
-
   private monitorAccountSource(source: MonitorAccountSource | null): Record<string, string> {
     return source ? { [MONITOR_ACCOUNT_SOURCE_PARAM]: source === 'connection' ? MONITOR_ACCOUNT_SOURCE_CONNECTION : MONITOR_ACCOUNT_SOURCE_LEGACY } : {};
   }

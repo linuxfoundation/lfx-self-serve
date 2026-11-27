@@ -7313,6 +7313,8 @@ export interface MonitorSystemAccountRead {
   accountId: string | null;
   /** The panel's empty state when no campaign came back: no campaigns are recorded for the project yet. */
   emptyMessage: string;
+  /** True when the read was account-wide (#6209): every campaign on the account, not only the project's. */
+  accountWide?: boolean;
 }
 
 /**

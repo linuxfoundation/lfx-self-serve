@@ -311,6 +311,13 @@ describe('MonitoringTabComponent — keyword totals completeness', () => {
       expect(cells.slice(2)).toEqual(['$3,000.00', '$25.00', '1,000', '40', '4.0%', '$0.63', '12.5', '50%']);
     });
 
+    it('tags an account-wide Google row with its recording project, and a project-scoped one not at all (#6209)', () => {
+      renderRow({ recordedProjectId: 'cncf' });
+      expect(fixture.nativeElement.querySelector('[data-testid="monitoring-campaign-provenance"]')?.textContent?.trim()).toBe('LFX: cncf');
+      renderRow({});
+      expect(fixture.nativeElement.querySelector('[data-testid="monitoring-campaign-provenance"]')).toBeNull();
+    });
+
     it('renders every figure of an unread row as a dash', () => {
       const cells = renderRow({ fetchFailed: true, pacingPct: 0, spend: 0, impressions: 0, clicks: 0, ctr: 0, avgCpc: 0, conversions: 0 });
       expect(cells.slice(2)).toEqual(['—', '—', '—', '—', '—', '—', '—', '—']);
@@ -1529,6 +1536,7 @@ describe('MonitoringTabComponent — campaign-service monitor cutover', () => {
       service['getTwitterMonitorData'].mockReturnValue(of(reportBacked({ campaigns: rows })));
       select('twitter');
 
+      expect(text('twitter-campaign-provenance')).toBe('LFX: tlf');
       expect(text('twitter-campaign-managed-under')).toBe('Managed under tlf');
       expect(el('monitor-act-twitter-ads-other')).toBeNull();
       expect(el('monitor-act-twitter-ads-external')).not.toBeNull();

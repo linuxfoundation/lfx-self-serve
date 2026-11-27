@@ -8,7 +8,7 @@
 import { emailLinkDestinations, emailLinkMatchKey, hasVisibleHtmlText, sanitizeDisplayText, stripResourceLoadingHtml } from '@lfx-one/shared/utils/html-utils';
 import { canonicalHttpUrl } from '@lfx-one/shared/utils/url.utils';
 import { campaignSurveySourceTextTooLong, deriveNewsletterSlug, normalizeSponsors } from '@lfx-one/shared/utils/campaign.utils';
-import { campaignMonitorScope, withRecordedProjects } from '@lfx-one/shared/utils/campaign-monitor-scope.utils';
+import { campaignMonitorScope, withAccountWideSystemAccountRead, withRecordedProjects } from '@lfx-one/shared/utils/campaign-monitor-scope.utils';
 import { twitterTweetTextError } from '@lfx-one/shared/utils/campaign-twitter.utils';
 import { resolveLinkedInTargetingProfileId, roundUsdToCentsLikeGo } from '@lfx-one/shared/utils/campaign-linkedin.utils';
 import { correctLinkedInGeoTargets, linkedInConfigKeyRefusal } from '@lfx-one/shared/utils/campaign-linkedin-config.utils';
@@ -165,6 +165,7 @@ import type {
   CampaignServiceAccountMonitor,
   CampaignServiceMonitorScope,
   MonitorResponseWithCampaigns,
+  MonitorSystemAccountRead,
   CampaignServiceMonitorProvider,
   CampaignStatusUpdateRequest,
   CampaignStatusUpdateResult,
@@ -6825,7 +6826,7 @@ export class CampaignController {
    * The campaign-service arm of the Google Ads, LinkedIn, Meta and Reddit monitor routes: read the account monitor and
    * answer in the legacy shape the Monitor and Optimize panels already render.
    */
-  private async serveLegacyShapedMonitor<T extends MonitorResponseWithCampaigns>(
+  private async serveLegacyShapedMonitor<T extends MonitorResponseWithCampaigns & { systemAccountRead?: MonitorSystemAccountRead }>(
     req: Request,
     res: Response,
     next: NextFunction,
@@ -6851,7 +6852,7 @@ export class CampaignController {
     try {
       const payload = await opts.read(projectSlug, scope);
       const mapped = opts.toResponse(payload);
-      const data = scope === 'account' ? withRecordedProjects(mapped, payload) : mapped;
+      const data = scope === 'account' ? withAccountWideSystemAccountRead(withRecordedProjects(mapped, payload)) : mapped;
       logger.success(req, opts.operation, startTime, {
         viaCampaignService: true,
         campaigns: payload.campaigns?.length ?? 0,
@@ -6910,7 +6911,16 @@ export class CampaignController {
       platformLabel: 'Google Ads',
       days,
       accountId: null,
-      read: (slug, scope) => this.campaignServiceClient.getGoogleAdsAccountMonitor(req, slug, undefined, days, scope),
+      // Project-scoped, campaign-service names the account the project's campaigns were created under. Account-wide,
+      // that is empty for a project with none recorded, so the LF account is named when it is configured.
+      read: (slug, scope) =>
+        this.campaignServiceClient.getGoogleAdsAccountMonitor(
+          req,
+          slug,
+          scope === 'account' ? this.accountWideFallbackAccount('google-ads') : undefined,
+          days,
+          scope
+        ),
       toResponse: (payload) => toRecordedCampaignsGoogleMonitorResponse(payload, new Date().toISOString()),
       mapError: (error) => (isAccountIdRequiredByUpstream(error) ? toMonitorConnectionError(priorState, 'Google Ads', operation) : undefined),
     });
@@ -6940,6 +6950,23 @@ export class CampaignController {
       default:
         return null;
     }
+  }
+
+  /**
+   * The LF account an ACCOUNT-WIDE read names when the project has no account of its own and the platform's fallback
+   * names none (#6209): campaign-service otherwise picks the account the project's campaigns were created under, which
+   * a project with none recorded does not have, so the read would come back empty. Google Ads: the configured
+   * `GADS_CUSTOMER_ID`; LinkedIn: the first configured account. `undefined` (campaign-service picks) when unset.
+   */
+  private accountWideFallbackAccount(provider: CampaignServiceMonitorProvider): string | undefined {
+    if (provider === 'google-ads') {
+      const customer = (process.env['GADS_CUSTOMER_ID'] ?? '').replace(/-/g, '').trim();
+      return /^[0-9]+$/.test(customer) ? customer : undefined;
+    }
+    if (provider === 'linkedin-ads') {
+      return getLinkedInConfig().accounts[0]?.accountId || undefined;
+    }
+    return undefined;
   }
 
   /** A connection with no account bound of its own, as `system_account` where the platform has that read (#5889). */
@@ -7016,7 +7043,7 @@ export class CampaignController {
       platformLabel: opts.platformLabel,
       days: opts.days,
       accountId: fallback.accountId ?? null,
-      read: (slug, scope) => opts.read(slug, fallback.accountId, scope),
+      read: (slug, scope) => opts.read(slug, fallback.accountId ?? (scope === 'account' ? this.accountWideFallbackAccount(opts.provider) : undefined), scope),
       toResponse: (payload) => ({ ...opts.toResponse(payload), systemAccountRead: toSystemAccountRead(payload, opts.platformLabel) }),
       mapError: (error) => (isSystemAccountRefusal(error) ? toSystemAccountRefusedError(error, opts.platformLabel, opts.operation) : undefined),
     });

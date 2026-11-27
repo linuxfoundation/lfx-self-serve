@@ -25,7 +25,7 @@ import {
   MONITOR_SHARED_ACCOUNT_RESTRICTED_CODE,
   parseCampaignName,
 } from '@lfx-one/shared/constants';
-import { campaignMonitorManagedElsewhere, campaignMonitorProvenance, formatPercent } from '@lfx-one/shared/utils';
+import { campaignMonitorManagedElsewhere, campaignMonitorProvenance, campaignMonitorSystemAccountNote, formatPercent } from '@lfx-one/shared/utils';
 import { CampaignService } from '@services/campaign.service';
 import { ProjectContextService } from '@services/project-context.service';
 
@@ -1488,13 +1488,11 @@ export class MonitoringTabComponent implements OnInit {
 
   /**
    * The note under a panel read through the LF system account (#5889): which ad account campaign-service
-   * read, and why only this project's campaigns are shown. NULL on a read through the project's own
-   * connection, on the legacy path, and when the read named no account (nothing recorded yet).
+   * read, and which campaigns are shown (only this project's, or every one on an account-wide read). NULL on a
+   * read through the project's own connection, on the legacy path, and when the read named no account.
    */
   private systemAccountNote(panel: MonitorConnectionPlatform, read: MonitorSystemAccountRead | undefined): string | null {
-    if (!read?.accountId) return null;
-    const label = this.paidPanelLabel(panel);
-    return `Read from ${label} account ${read.accountId} through the LF system account. This project has no ${label} account bound of its own, so only the campaigns created for it are shown.`;
+    return campaignMonitorSystemAccountNote(this.paidPanelLabel(panel), read);
   }
 
   /** Records whether a panel's failed read was a role refusal, for `refusedReads`. */
