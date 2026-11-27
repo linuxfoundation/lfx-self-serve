@@ -1523,10 +1523,11 @@ export class CampaignController {
       // (`checkRedditPlacementTargeting`, `checkRedditDemographicTargeting`, `checkRedditBudgetType`), feature by feature
       // in its PreflightCreate order. campaign-service runs every shape check first, so when two features are both wrong
       // it may name the other field; either way the create is refused. See `redditPlacementsRefusal`,
-      // `redditDemographicsRefusal` and `redditBudgetTypeRefusal`.
+      // `redditDemographicsRefusal` and `redditBudgetTypeRefusal`. The demographics only when Reddit is selected:
+      // campaign-service checks only the selected platforms, so an unused redditConfig must not block another create.
       const redditDeliveryRefused =
         redditPlacementsRefusal(body?.redditConfig, canSetRedditPlacements()) ??
-        redditDemographicsRefusal(body?.redditConfig, canSetRedditDemographics()) ??
+        (platforms.includes('reddit-ads') ? redditDemographicsRefusal(body?.redditConfig, canSetRedditDemographics()) : null) ??
         redditBudgetTypeRefusal(body?.redditConfig, canSetRedditBudgetType());
       if (redditDeliveryRefused !== null) {
         throw ServiceValidationError.forField(redditDeliveryRefused.field, redditDeliveryRefused.message, {

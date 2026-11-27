@@ -13383,6 +13383,21 @@ describe('CampaignController.createCampaign Reddit gender, languages and daypart
     const error = vi.mocked(next).mock.calls[0][0] as unknown as ServiceValidationError;
     expect(error.toResponse()['errors']).toEqual([{ field, message: expect.any(String), code: 'FIELD_VALIDATION_ERROR' }]);
   });
+
+  it('leaves an unused redditConfig.gender alone when Reddit is not selected, flag off', async () => {
+    isServerFeatureEnabled.mockImplementation((flag) => flag !== ServerFeatureFlag.CampaignServiceRedditGenderLanguageDayparting);
+    createCampaigns.mockResolvedValue({ enabled: true, jobId: 'job-uuid', error: null });
+    const next = vi.fn();
+
+    await new CampaignController().createCampaign(
+      buildReq({ platforms: ['meta-ads'], redditConfig: { budgetUsd: 50, gender: 'FEMALE' } }, { project: 'tlf', brief_id: 'b-1' }),
+      buildRes(),
+      next
+    );
+
+    expect(createCampaigns).toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+  });
 });
 
 /**
