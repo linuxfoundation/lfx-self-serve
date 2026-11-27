@@ -18,14 +18,26 @@ import {
   viewChild,
 } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
-import { MEETING_COMPOSER_OCCURRENCE_NOTES, MEETING_COMPOSER_SECTION_DESCRIPTIONS, MEETING_COMPOSER_SECTIONS } from '@lfx-one/shared/constants';
-import type { MeetingComposerProjectLabel, MeetingComposerScopeNote, MeetingComposerSection, MeetingComposerSectionId } from '@lfx-one/shared/interfaces';
+import {
+  MEETING_COMPOSER_OCCURRENCE_NOTES,
+  MEETING_COMPOSER_SECTION_DESCRIPTIONS,
+  MEETING_COMPOSER_SECTIONS,
+  PHONE_MEDIA_QUERY,
+} from '@lfx-one/shared/constants';
+import type {
+  MeetingComposerProjectLabel,
+  MeetingComposerScopeNote,
+  MeetingComposerSection,
+  MeetingComposerSectionId,
+  UiButtonSize,
+} from '@lfx-one/shared/interfaces';
 import { formatMeetingOccurrenceLabel, toUpcomingMeetingHomeRow } from '@lfx-one/shared/utils';
 import { ProjectContextService } from '@services/project-context.service';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiModalService } from '@shared/uikit/modal/modal.service';
 import { UiOptionComponent } from '@shared/uikit/select/option.component';
 import { UiSelectComponent } from '@shared/uikit/select/select.component';
+import { injectIsMobileViewport } from '@shared/utils/mobile-viewport.util';
 import { PrimeNG } from 'primeng/config';
 import { ZIndexUtils } from 'primeng/utils';
 import { filter, take } from 'rxjs';
@@ -108,6 +120,9 @@ export class MeetingComposerModalComponent {
   );
   protected readonly project: Signal<MeetingComposerProjectLabel | null> = this.initProject();
   protected readonly scope: Signal<MeetingComposerScopeNote | null> = this.initScope();
+  protected readonly phone: Signal<boolean> = injectIsMobileViewport(PHONE_MEDIA_QUERY);
+  // Phones get smaller footer buttons so Cancel, Back and the primary action fit on one row.
+  protected readonly footerButtonSize: Signal<UiButtonSize> = computed(() => (this.phone() ? 'default' : 'large'));
 
   public constructor() {
     // An edit starts with every section filled, so the preview shows all of them from the start.
