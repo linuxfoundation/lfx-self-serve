@@ -5,7 +5,7 @@ import type { Observable } from 'rxjs';
 import type { MktgDocumentAgentKey, MktgDocumentLocation } from './mktg-document-store.interface';
 import type { MktgRunActivity, MktgRunAnswer, MktgRunKeptDraft, MktgRunQuestion } from './mktg-run.interface';
 import type { Member360FailureReason } from './member-360.interface';
-import type { MKTG_RUN_ACTIVE, MKTG_RUN_ANSWERED, MKTG_RUN_NOT_FAILED } from '../constants/mktg-run.constants';
+import type { MKTG_RUN_ACTIVE, MKTG_RUN_ANSWERED, MKTG_RUN_NOT_FAILED, MKTG_RUN_SLOT_SCHEMA } from '../constants/mktg-run.constants';
 
 /** Safe conflict facts; never a Guild session id or owner capability. */
 export interface MktgActiveRunConflict {
@@ -95,6 +95,37 @@ export interface MktgActiveRunStartOptions {
   /** Server-verified continuing session; exempt only its own record from the active-slot check. */
   continuingRunId?: string;
 }
+
+/** One active slot: a living document, or one creator's one-off runs of a type. `slotId` is an opaque hash, never a subject. */
+export interface MktgRunSlot {
+  project: string;
+  agentKey: MktgDocumentAgentKey;
+  slotId: string;
+}
+
+/**
+ * BFF-only reservation of a slot by one start, written only with conditional writes (create-if-absent, then
+ * replace-this-version). It is never sent to a browser: `creatorSubject` is the opaque effective subject of the
+ * requester, resolved to a display name only in a 409.
+ */
+export interface MktgRunSlotMarker extends MktgRunSlot {
+  schema: typeof MKTG_RUN_SLOT_SCHEMA;
+  /** Random per start: only the start that wrote it can release it. */
+  claim: string;
+  creatorSubject: string | null;
+  startedAt: string;
+  /** Epoch ms after which the reservation holds nothing, never later than `startedAt` plus the TTL; 0 once released. */
+  expiresAt: number;
+}
+
+/** The answer to a claim: this start's own reservation, or the live holder's (null when no holder could be read). */
+export interface MktgRunSlotClaim {
+  held: MktgRunSlotMarker | null;
+  holder: MktgRunSlotMarker | null;
+}
+
+/** How far this request's Guild session creation got: not sent, sent with no usable answer yet, or answered with a session id. */
+export type MktgGuildSessionDispatch = 'none' | 'sent' | 'accepted';
 
 /** Server-only facts shared by one-off result readers; a model turn alone is not session completion. */
 export interface MktgOneOffTerminalFacts {

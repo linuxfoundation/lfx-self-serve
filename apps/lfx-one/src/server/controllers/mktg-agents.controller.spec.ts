@@ -16,7 +16,8 @@ vi.mock('../services/mktg-document-redraft-context.service', () => ({
 const runMocks = vi.hoisted(() => ({
   resolveProject: vi.fn(),
   resolveCatalogProject: vi.fn(),
-  assertSingleActiveCatalogRun: vi.fn(),
+  catalogSlot: vi.fn(),
+  slotReleased: vi.fn(),
   assertRunOpen: vi.fn(),
   startForCatalogAgent: vi.fn(),
   recordResultBestEffort: vi.fn(),
@@ -36,7 +37,6 @@ vi.mock('../services/mktg-document-run.service', () => ({
   MktgDocumentRunService: class {
     public resolveProject = runMocks.resolveProject;
     public resolveCatalogProject = runMocks.resolveCatalogProject;
-    public assertSingleActiveCatalogRun = runMocks.assertSingleActiveCatalogRun;
     public assertRunOpen = runMocks.assertRunOpen;
     public startForCatalogAgent = runMocks.startForCatalogAgent;
     public recordResultBestEffort = runMocks.recordResultBestEffort;
@@ -44,6 +44,13 @@ vi.mock('../services/mktg-document-run.service', () => ({
     public questionsForAnswers = runMocks.questionsForAnswers;
     public claimAnswers = runMocks.claimAnswers;
     public claimSessionAnswers = runMocks.claimSessionAnswers;
+    // The real slot refuses before `start` runs and is released only once `start` has returned.
+    public withCatalogSlot = async (req: unknown, project: string, agentId: string, discard: unknown, start: () => Promise<unknown>): Promise<unknown> => {
+      await runMocks.catalogSlot(req, project, agentId, discard);
+      const started = await start();
+      runMocks.slotReleased();
+      return started;
+    };
   },
 }));
 const projectMocks = vi.hoisted(() => ({
@@ -285,13 +292,21 @@ describe('MktgAgentsController', () => {
   let controller: MktgAgentsController;
   let next: NextFunction & ReturnType<typeof vi.fn>;
 
-  async function refusesActive(invoke: () => Promise<void>, start: ReturnType<typeof vi.fn>): Promise<void> {
+  async function refusesActive(invoke: () => Promise<void>, start: ReturnType<typeof vi.fn>, started: unknown = 'synthetic-session'): Promise<void> {
     const conflict = Object.assign(new Error('Active run'), { statusCode: 409, code: 'MKTG_RUN_ACTIVE' });
-    runMocks.assertSingleActiveCatalogRun.mockRejectedValueOnce(conflict);
+    runMocks.catalogSlot.mockRejectedValueOnce(conflict);
     await invoke();
     expect(next).toHaveBeenCalledWith(conflict);
     expect(start).not.toHaveBeenCalled();
     expect(runMocks.startForCatalogAgent).not.toHaveBeenCalled();
+    // An accepted start creates its Guild session and records its run inside the slot, which is released only after the record.
+    next.mockClear();
+    start.mockResolvedValueOnce(started);
+    await invoke();
+    expect(next).not.toHaveBeenCalled();
+    const order = [runMocks.catalogSlot, start, runMocks.startForCatalogAgent, runMocks.slotReleased].map((mock) => mock.mock.invocationCallOrder.at(-1));
+    expect(order.every((at) => at !== undefined)).toBe(true);
+    expect(order).toEqual([...order].sort((a, b) => (a ?? 0) - (b ?? 0)));
   }
 
   beforeEach(() => {
@@ -555,7 +570,7 @@ describe('MktgAgentsController', () => {
     const req = chatRequest(false);
     req.body.discard = 'a'.repeat(64);
     await refusesActive(() => controller.chat(req, buildRes(), next), guildMocks.createSession);
-    expect(runMocks.assertSingleActiveCatalogRun).toHaveBeenCalledWith(req, 'proj-uid-1', 'brand-kit', 'a'.repeat(64));
+    expect(runMocks.catalogSlot).toHaveBeenCalledWith(req, 'proj-uid-1', 'brand-kit', 'a'.repeat(64));
   });
 
   it('checks the live session before sending a chat follow-up without treating it as a second start', async () => {
@@ -563,7 +578,7 @@ describe('MktgAgentsController', () => {
     await controller.chat(req, buildRes(), next);
     expect(runMocks.assertRunOpen).toHaveBeenCalledWith(req, 'proj-uid-1', 'brand-kit', req.body.sessionId);
     expect(runMocks.assertRunOpen.mock.invocationCallOrder[0]).toBeLessThan(guildMocks.sendFollowUp.mock.invocationCallOrder[0]);
-    expect(runMocks.assertSingleActiveCatalogRun).not.toHaveBeenCalled();
+    expect(runMocks.catalogSlot).not.toHaveBeenCalled();
     expect(guildMocks.sendFollowUp).toHaveBeenCalled();
   });
 
@@ -982,7 +997,7 @@ describe('MktgAgentsController', () => {
     it('refuses an active Brand Kit before starting a Guild session', async () => {
       const req = buildIcpReq('/api/mktg-agents/brand-kit/generate', { answers: brandKitAnswers(), project: 'synthetic-project', discard: 'a'.repeat(64) });
       await refusesActive(() => controller.generateBrandKit(req, buildRes(), next), brandKitMocks.startGeneration);
-      expect(runMocks.assertSingleActiveCatalogRun).toHaveBeenCalledWith(req, 'proj-uid-1', 'brand-kit', 'a'.repeat(64));
+      expect(runMocks.catalogSlot).toHaveBeenCalledWith(req, 'proj-uid-1', 'brand-kit', 'a'.repeat(64));
     });
 
     it('routes with the catalog handle, passes the trimmed answers, the logo files and the project uid, and mints an owner token', async () => {
@@ -1186,7 +1201,8 @@ describe('MktgAgentsController', () => {
     it('refuses an active ICP before starting a Guild session', async () => {
       await refusesActive(
         () => controller.generateIcp(buildIcpReq('/api/mktg-agents/icp/generate', { answers: icpAnswers(), project: 'synthetic-project' }), buildRes(), next),
-        icpMocks.startGeneration
+        icpMocks.startGeneration,
+        { sessionId: 'synthetic-session', readme: { fetched: false, skipReason: 'no-readme' } }
       );
     });
     it('routes with the catalog handle and mints a creator-binding owner token', async () => {

@@ -9,7 +9,8 @@ const mocks = vi.hoisted(() => ({
   prepareAnswers: vi.fn(),
   deliverAnswers: vi.fn(),
   resolveProject: vi.fn(),
-  assertSingleActiveOneOffRun: vi.fn(),
+  slot: vi.fn(),
+  slotReleased: vi.fn(),
   startForOneOff: vi.fn(),
   ownedOneOffResult: vi.fn(),
   assertRunOpen: vi.fn(),
@@ -39,11 +40,17 @@ vi.mock('../services/aeo-geo.service', () => ({
 vi.mock('../services/mktg-document-run.service', () => ({
   MktgDocumentRunService: class {
     public resolveProject = mocks.resolveProject;
-    public assertSingleActiveOneOffRun = mocks.assertSingleActiveOneOffRun;
     public startForOneOff = mocks.startForOneOff;
     public ownedOneOffResult = mocks.ownedOneOffResult;
     public assertRunOpen = mocks.assertRunOpen;
     public claimSessionAnswers = mocks.claimSessionAnswers;
+    // The real slot refuses before `start` runs and is released only once `start` has returned.
+    public withOneOffSlot = async (req: unknown, project: string, agentId: string, discard: unknown, start: () => Promise<unknown>): Promise<unknown> => {
+      await mocks.slot(req, project, agentId, discard);
+      const started = await start();
+      mocks.slotReleased();
+      return started;
+    };
   },
 }));
 vi.mock('../services/project.service', () => ({
@@ -82,7 +89,7 @@ describe('AeoGeoController', () => {
     mocks.getProjectById.mockResolvedValue({ uid: 'resolved-project', name: 'Synthetic Canonical Project', writer: true });
     mocks.startGeneration.mockResolvedValue({ sessionId: 'session-a', documentId: 'run-012345678901234567890123' });
     mocks.resolveProject.mockResolvedValue('resolved-project');
-    mocks.assertSingleActiveOneOffRun.mockResolvedValue(undefined);
+    mocks.slot.mockResolvedValue(undefined);
     mocks.startForOneOff.mockResolvedValue(runId);
     mocks.ownedOneOffResult.mockResolvedValue({ status: 'pending' });
     mocks.assertRunOpen.mockResolvedValue(undefined);
@@ -107,23 +114,24 @@ describe('AeoGeoController', () => {
     );
     expect(mocks.startForOneOff).toHaveBeenCalledWith(expect.anything(), 'aeo-geo', 'resolved-project', 'session-a');
   });
-  it('checks tracking storage and the creator’s active audit before any Guild session, and records the accepted one', async () => {
+  it('checks tracking storage and reserves the creator’s slot before any Guild session, and holds it until the accepted one is recorded', async () => {
     const order: string[] = [];
     mocks.resolveProject.mockImplementation(async () => (order.push('storage'), 'resolved-project'));
-    mocks.assertSingleActiveOneOffRun.mockImplementation(async () => void order.push('slot'));
+    mocks.slot.mockImplementation(async () => void order.push('slot'));
     mocks.startGeneration.mockImplementation(async () => (order.push('session'), { sessionId: 'session-a', documentId: 'run-012345678901234567890123' }));
     mocks.startForOneOff.mockImplementation(async () => (order.push('record'), runId));
+    mocks.slotReleased.mockImplementation(() => void order.push('released'));
     expect((await call('generate', { ...body(), discard: runId })).next).not.toHaveBeenCalled();
-    expect(order).toEqual(['storage', 'slot', 'session', 'record']);
-    expect(mocks.assertSingleActiveOneOffRun).toHaveBeenCalledWith(expect.anything(), 'resolved-project', 'aeo-geo', runId);
+    expect(order).toEqual(['storage', 'slot', 'session', 'record', 'released']);
+    expect(mocks.slot).toHaveBeenCalledWith(expect.anything(), 'resolved-project', 'aeo-geo', runId);
     // A second start is the tracker's 409 MKTG_RUN_ACTIVE: no session, no record, no owner token.
     mocks.startGeneration.mockClear();
     mocks.startForOneOff.mockClear();
     const active = conflict('MKTG_RUN_ACTIVE');
-    mocks.assertSingleActiveOneOffRun.mockRejectedValueOnce(active);
+    mocks.slot.mockRejectedValueOnce(active);
     const refused = await call('generate', body());
     expect(refused.next).toHaveBeenCalledWith(active);
-    expect(mocks.assertSingleActiveOneOffRun).toHaveBeenLastCalledWith(expect.anything(), 'resolved-project', 'aeo-geo', undefined);
+    expect(mocks.slot).toHaveBeenLastCalledWith(expect.anything(), 'resolved-project', 'aeo-geo', undefined);
     expect(mocks.startGeneration).not.toHaveBeenCalled();
     expect(mocks.startForOneOff).not.toHaveBeenCalled();
     expect(refused.json).not.toHaveBeenCalled();

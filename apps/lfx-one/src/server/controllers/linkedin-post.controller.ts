@@ -104,11 +104,11 @@ export class LinkedinPostController {
       if (setup !== undefined && !isLinkedinSetup(setup)) throw ServiceValidationError.forField('setup', 'Complete the required profile fields.');
       const project = await this.writableProject(req, body['project']);
       await this.runs.resolveProject(req, project.uid);
-      await this.runs.assertSingleActiveOneOffRun(req, project.uid, LINKEDIN_POST_INTAKE.agentId, body['discard']);
-      const result = await this.posts.start(req, user, answers, setup, this.routingHandle(), project);
-      const runId = await this.runs.startForOneOff(req, LINKEDIN_POST_INTAKE.agentId, project.uid, result.sessionId, {
-        answers: result.answers,
-        sourceWords: result.source.words,
+      // The creator's active slot is reserved before any Guild session exists and held until the run is recorded.
+      const { result, runId } = await this.runs.withOneOffSlot(req, project.uid, LINKEDIN_POST_INTAKE.agentId, body['discard'], async () => {
+        const result = await this.posts.start(req, user, answers, setup, this.routingHandle(), project);
+        const context = { answers: result.answers, sourceWords: result.source.words };
+        return { result, runId: await this.runs.startForOneOff(req, LINKEDIN_POST_INTAKE.agentId, project.uid, result.sessionId, context) };
       });
       logger.success(req, operation, start, {});
       res.set('Cache-Control', 'private, no-store').json({ ...result, runId, ownerToken: createSessionOwnerToken(user, result.sessionId) });

@@ -19,6 +19,7 @@ import { MKTG_ANSWERS_INCOMPLETE_MESSAGE } from '@lfx-one/shared/constants/mktg-
 const mocks = vi.hoisted(() => ({
   preflight: vi.fn(),
   active: vi.fn(),
+  released: vi.fn(),
   open: vi.fn(),
   history: vi.fn(),
   ownedResult: vi.fn(),
@@ -41,13 +42,19 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../services/mktg-document-run.service', () => ({
   MktgDocumentRunService: class {
     public resolveProject = mocks.preflight;
-    public assertSingleActiveOneOffRun = mocks.active;
     public assertRunOpen = mocks.open;
     public ownedOneOffResult = mocks.ownedResult;
     public startForOneOff = mocks.track;
     public recordResultBestEffort = mocks.record;
     public resumeAfterQuestions = mocks.resume;
     public claimSessionAnswers = mocks.claim;
+    // The real slot refuses before `start` runs and is released only once `start` has returned.
+    public withOneOffSlot = async (req: unknown, project: string, agentId: string, discard: unknown, start: () => Promise<unknown>): Promise<unknown> => {
+      await mocks.active(req, project, agentId, discard);
+      const started = await start();
+      mocks.released();
+      return started;
+    };
   },
 }));
 vi.mock('../services/mktg-last-intake.service', () => ({
@@ -339,6 +346,9 @@ describe('LinkedIn endpoint boundaries', () => {
       documentCount: 0,
       logoCount: 0,
     });
+    // The session is created and recorded inside the slot, which is released only after the record.
+    const inSlot = [mocks.active, mocks.start, mocks.track, mocks.released].map((mock) => mock.mock.invocationCallOrder.at(-1) ?? 0);
+    expect(inSlot).toEqual([...inSlot].sort((a, b) => a - b));
     expect(mocks.track.mock.invocationCallOrder[0]).toBeLessThan(mocks.history.mock.invocationCallOrder[0]);
     expect(vi.mocked(res.json).mock.invocationCallOrder[0]).toBeLessThan(mocks.history.mock.invocationCallOrder[0]);
   });

@@ -1,10 +1,60 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MKTG_RUN_ACTIVE, MKTG_RUN_ANSWERED, MKTG_RUN_CHANGED_BY_FALLBACK, MKTG_RUN_NOT_FAILED } from '../constants/mktg-run.constants';
+import {
+  MKTG_RUN_ACTIVE,
+  MKTG_RUN_ANSWERED,
+  MKTG_RUN_CHANGED_BY_FALLBACK,
+  MKTG_RUN_NOT_FAILED,
+  MKTG_RUN_SLOT_KEY_PREFIX,
+  MKTG_RUN_SLOT_SCHEMA,
+  MKTG_RUN_SLOT_TTL_MS,
+} from '../constants/mktg-run.constants';
 import { MKTG_DOCUMENT_TYPES, MKTG_DOCUMENT_ID_REGEX, MKTG_LIVING_DOCUMENT_ID, MKTG_STARTED_RUN_ID_REGEX } from '../constants/mktg-document-store.constants';
-import type { MktgActiveRunConflict, MktgRunAnsweredConflict, MktgRunNotFailedConflict } from '../interfaces/mktg-document-run.interface';
+import type {
+  MktgActiveRunConflict,
+  MktgRunAnsweredConflict,
+  MktgRunNotFailedConflict,
+  MktgRunSlot,
+  MktgRunSlotMarker,
+} from '../interfaces/mktg-document-run.interface';
 import { isMktgDisplayName } from './mktg-document-store.utils';
+
+/** The key of a slot's one reservation, outside the started-run prefix. */
+export function buildMktgRunSlotKey(slot: MktgRunSlot): string {
+  return `${MKTG_RUN_SLOT_KEY_PREFIX}/${slot.project}/${slot.agentKey}/${slot.slotId}.json`;
+}
+
+/**
+ * The stored reservation of exactly this slot, or null. Anything else holds nothing: bytes that are not a
+ * reservation, one filed under another slot, or one whose deadline is later than its start allows.
+ */
+export function readMktgRunSlotMarker(body: string, slot: MktgRunSlot): MktgRunSlotMarker | null {
+  let value: unknown;
+  try {
+    value = JSON.parse(body);
+  } catch {
+    return null;
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const { schema, project, agentKey, slotId, claim, creatorSubject, startedAt, expiresAt } = value as Record<string, unknown>;
+  if (
+    schema !== MKTG_RUN_SLOT_SCHEMA ||
+    project !== slot.project ||
+    agentKey !== slot.agentKey ||
+    slotId !== slot.slotId ||
+    typeof claim !== 'string' ||
+    !claim ||
+    (creatorSubject !== null && (typeof creatorSubject !== 'string' || !creatorSubject)) ||
+    typeof startedAt !== 'string' ||
+    !Number.isFinite(Date.parse(startedAt)) ||
+    typeof expiresAt !== 'number' ||
+    !Number.isFinite(expiresAt) ||
+    expiresAt > Date.parse(startedAt) + MKTG_RUN_SLOT_TTL_MS
+  )
+    return null;
+  return { schema: MKTG_RUN_SLOT_SCHEMA, project: slot.project, agentKey: slot.agentKey, slotId: slot.slotId, claim, creatorSubject, startedAt, expiresAt };
+}
 
 /** Validate the server's top-level conflict facts before presenting navigation or discard. */
 export function readMktgActiveRunConflict(value: unknown, agentId: string, documentId?: string): MktgActiveRunConflict | null {

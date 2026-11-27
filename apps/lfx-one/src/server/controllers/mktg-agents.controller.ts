@@ -218,12 +218,9 @@ export class MktgAgentsController {
     try {
       const project = await this.documentRuns.resolveCatalogProject(req, agent.id, rawProject);
       if (!validSessionId) {
-        if (project) await this.documentRuns.assertSingleActiveCatalogRun(req, project, agent.id, req.body?.discard);
         // New session: bind it to the creator via an opaque owner token.
-        const newSessionId = await this.guildService.createSession(req, { message: message.trim(), handle: agent.guildAgentHandle });
-        if (project) {
-          await this.trackStart(req, agent.id, project, newSessionId);
-        }
+        const create = (): Promise<string> => this.guildService.createSession(req, { message: message.trim(), handle: agent.guildAgentHandle });
+        const newSessionId = project ? (await this.startInSlot(req, agent.id, project, create)).sessionId : await create();
         logger.success(req, 'mktg_agents_chat', startTime, { agent_id: trimmedAgentId, session_created: true });
         const response: MktgChatResponse = { sessionId: newSessionId, ownerToken: createSessionOwnerToken(userId, newSessionId) };
         res.json(response);
@@ -409,9 +406,9 @@ export class MktgAgentsController {
           .filter(([, value]) => value !== '')
       );
       const project = await this.documentRuns.resolveProject(req, trimmedProject);
-      await this.documentRuns.assertSingleActiveCatalogRun(req, project, agent.id, req.body?.discard);
-      const sessionId = await this.brandKitService.startGeneration(req, trimmedAnswers, files, project, agent.guildAgentHandle);
-      const runId = await this.trackStart(req, agent.id, project, sessionId);
+      const { sessionId, runId } = await this.startInSlot(req, agent.id, project, () =>
+        this.brandKitService.startGeneration(req, trimmedAnswers, files, project, agent.guildAgentHandle)
+      );
       logger.success(req, 'brand_kit_generate', startTime, { session_created: true });
       const response: BrandKitGenerateResponse = { sessionId, ownerToken: createSessionOwnerToken(userId, sessionId), runId };
       res.json(response);
@@ -714,9 +711,9 @@ export class MktgAgentsController {
           .filter(([, value]) => value !== '')
       );
       const project = await this.documentRuns.resolveProject(req, trimmedProject);
-      await this.documentRuns.assertSingleActiveCatalogRun(req, project, agent.id, req.body?.discard);
-      const sessionId = await this.foundationMessageService.startGeneration(req, trimmedAnswers, submitted, project, agent.guildAgentHandle);
-      const runId = await this.trackStart(req, agent.id, project, sessionId);
+      const { sessionId, runId } = await this.startInSlot(req, agent.id, project, () =>
+        this.foundationMessageService.startGeneration(req, trimmedAnswers, submitted, project, agent.guildAgentHandle)
+      );
       logger.success(req, 'foundation_message_generate', startTime, { session_created: true });
       const response: FoundationMessageGenerateResponse = { sessionId, ownerToken: createSessionOwnerToken(userId, sessionId), runId };
       res.json(response);
@@ -1002,9 +999,9 @@ export class MktgAgentsController {
           .filter(([, value]) => value !== '')
       );
       const project = await this.documentRuns.resolveProject(req, trimmedProject);
-      await this.documentRuns.assertSingleActiveCatalogRun(req, project, agent.id, req.body?.discard);
-      const sessionId = await this.boilerplatesService.startGeneration(req, trimmedAnswers, project, agent.guildAgentHandle);
-      const runId = await this.trackStart(req, agent.id, project, sessionId);
+      const { sessionId, runId } = await this.startInSlot(req, agent.id, project, () =>
+        this.boilerplatesService.startGeneration(req, trimmedAnswers, project, agent.guildAgentHandle)
+      );
       logger.success(req, 'boilerplates_generate', startTime, { session_created: true });
       const response: BoilerplatesGenerateResponse = { sessionId, ownerToken: createSessionOwnerToken(userId, sessionId), runId };
       res.json(response);
@@ -1273,9 +1270,11 @@ export class MktgAgentsController {
           .filter(([, value]) => value !== '')
       );
       const project = await this.documentRuns.resolveProject(req, rawProject);
-      await this.documentRuns.assertSingleActiveCatalogRun(req, project, agent.id, req.body?.discard);
-      const { sessionId, readme } = await this.icpService.startGeneration(req, trimmedAnswers, { feedback, priorVersion }, agent.guildAgentHandle);
-      const runId = await this.trackStart(req, agent.id, project, sessionId, priorVersion ?? 0);
+      // The same slot as `startInSlot`, with the README outcome carried out of the start.
+      const { sessionId, readme, runId } = await this.documentRuns.withCatalogSlot(req, project, agent.id, req.body?.discard, async () => {
+        const started = await this.icpService.startGeneration(req, trimmedAnswers, { feedback, priorVersion }, agent.guildAgentHandle);
+        return { ...started, runId: await this.trackStart(req, agent.id, project, started.sessionId, priorVersion ?? 0) };
+      });
       logger.success(req, 'icp_generate', startTime, { session_created: true, readme_fetched: readme.fetched, readme_source: readme.source });
       // The README outcome rides the response so the run shell can label a
       // document generated WITHOUT a README instead of leaving a thin document
@@ -1514,9 +1513,9 @@ export class MktgAgentsController {
           .filter(([, value]) => value !== '')
       );
       const project = await this.documentRuns.resolveProject(req, trimmedProject);
-      await this.documentRuns.assertSingleActiveCatalogRun(req, project, agent.id, req.body?.discard);
-      const sessionId = await this.faqService.startGeneration(req, trimmedAnswers, submitted, project, agent.guildAgentHandle);
-      const runId = await this.trackStart(req, agent.id, project, sessionId);
+      const { sessionId, runId } = await this.startInSlot(req, agent.id, project, () =>
+        this.faqService.startGeneration(req, trimmedAnswers, submitted, project, agent.guildAgentHandle)
+      );
       logger.success(req, 'faq_generate', startTime, { session_created: true });
       const response: FaqGenerateResponse = { sessionId, ownerToken: createSessionOwnerToken(userId, sessionId), runId };
       res.json(response);
@@ -1766,6 +1765,17 @@ export class MktgAgentsController {
       default:
         return null;
     }
+  }
+
+  /**
+   * A new session, created and recorded inside the document's active slot: the slot is reserved before `dispatch`
+   * can reach Guild and held until the run record is published, so a second simultaneous start gets 409 MKTG_RUN_ACTIVE.
+   */
+  private startInSlot(req: Request, agentId: string, project: string, dispatch: () => Promise<string>): Promise<{ sessionId: string; runId: string }> {
+    return this.documentRuns.withCatalogSlot(req, project, agentId, req.body?.discard, async () => {
+      const sessionId = await dispatch();
+      return { sessionId, runId: await this.trackStart(req, agentId, project, sessionId) };
+    });
   }
 
   /** Record the ACK through the catalog-aware domain service. */

@@ -7,6 +7,7 @@ import { mktgRunFailureFromPayloads } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { MicroserviceError } from '../errors';
+import { noteGuildSessionDispatch } from '../utils/mktg-guild-dispatch.util';
 import { logger } from './logger.service';
 
 /** Default Guild API base URL when GUILD_API_URL is not set. */
@@ -154,6 +155,8 @@ export class GuildService {
       explicit_agent_id: !!body['agent_id'],
     });
 
+    // From here Guild may hold a session whatever this call returns: only its own answer proves otherwise.
+    noteGuildSessionDispatch(req, 'sent');
     const response = await this.fetchGuild(path, { method: 'POST', body: JSON.stringify(body) }, 'guild_create_session');
 
     await this.assertOk(response, 'guild_create_session', path);
@@ -167,6 +170,7 @@ export class GuildService {
       });
     }
 
+    noteGuildSessionDispatch(req, 'accepted');
     return data.id;
   }
 
