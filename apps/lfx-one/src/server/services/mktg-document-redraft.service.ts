@@ -1,12 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MKTG_AGENTS, MKTG_AGENT_INTAKES } from '@lfx-one/shared/constants';
-import type { MktgDocumentType, MktgPreparedRedraft, MktgRedraftStartResponse } from '@lfx-one/shared/interfaces';
+import { MKTG_AGENTS, MKTG_AGENT_INTAKES, MKTG_RUN_ACTIVE } from '@lfx-one/shared/constants';
+import type { ActiveMktgAgent, MktgDocumentType, MktgPreparedRedraft, MktgRedraftStartResponse, MktgReviseDocumentRequest } from '@lfx-one/shared/interfaces';
 import { readMktgRedraftRequest, isMktgRedraftSubmissionBusy } from '@lfx-one/shared/utils';
 import { redraftWasNotAccepted } from '../utils/mktg-redraft-start.util';
 import type { Request } from 'express';
-import { AuthenticationError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { AuthenticationError, ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { createSessionOwnerToken } from '../utils/mktg-session-token.util';
 import { GuildService } from './guild.service';
 import { logger } from './logger.service';
@@ -20,6 +20,7 @@ import { MktgDocumentStoreService } from './mktg-document-store.service';
 /**
  * Writer/canonical-project boundary is the Documents controller. No callback after reservation can create another session.
  * Both refusals come before any reservation is committed, so a 409 MKTG_REDRAFT_COMMENTS_BUSY or MKTG_RUN_ACTIVE proves nothing was sent.
+ * A new send holds the document's active slot from before its ledger reservation until its run record is published.
  */
 export class MktgDocumentRedraftService {
   private readonly guild = new GuildService();
@@ -44,9 +45,33 @@ export class MktgDocumentRedraftService {
     const agent = MKTG_AGENTS.find((entry) => entry.id === type.catalogAgentId);
     if (!agent || agent.status !== 'active' || !MKTG_AGENT_INTAKES[agent.id])
       throw ServiceValidationError.forField('agentKey', 'No registered redraft intake.');
-    // First answer wins. A replay only re-observes its own run; a new send never starts over a run that holds this document.
+    // First answer wins. A replay only re-observes its own run and never creates a session, so it takes no slot; a new
+    // send never starts over a run, or another start, that holds this document.
     const replay = await this.comments.admit(req, project, type, documentId, input);
-    if (!replay) await runs.assertSingleActiveRun(req, project, type.agentKey, { documentId });
+    const start = (): Promise<MktgRedraftStartResponse> => this.start(req, project, type, documentId, input, runs, creator, agent);
+    if (replay) return start();
+    try {
+      return await runs.withActiveSlot(req, project, type.agentKey, { documentId }, start);
+    } catch (error) {
+      // This creator's own start holds the slot and has no run record yet. It may be this same request sent twice, so the
+      // answer must not prove that nothing was sent: the same request ID is retried, and then finds its run or a named 409.
+      const details = error instanceof ConflictError && error.code === MKTG_RUN_ACTIVE ? error.details : undefined;
+      if (details?.['startedByViewer'] === true && !details['activeRunId']) throw this.uncertain();
+      throw error;
+    }
+  }
+
+  /** The ledger reservation, the one Guild session and its run record: for a new send, all inside the document's active slot. */
+  private async start(
+    req: Request,
+    project: string,
+    type: MktgDocumentType,
+    documentId: string,
+    input: MktgReviseDocumentRequest,
+    runs: MktgDocumentRunService,
+    creator: string,
+    agent: ActiveMktgAgent
+  ): Promise<MktgRedraftStartResponse> {
     let prepared: MktgPreparedRedraft | undefined;
     const reservation = await this.comments.reserve(req, project, type, documentId, input, async (comments) => {
       this.guild.preflight('mktg_document_redraft');

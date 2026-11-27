@@ -14,6 +14,7 @@ import {
   MKTG_STARTED_RUN_FAILURE_BYTES,
   MEMBER_360_FAILURE_MESSAGES,
   MKTG_ONE_OFF_STOPPED_MESSAGE,
+  MKTG_RUN_SLOT_TTL_MS,
   MKTG_STARTED_RUN_READ_CONCURRENCY,
 } from '@lfx-one/shared/constants';
 
@@ -148,7 +149,23 @@ vi.mock('./object-store.service', () => ({
       const object = objects.get(key);
       return object ? { ...object, metadata: { ...object.metadata }, etag: flows.omitEtag ? undefined : hash(object.body) } : null;
     }
+    public getPrivateObject(_req: unknown, _purpose: string, key: string) {
+      const object = objects.get(key);
+      return Promise.resolve(object ? { ...object, etag: flows.omitEtag ? undefined : hash(object.body) } : null);
+    }
+    public async putPrivateObjectIfAbsent(_req: unknown, _purpose: string, key: string, input: ObjectStorePutInput) {
+      await Promise.resolve();
+      if (objects.has(key)) return false;
+      objects.set(key, { body: Buffer.from(input.body).toString('utf8'), metadata: {}, lastModified: new Date() });
+      return true;
+    }
     public async putConditionalObject(_req: unknown, _purpose: string, key: string, input: ObjectStorePutInput) {
+      // A slot reservation is not a run record: none of the run-record hooks below apply to it.
+      if (key.startsWith('document-run-slots/')) {
+        if (input.ifMatch !== hash(objects.get(key)?.body ?? '')) return false;
+        objects.set(key, { body: Buffer.from(input.body).toString('utf8'), metadata: {}, lastModified: new Date() });
+        return true;
+      }
       await flows.beforeConditionalPut(input.metadata);
       const previous = objects.get(key);
       if (
@@ -194,6 +211,7 @@ vi.mock('./object-store.service', () => ({
 }));
 
 import { MktgDocumentRunService } from './mktg-document-run.service';
+import { GuildService } from './guild.service';
 import { AuthorizationError, ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { logger } from './logger.service';
 import type {
@@ -224,6 +242,9 @@ const ready = (agentKey = types[0].agentKey): MktgRunResultResponse => ({
   version: 1,
   persistence: { project, version: 1, s3_key: 'synthetic-key', content_sha256: 'a'.repeat(64), document_location: location(agentKey) },
 });
+/** A one-off start that reaches no Guild session: the slot is reserved, its runs are checked, and it is released. */
+const oneOffSlot = (service: MktgDocumentRunService, who: Request, agentId: string, discard?: string): Promise<void> =>
+  service.withOneOffSlot(who, project, agentId, discard, () => Promise.resolve());
 function stored(value = session) {
   const object = objects.get(key(value));
   if (!object) {
@@ -661,7 +682,7 @@ describe('MktgDocumentRunService core', () => {
     it('tracks an AEO/GEO audit: one active run per creator, and only the first answer to its questions wins', async () => {
       const creator = writerRequest('synthetic-audit-creator');
       await service.startForOneOff(creator, 'aeo-geo', project, session);
-      const second = await service.assertSingleActiveOneOffRun(creator, project, 'aeo-geo').catch((err: unknown) => err);
+      const second = await oneOffSlot(service, creator, 'aeo-geo').catch((err: unknown) => err);
       expect(second).toMatchObject({ statusCode: 409, code: 'MKTG_RUN_ACTIVE' });
       expect(second instanceof ConflictError ? second.toResponse() : null).toMatchObject({
         message: 'Your AEO/GEO report run is in progress.',
@@ -673,7 +694,7 @@ describe('MktgDocumentRunService core', () => {
         state: 'writing',
       });
       // Another writer's slot is their own; a visitor's Documents read stores the report as the creator's.
-      await expect(service.assertSingleActiveOneOffRun(writerRequest('synthetic-other-writer'), project, 'aeo-geo')).resolves.toBeUndefined();
+      await expect(oneOffSlot(service, writerRequest('synthetic-other-writer'), 'aeo-geo')).resolves.toBeUndefined();
       flows.aeo.mockResolvedValue({ status: 'questions', questionsId, questions });
       await service.readProgress(writerRequest('synthetic-other-writer'), project);
       expect(flows.attribution).toHaveBeenLastCalledWith({ creatorSubject: 'synthetic-audit-creator' });
@@ -1043,14 +1064,14 @@ describe('MktgDocumentRunService core', () => {
   it('requires a separate confirmation for each legacy duplicate one-off run', async () => {
     await service.startForOneOff(req, 'member-360', project, session);
     await service.startForOneOff(req, 'member-360', project, 'legacy-other-session');
-    await expect(service.assertSingleActiveOneOffRun(req, project, 'member-360', hash(session))).rejects.toMatchObject({
+    await expect(oneOffSlot(service, req, 'member-360', hash(session))).rejects.toMatchObject({
       statusCode: 409,
       details: { activeRunId: hash('legacy-other-session') },
     });
     expect(stored().metadata['state']).toBe('discarded');
     expect(stored('legacy-other-session').metadata['state']).toBe('writing');
     expect(flows.interrupt).toHaveBeenCalledTimes(1);
-    await expect(service.assertSingleActiveOneOffRun(req, project, 'member-360', hash('legacy-other-session'))).resolves.toBeUndefined();
+    await expect(oneOffSlot(service, req, 'member-360', hash('legacy-other-session'))).resolves.toBeUndefined();
     expect(stored('legacy-other-session').metadata['state']).toBe('discarded');
   });
 
@@ -1058,11 +1079,11 @@ describe('MktgDocumentRunService core', () => {
     const owner = Object.assign({} as Request, { oidc: { user: { sub: 'synthetic-owner' } } });
     const other = Object.assign({} as Request, { oidc: { user: { sub: 'synthetic-other' } } });
     await service.startForOneOff(owner, 'member-360', project, session);
-    await expect(service.assertSingleActiveOneOffRun(other, project, 'member-360', hash(session))).resolves.toBeUndefined();
+    await expect(oneOffSlot(service, other, 'member-360', hash(session))).resolves.toBeUndefined();
     expect(flows.author).not.toHaveBeenCalled();
     expect(flows.interrupt).not.toHaveBeenCalled();
     expect(stored().metadata['state']).toBe('writing');
-    await expect(service.assertSingleActiveOneOffRun(owner, project, 'member-360')).rejects.toMatchObject({ statusCode: 409 });
+    await expect(oneOffSlot(service, owner, 'member-360')).rejects.toMatchObject({ statusCode: 409 });
     expect(flows.author).not.toHaveBeenCalled();
   });
 
@@ -1091,7 +1112,7 @@ describe('MktgDocumentRunService core', () => {
 
   it('uses the caller-facing message for the caller own one-off conflict', async () => {
     await service.startForOneOff(req, 'member-360', project, session);
-    const conflict = await service.assertSingleActiveOneOffRun(req, project, 'member-360').catch((err: unknown) => err);
+    const conflict = await oneOffSlot(service, req, 'member-360').catch((err: unknown) => err);
     expect(conflict).toBeInstanceOf(ConflictError);
     if (!(conflict instanceof ConflictError)) return;
     expect(conflict.toResponse()).toMatchObject({ startedBy: 'Another writer', startedByViewer: true, message: 'Your Member 360 run is in progress.' });
@@ -1108,7 +1129,7 @@ describe('MktgDocumentRunService core', () => {
       details: { activeRunId: hash('active-session') },
     });
     expect(stored().metadata['state']).toBe('failed');
-    await service.assertSingleActiveOneOffRun(actor, project, 'member-360', hash('active-session'));
+    await oneOffSlot(service, actor, 'member-360', hash('active-session'));
     await expect(service.retry(actor, project, 'member-360', documentId, hash(session))).resolves.toBeUndefined();
     expect(stored().metadata['state']).toBe('writing');
   });
@@ -2410,5 +2431,167 @@ describe('MktgDocumentRunService core', () => {
     flows.result.mockResolvedValue(ready());
     expect(await service.refreshFailure(req, project, types[0].agentKey, 'living', hash(session))).toBeNull();
     expect(stored().metadata['state']).toBe('completed');
+  });
+});
+
+describe('MktgDocumentRunService active slot', () => {
+  const agentKey = types[0].agentKey;
+  const agentId = types[0].catalogAgentId ?? '';
+  const label = types[0].itemLabel.replace(/\s+run$/i, '');
+  const writerA = writerRequest('synthetic-writer-a');
+  const writerB = writerRequest('synthetic-writer-b');
+  const slot = { project, agentKey, slotId: hash('document:living') };
+  const slotKey = `document-run-slots/${project}/${agentKey}/${slot.slotId}.json`;
+  const reservation = () => JSON.parse(objects.get(slotKey)?.body ?? '{}') as { claim?: string; expiresAt?: number };
+  const guildAnswers = (answer: object | Error) => (): Promise<string> => {
+    vi.stubGlobal('fetch', answer instanceof Error ? vi.fn().mockRejectedValue(answer) : vi.fn().mockResolvedValue(answer));
+    return new GuildService().createSession(writerA, { message: 'Synthetic intake', handle: 'synthetic-agent' });
+  };
+  let service: MktgDocumentRunService;
+  let sessions: number;
+  /** One whole start as a controller runs it: the Guild session, then its run record, both inside the slot. */
+  const start = (who: Request, id: string, create: () => Promise<unknown> = () => Promise.resolve()): Promise<string> =>
+    service.withCatalogSlot(who, project, agentId, undefined, async () => {
+      await create();
+      sessions++;
+      return service.startForCatalogAgent(who, agentId, project, id);
+    });
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime('2026-10-19T12:00:00Z');
+    vi.clearAllMocks();
+    objects.clear();
+    for (const hook of [flows.beforePut, flows.beforeConditionalPut, flows.beforePredicate, flows.beforeClaim, flows.beforeMark]) hook.mockReset();
+    flows.omitEtag = false;
+    redraft.forSession.mockResolvedValue(null);
+    flows.interrupt.mockReset().mockResolvedValue(undefined);
+    flows.author
+      .mockReset()
+      .mockImplementation(async (_req: Request, subject: string) => (subject === 'synthetic-writer-a' ? { name: 'Synthetic Writer' } : null));
+    vi.stubEnv('GUILD_API_KEY', 'synthetic-key');
+    vi.stubEnv('GUILD_API_URL', 'https://guild.test');
+    sessions = 0;
+    service = new MktgDocumentRunService();
+  });
+  afterEach(async () => {
+    await vi.runAllTimersAsync();
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  it('gives two simultaneous starts exactly one Guild session and one 409 with who and when, naming no run before its record exists', async () => {
+    const [first, second] = await Promise.allSettled([start(writerA, 'session-a'), start(writerB, 'session-b')]);
+    expect(sessions).toBe(1);
+    expect(first).toEqual({ status: 'fulfilled', value: hash('session-a') });
+    const refused = second.status === 'rejected' ? second.reason : null;
+    expect(refused).toBeInstanceOf(ConflictError);
+    expect(refused instanceof ConflictError ? refused.toResponse() : null).toMatchObject({
+      code: 'MKTG_RUN_ACTIVE',
+      message: `Synthetic Writer's ${label} run is starting. Try again in a moment.`,
+      agentKey,
+      startedBy: 'Synthetic Writer',
+      startedByViewer: false,
+      startedAt: '2026-10-19T12:00:00.000Z',
+    });
+    // The winner had no run record yet: the refusal names nobody's run to open or discard, and the loser recorded nothing.
+    expect(refused instanceof ConflictError ? Object.keys(refused.details ?? {}).sort() : null).toEqual([
+      'agentKey',
+      'startedAt',
+      'startedBy',
+      'startedByViewer',
+    ]);
+    expect(objects.has(key('session-b'))).toBe(false);
+    // The record is published and the reservation released: a later start reserves the slot and is told about that run.
+    expect(reservation().expiresAt).toBe(0);
+    await expect(start(writerB, 'session-b')).rejects.toMatchObject({
+      statusCode: 409,
+      details: { activeRunId: hash('session-a'), state: 'writing', documentId: 'living', startedBy: 'Synthetic Writer' },
+    });
+    expect(reservation().expiresAt).toBe(0);
+    expect(sessions).toBe(1);
+  });
+
+  it.each<[string, boolean, () => Promise<unknown>]>([
+    ['a failure before anything is sent', false, () => Promise.reject(new MicroserviceError('Source unavailable.', 503, 'SYNTHETIC_SOURCE'))],
+    ['a refusal by Guild', false, guildAnswers({ ok: false, status: 400, statusText: 'Bad Request', text: () => Promise.resolve('') })],
+    ['an unreachable Guild', false, guildAnswers(Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNREFUSED' } }))],
+    ['a Guild timeout', true, guildAnswers(Object.assign(new Error('Timed out'), { name: 'TimeoutError' }))],
+    ['a Guild 5xx', true, guildAnswers({ ok: false, status: 502, statusText: 'Bad Gateway', text: () => Promise.resolve('') })],
+    ['a 2xx with no session id', true, guildAnswers({ ok: true, status: 200, json: () => Promise.resolve({}) })],
+    [
+      'a session whose run could not be recorded',
+      true,
+      () =>
+        guildAnswers({ ok: true, status: 201, json: () => Promise.resolve({ id: 'session-a' }) })().then(() =>
+          Promise.reject(new MicroserviceError('The run could not be recorded.', 503, 'DOCUMENT_RUN_STORAGE_UNAVAILABLE'))
+        ),
+    ],
+  ])('ends a start with %s: the slot stays reserved until it expires = %s', async (_ending, kept, create) => {
+    await expect(start(writerA, 'session-a', create)).rejects.toBeInstanceOf(MicroserviceError);
+    expect(sessions).toBe(0);
+    if (kept) {
+      // Guild may hold a session nobody can follow: no second one is created while the reservation lasts.
+      vi.advanceTimersByTime(MKTG_RUN_SLOT_TTL_MS - 1);
+      await expect(start(writerB, 'session-b')).rejects.toMatchObject({ statusCode: 409, code: 'MKTG_RUN_ACTIVE', details: { startedBy: 'Synthetic Writer' } });
+      expect(sessions).toBe(0);
+      vi.advanceTimersByTime(1);
+    }
+    await expect(start(writerB, 'session-b')).resolves.toBe(hash('session-b'));
+    expect(sessions).toBe(1);
+  });
+
+  it('refuses a start while another holds the slot without discarding anything, and names a published run first', async () => {
+    let finish = (): void => undefined;
+    const holding = start(writerA, 'session-a', () => new Promise<void>((resolve) => (finish = resolve)));
+    await vi.waitFor(() => expect(reservation().expiresAt).toBeGreaterThan(Date.now()));
+    // A run published outside this start (a legacy duplicate, a retried run) is the one named, and it is not discarded.
+    await service.start(writerB, project, agentKey, session);
+    const refused = service.withCatalogSlot(writerB, project, agentId, hash(session), () => Promise.reject(new Error('This start must not run.')));
+    await expect(refused).rejects.toMatchObject({ statusCode: 409, details: { activeRunId: hash(session), startedByViewer: true } });
+    expect(stored().metadata['state']).toBe('writing');
+    expect(flows.interrupt).not.toHaveBeenCalled();
+    finish();
+    await expect(holding).resolves.toBe(hash('session-a'));
+  });
+
+  it('releases the reservation when the slot holds an active run, so the requester can discard it and start', async () => {
+    await service.start(writerA, project, agentKey, session);
+    await expect(start(writerB, 'session-b')).rejects.toMatchObject({ statusCode: 409, details: { activeRunId: hash(session) } });
+    expect(reservation().expiresAt).toBe(0);
+    await expect(service.withCatalogSlot(writerB, project, agentId, 'not-a-run-id', () => Promise.resolve())).rejects.toMatchObject({ statusCode: 400 });
+    const replaced = service.withCatalogSlot(writerB, project, agentId, hash(session), () =>
+      service.startForCatalogAgent(writerB, agentId, project, 'session-b')
+    );
+    await expect(replaced).resolves.toBe(hash('session-b'));
+    expect(stored().metadata['state']).toBe('discarded');
+  });
+
+  it('fences a release by its claim, and writes over a reservation that is expired or unreadable', async () => {
+    const slots = service['slots'];
+    const first = (await slots.claim(writerA, slot, 'synthetic-writer-a')).held;
+    expect(first).toMatchObject({ ...slot, creatorSubject: 'synthetic-writer-a', expiresAt: Date.now() + MKTG_RUN_SLOT_TTL_MS });
+    vi.advanceTimersByTime(MKTG_RUN_SLOT_TTL_MS);
+    const second = (await slots.claim(writerB, slot, 'synthetic-writer-b')).held;
+    if (!first || !second) throw new Error('Both synthetic claims must hold the slot in turn');
+    // The first start outlived its reservation: its late release must not free the start that took the slot.
+    await slots.release(writerA, first);
+    expect(logger.warning).toHaveBeenCalledWith(writerA, 'mktg_run_slot_release', expect.stringContaining('no longer held'), { project, agentKey });
+    expect(await slots.claim(writerA, slot, null)).toEqual({ held: null, holder: second });
+    await slots.release(writerB, second);
+    expect(reservation()).toMatchObject({ claim: second.claim, expiresAt: 0 });
+    objects.set(slotKey, { body: 'not a reservation', metadata: {}, lastModified: new Date() });
+    // With no version to write over, no start can take the slot: still a refusal, naming nobody and no run.
+    flows.omitEtag = true;
+    const unnamed = await start(writerB, 'session-b').catch((err: unknown) => err);
+    expect(unnamed instanceof ConflictError ? unnamed.toResponse() : null).toMatchObject({
+      code: 'MKTG_RUN_ACTIVE',
+      message: `Another ${label} run is starting. Try again in a moment.`,
+    });
+    expect(unnamed instanceof ConflictError ? unnamed.details : null).toEqual({ agentKey });
+    expect(sessions).toBe(0);
+    flows.omitEtag = false;
+    expect((await slots.claim(writerA, slot, null)).held).toMatchObject({ ...slot, creatorSubject: null });
   });
 });

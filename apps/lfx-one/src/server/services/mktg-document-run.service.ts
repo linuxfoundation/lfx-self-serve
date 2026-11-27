@@ -52,6 +52,8 @@ import {
   MktgActiveRunStartOptions,
   MktgMember360QuestionsClaim,
   MktgRunNotFailedConflict,
+  MktgRunSlot,
+  MktgRunSlotMarker,
 } from '@lfx-one/shared/interfaces';
 import { MKTG_RUN_ACTIVE, MKTG_RUN_ANSWERED, MKTG_RUN_CLOSED, MKTG_RUN_NOT_FAILED } from '@lfx-one/shared/constants/mktg-run.constants';
 import { createMember360Redactor } from '@lfx-one/shared/server';
@@ -84,6 +86,8 @@ import {
 } from '../errors';
 import { getEffectiveSub, isImpersonating } from '../utils/auth-helper';
 import { buildMktgRunDocumentId } from '../utils/mktg-document-store.util';
+import { guildSessionDispatch, noteGuildSessionDispatch } from '../utils/mktg-guild-dispatch.util';
+import { redraftWasNotAccepted } from '../utils/mktg-redraft-start.util';
 import { classifyTransientStorageError } from '../utils/transient-storage-error.util';
 import { AeoGeoService } from './aeo-geo.service';
 import { LinkedinPostService } from './linkedin-post.service';
@@ -100,6 +104,7 @@ import { ProjectService } from './project.service';
 import { MktgDocumentRedraftContextService } from './mktg-document-redraft-context.service';
 import { MktgDocumentCommentsService } from './mktg-document-comments.service';
 import { MktgDocumentAuthorService } from './mktg-document-author.service';
+import { MktgRunSlotService } from './mktg-run-slot.service';
 
 /** Private session-keyed starts and question turns; answer/state transitions use conditional object versions. */
 export class MktgDocumentRunService {
@@ -117,6 +122,7 @@ export class MktgDocumentRunService {
   private readonly redrafts = new MktgDocumentRedraftContextService();
   private readonly comments = new MktgDocumentCommentsService();
   private readonly authors = new MktgDocumentAuthorService();
+  private readonly slots = new MktgRunSlotService();
 
   public async resolveProject(req: Request, raw: unknown): Promise<string> {
     const uid = typeof raw === 'string' ? raw.trim() : '';
@@ -170,23 +176,58 @@ export class MktgDocumentRunService {
     await this.assertSingleActiveRun(req, project, type.agentKey, { continuingRunId: runId });
   }
 
-  /** Controllers call this before creating any Guild session, not after its accepted ACK. */
-  public async assertSingleActiveCatalogRun(req: Request, project: string, agentId: string, discard?: unknown): Promise<void> {
+  /** Controllers create the Guild session and record its run inside `start`, never before it or after its accepted ACK. */
+  public async withCatalogSlot<T>(req: Request, project: string, agentId: string, discard: unknown, start: () => Promise<T>): Promise<T> {
     const type = this.catalogDocumentType(agentId);
-    if (type) await this.assertSingleActiveRun(req, project, type.agentKey, { discard });
+    return type ? this.withActiveSlot(req, project, type.agentKey, { discard }, start) : start();
   }
 
-  public async assertSingleActiveOneOffRun(req: Request, project: string, agentId: string, discard?: unknown): Promise<void> {
-    await this.assertSingleActiveRun(req, project, this.oneOffType(agentId).agentKey, { discard });
+  public async withOneOffSlot<T>(req: Request, project: string, agentId: string, discard: unknown, start: () => Promise<T>): Promise<T> {
+    return this.withActiveSlot(req, project, this.oneOffType(agentId).agentKey, { discard }, start);
+  }
+
+  /**
+   * One start at a time per slot, and the first wins. The slot is reserved with a conditional write before its runs
+   * are read or anything is sent, so of two simultaneous starts one creates a Guild session and the other gets 409
+   * MKTG_RUN_ACTIVE. `start` creates the session and publishes its run record; the reservation is released once that
+   * record holds the slot. A start that fails before anything is sent, or that Guild refused (`redraftWasNotAccepted`),
+   * releases it at once. A send with no certain outcome (a timeout, a 2xx with no session id, a 5xx), or a session
+   * whose record could not be written, may be a run Guild holds that nobody can follow: the reservation is kept until
+   * it expires.
+   */
+  public async withActiveSlot<T>(
+    req: Request,
+    project: string,
+    agentKey: MktgDocumentAgentKey,
+    options: MktgActiveRunStartOptions,
+    start: () => Promise<T>
+  ): Promise<T> {
+    const held = await this.reserveActiveSlot(req, project, agentKey, options);
+    noteGuildSessionDispatch(req, 'none');
+    let started: T;
+    try {
+      started = await start();
+    } catch (error) {
+      const dispatch = guildSessionDispatch(req);
+      if (dispatch === 'none' || (dispatch === 'sent' && redraftWasNotAccepted(error, false))) {
+        await this.slots.release(req, held);
+      } else {
+        logger.warning(req, 'mktg_run_start', 'Guild may hold a session this start did not record — the slot stays reserved until it expires', {
+          project,
+          agentKey,
+          dispatch,
+          err: error,
+        });
+      }
+      throw error;
+    }
+    await this.slots.release(req, held);
+    return started;
   }
 
   /** A stale discard is another conflict, never permission to close a different run. */
   public async assertSingleActiveRun(req: Request, project: string, agentKey: MktgDocumentAgentKey, options: MktgActiveRunStartOptions = {}): Promise<void> {
-    if (options.discard !== undefined && (typeof options.discard !== 'string' || !MKTG_STARTED_RUN_ID_REGEX.test(options.discard))) {
-      throw ServiceValidationError.forField('discard', 'Select a valid active run to discard.');
-    }
-    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === agentKey);
-    if (!type) throw ServiceValidationError.forField('agentKey', 'No registered document type.');
+    const type = this.slotType(agentKey, options);
     // Unlike the bounded navigation scan, a start must check the whole project listing.
     const entries = await this.discover(req, project, undefined, true);
     const active: MktgStoredStartedRun[] = [];
@@ -291,7 +332,7 @@ export class MktgDocumentRunService {
   /**
    * Retain accepted turn IDs across sequential replay; a full ledger rejects a new turn, never evicts history.
    * Existing-session renewals advance the body and conditionally replace the observed ETag, fencing held
-   * result polls. Initial session admission remains separate from the active-slot reservation follow-up.
+   * result polls. A new session's record is published while its start still holds the slot (`withActiveSlot`).
    */
   public async start(
     req: Request,
@@ -1566,26 +1607,72 @@ export class MktgDocumentRunService {
     return type?.kind === 'run' ? buildMktgRunDocumentId(sessionId) : MKTG_LIVING_DOCUMENT_ID;
   }
 
-  private async activeRunConflict(req: Request, record: MktgStartedRunRecord, type: MktgDocumentType): Promise<ConflictError> {
-    const startedByViewer = record.creatorSubject === getEffectiveSub(req);
-    const author = startedByViewer ? null : await this.authors.resolveAuthor(req, record.creatorSubject, 'mktg_run_start');
+  /**
+   * Who holds the slot and since when. Only a published run record is named as a run (`activeRunId`, `state`,
+   * `documentId`): a reservation is a start with no run record yet, so its 409 carries who and when and no run to
+   * open or discard, and names nobody when the holder could not be read.
+   */
+  private async activeRunConflict(req: Request, holder: MktgStartedRunRecord | MktgRunSlotMarker | null, type: MktgDocumentType): Promise<ConflictError> {
+    const record = holder && 'runId' in holder ? holder : null;
+    const startedByViewer = !!holder && holder.creatorSubject === getEffectiveSub(req);
+    const author = !holder || startedByViewer ? null : await this.authors.resolveAuthor(req, holder.creatorSubject, 'mktg_run_start');
     const startedBy = author?.name ?? 'Another writer';
     const itemLabel = type.itemLabel.replace(/\s+run$/i, '');
-    const clientMessage = type.kind === 'run' || startedByViewer ? `Your ${itemLabel} run is in progress.` : `${startedBy}'s ${itemLabel} run is in progress.`;
+    const own = type.kind === 'run' || startedByViewer;
+    const whose = own ? 'Your' : `${startedBy}'s`;
+    // A one-off slot is the caller's own; a living slot with no readable holder is nobody's by name.
+    const starting = holder || own ? whose : 'Another';
     return new ConflictError(`A ${itemLabel} run is already in progress.`, MKTG_RUN_ACTIVE, {
       operation: 'mktg_run_start',
       service: 'object_store',
-      clientMessage,
+      clientMessage: record ? `${whose} ${itemLabel} run is in progress.` : `${starting} ${itemLabel} run is starting. Try again in a moment.`,
       details: {
-        activeRunId: record.runId,
-        state: record.state,
-        agentKey: record.agentKey,
-        documentId: record.documentId,
-        startedBy,
-        startedByViewer,
-        startedAt: record.startedAt,
+        agentKey: type.agentKey,
+        ...(record && { activeRunId: record.runId, state: record.state, documentId: record.documentId }),
+        ...(holder && { startedBy, startedByViewer, startedAt: holder.startedAt }),
       },
     });
+  }
+
+  /**
+   * Reserve the slot, then read its runs. A slot another start holds is refused at once and nothing is discarded: a
+   * published active run answers first (its 409 names a run the page can open or discard), else the reservation's
+   * holder. With the slot held the usual check runs, discard included; a refusal there releases the reservation.
+   */
+  private async reserveActiveSlot(
+    req: Request,
+    project: string,
+    agentKey: MktgDocumentAgentKey,
+    options: MktgActiveRunStartOptions
+  ): Promise<MktgRunSlotMarker> {
+    const type = this.slotType(agentKey, options);
+    const owner = options.creatorSubject !== undefined ? options.creatorSubject : getEffectiveSub(req);
+    const scope = type.kind === 'run' ? `creator:${owner ?? ''}` : `document:${options.documentId ?? MKTG_LIVING_DOCUMENT_ID}`;
+    // The project is a key segment: only a single-segment uid, as for every run record.
+    this.prefix(project);
+    const slot: MktgRunSlot = { project, agentKey, slotId: this.hash(scope) };
+    const { held, holder } = await this.slots.claim(req, slot, getEffectiveSub(req) ?? null);
+    if (!held) {
+      await this.assertSingleActiveRun(req, project, agentKey, { ...options, discard: undefined });
+      throw await this.activeRunConflict(req, holder, type);
+    }
+    try {
+      await this.assertSingleActiveRun(req, project, agentKey, options);
+    } catch (error) {
+      await this.slots.release(req, held);
+      throw error;
+    }
+    return held;
+  }
+
+  /** Untrusted discard input and the type are validated before any reservation or tracking mutation. */
+  private slotType(agentKey: MktgDocumentAgentKey, options: MktgActiveRunStartOptions): MktgDocumentType {
+    if (options.discard !== undefined && (typeof options.discard !== 'string' || !MKTG_STARTED_RUN_ID_REGEX.test(options.discard))) {
+      throw ServiceValidationError.forField('discard', 'Select a valid active run to discard.');
+    }
+    const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === agentKey);
+    if (!type) throw ServiceValidationError.forField('agentKey', 'No registered document type.');
+    return type;
   }
 
   /** Explicit selections are independent of the discovery window; known rows avoid a duplicate Guild read. */

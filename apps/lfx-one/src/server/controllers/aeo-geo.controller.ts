@@ -46,19 +46,20 @@ export class AeoGeoController {
       }
       const scope = await this.writableProject(req, project);
       const handle = this.agentHandle();
-      // Tracking storage and the creator's active slot are checked before any Guild session exists.
+      // Tracking storage is checked and the creator's active slot reserved before any Guild session exists; the slot is held until the run is recorded.
       await this.runs.resolveProject(req, scope.uid);
-      await this.runs.assertSingleActiveOneOffRun(req, scope.uid, AEO_GEO_INTAKE.agentId, discard);
-      const result = await this.service.startGeneration(
-        req,
-        {
-          ...(answers as Record<string, string>),
-          project_name: scope.name,
-          project_uid: scope.uid,
-        },
-        handle
-      );
-      const runId = await this.runs.startForOneOff(req, AEO_GEO_INTAKE.agentId, scope.uid, result.sessionId);
+      const { result, runId } = await this.runs.withOneOffSlot(req, scope.uid, AEO_GEO_INTAKE.agentId, discard, async () => {
+        const result = await this.service.startGeneration(
+          req,
+          {
+            ...(answers as Record<string, string>),
+            project_name: scope.name,
+            project_uid: scope.uid,
+          },
+          handle
+        );
+        return { result, runId: await this.runs.startForOneOff(req, AEO_GEO_INTAKE.agentId, scope.uid, result.sessionId) };
+      });
       logger.success(req, operation, start, { session_created: true });
       res.json({ ...result, runId, ownerToken: createSessionOwnerToken(user, `aeo-geo:${scope.uid}:${result.sessionId}`) });
     } catch (error) {

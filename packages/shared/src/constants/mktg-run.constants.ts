@@ -51,6 +51,18 @@ import { LINKEDIN_SHARE_LINK_ANSWER_KEY } from './linkedin-post.constants';
 
 /** A start must explicitly discard the current active run before replacing it. */
 export const MKTG_RUN_ACTIVE = 'MKTG_RUN_ACTIVE';
+/** One start's reservation of an active slot, held until its run record is published: BFF-only, in the private bucket. */
+export const MKTG_RUN_SLOT_SCHEMA = 'mktg-run-slot/v1';
+/** Reservations live under their own prefix: the started-run prefix lists run records only. */
+export const MKTG_RUN_SLOT_KEY_PREFIX = 'document-run-slots';
+/**
+ * The longest a reservation holds its slot: a start's own work between the claim and its published run record (the
+ * active-run scan, preparing the input, Guild's session-creation timeout, the record write). No reservation outlives
+ * it, whatever happened to the server that wrote it.
+ */
+export const MKTG_RUN_SLOT_TTL_MS = 2 * 60 * 1000;
+/** Conditional writes a start tries before it answers that another start holds the slot, naming nobody. */
+export const MKTG_RUN_SLOT_CLAIM_ATTEMPTS = 3;
 /** Another writer already accepted the answers for this exact questions turn. */
 export const MKTG_RUN_ANSWERED = 'MKTG_RUN_ANSWERED';
 /** A discarded or superseded session cannot accept another turn. */

@@ -12,6 +12,7 @@ import { redraftContextFixture } from '@lfx-one/shared/utils/__fixtures__/mktg-r
 const f = vi.hoisted(() => ({
   admit: vi.fn(),
   guard: vi.fn(),
+  released: vi.fn(),
   reserve: vi.fn(),
   bind: vi.fn(),
   guild: vi.fn(),
@@ -102,7 +103,14 @@ const context = redraftContextFixture();
 const type = MKTG_DOCUMENT_TYPES.find((row) => row.agentKey === MKTG_KIT_FRAMEWORK_KEY);
 if (!type) throw new Error('Missing registered synthetic target');
 const body = { project: context.project, revisionId: context.basedOnId, commentIds: context.comments.map((row) => row.id), clientRequestId: context.requestId };
-const runs = { knownRedraftSession: f.known, start: f.start, assertSingleActiveRun: f.guard } as unknown as MktgDocumentRunService;
+// The real slot refuses before `start` runs (`f.guard`) and is released only once `start` has returned (`f.released`).
+const withActiveSlot = async (...args: unknown[]): Promise<unknown> => {
+  await f.guard(...args.slice(0, 4));
+  const started = await (args[4] as () => Promise<unknown>)();
+  f.released();
+  return started;
+};
+const runs = { knownRedraftSession: f.known, start: f.start, withActiveSlot } as unknown as MktgDocumentRunService;
 const send = () => new MktgDocumentRedraftService().send(req, context.project, type, 'living', body, runs);
 describe('reserved redraft delivery', () => {
   beforeEach(() => {
@@ -169,6 +177,24 @@ describe('reserved redraft delivery', () => {
     await expect(send()).resolves.toMatchObject({ runId: 'c'.repeat(64) });
     expect(f.guard.mock.invocationCallOrder[1]).toBeLessThan(f.reserve.mock.invocationCallOrder[0]);
     expect(f.guild).toHaveBeenCalledTimes(1);
+  });
+  it('creates and records a new send inside the slot, which is released only after the run record', async () => {
+    await send();
+    const order = [f.admit, f.guard, f.reserve, f.guild, f.start, f.released].map((mock) => mock.mock.invocationCallOrder[0]);
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+    expect(f.released).toHaveBeenCalledTimes(1);
+  });
+  it.each([
+    [true, 503, 'MKTG_REDRAFT_START_UNCERTAIN'],
+    [false, 409, 'MKTG_RUN_ACTIVE'],
+  ])('never answers a slot the creator’s own start still holds as proof that nothing was sent (own=%s)', async (startedByViewer, statusCode, code) => {
+    // A start with no run record yet names no run. The creator's own may be this same request sent twice.
+    const details = { agentKey: type.agentKey, startedBy: 'Synthetic writer', startedByViewer, startedAt: '2026-10-19T12:00:00.000Z' };
+    f.guard.mockRejectedValueOnce(new ConflictError('A run is already in progress.', 'MKTG_RUN_ACTIVE', { details }));
+    await expect(send()).rejects.toMatchObject({ statusCode, code });
+    expect(f.reserve).not.toHaveBeenCalled();
+    expect(f.guild).not.toHaveBeenCalled();
+    expect(f.end).not.toHaveBeenCalled();
   });
   it('never checks the active run on a same-ID replay, whose own run would otherwise refuse its ACK', async () => {
     await send();

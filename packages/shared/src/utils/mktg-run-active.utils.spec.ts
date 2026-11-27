@@ -2,7 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 import { describe, expect, it } from 'vitest';
+import { MKTG_RUN_SLOT_TTL_MS } from '../constants/mktg-run.constants';
 import {
+  buildMktgRunSlotKey,
+  readMktgRunSlotMarker,
   readMktgActiveRunConflict,
   readMktgRunAnsweredConflict,
   readMktgRunNotFailedConflict,
@@ -21,6 +24,43 @@ const body = {
   agentKey: 'brand-kit',
   documentId: 'living',
 };
+
+describe('active-slot reservation', () => {
+  const slot = { project: 'synthetic-project', agentKey: 'faq', slotId: 'c'.repeat(64) } as const;
+  const startedAt = '2026-10-19T12:00:00.000Z';
+  const marker = {
+    schema: 'mktg-run-slot/v1',
+    ...slot,
+    claim: 'synthetic-claim',
+    creatorSubject: 'synthetic-subject',
+    startedAt,
+    expiresAt: Date.parse(startedAt) + MKTG_RUN_SLOT_TTL_MS,
+  };
+  it('files a slot outside the started-run prefix, and reads back only its own fields', () => {
+    expect(buildMktgRunSlotKey(slot)).toBe(`document-run-slots/synthetic-project/faq/${'c'.repeat(64)}.json`);
+    expect(readMktgRunSlotMarker(JSON.stringify({ ...marker, sessionId: 'private-session' }), slot)).toEqual(marker);
+    expect(readMktgRunSlotMarker(JSON.stringify({ ...marker, creatorSubject: null, expiresAt: 0 }), slot)).toEqual({
+      ...marker,
+      creatorSubject: null,
+      expiresAt: 0,
+    });
+  });
+  it.each([
+    ['bytes that are not JSON', 'not a reservation'],
+    ['a list', '[]'],
+    ['another schema', JSON.stringify({ ...marker, schema: 'mktg-family-export-active/v1' })],
+    ['another project', JSON.stringify({ ...marker, project: 'other-project' })],
+    ['another agent', JSON.stringify({ ...marker, agentKey: 'brand-kit' })],
+    ['another slot', JSON.stringify({ ...marker, slotId: 'd'.repeat(64) })],
+    ['no claim', JSON.stringify({ ...marker, claim: '' })],
+    ['an empty subject', JSON.stringify({ ...marker, creatorSubject: '' })],
+    ['an unreadable start', JSON.stringify({ ...marker, startedAt: 'bad' })],
+    ['a deadline that is not a number', JSON.stringify({ ...marker, expiresAt: '0' })],
+    ['a deadline later than its start allows', JSON.stringify({ ...marker, expiresAt: marker.expiresAt + 1 })],
+  ])('holds nothing for %s', (_case, body) => {
+    expect(readMktgRunSlotMarker(body, slot)).toBeNull();
+  });
+});
 
 describe('answered-run acknowledgement', () => {
   const answered = { code: 'MKTG_RUN_ANSWERED', answeredBy: 'Synthetic writer', answeredAt: '2026-10-19T12:00:00Z' };

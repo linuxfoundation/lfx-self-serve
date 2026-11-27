@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   track: vi.fn(),
   record: vi.fn(),
   active: vi.fn(),
+  released: vi.fn(),
   prepare: vi.fn(),
   cleanup: vi.fn(),
   sendAnswers: vi.fn(),
@@ -27,11 +28,17 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../services/mktg-document-run.service', () => ({
   MktgDocumentRunService: class {
     public resolveProject = mocks.preflight;
-    public assertSingleActiveOneOffRun = mocks.active;
     public startForOneOff = mocks.track;
     public recordResultBestEffort = mocks.record;
     public prepareMember360QuestionsClaim = mocks.claim;
     public ownedMember360Session = mocks.owned;
+    // The real slot refuses before `start` runs and is released only once `start` has returned.
+    public withOneOffSlot = async (req: unknown, project: string, agentId: string, discard: unknown, start: () => Promise<unknown>): Promise<unknown> => {
+      await mocks.active(req, project, agentId, discard);
+      const started = await start();
+      mocks.released();
+      return started;
+    };
   },
 }));
 vi.mock('../services/member-360.service', async (original) => {
@@ -207,7 +214,9 @@ describe('Member 360 HTTP boundary', () => {
     expect(mocks.active.mock.invocationCallOrder[0]).toBeLessThan(mocks.start.mock.invocationCallOrder[0]);
     expect(mocks.start).toHaveBeenCalledWith(req, { project: 'sample-project', trackerIds: ['a'.repeat(64)] }, rows);
     expect(mocks.cleanup).toHaveBeenCalledWith(req, 'sample-project', ['a'.repeat(64)]);
-    expect(mocks.track.mock.invocationCallOrder[0]).toBeLessThan(mocks.cleanup.mock.invocationCallOrder[0]);
+    // The slot is held until the run is recorded; the receipts are cleaned up outside it.
+    expect(mocks.track.mock.invocationCallOrder[0]).toBeLessThan(mocks.released.mock.invocationCallOrder[0]);
+    expect(mocks.released.mock.invocationCallOrder[0]).toBeLessThan(mocks.cleanup.mock.invocationCallOrder[0]);
   });
   it('retains prepared private rows when durable registration fails so receipts remain usable', async () => {
     const rows = [{ filename: 'tracker.csv', rows: [{ company: 'Synthetic Member' }] }];
