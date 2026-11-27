@@ -4976,6 +4976,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       redditPlacementsEnabled: false,
       redditBudgetTypeEnabled: false,
       redditAdPerVariantEnabled: false,
+      redditVideoEnabled: false,
       redditPixelListEnabled: false,
       googleAssetUploadEnabled: false,
       metaCreativeEnabled: false,
@@ -5742,6 +5743,23 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
     }
   });
 
+  /** Reddit video posts (#6108 row 8): the cutover, the Reddit assets flag (URL signing) and its own flag, all three. */
+  it('reports redditVideoEnabled only with the cutover, the Reddit assets flag and its own flag', async () => {
+    const read = async (off: ServerFeatureFlag | null): Promise<boolean | undefined> => {
+      isServerFeatureEnabled.mockImplementation((flag: unknown) => flag !== off);
+      proxyRequest.mockResolvedValueOnce({ resources: [{ data: doc() }] });
+      return (await new CampaignServiceClient().listBriefCampaigns(req, 'tlf', 'b-1')).redditVideoEnabled;
+    };
+    try {
+      const offs = [null, ServerFeatureFlag.CampaignServiceRedditVideo, ServerFeatureFlag.CampaignServiceRedditAssets, ServerFeatureFlag.CampaignServiceCreate];
+      const results = [];
+      for (const off of offs) results.push(await read(off));
+      expect(results).toEqual([true, false, false, false]);
+    } finally {
+      isServerFeatureEnabled.mockImplementation(() => false);
+    }
+  });
+
   /** Reddit targeting exclusions (#6108 row 3): the cutover and its own flag. */
   it.each([
     [{ cutover: true, exclusions: true }, true],
@@ -5992,6 +6010,7 @@ describe('CampaignServiceClient.listBriefCampaigns', () => {
       redditPlacementsEnabled: false,
       redditBudgetTypeEnabled: false,
       redditAdPerVariantEnabled: false,
+      redditVideoEnabled: false,
       redditPixelListEnabled: false,
       googleAssetUploadEnabled: false,
       metaCreativeEnabled: false,

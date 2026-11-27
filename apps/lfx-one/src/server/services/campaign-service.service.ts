@@ -813,6 +813,18 @@ export function canSetRedditAdPerVariant(): boolean {
 }
 
 /**
+ * Whether a Reddit create may carry `videoAssetId` and `thumbnailAssetId`, a video post from stored assets (#6108 row 8,
+ * campaign-service #549). Needs the Reddit creative asset path (`canUseRedditCreativeAssets`, which includes the
+ * campaign-service create path and says URL signing is configured), since Reddit fetches the video and its thumbnail
+ * from signed URLs, AND `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_VIDEO`, which follows campaign-service's own
+ * `REDDIT_VIDEO_ENABLED`: campaign-service refuses both fields while either is missing, and the legacy creator ignores
+ * them. Also admits an MP4 to the creative-asset upload.
+ */
+export function canSetRedditVideo(): boolean {
+  return canUseRedditCreativeAssets() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceRedditVideo);
+}
+
+/**
  * Whether the Reddit pixel picker's read is served (#6108 row 5, campaign-service #549). Needs the campaign-service create
  * path AND `LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_PIXEL_LIST`, which follows campaign-service's own
  * `REDDIT_PIXEL_LIST_ENABLED`: campaign-service refuses the read while that is off. The caller also needs
@@ -1432,6 +1444,7 @@ export class CampaignServiceClient {
         redditPlacementsEnabled: canSetRedditPlacements(),
         redditBudgetTypeEnabled: canSetRedditBudgetType(),
         redditAdPerVariantEnabled: canSetRedditAdPerVariant(),
+        redditVideoEnabled: canSetRedditVideo(),
         redditPixelListEnabled: canListRedditPixels(),
         googleAssetUploadEnabled: canUseGoogleCreativeAssets(),
         metaCreativeEnabled: cutoverOwnsCreate(),
@@ -1540,6 +1553,7 @@ export class CampaignServiceClient {
       redditPlacementsEnabled: canSetRedditPlacements(),
       redditBudgetTypeEnabled: canSetRedditBudgetType(),
       redditAdPerVariantEnabled: canSetRedditAdPerVariant(),
+      redditVideoEnabled: canSetRedditVideo(),
       redditPixelListEnabled: canListRedditPixels(),
       googleAssetUploadEnabled: canUseGoogleCreativeAssets(),
       metaCreativeEnabled: cutoverOwnsCreate(),
@@ -3114,7 +3128,7 @@ export class CampaignServiceClient {
       Number.isFinite(list.bytes_used) &&
       typeof list.bytes_limit === 'number' &&
       Number.isFinite(list.bytes_limit);
-    // A LinkedIn video (#5764 row 18) shares the brief's store but is no image any image slot can use, so it is listed
+    // A LinkedIn video (#5764 row 18) or a Reddit video post's MP4 (#6108 row 8) shares the brief's store but is no image any image slot can use, so it is listed
     // apart, as `videos`, where it can be deleted to free the quota. `count` and `bytesUsed` stay upstream's.
     const isVideo = (asset: CampaignServiceCreativeAsset | undefined) => asset?.mime_type === CREATIVE_ASSET_VIDEO_MIME_TYPE;
     // Likewise a PDF (campaign-service#665), which only a LinkedIn document ad uses, listed as `documents`.
