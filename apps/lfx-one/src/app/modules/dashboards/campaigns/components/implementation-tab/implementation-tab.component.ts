@@ -672,6 +672,7 @@ import {
   metaUsesInstagram,
   metaVariantsWithImage,
   metaCarouselChosen,
+  metaCarouselOffered,
   metaCarouselCreateRefusal,
   metaCarouselSeed,
   metaCarouselUnavailable,
@@ -1386,7 +1387,9 @@ export class ImplementationTabComponent implements OnInit {
   /** Whether the Meta section offers carousel ads (`CampaignListResult.metaCarouselEnabled`, #6331). */
   public readonly metaCarouselEnabled = input<boolean | null>(null);
   /** @see metaCarouselEnabled — an explicit yes, never a `null`. */
-  protected readonly metaCarouselAvailable = computed<boolean>(() => this.metaCarouselEnabled() === true);
+  /** @see metaCarouselOffered — the carousel capability and the image capability together (#6331). */
+  protected readonly metaCarouselOfferedState = computed<boolean | null>(() => metaCarouselOffered(this.metaCarouselEnabled(), this.metaCreativeEnabled()));
+  protected readonly metaCarouselAvailable = computed<boolean>(() => this.metaCarouselOfferedState() === true);
 
   /**
    * Whether this deployment sends Meta interests (#5904 row 4) — `CampaignListResult.metaInterestTargetingEnabled`,
@@ -2954,7 +2957,7 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly metaCarouselCards = signal<MetaCarouselCardDraft[]>([]);
   protected readonly metaCarouselMessage = signal('');
   /** Whether this create is a carousel (#6331): chosen, and offered on an explicit yes. */
-  protected readonly metaCarouselSelected = computed<boolean>(() => metaCarouselChosen(this.metaFormat(), this.metaCarouselEnabled()));
+  protected readonly metaCarouselSelected = computed<boolean>(() => metaCarouselChosen(this.metaFormat(), this.metaCarouselOfferedState()));
   protected readonly metaGeoTargets = signal<string[]>([]);
   protected readonly metaBudgetUsd = signal(DEFAULT_META_BUDGET_USD);
   protected readonly metaLifetimeBudget = signal(false);
@@ -4678,7 +4681,7 @@ export class ImplementationTabComponent implements OnInit {
           adOptionsError: this.metaAdOptionsError(),
           leadFormError: this.metaLeadFormError(),
           // A carousel chosen but not offered is held, never sent (#6331); while chosen, its cards replace the variant check.
-          carouselUnavailable: metaCarouselUnavailable(this.metaFormat(), this.metaCarouselEnabled()),
+          carouselUnavailable: metaCarouselUnavailable(this.metaFormat(), this.metaCarouselOfferedState()),
           ...(this.metaCarouselSelected()
             ? {
                 carousel: {
@@ -6642,9 +6645,9 @@ export class ImplementationTabComponent implements OnInit {
     this.metaLeadFormHeldRefusal.set(refusal);
   }
 
-  /** The lead form picked or typed in `lfx-meta-lead-form-picker` (#5940). Signal-backed like the other Meta fields, so it emits. */
   /** The Meta ad format picker's value (#6331): anything else reads as single. The first switch to carousel seeds its cards from the brief's copy. */
   protected onMetaFormatSelect(value: unknown): void {
+    this.pendingMetaDraft = null;
     const format: MetaAdFormat = value === 'carousel' ? 'carousel' : 'single';
     this.metaFormat.set(format);
     if (format === 'carousel' && this.metaCarouselCards().length === 0) {
@@ -6675,6 +6678,7 @@ export class ImplementationTabComponent implements OnInit {
     this.campaignService.enqueueCreativeAssetUploads(files, projectSlug, briefId);
   }
 
+  /** The lead form picked or typed in `lfx-meta-lead-form-picker` (#5940). Signal-backed like the other Meta fields, so it emits. */
   protected onMetaLeadFormChange(leadFormId: string): void {
     this.pendingMetaDraft = null;
     this.metaLeadFormId.set(leadFormId);

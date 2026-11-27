@@ -110,6 +110,17 @@ export function metaCarouselUnavailable(format: MetaAdFormat, enabled: boolean |
   return format === 'carousel' && enabled !== true;
 }
 
+/**
+ * Whether this deployment offers a Meta carousel: its own capability AND the Meta image capability, since every card
+ * needs an image and none can carry one without it. An explicit no from either is no; both unread or one unread is
+ * `null` (not yet known), so a restored carousel is held rather than sent or offered.
+ */
+export function metaCarouselOffered(carouselEnabled: boolean | null, creativeEnabled: boolean | null): boolean | null {
+  if (carouselEnabled === false || creativeEnabled === false) return false;
+  if (carouselEnabled === true && creativeEnabled === true) return true;
+  return null;
+}
+
 /** A new empty card, keyed after the highest `card-<n>` already in `cards`. */
 export function newMetaCarouselCardDraft(cards: readonly MetaCarouselCardDraft[]): MetaCarouselCardDraft {
   const next = cards.reduce((max, card) => Math.max(max, Number(/^card-(\d+)$/.exec(card.key)?.[1] ?? 0)), 0) + 1;

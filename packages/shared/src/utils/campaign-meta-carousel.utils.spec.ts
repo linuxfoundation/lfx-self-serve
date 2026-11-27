@@ -9,6 +9,7 @@ import {
   metaAdFormatToSend,
   metaCarouselCardViews,
   metaCarouselChosen,
+  metaCarouselOffered,
   metaCarouselCreateRefusal,
   metaCarouselRefusal,
   metaCarouselSeed,
@@ -138,6 +139,18 @@ describe('the Implement tab carousel', () => {
   ] as const)('format %s with the capability %s: chosen %s, unavailable %s', (format, enabled, chosen, unavailable) => {
     expect(metaCarouselChosen(format, enabled)).toBe(chosen);
     expect(metaCarouselUnavailable(format, enabled)).toBe(unavailable);
+  });
+
+  it.each([
+    [true, true, true],
+    // No images: no card could carry one, so the carousel is not offered.
+    [true, false, false],
+    [false, true, false],
+    [true, null, null],
+    [null, true, null],
+    [null, null, null],
+  ] as const)('carousel %s with images %s: offered %s', (carouselEnabled, creativeEnabled, offered) => {
+    expect(metaCarouselOffered(carouselEnabled, creativeEnabled)).toBe(offered);
   });
 
   it.each([
