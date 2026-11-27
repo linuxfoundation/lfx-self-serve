@@ -540,9 +540,11 @@ export interface RedditCreateRefusalInput {
 
 /**
  * Whether this deployment can send each Reddit create field the create route holds to campaign-service's rules
- * (`redditCreateConfigRefusal`, #6108 rows 1-3 and 5-9), one flag read each.
+ * (`redditCreateConfigRefusal`, #6108 rows 1-3 and 5-9, plus bidding, the uploaded image and the per-campaign pixel),
+ * one flag read each.
  */
 export interface RedditCreateConfigCapabilities {
+  bidding: boolean;
   conversionEvent: boolean;
   customAudiences: boolean;
   targetingExclusions: boolean;
@@ -551,7 +553,9 @@ export interface RedditCreateConfigCapabilities {
   demographics: boolean;
   budgetType: boolean;
   video: boolean;
+  imageAsset: boolean;
   adPerVariant: boolean;
+  conversionPixel: boolean;
 }
 
 /** The three inputs needed to author a promoted post, once a creator has decided to author one. */
