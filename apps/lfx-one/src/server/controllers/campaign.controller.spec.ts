@@ -13169,11 +13169,11 @@ describe('CampaignController.createCampaign Reddit regions, cities and DMAs', ()
     ]);
   });
 
-  // campaign-service checks the exclusions, then these locations, then the placements.
+  // campaign-service runs the exclusions' value rules, then these locations', then the placements'.
   it.each([
     [{ ...redditConfig, excludedGeoTargets: ['XX'], subCountryGeoTargets: ['nope'] }, 'redditConfig.excludedGeoTargets'],
     [{ ...redditConfig, subCountryGeoTargets: ['nope'], placements: ['NOPE'] }, 'redditConfig.subCountryGeoTargets'],
-  ])('refuses in campaign-service order (%o names %s)', async (config, field) => {
+  ])('applies the value rules in campaign-service order (%o names %s)', async (config, field) => {
     isServerFeatureEnabled.mockImplementation(() => true);
 
     await controller.createCampaign(buildReq({ platforms: ['reddit-ads'], redditConfig: config }, { project: 'tlf', brief_id: 'b-1' }), res, next);

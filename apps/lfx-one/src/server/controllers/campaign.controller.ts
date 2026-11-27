@@ -1490,8 +1490,10 @@ export class CampaignController {
         });
       }
       // Reddit regions, cities and DMAs (#6108 row 7): refused, never dropped, while this deployment cannot send them, and
-      // held to campaign-service's rules (`checkRedditSubCountryGeo`), which it checks after the exclusions and before the
-      // placements. Whether Reddit can target an id is campaign-service's own read. See `redditSubCountryGeoRefusal`.
+      // held to campaign-service's rules (`checkRedditSubCountryGeo`), whose gate and value rules it runs after the
+      // exclusions' and before the placements' (it type-checks every field first, so a mistyped later field may be named
+      // there instead; either way nothing is created). Whether Reddit can target an id is campaign-service's own read. See
+      // `redditSubCountryGeoRefusal`.
       const redditSubCountryGeoRefused = redditSubCountryGeoRefusal(body?.redditConfig, canSetRedditSubCountryGeo());
       if (redditSubCountryGeoRefused !== null) {
         throw ServiceValidationError.forField(redditSubCountryGeoRefused.field, redditSubCountryGeoRefused.message, {

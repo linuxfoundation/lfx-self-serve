@@ -73,6 +73,7 @@ describe('redditSubCountryGeoRefusal', () => {
 
   it('never echoes a caller value', () => {
     expect(redditSubCountryGeoRefusal({ subCountryGeoTargets: ['<script>'] }, true)?.message).not.toContain('<script>');
-    expect(redditSubCountryGeoRefusal({ geoTargets: ['US'], subCountryGeoTargets: ['US-CA'] }, true)?.message).not.toContain('US');
+    expect(redditSubCountryGeoRefusal({ geoTargets: ['US'], subCountryGeoTargets: ['US-WA'] }, true)?.message).not.toContain('US-WA');
+    expect(redditSubCountryGeoRefusal({ excludedGeoTargets: ['GB'], subCountryGeoTargets: ['GB:2641599'] }, true)?.message).not.toContain('GB');
   });
 });
