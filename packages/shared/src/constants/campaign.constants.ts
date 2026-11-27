@@ -1870,6 +1870,17 @@ export const CAMPAIGN_SERVICE_BIDDING_REFUSAL_PATTERN = /invalid campaign config
 export const CAMPAIGN_SERVICE_REDDIT_TARGETING_REFUSAL_PATTERN = /invalid campaign config: redditConfig\.(?:subreddits|interests): entry \d+ .+/;
 
 /**
+ * campaign-service's synchronous refusal of a Reddit region, city or DMA (#6108 row 7, `ValidateSubCountryGeoTargets` in
+ * `internal/platform/reddit/subcountry_geo.go`, mapped by `redditLookupPreflightError`, #549), e.g.
+ * `invalid campaign config: redditConfig.subCountryGeoTargets: entry 2 ("US-ZZ") is not a targetable Reddit geolocation`.
+ * Reddit's own reason is not quoted: the entry is named by position, and the only caller value it can echo passes
+ * `domain.CallerValue`. So, like the community and interest refusal, the BFF may show it: it tells the operator which
+ * location to fix. It also matches campaign-service's config-only `NormalizeSubCountryGeoTargets` refusals, which the
+ * create route refuses first anyway.
+ */
+export const CAMPAIGN_SERVICE_REDDIT_SUBCOUNTRY_GEO_REFUSAL_PATTERN = /invalid campaign config: redditConfig\.subCountryGeoTargets: entry \d+ .+/;
+
+/**
  * campaign-service's two refusals of a create whose brief is no longer the approved version this page
  * read (#4983). Both mean the stored brief moved since this tab loaded it, most often because it was
  * edited and saved in another tab: a replace resets it to `draft` and bumps its version.
