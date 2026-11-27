@@ -96,19 +96,27 @@ describe('campaignMonitorSystemAccountNote', () => {
 
 describe('campaignMonitorGoogleAccountNote', () => {
   it.each([
-    ['connection', '1', null],
-    ['recorded_campaigns', undefined, null],
+    ['connection', '1', false, null],
+    ['recorded_campaigns', undefined, false, null],
     [
       'recorded_campaigns',
       '1',
+      false,
       "Read from Google Ads account 1, the account this project's campaigns were created under. This project has no Google Ads account bound of its own.",
+    ],
+    [
+      'recorded_campaigns',
+      '1',
+      true,
+      "Read from Google Ads account 1, the account this project's campaigns were created under, shown account-wide. This project has no Google Ads account bound of its own.",
     ],
     [
       'shared_account',
       '1',
+      true,
       'Read from Google Ads account 1, the LF shared account, shown account-wide. This project has no Google Ads account bound of its own.',
     ],
-  ] as const)('%s, %s -> %s', (origin, accountId, want) => {
-    expect(campaignMonitorGoogleAccountNote(origin, accountId)).toBe(want);
+  ] as const)('%s, %s, account-wide %s -> %s', (origin, accountId, accountWide, want) => {
+    expect(campaignMonitorGoogleAccountNote(origin, accountId, accountWide)).toBe(want);
   });
 });

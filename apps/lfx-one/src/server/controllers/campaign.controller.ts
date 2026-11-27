@@ -6934,6 +6934,7 @@ export class CampaignController {
     // The LF account an account-wide read named, if any: its response is labelled `shared_account`, not as the
     // account this project's campaigns were created under (set by `read`, which runs before `toResponse`).
     let sharedAccount: string | undefined;
+    let accountWide = false;
     await this.serveLegacyShapedMonitor(req, res, next, {
       operation,
       platformLabel: 'Google Ads',
@@ -6942,13 +6943,21 @@ export class CampaignController {
       // Project-scoped, campaign-service names the account the project's campaigns were created under. Account-wide,
       // that is empty for a project with none recorded, so the LF account is named when it is configured.
       read: (slug, scope) => {
-        sharedAccount = scope === 'account' ? this.accountWideFallbackAccount('google-ads') : undefined;
+        accountWide = scope === 'account';
+        sharedAccount = accountWide ? this.accountWideFallbackAccount('google-ads') : undefined;
         return this.campaignServiceClient.getGoogleAdsAccountMonitor(req, slug, sharedAccount, days, scope);
       },
+      // An account-wide read with no LF account configured still reads the customer the project's campaigns were
+      // created under, but every campaign on it: `accountWide` makes the note say so.
       toResponse: (payload) =>
         sharedAccount === undefined
-          ? toRecordedCampaignsGoogleMonitorResponse(payload, new Date().toISOString())
-          : { ...toGoogleMonitorResponse(payload, new Date().toISOString()), accountId: sharedAccount, googleAccountOrigin: 'shared_account' as const },
+          ? { ...toRecordedCampaignsGoogleMonitorResponse(payload, new Date().toISOString()), ...(accountWide ? { accountWide: true } : {}) }
+          : {
+              ...toGoogleMonitorResponse(payload, new Date().toISOString()),
+              accountId: sharedAccount,
+              googleAccountOrigin: 'shared_account' as const,
+              accountWide: true,
+            },
       mapError: (error) => (isAccountIdRequiredByUpstream(error) ? toMonitorConnectionError(priorState, 'Google Ads', operation) : undefined),
     });
   }
@@ -6983,7 +6992,8 @@ export class CampaignController {
    * The LF account an ACCOUNT-WIDE read names when the project has no account of its own and the platform's fallback
    * names none (#6209): campaign-service otherwise picks the account the project's campaigns were created under, which
    * a project with none recorded does not have, so the read would come back empty. Google Ads: the configured
-   * `GADS_CUSTOMER_ID`; LinkedIn: the first configured account. `undefined` (campaign-service picks) when unset.
+   * `GADS_CUSTOMER_ID`; LinkedIn: the configured default account, else the first configured one. `undefined`
+   * (campaign-service picks) when unset.
    */
   private accountWideFallbackAccount(provider: CampaignServiceMonitorProvider): string | undefined {
     if (provider === 'google-ads') {
@@ -6991,7 +7001,9 @@ export class CampaignController {
       return /^[0-9]+$/.test(customer) ? customer : undefined;
     }
     if (provider === 'linkedin-ads') {
-      return getLinkedInConfig().accounts[0]?.accountId || undefined;
+      // The configured default first, as the account list and the LinkedIn service resolve an unspecified account.
+      const config = getLinkedInConfig();
+      return config.defaultAccountId || config.accounts[0]?.accountId || undefined;
     }
     return undefined;
   }

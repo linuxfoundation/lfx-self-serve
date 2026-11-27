@@ -6677,6 +6677,8 @@ export interface CampaignMonitorResponse {
    * client's account picker got its account; that marker is never set from this field.
    */
   googleAccountOrigin?: 'connection' | 'recorded_campaigns' | 'shared_account';
+  /** True on an account-wide read (#6209): every campaign on the account is listed, not only the project's. */
+  accountWide?: boolean;
 }
 
 // ---------------------------------------------------------------------------

@@ -319,7 +319,7 @@ export class MonitoringTabComponent implements OnInit {
    */
   protected readonly googleRecordedAccountNote = computed((): string | null => {
     const data = this.monitorData();
-    return campaignMonitorGoogleAccountNote(data?.googleAccountOrigin, data?.accountId);
+    return campaignMonitorGoogleAccountNote(data?.googleAccountOrigin, data?.accountId, data?.accountWide === true);
   });
   /** The empty state's text: the read's own explanation when it gave one (#5622), else the default. */
   protected readonly googleEmptyMessage = computed(() => this.monitorData()?.message ?? 'No active campaigns found for the selected date range.');

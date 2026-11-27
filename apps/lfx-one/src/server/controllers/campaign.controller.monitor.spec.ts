@@ -36,6 +36,7 @@ const {
   checkRootWriter,
   checkRootCampaignManager,
   checkProjectGlobalMarketingOpsStrict,
+  linkedInConfig,
   isServerFeatureEnabled,
   logger,
 } = vi.hoisted(() => ({
@@ -60,6 +61,11 @@ const {
   checkRootWriter: vi.fn<(req: unknown) => Promise<boolean>>(),
   checkRootCampaignManager: vi.fn<(req: unknown) => Promise<boolean>>(),
   checkProjectGlobalMarketingOpsStrict: vi.fn<(req: unknown, projectSlug: string) => Promise<boolean>>(),
+  linkedInConfig: vi.fn(() => ({
+    accounts: [{ accountId: '512345678', label: 'LF LinkedIn', orgId: '1' }],
+    targetingProfiles: [],
+    defaultAccountId: '',
+  })),
   isServerFeatureEnabled: vi.fn<(flag: unknown) => boolean>(() => false),
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn() },
 }));
@@ -106,7 +112,7 @@ vi.mock('../services/campaign-metrics.service', () => ({
   },
 }));
 vi.mock('../services/linkedin-ads.service', () => ({
-  getLinkedInConfig: () => ({ accounts: [{ accountId: '512345678', label: 'LF LinkedIn', orgId: '1' }], targetingProfiles: [] }),
+  getLinkedInConfig: () => linkedInConfig(),
 }));
 vi.mock('../services/logger.service', () => ({ logger }));
 vi.mock('../utils/persona-helper', () => ({ personaDetectionService: { checkRootWriter, checkRootCampaignManager, checkProjectGlobalMarketingOpsStrict } }));
@@ -171,6 +177,11 @@ function nonRoot(): void {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  linkedInConfig.mockImplementation(() => ({
+    accounts: [{ accountId: '512345678', label: 'LF LinkedIn', orgId: '1' }],
+    targetingProfiles: [],
+    defaultAccountId: '',
+  }));
   flag(false);
   // Root by default, so the account-monitor specs below exercise the arms the gate lets through.
   checkRootWriter.mockResolvedValue(true);
@@ -1825,6 +1836,45 @@ describe('account-wide monitor scope', () => {
     // Labelled as the LF shared account, not as the account this project's campaigns were created under.
     expect(vi.mocked(res.json).mock.calls[0][0]).toMatchObject({ accountId: '8666746580', googleAccountOrigin: 'shared_account' });
     vi.unstubAllEnvs();
+  });
+
+  it('marks an account-wide Google read with no LF customer configured as account-wide, keeping its recorded origin', async () => {
+    flags(true);
+    vi.stubEnv('GADS_CUSTOMER_ID', '');
+    checkProjectGlobalMarketingOpsStrict.mockResolvedValueOnce(true);
+    svcConnection.mockRejectedValueOnce(
+      MicroserviceError.fromMicroserviceResponse(404, 'Not Found', { code: '404', message: 'not found' }, 'LFX_V2_CAMPAIGN_SERVICE', '/p')
+    );
+    svcGoogle.mockResolvedValueOnce({ ...labeledPayload(), account_id: '8666746580' });
+    const res = buildRes();
+
+    await new CampaignController().getMonitorData(buildReq({ project: 'tlf', accountWide: 'true' }), res, vi.fn());
+
+    expect(svcGoogle).toHaveBeenCalledWith(expect.anything(), 'tlf', undefined, expect.any(Number), 'account');
+    expect(vi.mocked(res.json).mock.calls[0][0]).toMatchObject({ googleAccountOrigin: 'recorded_campaigns', accountWide: true });
+    vi.unstubAllEnvs();
+  });
+
+  it("names LinkedIn's configured default account, not the first listed one, on an account-wide system-account read", async () => {
+    flags(true);
+    // Every read of the config in this request sees the two accounts (the route reads it too).
+    linkedInConfig.mockReturnValue({
+      accounts: [
+        { accountId: '500000001', label: 'Other', orgId: '2' },
+        { accountId: '512345678', label: 'LF LinkedIn', orgId: '1' },
+      ],
+      targetingProfiles: [],
+      defaultAccountId: '512345678',
+    });
+    checkProjectGlobalMarketingOpsStrict.mockResolvedValueOnce(true);
+    svcConnection.mockRejectedValueOnce(
+      MicroserviceError.fromMicroserviceResponse(404, 'Not Found', { code: '404', message: 'not found' }, 'LFX_V2_CAMPAIGN_SERVICE', '/p')
+    );
+    svcLinkedIn.mockResolvedValueOnce({ ...labeledPayload(), account_id: '512345678' });
+
+    await new CampaignController().getLinkedInMonitor(buildReq({ project: 'tlf', accountWide: 'true' }), buildRes(), vi.fn());
+
+    expect(svcLinkedIn).toHaveBeenCalledWith(expect.anything(), 'tlf', '512345678', 30, 'account');
   });
 
   it("names LinkedIn's configured LF account on an account-wide system-account read, and drops the project-only wording", async () => {

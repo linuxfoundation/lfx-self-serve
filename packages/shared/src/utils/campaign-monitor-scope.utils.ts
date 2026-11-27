@@ -85,13 +85,15 @@ export function campaignMonitorSystemAccountNote(label: string, read: MonitorSys
  */
 export function campaignMonitorGoogleAccountNote(
   origin: 'connection' | 'recorded_campaigns' | 'shared_account' | undefined,
-  accountId: string | undefined
+  accountId: string | undefined,
+  accountWide = false
 ): string | null {
   if (!accountId) {
     return null;
   }
   if (origin === 'recorded_campaigns') {
-    return `Read from Google Ads account ${accountId}, the account this project's campaigns were created under. This project has no Google Ads account bound of its own.`;
+    const shown = accountWide ? ', shown account-wide' : '';
+    return `Read from Google Ads account ${accountId}, the account this project's campaigns were created under${shown}. This project has no Google Ads account bound of its own.`;
   }
   if (origin === 'shared_account') {
     return `Read from Google Ads account ${accountId}, the LF shared account, shown account-wide. This project has no Google Ads account bound of its own.`;
