@@ -57,7 +57,7 @@ vi.mock('../utils/auth-helper', () => authMocks);
 
 import type { NextFunction, Request, Response } from 'express';
 
-import { AuthorizationError, ServiceValidationError } from '../errors';
+import { AuthorizationError, ConflictError, ServiceValidationError } from '../errors';
 import { MktgSlidesExportController } from './mktg-slides-export.controller';
 
 const REVISION_ID = `000001-${'a'.repeat(64)}`;
@@ -227,9 +227,31 @@ describe('MktgSlidesExportController', () => {
     });
 
     it('returns the last export and approved freshness independently of start', async () => {
-      exportMocks.getFamilyLast.mockResolvedValue({ last: null, currentMembers: [], skippedMembers: [], stale: false });
-      expect((await familyCall('last', target)).json).toHaveBeenCalledWith({ last: null, currentMembers: [], skippedMembers: [], stale: false });
+      exportMocks.getFamilyLast.mockResolvedValue({ last: null, currentMembers: [], skippedMembers: [], stale: false, running: null });
+      expect((await familyCall('last', target)).json).toHaveBeenCalledWith({ last: null, currentMembers: [], skippedMembers: [], stale: false, running: null });
       expect(exportMocks.getFamilyLast).toHaveBeenCalledWith(expect.anything(), target.project, target.familyId);
+    });
+
+    it('answers a refused second start with the conflict the service raised: who and when, no token, nothing started', async () => {
+      const running = { startedBy: 'Dana Example', startedByViewer: false, startedAt: '2026-11-27T10:00:00.000Z' };
+      exportMocks.startFamilyExport.mockRejectedValueOnce(
+        new ConflictError('An export of this family is already running.', 'MKTG_FAMILY_EXPORT_ACTIVE', { details: running })
+      );
+      const { json, next } = await familyCall('start', { ...target, mode: 'create' });
+      expect(json).not.toHaveBeenCalled();
+      const [error] = next.mock.calls[0] as [ConflictError];
+      expect(error).toBeInstanceOf(ConflictError);
+      // What apiErrorHandler sends: the code and the facts at the top level, as the card's reader takes them.
+      expect(error.statusCode).toBe(409);
+      expect(error.toResponse()).toMatchObject({ code: 'MKTG_FAMILY_EXPORT_ACTIVE', ...running });
+      expect(JSON.stringify(error.toResponse())).not.toContain('ownerToken');
+      expect(loggerMocks.success).not.toHaveBeenCalled();
+    });
+
+    it('reports the export in flight on the last-export read', async () => {
+      const running = { startedBy: null, startedByViewer: true, startedAt: '2026-11-27T10:00:00.000Z' };
+      exportMocks.getFamilyLast.mockResolvedValue({ last: null, currentMembers: [], skippedMembers: [], stale: false, running });
+      expect((await familyCall('last', target)).json).toHaveBeenCalledWith(expect.objectContaining({ running }));
     });
   });
 

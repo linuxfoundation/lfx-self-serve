@@ -22,6 +22,7 @@ import { redditAdVariantsFromDraft } from './campaign-reddit-ad-variants.utils';
 import { redditConversionEventFromDraft } from './campaign-reddit-conversion-event.utils';
 import { redditCustomAudienceIdsFromDraft } from './campaign-reddit-custom-audiences.utils';
 import { redditDeliveryDraftFields, redditDeliveryFromDraft } from './campaign-reddit-delivery.utils';
+import { redditSubCountryGeoFromDraft } from './campaign-reddit-subcountry-geo.utils';
 import { redditTargetingExclusionsFromDraft } from './campaign-reddit-targeting-exclusions.utils';
 import { redditTargetingListFromDraft } from './campaign-reddit-targeting-lists.utils';
 
@@ -56,6 +57,8 @@ export function redditDraftFields(state: RedditDraftState): RedditDraftSnapshot 
     redditExcludedCustomAudienceIds: [...state.customAudiences.excludedCustomAudienceIds],
     redditExcludedSubreddits: [...state.targetingExclusions.excludedSubreddits],
     redditExcludedGeoTargets: [...state.targetingExclusions.excludedGeoTargets],
+    // Only once a location is added (#6108 row 7), so a draft that never used them is unchanged.
+    ...(state.subCountryGeoTargets.length > 0 ? { redditSubCountryGeoTargets: [...state.subCountryGeoTargets] } : {}),
     ...(state.editedTargetingLists
       ? {
           redditEditedSubreddits: [...state.editedTargetingLists.subreddits],
@@ -109,6 +112,9 @@ export function redditDraftRestore(draft: RedditDraftSnapshot): RedditDraftResto
   if (excludedSubreddits !== undefined || excludedGeoTargets !== undefined) {
     restore.targetingExclusions = { excludedSubreddits: excludedSubreddits ?? [], excludedGeoTargets: excludedGeoTargets ?? [] };
   }
+  // The regions, cities and DMAs (#6108 row 7) when they are an array, keeping only its strings.
+  const subCountryGeoTargets = redditSubCountryGeoFromDraft(draft.redditSubCountryGeoTargets);
+  if (subCountryGeoTargets !== undefined) restore.subCountryGeoTargets = subCountryGeoTargets;
   const subreddits = redditTargetingListFromDraft(draft.redditEditedSubreddits);
   const interests = redditTargetingListFromDraft(draft.redditEditedInterests);
   if (subreddits !== undefined || interests !== undefined) {
@@ -142,6 +148,7 @@ export function redditBriefReset(): RedditBriefReset {
       excludedSubreddits: [...DEFAULT_REDDIT_TARGETING_EXCLUSIONS.excludedSubreddits],
       excludedGeoTargets: [...DEFAULT_REDDIT_TARGETING_EXCLUSIONS.excludedGeoTargets],
     },
+    subCountryGeoTargets: [],
     delivery: {
       ...DEFAULT_REDDIT_DELIVERY,
       placements: [...DEFAULT_REDDIT_DELIVERY.placements],

@@ -1020,6 +1020,17 @@ export function canSetMetaFrequencyCap(): boolean {
 export function canSetMetaCarousel(): boolean {
   return cutoverOwnsCreate() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMetaCarousel);
 }
+
+/**
+ * Whether a Meta variant may carry a `videoAssetId`, a video ad (#6332; campaign-service#550 gap 9). Needs the Meta
+ * creative asset path (`canUseMetaCreativeAssets`, which includes the campaign-service create path), since the video is
+ * an asset uploaded to the brief, AND `LFX_CUTOVER_CAMPAIGN_SERVICE_META_VIDEO`, which follows campaign-service's own
+ * `META_VIDEO_ENABLED`: campaign-service refuses the field while that is off, and the legacy creator ignores it. Also
+ * admits an MP4 to the creative-asset upload.
+ */
+export function canSetMetaVideo(): boolean {
+  return canUseMetaCreativeAssets() && isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceMetaVideo);
+}
 /** Whether `GET /api/campaigns/meta/targeting-search` answers: only while some list it fills can be sent. */
 export function canSearchMetaTargeting(): boolean {
   return canSetMetaInterestTargeting() || canSetMetaBehaviorTargeting() || canSetMetaLocaleTargeting() || canSetMetaRegionTargeting();
@@ -1495,6 +1506,7 @@ export class CampaignServiceClient {
         metaAdScheduleEnabled: canSetMetaAdSchedule(),
         metaFrequencyCapEnabled: canSetMetaFrequencyCap(),
         metaCarouselEnabled: canSetMetaCarousel(),
+        metaVideoEnabled: canSetMetaVideo(),
         // Per caller, so never granted here: `CampaignController.listBriefCampaigns` sets it.
         googleAudienceSegmentsEnabled: false,
         googleGeoSearchEnabled: canSearchGoogleGeoTargets(),
@@ -1605,6 +1617,7 @@ export class CampaignServiceClient {
       metaAdScheduleEnabled: canSetMetaAdSchedule(),
       metaFrequencyCapEnabled: canSetMetaFrequencyCap(),
       metaCarouselEnabled: canSetMetaCarousel(),
+      metaVideoEnabled: canSetMetaVideo(),
       // Per caller, so never granted here: `CampaignController.listBriefCampaigns` sets it.
       googleAudienceSegmentsEnabled: false,
       googleGeoSearchEnabled: canSearchGoogleGeoTargets(),

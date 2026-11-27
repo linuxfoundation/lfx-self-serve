@@ -199,7 +199,12 @@ export function redditTargetingExclusionsField(
  * can make it overlap, which is caught here rather than when it was added.
  */
 export function redditTargetingExclusionsDraftRefusal(exclusions: RedditTargetingExclusionsDraft, targeted: RedditTargetedLists): string | null {
-  const config = { subreddits: targeted.subreddits, geoTargets: targeted.geoTargets, ...redditTargetingExclusionsField(exclusions, true) };
+  const config = {
+    subreddits: targeted.subreddits,
+    geoTargets: targeted.geoTargets,
+    subCountryGeoTargets: targeted.subCountryGeoTargets,
+    ...redditTargetingExclusionsField(exclusions, true),
+  };
   return redditTargetingExclusionsRefusal(config, true)?.message ?? null;
 }
 
@@ -208,9 +213,9 @@ export function redditTargetingExclusionEntry(key: RedditTargetingExclusionKey, 
   return key === 'excludedSubreddits' ? subredditName(raw) : googleAdsToUpperCode(goTrimSpace(raw));
 }
 
-/** The country codes a create targets, which no excluded country may repeat: the geo targets as sent, or `US` when there are none. */
+/** The country codes a create targets, which no excluded country may repeat: the geo targets as sent, or `US` when there are none and no locations are sent. */
 export function redditTargetedGeoCodes(targeted: RedditTargetedLists): Set<string> {
-  return effectiveGeoSet({ geoTargets: targeted.geoTargets });
+  return effectiveGeoSet({ geoTargets: targeted.geoTargets, subCountryGeoTargets: targeted.subCountryGeoTargets });
 }
 
 /** Whether `list` already holds `entry`: subreddits compared ignoring case, as campaign-service drops repeats that way; codes exactly. */

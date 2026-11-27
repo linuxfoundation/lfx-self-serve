@@ -124,6 +124,7 @@ describe('redditCreateRefusal', () => {
     customAudiencesRefusal: null,
     targetingExclusionsBlock: null,
     targetingExclusionsRefusal: null,
+    subCountryGeoRefusal: null,
     deliveryRefusal: null,
     variantsRefusal: null,
   };
@@ -144,6 +145,9 @@ describe('redditCreateRefusal', () => {
     ['a refused variant', { variantsRefusal: 'Variant 2 has no headline.' }, 'Reddit Ads: Variant 2 has no headline.'],
     ['refused exclusions, after a held one', { targetingExclusionsBlock: 'Held.', targetingExclusionsRefusal: 'Refused.' }, 'Reddit Ads: Held.'],
     ['a budget and a geo error, budget first', { budgetUsd: 0, geoTargetCount: 0 }, 'Reddit Ads: set a budget Reddit accepts.'],
+    ['refused locations', { subCountryGeoRefusal: 'Location 1 is blank.' }, 'Reddit Ads: Location 1 is blank.'],
+    ['refused locations, after refused exclusions', { targetingExclusionsRefusal: 'Excluded.', subCountryGeoRefusal: 'Location.' }, 'Reddit Ads: Excluded.'],
+    ['refused locations, before delivery', { subCountryGeoRefusal: 'Location.', deliveryRefusal: 'Placement.' }, 'Reddit Ads: Location.'],
   ])('%s', (_name, over, expected) => {
     expect(redditCreateRefusal({ ...ok, ...over })).toBe(expected);
   });

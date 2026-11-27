@@ -198,6 +198,44 @@ Freshness compares exact approved member/ref sets, including lost or newly gaine
 approvals and restored older revisions. A new Draft alone does not stale a family
 export. No personal identity is written into export records.
 
+A family exports one at a time, and the first start wins. Before it reads or sends
+anything, `POST /start` takes the family's in-flight marker
+(`slides-export-active/{project}/{familyId}.json`, private and never sent to a
+browser) with a conditional write: created only when absent (`If-None-Match: *`),
+or written over the exact version read (`If-Match`) when that one holds nothing any
+more (released, past its deadline, or unreadable). A start that finds a live marker,
+or loses the write to another start, is answered 409 `MKTG_FAMILY_EXPORT_ACTIVE`
+with `startedBy` (a display name, or null), `startedByViewer` and `startedAt` at the
+top level of the body, read from the marker that won, so it names only an export
+that already holds the family. Nothing was read or sent. A start that loses every
+attempt without a holder it can read gets the same code and names nobody. Update
+therefore reads the last deck with no other export in flight. The marker stores
+the opaque effective subject; the name is resolved only for a response and is
+neither stored nor logged, and an email or the subject is never returned as a name.
+
+The marker is released, by setting its deadline to 0 over the version read, on every
+way an export ends with a known outcome: a start that fails before anything is sent
+(nothing approved, no deck to update, an unreadable asset, a storage failure) or
+that Guild refused (`redraftWasNotAccepted`: a 4xx other than 408 and 429, a 501, a
+refused connection); a result that is ready (after its record is kept), failed, or
+whose signed revisions are gone; and this server's own poll giving up at its
+deadline. A pending result, or a poll that throws on something the next one may
+read, keeps it. So does a ready result whose record could not be written: the poll
+answers 503 `MKTG_FAMILY_EXPORT_RECORD_NOT_KEPT`, which the browser's and the
+server's polls retry, and the marker goes only once a poll keeps the record. A send
+with no certain outcome (a timeout, a 2xx without a session id, a 5xx) may be an
+export Guild accepted that nobody can follow: the start still answers the error, and
+its marker is kept, cut to the poll deadline of an export sent then
+(`MKTG_SLIDES_EXPORT_POLL.timeoutMs`). A result poll releases by the session
+id bound to the marker once the session exists, so any replica can; the server that
+started the export also holds the start's claim, for a marker that could not be
+bound. A release never frees a newer export's marker and never fails a response.
+Whatever is left holds nothing after `MKTG_FAMILY_EXPORT_ACTIVE_TTL_MS` (the export's
+poll deadline plus two minutes for the start's own work), so no start waits on a
+marker whose server is gone. `GET /last` reads the marker before the records and
+reports the export in flight as `running` (the same three facts, null when none):
+an answer with `running: null` always carries a finished export's deck.
+
 The Family page eagerly checks last export independently of its document-list read.
 A failed check disables export rather than guessing Create. Download PDF composes
 the approved-current framework, brand kit, boilerplates and FAQ in exporter order,
