@@ -11,6 +11,7 @@ import {
   redditVideoPostCreateRefusal,
   redditVideoPostField,
   redditVideoPostFromDraft,
+  redditVideoPostVariantsNote,
   redditVideoPostView,
   redditVideoPostWithout,
   redditVideoPostWithThumbnail,
@@ -160,6 +161,17 @@ describe('redditVariantsSent', () => {
     ['every variant otherwise', false, ['a', 'b']],
   ])('sends %s', (_name, videoPost, expected) => {
     expect(redditVariantsSent(['a', 'b'], videoPost)).toEqual(expected);
+  });
+});
+
+describe('redditVideoPostVariantsNote', () => {
+  it.each<[string, RedditVideoPostDraft, number, string]>([
+    ['nothing with one variant', PICKED, 1, ''],
+    ['nothing without a pick', NONE, 3, ''],
+    ['the second variant left out', PICKED, 2, 'Only variant 1 is sent with a video post. Variant 2 is not sent.'],
+    ['the rest left out', PICKED, 4, 'Only variant 1 is sent with a video post. Variants 2 to 4 are not sent.'],
+  ])('%s', (_name, draft, count, expected) => {
+    expect(redditVideoPostVariantsNote(draft, count)).toBe(expected);
   });
 });
 

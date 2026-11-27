@@ -92,6 +92,7 @@ import {
   CreativeAssetLibrary,
   CreativeAssetPlan,
   CreativeAssetQueueItem,
+  CreativeAssetQueueKind,
   CreativeAssetQueueRefusal,
   CreativeAssetUploadOwner,
   CreativeAssetUploadResult,
@@ -525,7 +526,7 @@ export class CampaignService {
     briefId: string,
     options: { folder?: boolean; documents?: boolean; videos?: boolean } = {}
   ): void {
-    let kind: typeof CREATIVE_ASSET_DOCUMENT_MIME_TYPE | typeof CREATIVE_ASSET_VIDEO_MIME_TYPE | null = null;
+    let kind: CreativeAssetQueueKind | null = null;
     if (options.documents === true) kind = CREATIVE_ASSET_DOCUMENT_MIME_TYPE;
     else if (options.videos === true) kind = CREATIVE_ASSET_VIDEO_MIME_TYPE;
     const added = files.map((file): CreativeAssetQueueItem => {
@@ -1721,7 +1722,7 @@ export class CampaignService {
   private refuseQueuedCreativeAsset(
     file: File,
     folder: boolean,
-    kind: typeof CREATIVE_ASSET_DOCUMENT_MIME_TYPE | typeof CREATIVE_ASSET_VIDEO_MIME_TYPE | null
+    kind: CreativeAssetQueueKind | null
   ): { refusal: CreativeAssetQueueRefusal; message: string } | null {
     // `webkitRelativePath` is `folder/name.png` at the top level of a picked folder. Defaulted because
     // an engine without folder picks (and jsdom) leaves it undefined rather than empty.

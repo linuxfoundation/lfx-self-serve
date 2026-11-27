@@ -11,6 +11,12 @@
     <p class="text-xs text-gray-500" data-testid="reddit-video-post-library-note">{{ view().libraryNote }}</p>
   }
 
+  @if (variantsNote()) {
+    <p role="note" class="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="reddit-video-post-variants-note">
+      {{ variantsNote() }}
+    </p>
+  }
+
   <lfx-ui-select
     label="Video"
     size="small"
@@ -41,20 +47,16 @@
     <p class="text-xs text-gray-500" data-testid="reddit-video-post-upload-held">Wait for the library delete to finish to upload a video.</p>
   } @else if (uploadAvailable()) {
     <div class="flex flex-col gap-1" data-testid="reddit-video-post-upload">
-      <label class="text-xs font-medium text-gray-700" for="reddit-video-post-file">Upload an MP4 to the brief's library</label>
-      <!-- A plain file input, as the LinkedIn document editor's: the uikit has no file picker, and the library queue below
-           lists every file's outcome. -->
-      <input
-        id="reddit-video-post-file"
-        type="file"
-        [attr.accept]="videoAccept"
-        (change)="onFiles($event)"
-        aria-describedby="reddit-video-post-upload-hint"
-        class="text-sm text-gray-900 file:mr-3 file:rounded-md file:border file:border-gray-300 file:bg-white file:px-3 file:py-1.5 file:text-sm file:text-gray-700 hover:file:bg-gray-50"
-        data-testid="reddit-video-post-upload-file" />
-      <p id="reddit-video-post-upload-hint" class="text-xs text-gray-500">
-        MP4, up to 30 MB. Uploads are listed with the library below and offered here once stored.
-      </p>
+      <lfx-file-upload
+        mode="basic"
+        [accept]="videoAccept"
+        [auto]="true"
+        [customUpload]="true"
+        chooseLabel="Upload an MP4"
+        chooseIcon="fa-light fa-cloud-arrow-up"
+        dataTest="reddit-video-post-upload-file"
+        (onSelect)="onFileSelect($event)" />
+      <p class="text-xs text-gray-500">MP4, up to 30 MB, into the brief's library. Uploads are listed with the library below and offered here once stored.</p>
     </div>
   }
 </fieldset>

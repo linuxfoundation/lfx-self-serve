@@ -173,6 +173,12 @@ export type CreativeAssetUploadStatus = 'idle' | 'uploading' | 'error';
 export type CreativeAssetUploadOwner = 'reddit' | 'meta' | 'linkedin' | 'google' | 'microsoft' | 'twitter';
 
 /**
+ * The one non-image type a library upload pick takes (`enqueueCreativeAssetUploads`): a PDF for a LinkedIn document ad
+ * (campaign-service#665) or an MP4 for a Reddit video post (#6108 row 8). `null` where it is used means images only.
+ */
+export type CreativeAssetQueueKind = Exclude<CreativeAssetUploadMimeType, CreativeAssetMimeType>;
+
+/**
  * A creative asset campaign-service stored for a brief (`upload-creative-asset`), as the BFF
  * returns it to the browser.
  *
@@ -4145,6 +4151,8 @@ export interface RedditBriefReset extends RedditBriefSeed {
   callToAction: '';
   objective: RedditObjective;
   videoGoal: '';
+  /** The video post with nothing picked (#6108 row 8). */
+  videoPost: RedditVideoPostDraft;
   conversionEvent: RedditConversionEvent;
   customAudiences: RedditCustomAudiencesDraft;
   targetingExclusions: RedditTargetingExclusionsDraft;

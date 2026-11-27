@@ -287,6 +287,7 @@ describe('redditBriefReset', () => {
       callToAction: '',
       objective: DEFAULT_REDDIT_OBJECTIVE,
       videoGoal: '',
+      videoPost: { videoAssetId: '', videoBriefId: '', thumbnailAssetId: '', thumbnailBriefId: '' },
       conversionEvent: 'PURCHASE',
       customAudiences: { customAudienceIds: [], excludedCustomAudienceIds: [] },
       targetingExclusions: { excludedSubreddits: [], excludedGeoTargets: [] },

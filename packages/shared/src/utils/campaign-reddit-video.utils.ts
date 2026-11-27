@@ -192,6 +192,17 @@ export function redditVariantsSent<T>(variants: readonly T[], videoPost: boolean
   return videoPost ? variants.slice(0, 1) : [...variants];
 }
 
+/**
+ * What the video post says about the variants it leaves out, or `''`: a video post is one post and one ad, so only
+ * variant 1 is sent (`redditVariantsSent`), and the operator is told rather than left to find the others missing.
+ */
+export function redditVideoPostVariantsNote(draft: RedditVideoPostDraft, variantCount: number): string {
+  if (!redditVideoPostHeld(draft) || variantCount < 2) return '';
+  return variantCount === 2
+    ? 'Only variant 1 is sent with a video post. Variant 2 is not sent.'
+    : `Only variant 1 is sent with a video post. Variants 2 to ${variantCount} are not sent.`;
+}
+
 /** The draft with `assetId` picked as the video (`''` clears it), recorded with the brief it was picked for. */
 export function redditVideoPostWithVideo(draft: RedditVideoPostDraft, assetId: string, briefId: string): RedditVideoPostDraft {
   return { ...draft, videoAssetId: assetId, videoBriefId: assetId === '' ? '' : briefId };

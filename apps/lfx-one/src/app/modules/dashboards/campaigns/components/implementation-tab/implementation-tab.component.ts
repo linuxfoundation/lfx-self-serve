@@ -1184,11 +1184,10 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly redditVariantsSentNow = computed<RedditAdVariant[]>(() => redditVariantsSent(this.redditAdVariants(), this.redditVideoPostSelected()));
   /** The stored asset whose delete is running, `''` for none: the video picker and its upload wait for it (#6108 row 8). */
   protected readonly redditVideoDeletingId = computed<string>(() => this.campaignService.creativeVideoDeleting()?.id ?? '');
-  /** The stored videos the tab's ads name, which the library will not delete: the LinkedIn video ads' and the Reddit video post's. */
-  protected readonly creativeLibraryVideoIdsInUse = computed<string[]>(() => {
-    const reddit = this.redditVideoPost().videoAssetId;
-    return reddit !== '' ? [...this.linkedInVideoIdsInUse(), reddit] : this.linkedInVideoIdsInUse();
-  });
+  /** The stored videos any ad on this tab names: the LinkedIn video ads' and the Reddit video post's (#6108 row 8). The library will not delete them. */
+  protected readonly videoIdsInUse = computed<string[]>(() => [
+    ...new Set([...this.linkedInVideoIdsInUse(), ...(this.redditVideoPost().videoAssetId ? [this.redditVideoPost().videoAssetId] : [])]),
+  ]);
 
   /**
    * Whether the Meta section may offer an image UPLOAD (`CampaignListResult.metaAssetUploadEnabled`).
@@ -6453,16 +6452,23 @@ export class ImplementationTabComponent implements OnInit {
   }
 
   /**
-   * A stored video the library deleted, or the operator took off the ads there (#5764 row 18): cleared from any ad that
-   * names it. Delete is off while an ad uses a video, so after a delete this only catches an upload that came back with it.
+   * A stored video the library deleted, or the operator took off the ads there: cleared from the Reddit video post that
+   * names it (#6108 row 8), then from the LinkedIn ads (`onLibraryVideoDeleted`).
    */
-  protected onLibraryVideoDeleted(assetId: string): void {
-    // The Reddit video post too (#6108 row 8), whose video the library holds the same way.
+  protected onLibraryVideoGone(assetId: string): void {
     const redditVideoPost = redditVideoPostWithout(this.redditVideoPost(), assetId);
     if (redditVideoPost !== this.redditVideoPost()) {
       this.redditVideoPost.set(redditVideoPost);
       this.emitDraft();
     }
+    this.onLibraryVideoDeleted(assetId);
+  }
+
+  /**
+   * A stored video the library deleted, or the operator took off the ads there (#5764 row 18): cleared from any ad that
+   * names it. Delete is off while an ad uses a video, so after a delete this only catches an upload that came back with it.
+   */
+  protected onLibraryVideoDeleted(assetId: string): void {
     if (!this.linkedInVariants().some((variant) => variant.videoAssetId === assetId)) return;
     this.linkedInVariants.update((variants) =>
       variants.map((variant) => (variant.videoAssetId === assetId ? { ...variant, videoAssetId: '', videoAssetName: '', videoAssetBriefId: '' } : variant))
@@ -10913,6 +10919,7 @@ export class ImplementationTabComponent implements OnInit {
     this.redditCallToAction.set(redditReset.callToAction);
     this.redditObjective.set(redditReset.objective);
     this.redditVideoGoal.set(redditReset.videoGoal);
+    this.redditVideoPost.set(redditReset.videoPost);
     this.redditConversionEvent.set(redditReset.conversionEvent);
     this.redditCustomAudiences.set(redditReset.customAudiences);
     this.redditTargetingExclusions.set(redditReset.targetingExclusions);
