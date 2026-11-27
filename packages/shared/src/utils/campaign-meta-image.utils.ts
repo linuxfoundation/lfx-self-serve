@@ -13,6 +13,7 @@ import type {
   MetaAdVariant,
   MetaImageBlockInput,
   MetaImageField,
+  MetaImageUploadHoldInput,
 } from '../interfaces/campaign.interface';
 
 /**
@@ -110,6 +111,15 @@ export function metaImageAssetBlock(input: MetaImageBlockInput): CampaignMetaIma
     kind: 'failed',
     message: 'Could not confirm that Meta ad images are supported, so the image cannot be sent yet. Retry the check, or remove the image.',
   };
+}
+
+/**
+ * Whether the one image's upload in flight holds Create: only while its control (with its status and Cancel) is shown,
+ * as `redditImageUploadHoldsCreate`. Not while a carousel is chosen (#6331), which hides that control and sends its
+ * cards' images instead.
+ */
+export function metaImageUploadHoldsCreate(input: MetaImageUploadHoldInput): boolean {
+  return input.showMetaSection && input.uploadAvailable && !input.carouselSelected && input.uploadStatus === 'uploading';
 }
 
 /**

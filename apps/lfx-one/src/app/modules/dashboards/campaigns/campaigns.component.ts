@@ -1229,6 +1229,8 @@ export class CampaignsComponent {
   protected readonly briefCampaignsMetaCallToActionEnabled = signal<boolean | null>(null);
   /** Meta lead forms (#5940) — `CampaignListResult.metaLeadFormsEnabled`: whether THIS caller may create a lead ad. */
   protected readonly briefCampaignsMetaLeadFormsEnabled = signal<boolean | null>(null);
+  /** Whether the Meta section offers carousel ads (`CampaignListResult.metaCarouselEnabled`, #6331). */
+  protected readonly briefCampaignsMetaCarouselEnabled = signal<boolean | null>(null);
   /** Meta interests, behaviors with job titles, languages (#5904 row 4), and regions with cities (row 6): deployment-wide answers, read and cleared like the capabilities above. */
   protected readonly briefCampaignsMetaInterestTargetingEnabled = signal<boolean | null>(null);
   protected readonly briefCampaignsMetaBehaviorTargetingEnabled = signal<boolean | null>(null);
@@ -3449,6 +3451,7 @@ export class CampaignsComponent {
         this.briefCampaignsMetaAudienceTargetingEnabled.set(null);
         this.briefCampaignsMetaCallToActionEnabled.set(null);
         this.briefCampaignsMetaLeadFormsEnabled.set(null);
+        this.briefCampaignsMetaCarouselEnabled.set(null);
         this.briefCampaignsMetaInterestTargetingEnabled.set(null);
         this.briefCampaignsMetaBehaviorTargetingEnabled.set(null);
         this.briefCampaignsMetaLocaleTargetingEnabled.set(null);
@@ -6559,6 +6562,7 @@ export class CampaignsComponent {
           this.briefCampaignsMetaAudienceTargetingEnabled.set(result.metaAudienceTargetingEnabled ?? null);
           this.briefCampaignsMetaCallToActionEnabled.set(result.metaCallToActionEnabled ?? null);
           this.briefCampaignsMetaLeadFormsEnabled.set(result.metaLeadFormsEnabled ?? null);
+          this.briefCampaignsMetaCarouselEnabled.set(result.metaCarouselEnabled ?? null);
           this.briefCampaignsMetaInterestTargetingEnabled.set(result.metaInterestTargetingEnabled ?? null);
           this.briefCampaignsMetaBehaviorTargetingEnabled.set(result.metaBehaviorTargetingEnabled ?? null);
           this.briefCampaignsMetaLocaleTargetingEnabled.set(result.metaLocaleTargetingEnabled ?? null);
@@ -6631,6 +6635,7 @@ export class CampaignsComponent {
           this.briefCampaignsMetaAudienceTargetingEnabled.set(null);
           this.briefCampaignsMetaCallToActionEnabled.set(null);
           this.briefCampaignsMetaLeadFormsEnabled.set(null);
+          this.briefCampaignsMetaCarouselEnabled.set(null);
           this.briefCampaignsMetaInterestTargetingEnabled.set(null);
           this.briefCampaignsMetaBehaviorTargetingEnabled.set(null);
           this.briefCampaignsMetaLocaleTargetingEnabled.set(null);
@@ -6748,6 +6753,7 @@ export class CampaignsComponent {
       this.briefCampaignsMetaAudienceTargetingEnabled.set(null);
       this.briefCampaignsMetaCallToActionEnabled.set(null);
       this.briefCampaignsMetaLeadFormsEnabled.set(null);
+      this.briefCampaignsMetaCarouselEnabled.set(null);
       this.briefCampaignsMetaInterestTargetingEnabled.set(null);
       this.briefCampaignsMetaBehaviorTargetingEnabled.set(null);
       this.briefCampaignsMetaLocaleTargetingEnabled.set(null);
@@ -6835,6 +6841,7 @@ export class CampaignsComponent {
             this.briefCampaignsMetaAudienceTargetingEnabled.set(result.metaAudienceTargetingEnabled ?? null);
             this.briefCampaignsMetaCallToActionEnabled.set(result.metaCallToActionEnabled ?? null);
             this.briefCampaignsMetaLeadFormsEnabled.set(result.metaLeadFormsEnabled ?? null);
+            this.briefCampaignsMetaCarouselEnabled.set(result.metaCarouselEnabled ?? null);
             this.briefCampaignsMetaInterestTargetingEnabled.set(result.metaInterestTargetingEnabled ?? null);
             this.briefCampaignsMetaBehaviorTargetingEnabled.set(result.metaBehaviorTargetingEnabled ?? null);
             this.briefCampaignsMetaLocaleTargetingEnabled.set(result.metaLocaleTargetingEnabled ?? null);
@@ -6905,6 +6912,7 @@ export class CampaignsComponent {
             this.briefCampaignsMetaAudienceTargetingEnabled.set(null);
             this.briefCampaignsMetaCallToActionEnabled.set(null);
             this.briefCampaignsMetaLeadFormsEnabled.set(null);
+            this.briefCampaignsMetaCarouselEnabled.set(null);
             this.briefCampaignsMetaInterestTargetingEnabled.set(null);
             this.briefCampaignsMetaBehaviorTargetingEnabled.set(null);
             this.briefCampaignsMetaLocaleTargetingEnabled.set(null);

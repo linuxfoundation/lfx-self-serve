@@ -12,6 +12,7 @@ import {
   metaImageCapabilities,
   metaImageField,
   metaImageFileRefusal,
+  metaImageUploadHoldsCreate,
   metaImageUploadStatusMessage,
   metaImageUrlWithheld,
   metaPreviewImageLabel,
@@ -184,5 +185,20 @@ describe('metaImageCapabilities', () => {
     [true, true, true, true],
   ])('creative %s, upload %s: image %s, upload %s', (creative, upload, creativeAvailable, uploadAvailable) => {
     expect(metaImageCapabilities(creative, upload)).toEqual({ creativeAvailable, uploadAvailable });
+  });
+});
+
+describe('metaImageUploadHoldsCreate', () => {
+  const holding = { showMetaSection: true, uploadAvailable: true, carouselSelected: false, uploadStatus: 'uploading' as const };
+  it.each([
+    ['an upload in flight with its control shown', {}, true],
+    ['Meta not selected', { showMetaSection: false }, false],
+    ['uploads not offered', { uploadAvailable: false }, false],
+    // #6331: a carousel hides the one image's upload and its Cancel, and does not send that image.
+    ['a carousel chosen', { carouselSelected: true }, false],
+    ['no upload in flight', { uploadStatus: 'idle' as const }, false],
+    ['a failed upload', { uploadStatus: 'error' as const }, false],
+  ])('%s: holds %s', (_name, overrides, expected) => {
+    expect(metaImageUploadHoldsCreate({ ...holding, ...overrides })).toBe(expected);
   });
 });

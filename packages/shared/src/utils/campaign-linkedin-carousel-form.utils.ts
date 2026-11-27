@@ -28,8 +28,8 @@ export function newLinkedInCarouselCardDraft(cards: readonly LinkedInCarouselCar
   return { key: `card-${next}`, imageAssetId: '', imageAssetBriefId: '', headline: '', destinationUrl: '' };
 }
 
-/** `cards` with the card `key` moved one place up (`-1`) or down (`1`); unchanged at either end. */
-export function moveLinkedInCarouselCard(cards: readonly LinkedInCarouselCardDraft[], key: string, step: -1 | 1): LinkedInCarouselCardDraft[] {
+/** `cards` with the card `key` moved one place up (`-1`) or down (`1`); unchanged at either end. Meta's carousel (#6331) moves its cards with it too. */
+export function moveLinkedInCarouselCard<T extends { key: string }>(cards: readonly T[], key: string, step: -1 | 1): T[] {
   const from = cards.findIndex((card) => card.key === key);
   const to = from + step;
   if (from === -1 || to < 0 || to >= cards.length) return [...cards];
