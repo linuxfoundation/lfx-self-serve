@@ -170,6 +170,22 @@ the slot stays available after a listing error/403. Browser family and document 
 share one polling deadline/attempt/error policy. The family BFF and record model are
 documented in [Family exports](../backend/mktg-document-revisions.md#family-exports).
 
+One Slides export of a family runs at a time, and the server decides which. While
+`last` reports `running` for an export this card did not start (another writer's, or
+the viewer's own from another tab or before a reload), the card shows one status line
+(`family-export-following`: who is exporting and since when), holds Export to Google
+Slides and the Update/Create chooser, leaves Download PDF alone (who is exporting is
+not part of the PDF's scope, so it is not prepared again), and reads `last` again on
+the export's cadence through the shared visibility poller until it reports none, and
+for no longer than `MKTG_FAMILY_EXPORT_ACTIVE_TTL_MS` on its own clock. A start
+answered 409 `MKTG_FAMILY_EXPORT_ACTIVE` is an answer, not an error: the validated
+body (`readMktgFamilyExportActiveConflict`) puts the card straight into that state,
+and a body that does not validate names nobody until the next read. When the followed
+export ends the card says, in `family-export-followed`, that its deck is the last
+export below (a different last export than when following began, or one made after
+that start) or that nothing was kept; the next export clears the line. The card's own
+run is never followed: it reports itself, and its end re-reads `last`.
+
 `lfx-mktg-family-details` collapses Where it comes from to its validated source-read count and inline singular/plural failure count; Show/Hide uses native button aria-expanded/controls. Sign-off collapses to **Sign-off · roadmap: two-role sign-off arrives in November**, with Show/Hide preserving the full existing explainer. The only required framework row reason is **· after the framework is approved** (write-access wording is unchanged). Family-only source
 read stays unchanged: It reads only the framework row's latest document revision via the existing endpoint,
 then renders the validated `sidecar.report.sources_read` / `sources_failed`
