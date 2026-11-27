@@ -170,6 +170,78 @@ for (const width of [1280, 390]) {
   });
 }
 
+test('at 390px a long team header holds one line and a free-text deadline wraps inside the Actions card', async ({ page }, info) => {
+  await page.setViewportSize({ width: 390, height: 1000 });
+  await setupMember360(page, { stored: true }); // Includes suppressCookieBanner(page).
+  const view = member360Revision();
+  const envelope = view.member360;
+  if (!envelope) throw new Error('Member 360 fixture is missing');
+  const template = envelope.tabs.actions_by_team[0];
+  const spaced = 'when the board meets to approve the renewal plan for next year';
+  const unbroken = 'AfterTheBoardApprovesTheRenewalPlanForTheNextFinancialYear';
+  // The live shape that wrapped (#5467): the longest team name with a three-digit count. Deadlines are free text in the contract.
+  envelope.tabs.actions_by_team = [
+    { ...template, owner: 'Member Success', suggested_deadline: spaced },
+    { ...template, owner: 'Member Success', suggested_deadline: unbroken },
+    ...Array.from({ length: 200 }, () => ({ ...template, owner: 'Member Success' as const })),
+    { ...template, owner: 'Sales' },
+    { ...template, owner: 'Marketing' },
+  ];
+  envelope.content_sha256 = createHash('sha256').update(JSON.stringify(envelope.tabs)).digest('hex');
+  await page.route(`**/api/mktg-agents/documents/member-360/${MEMBER_360_DOCUMENT_ID}**`, (route) => json(route, view));
+  await openMember360(page, `documents/member-360/${MEMBER_360_DOCUMENT_ID}`);
+  const card = page.getByTestId('member-360-actions');
+  const team = page.getByTestId('member-360-team-member-success');
+  await expect(team.getByRole('heading')).toHaveText('Member Success · 202 actions');
+  // Free text sorts after every dated action, so it sits below the fold.
+  await team.getByTestId('member-360-show-all-member-success').click();
+  await expect(team.getByTestId('member-360-action-row')).toHaveCount(202);
+  const layout = await card.evaluate((element) => {
+    const lineCount = (target: Element) => Math.round(target.getBoundingClientRect().height / parseFloat(getComputedStyle(target).lineHeight));
+    const text = (target: Element) => target.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+    return {
+      headers: Array.from(element.querySelectorAll('h4'), (heading) => {
+        const box = heading.closest('[data-testid^="member-360-team-"]');
+        const copy = box?.querySelector('[data-testid^="member-360-copy-"]')?.getBoundingClientRect();
+        if (!box || !copy) throw new Error('Team box or Copy list button is missing');
+        const title = heading.getBoundingClientRect();
+        const style = getComputedStyle(box);
+        const inner = box.getBoundingClientRect().right - parseFloat(style.paddingRight) - parseFloat(style.borderRightWidth);
+        return {
+          text: text(heading),
+          lines: lineCount(heading),
+          copyInsideBox: copy.right <= inner + 0.5,
+          copyClearOfTitle: copy.left >= title.right - 0.5 || copy.top >= title.bottom - 0.5,
+        };
+      }),
+      dues: Array.from(element.querySelectorAll('[data-testid="member-360-action-due"]'), (due) => ({ text: text(due), lines: lineCount(due) })),
+      outsideRow: Array.from(element.querySelectorAll('[data-testid="member-360-action-row"]')).flatMap((row) => {
+        const right = row.getBoundingClientRect().right;
+        return Array.from(row.querySelectorAll('*'))
+          .filter((part) => part.getBoundingClientRect().right > right + 0.5)
+          .map(text);
+      }),
+      cardScrolls: element.scrollWidth > element.clientWidth,
+    };
+  });
+  expect(layout.headers).toEqual(
+    ['Sales · 1 action', 'Marketing · 1 action', 'Member Success · 202 actions'].map((text) => ({
+      text,
+      lines: 1,
+      copyInsideBox: true,
+      copyClearOfTitle: true,
+    }))
+  );
+  // A date keeps one line; free text wraps under the row instead of running out of the card, even with nowhere to break.
+  expect(layout.dues).toHaveLength(204);
+  expect(layout.dues.filter((due) => due.lines !== 1).map((due) => due.text)).toEqual([`Due ${unbroken}`, `Due ${spaced}`]);
+  expect(layout.outsideRow).toEqual([]);
+  expect(layout.cardScrolls).toBe(false);
+  const bounds = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, viewport: innerWidth }));
+  expect(bounds.scroll).toBeLessThanOrEqual(bounds.viewport);
+  await page.screenshot({ path: info.outputPath('actions-390.png'), fullPage: true });
+});
+
 test('non-writer sees an access message, never a run form', async ({ page }, info) => {
   await setupMember360(page, { writer: false });
   await openMember360(page);
