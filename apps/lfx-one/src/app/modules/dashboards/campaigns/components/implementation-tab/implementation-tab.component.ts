@@ -2116,7 +2116,7 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly linkedInDocumentDeletingId = computed<string>(() => this.campaignService.creativeVideoDeleting()?.id ?? '');
   /**
    * The stored PDF the LinkedIn document ad names (campaign-service#665), whatever the format: the library will not delete
-   * it, so a create can never send a deleted asset. It offers "Remove from ad" (`onLibraryDocumentDeleted`).
+   * it, so a create can never send a deleted asset. It offers "Remove from ad" (`onLibraryDocumentReleased`).
    */
   protected readonly linkedInDocumentIdsInUse = computed<string[]>(() => (this.linkedInDocument().assetId ? [this.linkedInDocument().assetId] : []));
   /** Whether this create is a video campaign (#5764 row 18): chosen, and offered by this deployment. */
