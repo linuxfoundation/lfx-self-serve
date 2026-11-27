@@ -195,14 +195,14 @@ test('filter button aria-label updates when a filter is active', async ({ page }
 | `mobile-chrome` | Pixel 5 (touch)   | 1                  | all                 | Single worker to avoid resource contention.           |
 | `mobile-safari` | iPhone 14 (touch) | 1                  | `**/mktg-*.spec.ts` | Marketing OS only. WebKit with the iPhone descriptor. |
 
-The two WebKit projects run only the Marketing OS specs (`e2e/mktg-*.spec.ts`); both take the glob from the `MKTG_OS_SPECS` constant in the config, so they always cover the same files. A Marketing OS spec must keep the `mktg-` prefix to be picked up. Install the browser once with `yarn playwright install webkit` (from `apps/lfx-one`), then:
+The two WebKit projects run only the Marketing OS specs (`e2e/mktg-*.spec.ts`); both take the glob from the `MKTG_OS_SPECS` constant in the config, so they always cover the same files. A Marketing OS spec must keep the `mktg-` prefix to be picked up. Install the browser once with `yarn playwright install webkit` (from `apps/lfx-one`; Chromium must be installed too, because global setup signs in with it), then:
 
 ```bash
 yarn playwright test --project=webkit          # desktop Safari
 yarn playwright test --project=mobile-safari   # iPhone emulation
 ```
 
-`mobile-safari` is WebKit with an iPhone viewport, touch and user agent. It is not the phone: the native print sheet and AirPrint are checked by hand in Safari on iOS. A plain `yarn e2e` runs every project, the two WebKit ones included.
+`mobile-safari` is WebKit with the iPhone 14 user agent, touch and scale factor. The iPhone viewport applies only to a spec that does not set its own: a spec-level `viewport` or `page.setViewportSize(...)` overrides the project's device, and most Marketing OS specs pin a desktop width (1280 or 1440), so they run the desktop layout here. A green `mobile-safari` run is therefore not "green at phone width" for those specs. It is not the phone either: the native print sheet and AirPrint are checked by hand in Safari on iOS. A plain `yarn e2e` runs every project, the two WebKit ones included.
 
 Parallelism is on by default (`fullyParallel: true`). CI caps workers to 1 and enables 2 retries.
 

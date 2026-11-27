@@ -141,8 +141,10 @@ export default defineConfig({
       name: 'mobile-safari',
       testMatch: MKTG_OS_SPECS,
       use: {
-        // WebKit with the iPhone viewport, touch and user agent: the nearest automation gets to
-        // Safari on iOS. It is not the phone (no AirPrint, no native print sheet).
+        // WebKit with the iPhone user agent, touch and scale factor: the nearest automation gets to
+        // Safari on iOS. The iPhone viewport applies only to a spec that does not set its own, and
+        // most Marketing OS specs pin a desktop width, so a green run here is not "green at phone
+        // width" for them. It is not the phone either (no AirPrint, no native print sheet).
         ...devices['iPhone 14'],
         storageState: 'playwright/.auth/user.json',
       },
