@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { LINKEDIN_BOOST_POST_FIELD, LINKEDIN_BOOST_POST_URN_PATTERN } from '../constants/campaign.constants';
-import type { LinkedInConfigKeyRefusal } from '../interfaces/campaign.interface';
+import type { LinkedInAdFormatChoice, LinkedInCampaignCreateRequest, LinkedInConfigKeyRefusal } from '../interfaces/campaign.interface';
 
 /**
  * Boosting an existing LinkedIn organization post (linuxfoundation/lfx-v2-campaign-service#673), mirroring
@@ -55,4 +55,48 @@ export function linkedInBoostRefusal(raw: unknown, enabled: boolean): LinkedInCo
     return { field: LINKEDIN_BOOST_POST_FIELD, message: 'The post must be a LinkedIn post URN, urn:li:share:<id> or urn:li:ugcPost:<id>.' };
   }
   return null;
+}
+
+/*
+ * The Implement tab's boost (campaign-service#673): whether it is chosen and sent, what it sends, the error under the post
+ * field and why Create waits. The create is held to `linkedInBoostRefusal`, as the create route holds it.
+ */
+
+/** Whether this create is a boost: chosen, and offered on an explicit yes (`CampaignListResult.linkedInBoostEnabled`). */
+export function linkedInBoostChosen(format: LinkedInAdFormatChoice, enabled: boolean | null): boolean {
+  return format === 'boost' && enabled === true;
+}
+
+/**
+ * Whether a boost is chosen while this deployment does not offer it (off, or not read yet): Create is held, and nothing
+ * is sent, never single image ads in its place.
+ */
+export function linkedInBoostUnavailable(format: LinkedInAdFormatChoice, enabled: boolean | null): boolean {
+  return format === 'boost' && enabled !== true;
+}
+
+/**
+ * The creatives a boost create sends: `format: 'boost'`, the post, and no variants, since the post is the one creative.
+ * Spaces a paste carries around the URN are dropped; nothing else is rewritten.
+ */
+export function linkedInBoostFieldsForCreate(post: string): Pick<LinkedInCampaignCreateRequest, 'format' | 'boostPost' | 'variants'> {
+  return { format: 'boost', boostPost: post.trim(), variants: [] };
+}
+
+/**
+ * The error under the post field, or `''` while it is empty or a post URN. A pasted link or an activity URN, which LinkedIn
+ * shows in a post's link but cannot sponsor, gets a hint to copy the URN from the post's embed code instead.
+ */
+export function linkedInBoostPostError(post: string): string {
+  const typed = post.trim();
+  if (typed === '' || LINKEDIN_BOOST_POST_URN_PATTERN.test(typed)) return '';
+  if (typed.startsWith('urn:li:activity:')) return "An activity URN can't be boosted. Copy the urn:li:share or urn:li:ugcPost URN from the post's embed code.";
+  if (/^https?:\/\//i.test(typed)) return "Paste the post's URN, not its link. Copy the urn:li:share or urn:li:ugcPost URN from the post's embed code.";
+  return 'Enter a LinkedIn post URN, urn:li:share:<id> or urn:li:ugcPost:<id>.';
+}
+
+/** Why a boost holds Create, or `null`: the request it would send, checked by `linkedInBoostRefusal`. */
+export function linkedInBoostCreateRefusal(post: string): string | null {
+  const refused = linkedInBoostRefusal(linkedInBoostFieldsForCreate(post), true);
+  return refused === null ? null : `LinkedIn Ads: ${refused.message}`;
 }

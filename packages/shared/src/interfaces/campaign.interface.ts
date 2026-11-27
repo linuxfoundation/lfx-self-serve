@@ -1606,6 +1606,11 @@ export interface CampaignImplementationDraft {
    */
   linkedInDocument?: LinkedInDocumentDraft;
   /**
+   * The post URN a LinkedIn boost sponsors, as typed (campaign-service#673). Restored only when present; the tab sends it
+   * only while `linkedInBoostEnabled` is on and the boost format is chosen.
+   */
+  linkedInBoostPost?: string;
+  /**
    * Whether custom targeting replaces the targeting profile (#5764 rows 8–11), and the clauses as edited. Restored only
    * when present; the tab sends `targeting` only while `linkedInTargetingEnabled` is on.
    */
@@ -2692,6 +2697,10 @@ export interface LinkedInCreateRefusalInput {
   documentUnavailable?: boolean;
   /** Present only while a document is chosen (campaign-service#665): why it cannot be sent, or `null`. It replaces the variant checks. */
   document?: { refusal: string | null };
+  /** A boost is chosen but this deployment no longer offers it (campaign-service#673). */
+  boostUnavailable?: boolean;
+  /** Present only while a boost is chosen (campaign-service#673): why its post cannot be sent, or `null`. It replaces the variant checks. */
+  boost?: { refusal: string | null };
   /** Present only while video ads are chosen (#5764 row 18): an ad with no video for the open brief. */
   videoMissing?: boolean;
   /**
@@ -3803,6 +3812,7 @@ export type LinkedInDraftSnapshot = Pick<
   | 'linkedInCarouselCards'
   | 'linkedInCarouselIntroText'
   | 'linkedInDocument'
+  | 'linkedInBoostPost'
   | 'linkedInCustomTargeting'
   | 'linkedInTargetingDraft'
   | 'linkedInObjectiveDraft'
@@ -3828,6 +3838,8 @@ export interface LinkedInDraftState {
   carouselIntroText: string;
   /** The document ad as edited (campaign-service#665). */
   document: LinkedInDocumentDraft;
+  /** The post URN a boost sponsors, as typed (campaign-service#673). */
+  boostPost: string;
   /** Whether custom targeting is on, and its clauses as edited (#5764 rows 8–11). */
   customTargeting: boolean;
   targetingDraft: LinkedInTargetingDraft;
@@ -3853,6 +3865,7 @@ export interface LinkedInDraftRestore {
   carouselCards?: LinkedInCarouselCardDraft[];
   carouselIntroText?: string;
   document?: LinkedInDocumentDraft;
+  boostPost?: string;
   customTargeting?: boolean;
   targetingDraft?: LinkedInTargetingDraft;
   objectiveDraft?: LinkedInObjectiveDraft;
