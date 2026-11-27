@@ -2764,6 +2764,7 @@ export class PlanningTabComponent implements OnInit {
    */
   private prefillFromSavedNewsletter(saved: CampaignBriefOutput | null): void {
     this.savedNewsletterReferenceIds = null;
+    const wasFromSavedBrief = this.notesFromSavedBrief();
     this.notesFromSavedBrief.set(false);
     if (!this.isNewsletter() || saved === null) {
       return;
@@ -2771,8 +2772,14 @@ export class PlanningTabComponent implements OnInit {
     const details = saved.eventDetails;
     const notes = this.briefForm.controls.sourceText;
     const savedNotes = (details?.sourceText ?? '').trim();
-    if (savedNotes !== '' && notes.pristine && (notes.value ?? '').trim() === '') {
+    const current = (notes.value ?? '').trim();
+    if (savedNotes !== '' && notes.pristine && current === '') {
       notes.setValue(savedNotes);
+      this.notesFromSavedBrief.set(true);
+    } else if (wasFromSavedBrief && savedNotes !== '' && notes.pristine && current === savedNotes) {
+      // The same saved issue read again: the box still holds that fill, untouched, so it is still
+      // the saved brief's. Dropping the flag here kept the notes on a later issue change (only a
+      // flagged fill is taken back) and hid where they came from.
       this.notesFromSavedBrief.set(true);
     }
     const referenceIds = details?.referenceEmailIds ?? [];

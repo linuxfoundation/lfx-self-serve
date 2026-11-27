@@ -167,6 +167,26 @@ describe('PlanningTabComponent newsletter issue with a saved brief', () => {
     expect(internals().selectedReferenceIds()).toEqual(['30', '20', '10']);
   });
 
+  it('still takes the filled notes back after the same issue is read again', async () => {
+    type('Acme', 'November 2026');
+    await settle();
+    expect(notes()).toBe(SAVED_NOTES);
+
+    // The saved-brief lookup runs again for the SAME issue: the parent bumps the refresh token
+    // after a write of its own, which re-keys the lookup without changing the slug.
+    const reads = loadBrief.mock.calls.length;
+    fixture.componentRef.setInput('savedBriefRefreshToken', 1);
+    fixture.detectChanges();
+    await settle();
+    expect(loadBrief.mock.calls.length).toBeGreaterThan(reads);
+    expect(notes()).toBe(SAVED_NOTES);
+    expect(internals().notesFromSavedBrief()).toBe(true);
+
+    type('Acme', 'December 2026');
+    await settle();
+    expect(notes()).toBe('');
+  });
+
   it('keeps notes the operator edited after the fill when the issue changes', async () => {
     type('Acme', 'November 2026');
     await settle();
