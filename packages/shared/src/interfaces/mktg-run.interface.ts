@@ -632,6 +632,8 @@ export interface MktgPendingDocumentRun {
   agentId: string;
   projectUid: string;
   documentId: string;
+  /** Public opaque selector of the tracked run, when the server recorded one; never a capability. */
+  runId?: string;
   sessionId: string;
   ownerToken: string;
   savedAt: string;

@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { expect, test } from '@playwright/test';
-import { AUDIT_PROJECT, PAGE_LOAD_TIMEOUT, setupAudit } from './helpers/mktg-os-aeo-geo.helper';
+import { AUDIT_ACTIVE_RUN, AUDIT_PROJECT, PAGE_LOAD_TIMEOUT, setupAudit } from './helpers/mktg-os-aeo-geo.helper';
+import { activeRunConfirmDialog } from './helpers/mktg-os-confirm-dialog.helper';
 import { aeoGeoEnvelopeFixture } from '@lfx-one/shared/utils/aeo-geo.fixture';
 import { FOUNDATION_MESSAGE_PRINT_BODY_CLASS } from '@lfx-one/shared/constants';
 import { expectMktgPrintFrame, finishMktgPrintFrame, mktgPrintFrame, stubMktgPrintFrame } from './helpers/mktg-print.helper';
@@ -254,6 +255,45 @@ test.describe('AEO/GEO audit content', () => {
     await expect(report.getByTestId('mktg-aeo-typed-sources')).toContainText('https://project.example/');
     await expect(page.getByTestId('mktg-document-view-document')).toHaveCount(0);
     await page.screenshot({ path: testInfo.outputPath('typed-audit-report.png'), fullPage: true });
+  });
+
+  test('a second start says whose audit is running and since when; only Discard and start over replaces it', async ({ page }, testInfo) => {
+    const app = await setupAudit(page);
+    app.state.activeRun = true;
+    await app.go('/aeo-geo');
+    await page.getByTestId('mktg-aeo-run-submit').click();
+    const dialog = activeRunConfirmDialog(page);
+    await expect(dialog).toContainText('Your AEO/GEO report run is in progress', { timeout: PAGE_LOAD_TIMEOUT });
+    await expect(dialog).toContainText('Started 19 Oct 2026');
+    await expect(page.getByTestId('mktg-aeo-run-error')).toHaveCount(0);
+    expect(app.sessions.size).toBe(0);
+    await page.screenshot({ path: testInfo.outputPath('audit-active-run.png'), fullPage: true });
+    const replacement = page.waitForRequest(
+      (request) => request.url().endsWith('/aeo-geo/generate') && request.postDataJSON().discard === AUDIT_ACTIVE_RUN.activeRunId
+    );
+    await dialog.getByRole('button', { name: 'Discard and start over', exact: true }).click();
+    expect((await replacement).postDataJSON().answers).toMatchObject({ project_uid: AUDIT_PROJECT.uid });
+    await expect(page.getByTestId('mktg-aeo-run-activity')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+    await expect(dialog).toHaveCount(0);
+    expect(app.sessions.size).toBe(1);
+  });
+
+  test('a second answer is refused: the notice says who answered first, and the report opens', async ({ page }, testInfo) => {
+    const app = await setupAudit(page, { questions: true });
+    await app.go('/aeo-geo');
+    await page.getByTestId('mktg-aeo-run-submit').click();
+    await expect(page.getByTestId('mktg-run-questions-progress')).toContainText('Question 1 of 4', { timeout: PAGE_LOAD_TIMEOUT });
+    // Another window of the same requester answers first; this one still shows the questions.
+    app.state.answeredBy = 'Synthetic Auditor';
+    for (let step = 0; step < 3; step++) await page.getByTestId('mktg-run-questions-next').click();
+    await page.getByTestId('mktg-run-questions-send').click();
+    await expect(page.getByText('Synthetic Auditor already answered these — the agent is writing.', { exact: true })).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath('audit-answered-elsewhere.png'), fullPage: true });
+    await expect(page).toHaveURL(/\/documents\/aeo-geo\/run-/, { timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page.getByTestId('mktg-document-view-generating')).toBeVisible();
+    expect(app.answers).toHaveLength(1);
+    expect(app.answers[0].questionsId).toMatch(/^[a-f0-9]{64}$/);
+    expect(app.sessions.size).toBe(1);
   });
 
   test('a document-side refusal clears writing recovery and permits a fresh audit', async ({ page }, testInfo) => {

@@ -16,9 +16,11 @@ import {
   MKTG_INTAKE_LINK_ADVICE,
   MKTG_POLL_MAX_BACKOFF_MS,
   MKTG_POLL_RETRYING_TEXT,
+  MKTG_RUN_ACTIVE_DIALOG_KEYS,
   MKTG_RUN_POLL,
 } from '@lfx-one/shared/constants';
 import { MktgAgentIntake, MktgDocumentType, MktgRevisionResponse } from '@lfx-one/shared/interfaces';
+import { MktgActiveRunGuardService } from '@services/mktg-active-run-guard.service';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { MktgPendingDocumentService } from '@services/mktg-pending-document.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -27,6 +29,7 @@ import { UserService } from '@services/user.service';
 // package-architecture.md § Import Patterns: test fixtures are not re-exported by the production utils barrel.
 import { aeoGeoQuestionsFixture } from '@lfx-one/shared/utils/aeo-geo.fixture';
 import { aeoGeoRunQuestions } from '@lfx-one/shared/utils';
+import { ConfirmationService, MessageService } from 'primeng/api';
 import { of, Subject, throwError, TimeoutError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AeoGeoRunComponent } from './aeo-geo-run.component';
@@ -43,6 +46,7 @@ describe('AeoGeoRunComponent', () => {
   const answerQuestions = vi.fn();
   const clear = vi.fn();
   const saveQuestionDraft = vi.fn();
+  const guardOpen = vi.fn();
   const run = () => ({
     agentId: AEO_GEO_INTAKE.agentId,
     projectUid: 'project-1',
@@ -129,6 +133,7 @@ describe('AeoGeoRunComponent', () => {
     answerQuestions.mockReset().mockReturnValue(of(undefined));
     clear.mockReset();
     saveQuestionDraft.mockReset();
+    guardOpen.mockReset();
     TestBed.configureTestingModule({
       imports: [AeoGeoRunComponent],
       providers: [
@@ -146,6 +151,9 @@ describe('AeoGeoRunComponent', () => {
         { provide: UserService, useValue: { user: signal({ sub: 'synthetic-sub' }) } },
         { provide: MktgDocumentStoreService, useValue: { listDocuments } },
         { provide: MktgPendingDocumentService, useValue: { start, poll, loadActive, markWriting, answerQuestions, clear, saveQuestionDraft } },
+        { provide: MktgActiveRunGuardService, useValue: { open: guardOpen } },
+        ConfirmationService,
+        MessageService,
       ],
     });
   });
@@ -361,10 +369,76 @@ describe('AeoGeoRunComponent', () => {
     expect(query('mktg-run-questions')).not.toBeNull();
     expect(fixture.debugElement.query(By.directive(MktgRunQuestionsComponent)).componentInstance.allowNonAnswers()).toBe(true);
     fixture.componentInstance['onAnswers']([{ key: questions[0].key, text: questions[0].suggestedAnswer, origin: 'accepted' }]);
-    expect(answerQuestions).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'session-1' }), AEO_GEO_INTAKE, [
+    expect(answerQuestions).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'session-1' }), AEO_GEO_INTAKE, 'questions-1', [
       { id: 'audience', text: questions[0].suggestedAnswer, origin: 'accepted' },
     ]);
     expect(navigate).toHaveBeenCalledWith(['..', 'documents', 'aeo-geo', run().documentId], expect.anything());
+  });
+  it('hands a refused second start to the shared active-run dialog; only a confirmed discard names the run to close', async () => {
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    const active = {
+      code: 'MKTG_RUN_ACTIVE',
+      message: 'Your AEO/GEO report run is in progress.',
+      startedBy: 'Another writer',
+      startedByViewer: true,
+      startedAt: '2026-10-19T10:00:00.000Z',
+      activeRunId: 'd'.repeat(64),
+      state: 'questions',
+      agentKey: 'aeo-geo',
+      documentId: 'run-0123456789abcdef01234567',
+    };
+    start.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 409, error: active })));
+    poll.mockReturnValue(of({ status: 'pending' }));
+    await render();
+    query('mktg-aeo-run-submit').click();
+    fixture.detectChanges();
+    expect(query('mktg-aeo-run-error')).toBeNull();
+    expect(query('mktg-aeo-run-form')).not.toBeNull();
+    expect(fixture.componentInstance['busy']()).toBe(false);
+    expect(guardOpen).toHaveBeenCalledExactlyOnceWith(expect.anything(), expect.anything(), expect.anything(), MKTG_RUN_ACTIVE_DIALOG_KEYS.aeoGeo);
+    const options = guardOpen.mock.calls[0][1];
+    expect(options.conflict).toEqual(active);
+    expect(options.classify(new HttpErrorResponse({ status: 409, error: { ...active, agentKey: 'linkedin-post' } }))).toBeNull();
+    options.onOpen(options.conflict);
+    expect(navigate).toHaveBeenCalledWith(
+      ['..', 'documents', 'aeo-geo', active.documentId],
+      expect.objectContaining({ queryParams: { mode: null, run: active.activeRunId } })
+    );
+    // The dialog's re-check is the same start with no discard; "Discard and start over" alone names the run.
+    options.recheck();
+    expect(start).toHaveBeenLastCalledWith(AEO_GEO_INTAKE, 'project-1', expect.objectContaining({ domain: 'https://project.example/' }));
+    options.onDiscard(options.conflict);
+    expect(start).toHaveBeenLastCalledWith(AEO_GEO_INTAKE, 'project-1', expect.anything(), active.activeRunId);
+    expect(fixture.componentInstance['activeRun']()).toMatchObject({ sessionId: 'session-1' });
+  });
+  it.each([
+    ['MKTG_RUN_ANSWERED', 'Synthetic Auditor already answered these — the agent is writing.'],
+    ['MKTG_RUN_CLOSED', ''],
+  ])('on a refused second answer (%s) shows the answered notice and opens the report, or ends a closed run plainly', async (code, notice) => {
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    const add = vi.spyOn(TestBed.inject(MessageService), 'add');
+    const questions = aeoGeoRunQuestions(aeoGeoQuestionsFixture());
+    poll.mockReturnValue(of({ status: 'questions', questions, questionsId: 'questions-1' }));
+    await render();
+    query('mktg-aeo-run-submit').click();
+    await fixture.whenStable();
+    const body = { code, runId: 'd'.repeat(64), questionsId: 'questions-1', answeredBy: 'Synthetic Auditor', answeredAt: '2026-10-19T10:00:00.000Z' };
+    answerQuestions.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 409, error: body })));
+    fixture.componentInstance['onAnswers']([{ key: questions[0].key, text: 'A second answer.', origin: 'edited' }]);
+    fixture.detectChanges();
+    // Neither outcome re-reads the run to guess: the server already said what happened.
+    expect(poll).toHaveBeenCalledTimes(1);
+    if (notice) {
+      expect(add).toHaveBeenCalledExactlyOnceWith({ severity: 'info', summary: notice });
+      expect(navigate).toHaveBeenCalledWith(['..', 'documents', 'aeo-geo', run().documentId], expect.anything());
+      expect(query('mktg-aeo-run-error')).toBeNull();
+    } else {
+      expect(add).not.toHaveBeenCalled();
+      expect(navigate).not.toHaveBeenCalled();
+      expect(query('mktg-aeo-run-error').textContent).toContain('This audit was closed.');
+      expect(clear).toHaveBeenCalledWith('project-1', run().documentId);
+      expect(query('mktg-aeo-run-form')).not.toBeNull();
+    }
   });
   it('resumes questions on reload without starting a second session', async () => {
     loadActive.mockReturnValue(run());

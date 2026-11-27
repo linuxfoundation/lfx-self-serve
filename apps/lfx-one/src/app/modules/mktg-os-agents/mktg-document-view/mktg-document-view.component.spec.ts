@@ -1271,6 +1271,8 @@ describe('MktgDocumentViewComponent', () => {
       const again = query('mktg-document-view-run-again');
       const download = query('mktg-document-view-download');
       expect(again?.textContent?.trim()).toBe('Audit again');
+      // A tracked audit keeps its one link: the shared run controls stay out of the audit's page.
+      expect(harness.routeNativeElement?.querySelectorAll('[data-testid="mktg-document-view-run-again"]')).toHaveLength(1);
       expect(again?.className).toBe('text-sm font-medium text-blue-700 hover:underline');
       expect(query('mktg-aeo-report-actions')?.className).toBe('ml-auto flex flex-wrap items-center gap-4');
       expect(header?.contains(again)).toBe(true);
@@ -1371,6 +1373,38 @@ describe('MktgDocumentViewComponent', () => {
         expect(pending.waitForStorage).not.toHaveBeenCalled();
         expect(query('mktg-document-view-error')).not.toBeNull();
       }
+    });
+    it('follows an audit the server still runs when this browser holds no capability, then opens the stored report', async () => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+      const documentId = 'run-012345678901234567890123';
+      const recorded = (state: MktgDocumentRunProgress['state']) =>
+        of({ ...detail, documentId, current: null, revisions: [], runs: [{ ...started(state), agentKey: 'aeo-geo' as const, documentId }] });
+      store.getDocument.mockReturnValueOnce(recorded('writing')).mockReturnValueOnce(recorded('storing')).mockReturnValue(of(detail));
+      await render('/documents/aeo-geo/run-012345678901234567890123');
+      for (let read = 1; read <= 2; read++) {
+        expect(store.getDocument).toHaveBeenCalledTimes(read);
+        expect(query('mktg-document-view-generating')?.textContent).toContain('Generating your report');
+        expect(query('mktg-document-view-error')).toBeNull();
+        await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+        await settle();
+      }
+      expect(query('mktg-document-view-generating')).toBeNull();
+      expect(query('mktg-document-view-document')).not.toBeNull();
+      expect(pending.waitForStorage).not.toHaveBeenCalled();
+      vi.useRealTimers();
+    });
+    it.each([
+      ['questions', 'waiting for answers'],
+      ['failed', 'ended without a report'],
+    ] as const)('says plainly why a recorded audit in %s cannot continue in a browser without its capability', async (state, reason) => {
+      const documentId = 'run-012345678901234567890123';
+      store.getDocument.mockReturnValue(
+        of({ ...detail, documentId, current: null, revisions: [], runs: [{ ...started(state), agentKey: 'aeo-geo' as const, documentId }] })
+      );
+      await render('/documents/aeo-geo/run-012345678901234567890123');
+      expect(query('mktg-document-view-error')?.textContent).toContain(reason);
+      expect(query('mktg-document-view-generating')).toBeNull();
+      expect(store.getDocument).toHaveBeenCalledTimes(1);
     });
     it('keeps a new document generating until storage, then reopens the stored revision', async () => {
       const completed = new Subject<void>();
@@ -2149,6 +2183,8 @@ describe('MktgDocumentViewComponent', () => {
     MKTG_DOCUMENT_TYPES.filter(
       (type) =>
         type.kind === 'run' &&
+        // The audit is tracked too, but keeps its own receiver on this page (the AEO/GEO seam above).
+        type.agentKey !== 'aeo-geo' &&
         MKTG_AGENT_INTAKES[type.catalogAgentId ?? '']?.tracksDocumentRun &&
         MKTG_AGENTS.some((agent) => agent.id === type.catalogAgentId && agent.status === 'active')
     )

@@ -110,6 +110,7 @@ and open that Document with `generation`; the existing receiver replaces it with
 `run`, resumes the saved run and handles registered result/answers endpoints. Do not use
 shared fresh-Generate or add another registry/poller; private owner proof stays out of URLs.
 A one-off intake may read `latestPending(project, agent)` for advisory same-visit UI only; it reads existing memory, never storage or Generate provenance.
+AEO/GEO is tracked on the server the same way but keeps its own page receiver (see [AEO/GEO audits](../frontend/mktg-aeo-geo.md)); it does not call `prepareAccepted`.
 
 ## Terminal Guild failures
 

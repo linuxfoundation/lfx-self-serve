@@ -23,7 +23,18 @@ Notes are rendered last, as the agent's `NOTES (untrusted context):` …
 `END NOTES` block, after the structural key-page lines its parser reads, with
 every protocol-looking line inside them quoted (`guardAeoGeoText`, the agent's
 `guardText`); blank notes send no block.
-The response includes a stable run-document id and creator-bound owner token.
+Every audit is a tracked one-off run (`tracksDocumentRun`, the
+[durable started runs](../backend/mktg-document-revisions.md#durable-started-runs)
+LinkedIn and Member 360 use). Generate preflights tracking storage and the
+creator's active slot before any Guild session exists: a second start while the
+creator's audit is `writing`, `questions` or `storing` in that project is 409
+`MKTG_RUN_ACTIVE` with who started it and when, and only `discard: <activeRunId>`
+closes that run and starts the new one. The accepted session is recorded with
+`startForOneOff`. The run page hands that 409 to the shared
+`MktgActiveRunGuardService` dialog ("Your AEO/GEO report run is in progress",
+"Started …"): "Open it" opens the run's document, "Discard and start over"
+re-sends the same audit with `discard`.
+The response includes a stable run-document id, the public `runId` and a creator-bound owner token.
 `MktgPendingDocumentService` retains that capability under the effective user,
 project and document, with the existing run TTL; it never travels in a URL.
 Research stays on the run page with the shared activity feed. A 2.0 run may
@@ -37,7 +48,11 @@ endpoint and displays a generating state until the persistence receipt arrives.
 A ready Markdown result without that receipt is not a stored document. Polling
 is bounded, retries transient failures and cancels on destruction or scope
 change. A refresh can resume the pending run; another user cannot load it.
-The audit receiver stays separate from the shared living-asset Runs-land lifecycle; it does not create a generic run record.
+The audit's result endpoint reads through the tracker (`ownedOneOffResult`), so each poll records the run's state, and a
+writer's Documents read advances the same record and stores the report as the creator's. The audit keeps its own receiver on
+the run and Document pages (its browser capability), not the shared run-progress view: opened without that capability (another
+browser, another writer, a Started runs row), the Document page shows the same generating state and re-reads until the
+recorded run is stored; a recorded run waiting for answers or failed is a plain line with Run again.
 Document reads preserve the shared client's poll/refresh arguments and use its trailing expected-404 flag only for the matching pending audit.
 
 While generating, the existing result endpoint projects Guild session events
@@ -55,11 +70,17 @@ progress message or fetched tool text. A shared guard validates the one fenced
 JSON block. `MktgRunQuestionsComponent` presents it one question at a time,
 with Back/Continue, suggestion acceptance or editing, and no skip. The new
 `POST /api/mktg-agents/aeo-geo/answers` checks creator proof, project writer
-rights, the session's document id and the actual questions before posting a
-byte-compatible, protocol-guarded `aeo-geo-answers/v1` user message to the SAME
-Guild session. Omitted API answers remain caveats; the interactive stepper
-requires an answer to each question. A history read recognizes an acknowledged
-answers turn after a lost response/reload; history is never read as a report.
+rights, the session's document id and the actual questions, then claims the
+questions turn named by `questionsId` on the run tracker (`claimSessionAnswers`,
+as LinkedIn does) before posting a byte-compatible, protocol-guarded
+`aeo-geo-answers/v1` user message to the SAME Guild session. The first answer
+wins: any later one for that turn (a stale window, a retry after a lost
+response) is 409 `MKTG_RUN_ANSWERED` and sends nothing, and the run page shows
+"<name> already answered these — the agent is writing." and opens the report.
+The claim requires one answer per asked question, as the interactive stepper
+does; invalid answers are a 400 that leaves the turn unclaimed, and a delivery
+that fails after the claim keeps it. A history read still recognizes an answered
+turn so a reload does not ask again; history is never read as a report.
 A plain transport/domain-confirmation refusal stays an error on the run page,
 with no invented question round or report. Malformed questions fail visibly.
 Question position and edits stay in the same user/project/session-scoped pending record, with its existing TTL/pruning; they are not proof of writing.
@@ -132,7 +153,8 @@ not a simulated control here.
 The content and structural `mktg-os-aeo-geo` Playwright specs stub every Marketing
 OS call and project entitlement and run against the served branch.
 They cover validation, storage-dependent generating state, independent runs,
-research/questions re-entry, same-session answers, writing recovery, typed
+research/questions re-entry, same-session answers, the active-run dialog on a
+second start, the answered notice on a second answer, writing recovery, typed
 report presentation, PDF printing, refusal/errors, access denial and responsive
 layouts. The existing typed-report case checks About to the right at 1440px and below at 390px.
 The contract fixtures retain the provided 2.0 key-mode QA's event and

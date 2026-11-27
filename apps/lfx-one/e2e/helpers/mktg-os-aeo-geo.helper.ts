@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { LENS_COOKIE_KEY, MKTG_DOCUMENT_TYPES, PERSONA_COOKIE_KEY, SELECTED_PROJECT_COOKIE_KEY } from '@lfx-one/shared/constants';
-import type { AeoGeoAnswersBody, MktgRevisionResponse } from '@lfx-one/shared/interfaces';
+import type { AeoGeoAnswersBody, MktgActiveRunConflict, MktgRevisionResponse } from '@lfx-one/shared/interfaces';
 import { expect, Page } from '@playwright/test';
 import { ApiMockHelper } from './api-mock.helper';
 import { suppressCookieBanner } from './account-settings-email.helper';
@@ -13,6 +13,21 @@ import { aeoGeoRunQuestions } from '@lfx-one/shared/utils/aeo-geo.utils';
 export const PAGE_LOAD_TIMEOUT = 20_000;
 export const AUDIT_PROJECT = { uid: 'audit-project-1', slug: 'audit-e2e-project', name: 'Synthetic Audit Project' };
 export const AUDIT_BASE = `/project/mktg-os-agents`;
+/** The BFF's 409 for a second start: the requester's own audit the run tracker still lists (who and when). */
+export const AUDIT_ACTIVE_RUN: MktgActiveRunConflict = {
+  code: 'MKTG_RUN_ACTIVE',
+  message: 'Your AEO/GEO report run is in progress.',
+  startedBy: 'Another writer',
+  startedByViewer: true,
+  startedAt: '2026-10-19T12:00:00.000Z',
+  activeRunId: 'd'.repeat(64),
+  state: 'writing',
+  agentKey: 'aeo-geo',
+  documentId: 'run-ffffffffffffffffffffffff',
+};
+const QUESTIONS_ID = 'c'.repeat(64);
+/** The stub's opaque run id for a session's document, as Generate returns it and an answers conflict repeats it. */
+const runIdOf = (documentId: string): string => documentId.slice('run-'.length).padStart(64, '0');
 const TYPE = (() => {
   const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === 'aeo-geo');
   if (!type) {
@@ -95,6 +110,10 @@ export async function setupAudit(page: Page, options: { writer?: boolean; previo
     refused: false,
     revisionReadError: false,
     revisionReadFailures: 0,
+    /** The tracker lists an audit of this requester: Generate answers 409 until a start names it in `discard`. Written by the Generate stub only. */
+    activeRun: false,
+    /** Who already answered the questions turn: the answers stub then answers 409 MKTG_RUN_ANSWERED. Read by the answers stub only. */
+    answeredBy: '',
   };
   const answers: AeoGeoAnswersBody[] = [];
   const sessions = new Map<string, string>();
@@ -132,16 +151,36 @@ export async function setupAudit(page: Page, options: { writer?: boolean; previo
       if (state.generateError) {
         return route.fulfill({ status: 500, json: { error: 'Synthetic generation outage' } });
       }
+      const start = route.request().postDataJSON();
+      if (state.activeRun && start.discard !== AUDIT_ACTIVE_RUN.activeRunId) {
+        return route.fulfill({ status: 409, json: AUDIT_ACTIVE_RUN });
+      }
+      state.activeRun = false;
       const documentId = id();
       const sessionId = `synthetic-session-${documentId}`;
       sessions.set(sessionId, documentId);
-      const pages = route.request().postDataJSON().answers.key_pages as string | undefined;
+      const pages = start.answers.key_pages as string | undefined;
       namedCounts.set(documentId, pages?.split('\n').filter((url) => url.trim()).length ?? 0);
-      return route.fulfill({ json: { documentId, sessionId, ownerToken: 'synthetic-owner-proof' } });
+      return route.fulfill({ json: { documentId, sessionId, runId: runIdOf(documentId), ownerToken: 'synthetic-owner-proof' } });
     }
     if (path.endsWith('/aeo-geo/answers')) {
-      answers.push(route.request().postDataJSON());
+      const sent: AeoGeoAnswersBody = route.request().postDataJSON();
+      answers.push(sent);
+      // Either way the questions turn is answered: by this request, or by the one that won it first.
       state.answersSent = true;
+      if (state.answeredBy) {
+        return route.fulfill({
+          status: 409,
+          json: {
+            code: 'MKTG_RUN_ANSWERED',
+            message: `Already answered by ${state.answeredBy}`,
+            runId: runIdOf(sessions.get(sent.sessionId) ?? ''),
+            questionsId: sent.questionsId,
+            answeredBy: state.answeredBy,
+            answeredAt: new Date().toISOString(),
+          },
+        });
+      }
       return route.fulfill({ json: { success: true } });
     }
     if (path.endsWith('/aeo-geo/result')) {
@@ -150,7 +189,7 @@ export async function setupAudit(page: Page, options: { writer?: boolean; previo
       }
       if (options.questions && !state.answersSent) {
         return route.fulfill({
-          json: { status: 'questions', questions: aeoGeoRunQuestions(aeoGeoQuestionsFixture()), questionsId: 'synthetic-questions', activity: [] },
+          json: { status: 'questions', questions: aeoGeoRunQuestions(aeoGeoQuestionsFixture()), questionsId: QUESTIONS_ID, activity: [] },
         });
       }
       const documentId = sessions.get(route.request().postDataJSON().sessionId);

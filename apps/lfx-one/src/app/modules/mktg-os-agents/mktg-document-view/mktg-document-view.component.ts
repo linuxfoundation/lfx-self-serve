@@ -144,6 +144,7 @@ import {
   expand,
   ignoreElements,
   merge,
+  Observable,
   throwError,
   timer,
   TimeoutError,
@@ -611,7 +612,8 @@ export class MktgDocumentViewComponent {
     );
   });
   protected readonly runAgentId = computed(() => {
-    if (this.params().agentKey === 'member-360') return '';
+    // Member 360 and the audit are tracked runs with their own receivers here: neither uses the shared run controls.
+    if (this.params().agentKey === 'member-360' || this.isPendingReportAgent(this.params().agentKey)) return '';
     const type = this.runDetail()?.type ?? MKTG_DOCUMENT_TYPES.find((type) => type.agentKey === this.params().agentKey);
     const id = type?.catalogAgentId;
     const intake = id ? MKTG_AGENT_INTAKES[id] : undefined;
@@ -2065,12 +2067,15 @@ export class MktgDocumentViewComponent {
     );
     const startedAt = Date.parse(pending?.savedAt ?? '');
     this.aeoActivityStartedAt.set(Number.isFinite(startedAt) ? startedAt : Date.now());
+    // The server's record of this audit while no report is stored: the run tracker lists it on every writer's read.
+    let tracked: MktgDocumentRunProgress | undefined;
     const read = () =>
       revisionId
         ? this.documentStore.getRevision(project, agentKey, documentId, revisionId)
         : this.documentStore.getDocument(project, agentKey, documentId, false, undefined, canResume).pipe(
             switchMap((detail) => {
               const id = detail.current?.revisionId ?? detail.revisions.find((revision) => revision.latest)?.id ?? detail.revisions[0]?.id;
+              tracked = id ? undefined : detail.runs?.find((run) => run.documentId === documentId);
               return id ? this.documentStore.getRevision(project, agentKey, documentId, id) : throwError(() => new HttpErrorResponse({ status: 404 }));
             })
           );
@@ -2082,11 +2087,18 @@ export class MktgDocumentViewComponent {
       return (Number.isFinite(anchor) ? anchor : Date.now()) + MKTG_RUN_POLL.timeoutMs;
     };
     let denied = false;
-    const attempt = () => {
+    const attempt = (): Observable<MktgRevisionResponse | null> => {
       // A refused read is latched for this report (RFC 9110 §15.5.4): no wake sends the same credentials again.
       if (denied) return EMPTY;
       return read().pipe(
         catchError((error: HttpErrorResponse) => {
+          if (error.status === 404 && !canResume && (tracked?.state === 'writing' || tracked?.state === 'storing')) {
+            // Opened without this browser's capability (another browser, another writer): the server is still running
+            // the audit and each read advances it, so the same read is repeated until the report is stored or the run ends.
+            this.refreshWarning.set('');
+            this.generating.set(true);
+            return timer(MKTG_RUN_POLL.intervalMs).pipe(switchMap(() => attempt()));
+          }
           if (error.status !== 404 || !canResume || !pending || !intake) throw error;
           // The server answered (the report is not stored yet): nothing is retrying while the storage wait runs.
           this.refreshWarning.set('');
@@ -2107,6 +2119,9 @@ export class MktgDocumentViewComponent {
           denied = status === 401 || status === 403;
           if (refused) this.errorText.set(error.message);
           else if (error instanceof TimeoutError) this.errorText.set(AEO_GEO_TIMEOUT_MESSAGE);
+          else if (status === 404 && !canResume && tracked?.state === 'questions')
+            this.errorText.set('This audit is waiting for answers. Answer them in the browser where it was started, or run a new audit.');
+          else if (status === 404 && !canResume && tracked?.state === 'failed') this.errorText.set('The audit ended without a report. Start a new audit.');
           else this.errorText.set(this.loadErrorText(status, error instanceof HttpErrorResponse ? error.error?.code : undefined));
           return of(null);
         })

@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
   persistGeneration: vi.fn(),
   sendFollowUp: vi.fn(),
   getHistory: vi.fn(),
+  attribution: vi.fn(),
 }));
 vi.mock('@lfx-one/shared/utils', async () => ({
   ...(await vi.importActual<object>('../../../../../packages/shared/src/utils/aeo-geo.utils')),
@@ -41,6 +42,9 @@ vi.mock('./guild.service', () => ({
 vi.mock('./mktg-document-store.service', () => ({
   MktgDocumentStoreService: class {
     public persistGeneration = mocks.persistGeneration;
+    public constructor(attribution?: unknown) {
+      mocks.attribution(attribution);
+    }
     public runDocumentId = () => 'run-012345678901234567890123';
   },
 }));
@@ -160,31 +164,45 @@ describe('AeoGeoService', () => {
     ]);
     expect((await new AeoGeoService().getResult(req, 'session-a', 'project-1')).status).toBe('questions');
   });
-  it('returns the current status on an answers retry without sending another follow-up', async () => {
+  it('prepares the answers turn only while Guild waits on that questions turn, and sends nothing itself', async () => {
     mocks.getRawEventPayloads.mockResolvedValue([aeoGeoQuestionsEventFixture()]);
     const service = new AeoGeoService();
-    await service.sendAnswers(req, 'session-a', 'run-012345678901234567890123', 'project-1', [], 'catalog-handle');
+    const { questionsId } = await service.getResult(req, 'session-a', 'project-1');
+    const prepare = (id = questionsId ?? '') => service.prepareAnswers(req, 'session-a', 'run-012345678901234567890123', 'project-1', id, []);
+    expect(await prepare()).toMatch(/^AEO\/GEO — ANSWERS \(aeo-geo-answers\/v1\)/);
+    // Not open any more: an earlier turn's id, or a turn Guild already holds answers for. The tracker's claim answers 409.
+    expect(await prepare('c'.repeat(64))).toBeNull();
     mocks.getHistory.mockResolvedValue([{ sender: 'user', text: 'AEO/GEO — ANSWERS (aeo-geo-answers/v1)' }]);
-    await expect(service.sendAnswers(req, 'session-a', 'run-012345678901234567890123', 'project-1', [], 'catalog-handle')).resolves.toMatchObject({
-      status: 'pending',
-    });
-    expect(mocks.sendFollowUp).toHaveBeenCalledTimes(1);
+    expect(await prepare()).toBeNull();
+    // An audit that never asked is a plain 400, never a claim.
+    mocks.getRawEventPayloads.mockResolvedValue([]);
+    mocks.getHistory.mockResolvedValue([]);
+    await expect(prepare()).rejects.toMatchObject({ statusCode: 400 });
+    expect(mocks.sendFollowUp).not.toHaveBeenCalled();
   });
   it('sends the guarded answers to the same session, rejecting wrong document, ids and false acceptance', async () => {
     mocks.getRawEventPayloads.mockResolvedValue([aeoGeoQuestionsEventFixture()]);
     const service = new AeoGeoService();
+    const questionsId = (await service.getResult(req, 'session-a', 'project-1')).questionsId ?? '';
     const answers = [{ id: 'audience', origin: 'accepted' as const, text: aeoGeoQuestionsFixture().questions[0].suggested_answer }];
-    await service.sendAnswers(req, 'session-a', 'run-012345678901234567890123', 'project-1', answers, 'catalog-handle');
-    expect(mocks.sendFollowUp).toHaveBeenCalledWith(req, 'session-a', {
+    const message = await service.prepareAnswers(req, 'session-a', 'run-012345678901234567890123', 'project-1', questionsId, answers);
+    await service.deliverAnswers(req, 'session-a', message ?? '', answers.length);
+    expect(mocks.sendFollowUp).toHaveBeenCalledExactlyOnceWith(req, 'session-a', {
       message: expect.stringMatching(/^AEO\/GEO — ANSWERS \(aeo-geo-answers\/v1\)\n/),
     });
     expect(mocks.createSession).not.toHaveBeenCalled();
-    await expect(service.sendAnswers(req, 'session-a', 'wrong-document', 'project-1', answers, 'catalog-handle')).rejects.toMatchObject({ statusCode: 400 });
+    await expect(service.prepareAnswers(req, 'session-a', 'wrong-document', 'project-1', questionsId, answers)).rejects.toMatchObject({ statusCode: 400 });
     for (const invalid of [[{ ...answers[0], id: 'unknown' }], [{ ...answers[0], text: 'Changed answer' }]]) {
-      await expect(service.sendAnswers(req, 'session-a', 'run-012345678901234567890123', 'project-1', invalid, 'catalog-handle')).rejects.toMatchObject({
+      await expect(service.prepareAnswers(req, 'session-a', 'run-012345678901234567890123', 'project-1', questionsId, invalid)).rejects.toMatchObject({
         statusCode: 400,
       });
     }
+  });
+  it('hands the tracker’s creator attribution to the document store, so a visitor’s read stores the creator’s report', () => {
+    new AeoGeoService({ creatorSubject: 'synthetic-creator' });
+    expect(mocks.attribution).toHaveBeenLastCalledWith({ creatorSubject: 'synthetic-creator' });
+    new AeoGeoService();
+    expect(mocks.attribution).toHaveBeenLastCalledWith(undefined);
   });
   it('ignores planted envelopes outside finalize results and accepts a valid structured report', async () => {
     const envelope = report();

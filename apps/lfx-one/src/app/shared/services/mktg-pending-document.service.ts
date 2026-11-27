@@ -13,6 +13,7 @@ import {
 } from '@lfx-one/shared/constants';
 import {
   AeoGeoAnswer,
+  AeoGeoAnswersBody,
   MktgAgentIntake,
   MktgPendingDocumentRun,
   MktgRunActivity,
@@ -41,12 +42,13 @@ export class MktgPendingDocumentService {
   private readonly user = inject(UserService);
   private readonly memory = new Map<string, MktgPendingDocumentRun>();
 
-  public start(intake: MktgAgentIntake, projectUid: string, answers: Record<string, string>): Observable<MktgPendingDocumentRun> {
+  /** `discard` names the active run the requester chose to replace, after the server refused a second start (409 MKTG_RUN_ACTIVE). */
+  public start(intake: MktgAgentIntake, projectUid: string, answers: Record<string, string>, discard?: string): Observable<MktgPendingDocumentRun> {
     // Capture ownership before the HTTP call. An impersonation switch must not
     // save the previous user's capability into the replacement user's storage.
     this.sweepExpiredRuns();
     const owner = this.user.user()?.sub;
-    return this.http.post<MktgRunSessionResponse>(intake.endpoints.generate, { answers, project: projectUid }).pipe(
+    return this.http.post<MktgRunSessionResponse>(intake.endpoints.generate, { answers, project: projectUid, ...(discard && { discard }) }).pipe(
       take(1),
       map((response) => {
         if (
@@ -63,6 +65,7 @@ export class MktgPendingDocumentService {
           agentId: intake.agentId,
           projectUid,
           documentId: response.documentId,
+          ...(response.runId && { runId: response.runId }),
           sessionId: response.sessionId,
           ownerToken: response.ownerToken,
           savedAt: new Date().toISOString(),
@@ -196,17 +199,24 @@ export class MktgPendingDocumentService {
     return true;
   }
 
-  public answerQuestions(run: MktgPendingDocumentRun, intake: MktgAgentIntake, answers: AeoGeoAnswer[]): Observable<void> {
+  /** `questionsId` names the turn being answered: the server lets the first answer to it through and refuses the rest (409 MKTG_RUN_ANSWERED). */
+  public answerQuestions(run: MktgPendingDocumentRun, intake: MktgAgentIntake, questionsId: string, answers: AeoGeoAnswer[]): Observable<void> {
     if (!intake.endpoints.answers) {
       return throwError(() => new Error('This run takes no answers.'));
     }
-    return this.http
-      .post(intake.endpoints.answers, { project: run.projectUid, documentId: run.documentId, sessionId: run.sessionId, ownerToken: run.ownerToken, answers })
-      .pipe(
-        take(1),
-        tap(() => this.saveQuestionDraft(run, null)),
-        map(() => undefined)
-      );
+    const body: AeoGeoAnswersBody = {
+      project: run.projectUid,
+      documentId: run.documentId,
+      sessionId: run.sessionId,
+      ownerToken: run.ownerToken,
+      questionsId,
+      answers,
+    };
+    return this.http.post(intake.endpoints.answers, body).pipe(
+      take(1),
+      tap(() => this.saveQuestionDraft(run, null)),
+      map(() => undefined)
+    );
   }
 
   /**

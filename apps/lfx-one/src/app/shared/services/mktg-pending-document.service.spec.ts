@@ -68,14 +68,26 @@ describe('MktgPendingDocumentService', () => {
     expect(restored.loadActive('project-1', AEO_GEO_INTAKE.agentId)).toBeNull();
     expect(restored.markWriting(run())).toBe(false);
   });
-  it('posts answers to the existing session and document without generating again', () => {
+  it('names the run to discard only on a confirmed restart, and keeps the tracked run id with the capability', () => {
+    const runId = 'd'.repeat(64);
+    post.mockReturnValue(of({ sessionId: 'session-1', ownerToken: 'owner-proof', documentId: DOCUMENT_ID, runId }));
+    service.start(AEO_GEO_INTAKE, 'project-1', { domain: 'project.example' }, 'e'.repeat(64)).subscribe();
+    expect(post).toHaveBeenCalledWith(AEO_GEO_INTAKE.endpoints.generate, {
+      project: 'project-1',
+      answers: { domain: 'project.example' },
+      discard: 'e'.repeat(64),
+    });
+    expect(service.load('project-1', DOCUMENT_ID)?.runId).toBe(runId);
+  });
+  it('posts answers for one questions turn to the existing session and document without generating again', () => {
     const answers = [{ id: 'audience', text: 'Platform engineers.', origin: 'requester' as const }];
-    service.answerQuestions(run(), AEO_GEO_INTAKE, answers).subscribe();
+    service.answerQuestions(run(), AEO_GEO_INTAKE, 'c'.repeat(64), answers).subscribe();
     expect(post).toHaveBeenCalledExactlyOnceWith(AEO_GEO_INTAKE.endpoints.answers, {
       project: 'project-1',
       documentId: DOCUMENT_ID,
       sessionId: 'session-1',
       ownerToken: 'owner-proof',
+      questionsId: 'c'.repeat(64),
       answers,
     });
   });

@@ -363,6 +363,7 @@ The HTTP guard `isAeoGeoSubmittedAnswers` is separate from the agent-protocol sh
 Member 360's questions branch carries a companion schema patch and retains its exact-key coverage.
 The current main run record does not store asked questions, so complete-turn coverage for kit,
 LinkedIn and AEO/GEO is a follow-on once that server-side evidence is available, not inferred here.
+AEO/GEO answers now pass the tracked claim below, whose stored turn requires one answer per asked question.
 
 ## Durable started runs
 
@@ -410,7 +411,7 @@ the stored subject, and `answeredAt` is ISO or null for unknown legacy attributi
 reads `writing`; an old questions result cannot reopen the answered block. A send failure does not roll
 back the claim because delivery may be uncertain; it must not invite a second answers message.
 The four kit creator-token answer endpoints require project and questions id and use this same claim
-before their existing domain senders, passing the validated answers into the same stored-key coverage check. LinkedIn's dedicated route requires the recorded one-off creator and performs read-only event/turn/key validation plus rendering before the claim; only delivery follows it, with no second events lookup. A preparation failure leaves the questions unclaimed, while uncertain delivery retains the claim. The public writer route still refuses one-offs.
+before their existing domain senders, passing the validated answers into the same stored-key coverage check. LinkedIn's dedicated route requires the recorded one-off creator and performs read-only event/turn/key validation plus rendering before the claim; only delivery follows it, with no second events lookup. AEO/GEO's dedicated route does the same with its own questions check: a turn Guild no longer waits on goes to the claim unsent, so a stale window gets the 409 rather than a 400. A preparation failure leaves the questions unclaimed, while uncertain delivery retains the claim. The public writer route still refuses one-offs.
 No client owner token or session id is trusted or returned by the public route; the ACK is
 only `{ runId, state: 'writing' }`. Viewers are refused (403), and one-offs always receive the plain
 creator-only reason (403) and keep their dedicated answer routes. Public progress includes the stored
@@ -425,7 +426,7 @@ completion data. The captured one-off body and the existing redraft
 `prior-revision-id` semantics stay separate; neither field populates the other.
 
 Dedicated one-offs opt in with `tracksDocumentRun` on their registered intake.
-LinkedIn Post and Member 360 Generate preflight tracking storage before creating a Guild session,
+LinkedIn Post, Member 360 and AEO/GEO Generate preflight tracking storage before creating a Guild session,
 then call `startForOneOff` before returning an opaque `runId` alongside their existing response.
 The destination is the exact session-derived `run-…` document ID, never `living`;
 separate one-off sessions cannot supersede each other's progress. Plain writer-entitled
