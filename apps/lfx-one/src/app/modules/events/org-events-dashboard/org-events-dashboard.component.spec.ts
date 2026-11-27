@@ -115,6 +115,7 @@ async function render(
         useValue: {
           pageState,
           hasPageState: computed(() => pageState() !== null),
+          employerName: signal(null),
           pageReady: signal(true),
           settled: signal(settled),
           retrying: signal(false),

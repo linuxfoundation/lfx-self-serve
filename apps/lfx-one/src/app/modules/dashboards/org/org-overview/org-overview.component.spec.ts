@@ -57,7 +57,15 @@ describe('OrgOverviewComponent page gate', () => {
         { provide: OrgRoleGrantsService, useValue: { isStaff: signal(false), correlationId: signal(null) } },
         {
           provide: OrgLensEmptyStateService,
-          useValue: { pageState, hasPageState: computed(() => pageState() !== null), pageReady, settled, retrying: signal(false), retry: vi.fn() },
+          useValue: {
+            pageState,
+            hasPageState: computed(() => pageState() !== null),
+            employerName: signal(null),
+            pageReady,
+            settled,
+            retrying: signal(false),
+            retry: vi.fn(),
+          },
         },
       ],
     }).compileComponents();

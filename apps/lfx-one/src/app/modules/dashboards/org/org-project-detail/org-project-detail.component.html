@@ -6,7 +6,7 @@
     <lfx-org-lens-empty-state
       [state]="state"
       [testId]="'org-project-detail-no-access'"
-      [values]="{ correlationId: correlationId() }"
+      [values]="{ correlationId: correlationId(), employerName: emptyState.employerName() }"
       [retrying]="emptyState.retrying()"
       (retry)="emptyState.retry()" />
   } @else if (!emptyState.settled()) {
