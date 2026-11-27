@@ -24,6 +24,10 @@ const store = vi.hoisted(() => ({
   /** Answer every public image upload with a URL longer than the exporter accepts. */
   longUrls: false,
   publicPuts: 0,
+  /** Keys whose conditional replace (ifMatch) throws, as a storage outage would: the write is never applied. */
+  failReplaceKeys: [] as string[],
+  /** Runs once, between a private read of this key and whatever follows it: another start writing in that gap. */
+  afterPrivateRead: null as { key: string; run: () => void } | null,
 }));
 const guildMocks = vi.hoisted(() => ({ createSession: vi.fn(), getRawEventPayloads: vi.fn() }));
 const loggerMocks = vi.hoisted(() => ({
@@ -119,6 +123,9 @@ vi.mock('./object-store.service', () => ({
       key: string,
       input: { body: Buffer; metadata?: Record<string, string>; ifMatch?: string; ifNoneMatch?: string }
     ): Promise<boolean> {
+      if (input.ifMatch && store.failReplaceKeys.includes(key)) {
+        throw new Error('bucket unavailable');
+      }
       const previous = store.objects.get(key);
       if ((input.ifNoneMatch && previous) || (input.ifMatch && (!previous || input.ifMatch !== String(previous.lastModified.getTime())))) {
         return false;
@@ -126,6 +133,22 @@ vi.mock('./object-store.service', () => ({
       store.clock += 1000;
       store.objects.set(key, { body: input.body.toString('utf8'), metadata: input.metadata ?? {}, lastModified: new Date(store.clock) });
       return true;
+    }
+    public async putPrivateObjectIfAbsent(req: unknown, purpose: string, key: string, input: { body: Buffer }): Promise<boolean> {
+      return this.putConditionalObject(req, purpose, key, { ...input, ifNoneMatch: '*' });
+    }
+    public async getPrivateObject(
+      req: unknown,
+      purpose: string,
+      key: string
+    ): Promise<{ body: string; metadata: Record<string, string>; etag: string } | null> {
+      const object = await this.getObject(req, purpose, key);
+      const hook = store.afterPrivateRead;
+      if (hook?.key === key) {
+        store.afterPrivateRead = null;
+        hook.run();
+      }
+      return object;
     }
     public async listObjects(_req: unknown, _purpose: string, prefix: string): Promise<{ key: string; lastModified?: Date }[]> {
       return [...store.objects.entries()].filter(([key]) => key.startsWith(prefix)).map(([key, object]) => ({ key, lastModified: object.lastModified }));
@@ -145,7 +168,14 @@ vi.mock('./object-store.service', () => ({
   },
 }));
 
-import { BRAND_KIT_ICON_SAMPLES, MKTG_ARTIFACT_SPECS, MKTG_DOCUMENT_TYPES, MKTG_SLIDES_EXPORT_POLL } from '@lfx-one/shared/constants';
+import {
+  BRAND_KIT_ICON_SAMPLES,
+  MKTG_ARTIFACT_SPECS,
+  MKTG_DOCUMENT_TYPES,
+  MKTG_FAMILY_EXPORT_ACTIVE,
+  MKTG_FAMILY_EXPORT_ACTIVE_TTL_MS,
+  MKTG_SLIDES_EXPORT_POLL,
+} from '@lfx-one/shared/constants';
 import type { MktgDocumentType, MktgSlidesExportStartInput } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
@@ -343,6 +373,8 @@ describe('MktgSlidesExportService', () => {
     store.failPublicPutImages = [];
     store.longUrls = false;
     store.publicPuts = 0;
+    store.failReplaceKeys = [];
+    store.afterPrivateRead = null;
     projectMocks.getProjectById.mockResolvedValue({ uid: PROJECT, writer: true });
     directoryMocks.getUserInfo.mockResolvedValue({ success: true, data: { name: 'The writer' } });
     guildMocks.createSession.mockResolvedValue('session-1');
@@ -654,6 +686,292 @@ describe('MktgSlidesExportService', () => {
       guildMocks.getRawEventPayloads.mockResolvedValue([outputEvent()]);
       await vi.advanceTimersByTimeAsync(MKTG_SLIDES_EXPORT_POLL.intervalMs);
       expect((await service.getFamilyLast(req, PROJECT, familyInput.familyId)).last?.deckId).toBe(DECK_ID);
+    });
+
+    describe('one at a time', () => {
+      const MARKER_KEY = `slides-export-active/${PROJECT}/positioning-brand.json`;
+      const OTHER_SUB = 'auth0|synthetic-second-writer';
+      const other = { path: req.path, oidc: { user: { sub: OTHER_SUB } } } as unknown as Request;
+      const marker = (): Record<string, unknown> => JSON.parse(store.objects.get(MARKER_KEY)?.body ?? 'null');
+      const running = async (viewer: Request = req) => (await service.getFamilyLast(viewer, PROJECT, familyInput.familyId)).running;
+      const records = (): string[] => [...store.objects.keys()].filter((key) => key.startsWith('slides-exports/'));
+      /** Another start's marker landing between this start's read of the marker and its own write. */
+      const landOtherMarker = (): void => {
+        store.afterPrivateRead = {
+          key: MARKER_KEY,
+          run: () => {
+            const body = {
+              schema: 'mktg-family-export-active/v1',
+              project: PROJECT,
+              familyId: 'positioning-brand',
+              claim: 'synthetic-claim',
+              creatorSubject: OTHER_SUB,
+              startedAt: new Date().toISOString(),
+              expiresAt: Date.now() + MKTG_FAMILY_EXPORT_ACTIVE_TTL_MS,
+              sessionId: null,
+            };
+            store.objects.set(MARKER_KEY, { body: JSON.stringify(body), metadata: {}, lastModified: new Date((store.clock += 1000)) });
+          },
+        };
+      };
+      /** Let work started from a timer (the server's own release) run to its end. */
+      const settle = async (): Promise<void> => {
+        for (let turn = 0; turn < 50; turn++) await Promise.resolve();
+      };
+
+      it('refuses a second start with who holds the family and since when, without reading or sending anything', async () => {
+        await seedFramework(documentStore);
+        vi.setSystemTime(new Date('2026-11-27T10:00:00.000Z'));
+        const first = await service.startFamilyExport(req, familyInput);
+        expect(marker()).toMatchObject({ creatorSubject: 'auth0|synthetic-export-writer', startedAt: '2026-11-27T10:00:00.000Z', sessionId: first.sessionId });
+        vi.setSystemTime(new Date('2026-11-27T10:01:00.000Z'));
+        const read = vi.spyOn(MktgDocumentStoreService.prototype, 'readExportRevision');
+        directoryMocks.getUserInfo.mockClear();
+
+        // Another writer, whichever mode they chose: the first writer's display name, never their subject.
+        for (const mode of ['create', 'update'] as const) {
+          const refused = await service.startFamilyExport(other, { ...familyInput, mode }).catch((error: unknown) => error);
+          expect(refused).toBeInstanceOf(ConflictError);
+          expect(refused).toMatchObject({ statusCode: 409, code: MKTG_FAMILY_EXPORT_ACTIVE });
+          expect((refused as ConflictError).toResponse()).toMatchObject({
+            code: MKTG_FAMILY_EXPORT_ACTIVE,
+            startedBy: 'The writer',
+            startedByViewer: false,
+            startedAt: '2026-11-27T10:00:00.000Z',
+          });
+        }
+        expect(directoryMocks.getUserInfo).toHaveBeenCalledWith(other, 'auth0|synthetic-export-writer');
+
+        // The same writer again (a second tab, a second click): theirs, and no directory lookup for their own name.
+        directoryMocks.getUserInfo.mockClear();
+        const own = await service.startFamilyExport(req, familyInput).catch((error: unknown) => error);
+        expect((own as ConflictError).toResponse()).toMatchObject({ startedBy: null, startedByViewer: true, startedAt: '2026-11-27T10:00:00.000Z' });
+        expect(directoryMocks.getUserInfo).not.toHaveBeenCalled();
+
+        // Nothing was read or sent for any refused start, and the first export still holds the family.
+        expect(read).not.toHaveBeenCalled();
+        read.mockRestore();
+        expect(guildMocks.createSession).toHaveBeenCalledTimes(1);
+        expect(marker()).toMatchObject({ sessionId: first.sessionId, startedAt: '2026-11-27T10:00:00.000Z' });
+        // The name is response-only: neither the log lines nor the server message carry it.
+        expect((own as ConflictError).message).toBe('An export of this family is already running.');
+        expect(JSON.stringify([...loggerMocks.warning.mock.calls, ...loggerMocks.info.mock.calls, ...loggerMocks.debug.mock.calls])).not.toContain(
+          'The writer'
+        );
+      });
+
+      it('names nobody when the directory has no display name, or only an email, for the starter', async () => {
+        await seedFramework(documentStore);
+        await service.startFamilyExport(req, familyInput);
+        for (const data of [{ name: 'writer@example.com' }, { name: '' }, { name: 'auth0|synthetic-export-writer' }]) {
+          directoryMocks.getUserInfo.mockResolvedValue({ success: true, data });
+          // A fresh request each time: the name is memoised per request.
+          const viewer = { path: req.path, oidc: { user: { sub: OTHER_SUB } } } as unknown as Request;
+          const refused = await service.startFamilyExport(viewer, familyInput).catch((error: unknown) => error);
+          expect((refused as ConflictError).toResponse()).toMatchObject({ code: MKTG_FAMILY_EXPORT_ACTIVE, startedBy: null, startedByViewer: false });
+        }
+      });
+
+      it('lets exactly one of two starts through when both find the family free', async () => {
+        await seedFramework(documentStore);
+        // This start reads "no marker", and the other one's marker lands before this one's create-if-absent.
+        landOtherMarker();
+        const refused = await service.startFamilyExport(req, familyInput).catch((error: unknown) => error);
+        expect((refused as ConflictError).toResponse()).toMatchObject({ code: MKTG_FAMILY_EXPORT_ACTIVE, startedBy: 'The writer', startedByViewer: false });
+        expect(guildMocks.createSession).not.toHaveBeenCalled();
+        expect(marker()).toMatchObject({ claim: 'synthetic-claim', creatorSubject: OTHER_SUB });
+      });
+
+      it('lets exactly one of two starts take over a marker that holds nothing any more', async () => {
+        await seedFramework(documentStore);
+        const abandoned = await service.startFamilyExport(req, familyInput);
+        vi.clearAllTimers();
+        vi.setSystemTime(Date.now() + MKTG_FAMILY_EXPORT_ACTIVE_TTL_MS);
+        guildMocks.createSession.mockClear();
+        // Both starts read the expired marker; the other one's replacement lands before this one's.
+        landOtherMarker();
+        const refused = await service.startFamilyExport(req, familyInput).catch((error: unknown) => error);
+        expect((refused as ConflictError).toResponse()).toMatchObject({ code: MKTG_FAMILY_EXPORT_ACTIVE, startedBy: 'The writer', startedByViewer: false });
+        expect(guildMocks.createSession).not.toHaveBeenCalled();
+        expect(marker()).toMatchObject({ claim: 'synthetic-claim', creatorSubject: OTHER_SUB });
+        expect(marker()).not.toMatchObject({ sessionId: abandoned.sessionId });
+      });
+
+      it('reports the export in flight on the last-export read, to its starter and to everyone else, until it ends', async () => {
+        await seedFramework(documentStore);
+        expect(await running()).toBeNull();
+        vi.setSystemTime(new Date('2026-11-27T10:00:00.000Z'));
+        const started = await service.startFamilyExport(req, familyInput);
+        expect(await running()).toEqual({ startedBy: null, startedByViewer: true, startedAt: '2026-11-27T10:00:00.000Z' });
+        expect(await running(other)).toEqual({ startedBy: 'The writer', startedByViewer: false, startedAt: '2026-11-27T10:00:00.000Z' });
+        // A pending poll keeps the family held.
+        expect(await service.getFamilyResult(req, started.sessionId, started.snapshot)).toEqual({ status: 'pending' });
+        expect(await running(other)).not.toBeNull();
+        // The deck's record is kept before the marker goes: the read that says nothing is running carries the deck.
+        guildMocks.getRawEventPayloads.mockResolvedValue([outputEvent()]);
+        await service.getFamilyResult(req, started.sessionId, started.snapshot);
+        const last = await service.getFamilyLast(other, PROJECT, familyInput.familyId);
+        expect(last.running).toBeNull();
+        expect(last.last?.deckId).toBe(DECK_ID);
+        // And the family is free: the next start is not refused.
+        guildMocks.createSession.mockResolvedValue('session-2');
+        await expect(service.startFamilyExport(other, familyInput)).resolves.toMatchObject({ sessionId: 'session-2' });
+      });
+
+      it('frees the family when the start is refused later or Guild creates no session', async () => {
+        // Nothing approved: the start took the family, found nothing to export and gave it back.
+        await seedFramework(documentStore, 'Draft only.', false);
+        await expect(service.startFamilyExport(req, familyInput)).rejects.toMatchObject({ code: 'FAMILY_NOTHING_APPROVED' });
+        expect(marker()).toMatchObject({ expiresAt: 0, sessionId: null });
+        expect(await running(other)).toBeNull();
+        // No deck to update.
+        await approveNewest(documentStore, FRAMEWORK);
+        await expect(service.startFamilyExport(req, { ...familyInput, mode: 'update' })).rejects.toMatchObject({ code: 'NO_DECK_TO_UPDATE' });
+        expect(await running(other)).toBeNull();
+        // Guild down.
+        guildMocks.createSession.mockRejectedValueOnce(new Error('guild unavailable'));
+        await expect(service.startFamilyExport(req, familyInput)).rejects.toThrow('guild unavailable');
+        expect(await running(other)).toBeNull();
+        // Each time the next start, by anyone, goes through.
+        await expect(service.startFamilyExport(other, familyInput)).resolves.toMatchObject({ sessionId: 'session-1' });
+        expect(guildMocks.createSession).toHaveBeenCalledTimes(2);
+      });
+
+      it('frees the family when the export fails, and when its deck can never be recorded', async () => {
+        await seedFramework(documentStore);
+        const failed = await service.startFamilyExport(req, familyInput);
+        guildMocks.getRawEventPayloads.mockResolvedValue([
+          JSON.stringify({ type: 'agent_notification_message', created_at: '2026-10-19T10:00:00Z', content: { type: 'text', data: 'Google refused.' } }),
+        ]);
+        expect(await service.getFamilyResult(req, failed.sessionId, failed.snapshot)).toMatchObject({ status: 'failed' });
+        expect(await running(other)).toBeNull();
+
+        // A finished deck whose signed revision is gone: this poll and every later one throws, so the family is freed now.
+        guildMocks.createSession.mockResolvedValue('session-2');
+        const lost = await service.startFamilyExport(req, familyInput);
+        const member = lost.snapshot.members[0];
+        if (!member) throw new Error('Missing synthetic member');
+        guildMocks.getRawEventPayloads.mockResolvedValue([outputEvent()]);
+        const tampered = { ...lost.snapshot, members: [{ ...member, contentSha256: 'f'.repeat(64) }] };
+        await expect(service.getFamilyResult(req, lost.sessionId, tampered)).rejects.toMatchObject({ statusCode: 404 });
+        expect(await running(other)).toBeNull();
+        expect(records()).toHaveLength(0);
+      });
+
+      it('keeps the family held through a poll that may still succeed, and a poll of another session never frees it', async () => {
+        await seedFramework(documentStore);
+        const started = await service.startFamilyExport(req, familyInput);
+        // Guild unreachable: the poll throws, the export may still be running.
+        guildMocks.getRawEventPayloads.mockRejectedValueOnce(new Error('guild unavailable'));
+        await expect(service.getFamilyResult(req, started.sessionId, started.snapshot)).rejects.toThrow('guild unavailable');
+        expect(await running(other)).not.toBeNull();
+        // A finished poll of an earlier session of this family (a late browser) is not this export's end.
+        guildMocks.getRawEventPayloads.mockResolvedValue([outputEvent()]);
+        await service.getFamilyResult(req, 'session-of-an-earlier-export', started.snapshot);
+        expect(await running(other)).not.toBeNull();
+        expect(marker()).toMatchObject({ sessionId: started.sessionId });
+      });
+
+      it('frees the family at the server’s own deadline when the export never ends and no browser polls', async () => {
+        await seedFramework(documentStore);
+        await service.startFamilyExport(req, familyInput);
+        await vi.advanceTimersByTimeAsync(MKTG_SLIDES_EXPORT_POLL.timeoutMs - MKTG_SLIDES_EXPORT_POLL.intervalMs);
+        expect(await running(other)).not.toBeNull();
+        await vi.advanceTimersByTimeAsync(MKTG_SLIDES_EXPORT_POLL.intervalMs);
+        await settle();
+        expect(marker()).toMatchObject({ expiresAt: 0 });
+        expect(await running(other)).toBeNull();
+        expect(vi.getTimerCount()).toBe(0);
+      });
+
+      it('holds nothing past its deadline: a marker no server released stops being reported and is taken over', async () => {
+        await seedFramework(documentStore);
+        const started = await service.startFamilyExport(req, familyInput);
+        // The server that started it is gone: its poll never runs, and no browser polls.
+        vi.clearAllTimers();
+        vi.setSystemTime(Date.now() + MKTG_FAMILY_EXPORT_ACTIVE_TTL_MS - 1);
+        expect(await running(other)).not.toBeNull();
+        await expect(service.startFamilyExport(other, familyInput)).rejects.toMatchObject({ code: MKTG_FAMILY_EXPORT_ACTIVE });
+        vi.setSystemTime(Date.now() + 1);
+        expect(await running(other)).toBeNull();
+        guildMocks.createSession.mockResolvedValue('session-2');
+        const next = await service.startFamilyExport(other, familyInput);
+        expect(marker()).toMatchObject({ creatorSubject: OTHER_SUB, sessionId: 'session-2' });
+        // The first export's late result is recorded, and frees nothing: the family is the second export's now.
+        guildMocks.getRawEventPayloads.mockResolvedValue([outputEvent()]);
+        expect(await service.getFamilyResult(req, started.sessionId, started.snapshot)).toMatchObject({ status: 'ready' });
+        expect(marker()).toMatchObject({ creatorSubject: OTHER_SUB, sessionId: next.sessionId });
+        expect(await running(req)).toMatchObject({ startedByViewer: false });
+      });
+
+      it('writes over a marker it cannot read, or one that claims a later deadline than its start allows', async () => {
+        await seedFramework(documentStore);
+        const now = Date.now();
+        const tooLong = {
+          schema: 'mktg-family-export-active/v1',
+          project: PROJECT,
+          familyId: 'positioning-brand',
+          claim: 'synthetic-claim',
+          creatorSubject: OTHER_SUB,
+          startedAt: new Date(now).toISOString(),
+          expiresAt: now + MKTG_FAMILY_EXPORT_ACTIVE_TTL_MS + 1,
+          sessionId: null,
+        };
+        for (const [index, body] of ['not a marker', JSON.stringify(tooLong)].entries()) {
+          store.objects.set(MARKER_KEY, { body, metadata: {}, lastModified: new Date((store.clock += 1000)) });
+          expect(await running(other)).toBeNull();
+          guildMocks.createSession.mockResolvedValue(`session-${index}`);
+          const started = await service.startFamilyExport(req, familyInput);
+          expect(marker()).toMatchObject({ creatorSubject: 'auth0|synthetic-export-writer', sessionId: `session-${index}` });
+          guildMocks.getRawEventPayloads.mockResolvedValue([outputEvent()]);
+          await service.getFamilyResult(req, started.sessionId, started.snapshot);
+          guildMocks.getRawEventPayloads.mockResolvedValue([]);
+        }
+      });
+
+      it('still exports when the marker cannot be bound to its session, and this server’s own poll frees the family', async () => {
+        await seedFramework(documentStore);
+        store.failReplaceKeys = [MARKER_KEY];
+        const started = await service.startFamilyExport(req, familyInput);
+        expect(started.sessionId).toBe('session-1');
+        expect(marker()).toMatchObject({ sessionId: null });
+        expect(loggerMocks.warning).toHaveBeenCalledWith(
+          req,
+          'mktg_family_export_claim',
+          expect.stringContaining('could not be bound'),
+          expect.objectContaining({ family: 'positioning-brand' })
+        );
+        // Still one at a time, and a browser's poll (it knows the session, not the claim) cannot free an unbound marker…
+        await expect(service.startFamilyExport(other, familyInput)).rejects.toMatchObject({ code: MKTG_FAMILY_EXPORT_ACTIVE });
+        store.failReplaceKeys = [];
+        guildMocks.getRawEventPayloads.mockResolvedValue([outputEvent()]);
+        expect(await service.getFamilyResult(req, started.sessionId, started.snapshot)).toMatchObject({ status: 'ready' });
+        expect(await running(other)).not.toBeNull();
+        // …but the server that started it holds the claim, and its own poll does.
+        await vi.advanceTimersByTimeAsync(MKTG_SLIDES_EXPORT_POLL.intervalMs);
+        await settle();
+        expect(await running(other)).toBeNull();
+        expect(records()).toHaveLength(1);
+      });
+
+      it('returns the deck even when the marker cannot be released, and the family is free at the deadline', async () => {
+        await seedFramework(documentStore);
+        const started = await service.startFamilyExport(req, familyInput);
+        vi.clearAllTimers();
+        store.failReplaceKeys = [MARKER_KEY];
+        guildMocks.getRawEventPayloads.mockResolvedValue([outputEvent()]);
+        expect(await service.getFamilyResult(req, started.sessionId, started.snapshot)).toMatchObject({ status: 'ready', record: { deckId: DECK_ID } });
+        expect(loggerMocks.warning).toHaveBeenCalledWith(
+          req,
+          'mktg_family_export_release',
+          expect.stringContaining('could not be released'),
+          expect.objectContaining({ family: 'positioning-brand' })
+        );
+        expect(await running(other)).not.toBeNull();
+        store.failReplaceKeys = [];
+        vi.setSystemTime(Date.now() + MKTG_FAMILY_EXPORT_ACTIVE_TTL_MS);
+        expect(await running(other)).toBeNull();
+      });
     });
   });
 

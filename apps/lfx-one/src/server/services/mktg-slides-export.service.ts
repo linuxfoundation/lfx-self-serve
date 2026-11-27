@@ -6,7 +6,11 @@ import {
   BRAND_KIT_ICON_SAMPLES,
   BRAND_KIT_ICON_STRIP_INK,
   MKTG_ARTIFACT_SPECS,
+  MKTG_FAMILY_EXPORT_ACTIVE,
+  MKTG_FAMILY_EXPORT_ACTIVE_TTL_MS,
+  MKTG_FAMILY_EXPORT_CLAIM_ATTEMPTS,
   MKTG_FAMILY_EXPORT_KINDS,
+  MKTG_FAMILY_EXPORT_MARKER_SCHEMA,
   MKTG_FAMILY_EXPORT_SCHEMA,
   MKTG_KIT_FAMILIES,
   MKTG_LIVING_DOCUMENT_ID,
@@ -29,9 +33,12 @@ import {
   BrandKitRevision,
   MktgFamilyExportLastResponse,
   MktgFamilyExportAgentKey,
+  MktgFamilyExportHold,
+  MktgFamilyExportMarker,
   MktgFamilyExportMember,
   MktgFamilyExportRecord,
   MktgFamilyExportResultResponse,
+  MktgFamilyExportRunning,
   MktgFamilyExportSelection,
   MktgFamilyExportSnapshot,
   MktgFamilyExportStarted,
@@ -64,16 +71,20 @@ import {
   MktgSlidesExportStarted,
   MktgSlidesExportStartInput,
   MktgStoredRevision,
+  ObjectStorePutInput,
 } from '@lfx-one/shared/interfaces';
 import {
   brandKitIconColours,
   settledMktgSessionError,
   buildMktgSlidesExportPrefix,
+  buildMktgFamilyExportActiveKey,
   buildMktgFamilyExportPrefix,
   buildMktgFamilyExportRecordKey,
   findMktgDocumentType,
+  isMktgDisplayName,
   isMktgFamilyExportStale,
   mktgFamilyExportAgentKeys,
+  readMktgFamilyExportMarker,
   readMktgFamilyExportRecord,
   buildMktgSlidesExportRecordKey,
   classifyMktgSlidesExportFailure,
@@ -93,17 +104,19 @@ import {
   renderMktgSlidesExportFormMessage,
   validateMktgSlidesExportEnvelope,
 } from '@lfx-one/shared/utils';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { Request } from 'express';
 
 import { MKTG_SLIDES_EXPORT_DEFAULT_FOLDER_ID, MKTG_SLIDES_EXPORT_FOLDER_ID_ENV } from '../constants';
-import { ConflictError, ResourceNotFoundError } from '../errors';
+import { AuthenticationError, ConflictError, ResourceNotFoundError } from '../errors';
+import { getEffectiveSub } from '../utils/auth-helper';
 import { getAvatarCdnPrefix } from '../utils/avatar-url.util';
 import { brandKitIconSvg } from '../utils/mktg-brand-kit-icons.util';
 import { rasterizeLogoSvg } from '../utils/mktg-logo-png.util';
 import { logoVariantSources, recolourLogoPngSvg } from '../utils/mktg-logo-variants.util';
 import { GuildService } from './guild.service';
 import { logger } from './logger.service';
+import { MktgDocumentAuthorService } from './mktg-document-author.service';
 import { MktgDocumentStoreService } from './mktg-document-store.service';
 import { ObjectStoreService } from './object-store.service';
 
@@ -152,11 +165,19 @@ import { ObjectStoreService } from './object-store.service';
  *    The server polls every export it starts to its end itself, so the
  *    record is kept even when no browser does (the page left mid-export);
  *    the browser's polls write the same content-addressed record, once.
+ * 4. A family exports one at a time, and the first start wins: the start
+ *    takes the family's one in-flight marker with a conditional write before
+ *    it reads or sends anything (`claimFamilyExport`), so a second start is
+ *    refused with who holds the family and since when, and an update reads
+ *    the last deck with no other export in flight. The marker is released
+ *    when the export ends, however it ends, and holds nothing past its
+ *    deadline (`MKTG_FAMILY_EXPORT_ACTIVE_TTL_MS`).
  */
 export class MktgSlidesExportService {
   private readonly guildService = new GuildService();
   private readonly documentStore = new MktgDocumentStoreService();
   private readonly objectStore = new ObjectStoreService();
+  private readonly authors = new MktgDocumentAuthorService();
 
   /** Start an export on a fresh session. Throws a 404 when the revision is not stored, a 409 when it holds nothing to export or there is no deck to update. */
   public async startExport(req: Request, input: MktgSlidesExportStartInput): Promise<MktgSlidesExportStarted> {
@@ -282,8 +303,62 @@ export class MktgSlidesExportService {
     return { last, latestRevision };
   }
 
-  /** One family export from approved members only; a missing approval is not an unreadable stored asset. */
+  /**
+   * One family export at a time, and the first start wins. The family's marker is taken before anything is read or
+   * sent, so a second start (another writer, another tab, a second click) is refused with 409
+   * MKTG_FAMILY_EXPORT_ACTIVE, and an update reads the last deck with no other export in flight. A start that is
+   * refused later, or whose session Guild does not create, releases the marker at once; once the session exists the
+   * result that ends it does (`familyResult`), or this server's own poll when it gives up at its deadline.
+   */
   public async startFamilyExport(req: Request, input: MktgFamilyExportStartRequest & { projectName: string }): Promise<MktgFamilyExportStarted> {
+    const marker = await this.claimFamilyExport(req, input.project, input.familyId);
+    let started: MktgFamilyExportStarted;
+    try {
+      started = await this.sendFamilyExport(req, input);
+    } catch (error) {
+      await this.releaseFamilyExport(req, input.project, input.familyId, { claim: marker.claim });
+      throw error;
+    }
+    const { sessionId, snapshot } = started;
+    await this.bindFamilyExport(req, marker, sessionId);
+    const held: MktgFamilyExportHold = { claim: marker.claim, sessionId };
+    this.finishInBackground(
+      req,
+      sessionId,
+      () => this.familyResult(req, sessionId, snapshot, held),
+      { family: input.familyId },
+      () => this.releaseFamilyExport(req, input.project, input.familyId, held)
+    );
+    return started;
+  }
+
+  /** The session's result; any answer that ends the export releases the family's marker. */
+  public getFamilyResult(req: Request, sessionId: string, snapshot: MktgFamilyExportSnapshot): Promise<MktgFamilyExportResultResponse> {
+    return this.familyResult(req, sessionId, snapshot, { sessionId });
+  }
+
+  public async getFamilyLast(req: Request, project: string, familyId: string): Promise<MktgFamilyExportLastResponse> {
+    // The marker is read before the records, never beside them: a finished export keeps its record and only then
+    // releases the marker, so an answer that says nothing is running always carries that export's deck.
+    const running = await this.readFamilyRunning(req, project, familyId);
+    const keys = mktgFamilyExportAgentKeys(familyId);
+    const [last, members] = await Promise.all([
+      this.readFamilyRecord(req, project, familyId),
+      Promise.all(
+        keys.map(async (agentKey) => {
+          const type = findMktgDocumentType(agentKey);
+          const summary = type ? await this.documentStore.readApprovedCurrentSummary(req, project, type, MKTG_LIVING_DOCUMENT_ID) : null;
+          return summary ? this.familyMember(agentKey, summary) : null;
+        })
+      ),
+    ]);
+    const currentMembers = members.filter((member): member is MktgFamilyExportMember => member !== null);
+    const skippedMembers = keys.filter((key) => !currentMembers.some((member) => member.agentKey === key));
+    return { last, currentMembers, skippedMembers, stale: isMktgFamilyExportStale(last, currentMembers), running };
+  }
+
+  /** One family export from approved members only; a missing approval is not an unreadable stored asset. */
+  private async sendFamilyExport(req: Request, input: MktgFamilyExportStartRequest & { projectName: string }): Promise<MktgFamilyExportStarted> {
     const last = input.mode === 'update' ? await this.readFamilyRecord(req, input.project, input.familyId) : null;
     if (input.mode === 'update' && !last) throw new ConflictError(MKTG_SLIDES_EXPORT_START_MESSAGES['NO_DECK_TO_UPDATE'], 'NO_DECK_TO_UPDATE');
     const { selections, skippedMembers } = await this.selectFamily(req, input.project, input.familyId);
@@ -355,14 +430,39 @@ export class MktgSlidesExportService {
       logo_variants: Object.keys(logo.variants),
       has_icons: Object.keys(icons).length > 0,
     });
-    this.finishInBackground(req, sessionId, () => this.getFamilyResult(req, sessionId, snapshot), { family: input.familyId });
     return { sessionId, snapshot, skippedMembers, logoNote: logo.note };
   }
 
-  public async getFamilyResult(req: Request, sessionId: string, snapshot: MktgFamilyExportSnapshot): Promise<MktgFamilyExportResultResponse> {
+  /**
+   * The session's result, and the end of the family's marker: a pending export keeps it, and so does a poll that
+   * throws on something the next one may read (storage, Guild). Any answer that ends the export releases it: a kept
+   * deck (after its record, so a reader that sees no marker sees the deck), a failed export, or a deck whose signed
+   * revisions are gone, which no later poll can record.
+   */
+  private async familyResult(
+    req: Request,
+    sessionId: string,
+    snapshot: MktgFamilyExportSnapshot,
+    held: MktgFamilyExportHold
+  ): Promise<MktgFamilyExportResultResponse> {
     const outcome = await this.readResult(req, sessionId);
-    if (outcome.status !== 'ready') return outcome;
-    const { envelope } = outcome;
+    if (outcome.status === 'pending') return outcome;
+    try {
+      const result = outcome.status === 'ready' ? await this.recordFamilyResult(req, sessionId, snapshot, outcome.envelope) : outcome;
+      await this.releaseFamilyExport(req, snapshot.project, snapshot.familyId, held);
+      return result;
+    } catch (error) {
+      if (error instanceof ResourceNotFoundError) await this.releaseFamilyExport(req, snapshot.project, snapshot.familyId, held);
+      throw error;
+    }
+  }
+
+  private async recordFamilyResult(
+    req: Request,
+    sessionId: string,
+    snapshot: MktgFamilyExportSnapshot,
+    envelope: MktgSlidesExportEnvelope
+  ): Promise<MktgFamilyExportResultResponse> {
     if (envelope.mode !== snapshot.mode || (snapshot.deckId && envelope.deck.id !== snapshot.deckId)) {
       logger.warning(req, 'mktg_family_export_result', 'Exporter result does not match the chosen mode or update deck', { session_id: sessionId });
       return mktgSlidesExportFailed('unknown');
@@ -385,21 +485,158 @@ export class MktgSlidesExportService {
     return { status: 'ready', record };
   }
 
-  public async getFamilyLast(req: Request, project: string, familyId: string): Promise<MktgFamilyExportLastResponse> {
-    const keys = mktgFamilyExportAgentKeys(familyId);
-    const [last, members] = await Promise.all([
-      this.readFamilyRecord(req, project, familyId),
-      Promise.all(
-        keys.map(async (agentKey) => {
-          const type = findMktgDocumentType(agentKey);
-          const summary = type ? await this.documentStore.readApprovedCurrentSummary(req, project, type, MKTG_LIVING_DOCUMENT_ID) : null;
-          return summary ? this.familyMember(agentKey, summary) : null;
-        })
-      ),
-    ]);
-    const currentMembers = members.filter((member): member is MktgFamilyExportMember => member !== null);
-    const skippedMembers = keys.filter((key) => !currentMembers.some((member) => member.agentKey === key));
-    return { last, currentMembers, skippedMembers, stale: isMktgFamilyExportStale(last, currentMembers) };
+  /**
+   * Take the family for one export. The marker is created only when none exists (`ifNoneMatch`), or written over the
+   * exact version read (`ifMatch`) when that one holds nothing any more: released, past its deadline, or unreadable.
+   * A live marker, or a write lost to another start, is the answer: 409 with who holds the family and since when,
+   * read from the marker that won, so it names only an export that already holds the family. Nothing has been read
+   * or sent when this throws.
+   */
+  private async claimFamilyExport(req: Request, project: string, familyId: string): Promise<MktgFamilyExportMarker> {
+    const creatorSubject = this.authors.captureAuthorId(req);
+    if (!creatorSubject) {
+      throw new AuthenticationError('Could not identify the requesting user.', {
+        operation: 'mktg_family_export_start',
+        service: 'mktg_slides_export_service',
+      });
+    }
+    const key = buildMktgFamilyExportActiveKey(project, familyId);
+    for (let attempt = 0; attempt < MKTG_FAMILY_EXPORT_CLAIM_ATTEMPTS; attempt++) {
+      const now = Date.now();
+      const marker: MktgFamilyExportMarker = {
+        schema: MKTG_FAMILY_EXPORT_MARKER_SCHEMA,
+        project,
+        familyId,
+        claim: randomUUID(),
+        creatorSubject,
+        startedAt: new Date(now).toISOString(),
+        expiresAt: now + MKTG_FAMILY_EXPORT_ACTIVE_TTL_MS,
+        sessionId: null,
+      };
+      const saved = await this.objectStore.getPrivateObject(req, 'marketing-os-artifacts', key);
+      if (!saved) {
+        if (await this.objectStore.putPrivateObjectIfAbsent(req, 'marketing-os-artifacts', key, this.markerInput(marker))) return marker;
+        continue;
+      }
+      const holder = readMktgFamilyExportMarker(saved.body, project, familyId);
+      if (holder && holder.expiresAt > now) throw await this.familyActiveConflict(req, holder);
+      if (!holder) {
+        logger.warning(req, 'mktg_family_export_claim', 'The family export marker is unreadable — it holds nothing and is written over', { family: familyId });
+      }
+      if (
+        saved.etag &&
+        (await this.objectStore.putConditionalObject(req, 'marketing-os-artifacts', key, { ...this.markerInput(marker), ifMatch: saved.etag }, true))
+      ) {
+        return marker;
+      }
+    }
+    // Every write was lost to another start and none could be read as the holder: still a refusal, naming nobody.
+    throw await this.familyActiveConflict(req, null);
+  }
+
+  /**
+   * Bind the created session to the marker, so a result poll on any replica releases the marker of the session it
+   * reads. A marker that cannot be bound is not an error: the export goes on, and this server's own poll, which
+   * holds the claim, releases it.
+   */
+  private async bindFamilyExport(req: Request, marker: MktgFamilyExportMarker, sessionId: string): Promise<void> {
+    try {
+      const key = buildMktgFamilyExportActiveKey(marker.project, marker.familyId);
+      const saved = await this.objectStore.getPrivateObject(req, 'marketing-os-artifacts', key);
+      const current = saved ? readMktgFamilyExportMarker(saved.body, marker.project, marker.familyId) : null;
+      const bound =
+        !!saved?.etag &&
+        current?.claim === marker.claim &&
+        (await this.objectStore.putConditionalObject(
+          req,
+          'marketing-os-artifacts',
+          key,
+          { ...this.markerInput({ ...current, sessionId }), ifMatch: saved.etag },
+          true
+        ));
+      if (!bound) {
+        logger.warning(req, 'mktg_family_export_claim', 'The family export marker could not be bound to its session — this server releases it', {
+          family: marker.familyId,
+        });
+      }
+    } catch (error) {
+      logger.warning(req, 'mktg_family_export_claim', 'The family export marker could not be bound to its session — this server releases it', {
+        family: marker.familyId,
+        err: error,
+      });
+    }
+  }
+
+  /**
+   * Release the marker the caller holds, by the start's claim or by the session it is bound to, over the exact
+   * version read: a late release never frees a newer export's marker. It never throws: a deck or a failure still
+   * reaches the user, and a marker that could not be released holds nothing past its deadline.
+   */
+  private async releaseFamilyExport(req: Request, project: string, familyId: string, held: MktgFamilyExportHold): Promise<void> {
+    try {
+      const key = buildMktgFamilyExportActiveKey(project, familyId);
+      // Twice: the second read answers a release lost to the session bind or to another release of the same export.
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const saved = await this.objectStore.getPrivateObject(req, 'marketing-os-artifacts', key);
+        const marker = saved ? readMktgFamilyExportMarker(saved.body, project, familyId) : null;
+        const holds = !!marker && ((!!held.claim && marker.claim === held.claim) || (!!held.sessionId && marker.sessionId === held.sessionId));
+        if (!saved?.etag || !marker || !holds || marker.expiresAt === 0) return;
+        const released = await this.objectStore.putConditionalObject(
+          req,
+          'marketing-os-artifacts',
+          key,
+          { ...this.markerInput({ ...marker, expiresAt: 0 }), ifMatch: saved.etag },
+          true
+        );
+        if (released) {
+          logger.debug(req, 'mktg_family_export_release', 'Released the family export marker', { family: familyId });
+          return;
+        }
+      }
+      logger.warning(req, 'mktg_family_export_release', 'The family export marker changed while it was released — its deadline frees the family', {
+        family: familyId,
+      });
+    } catch (error) {
+      logger.warning(req, 'mktg_family_export_release', 'The family export marker could not be released — its deadline frees the family', {
+        family: familyId,
+        err: error,
+      });
+    }
+  }
+
+  /** The export in flight for the family, or null: no marker, a released or expired one, or one that cannot be read. */
+  private async readFamilyRunning(req: Request, project: string, familyId: string): Promise<MktgFamilyExportRunning | null> {
+    const saved = await this.objectStore.getPrivateObject(req, 'marketing-os-artifacts', buildMktgFamilyExportActiveKey(project, familyId));
+    const marker = saved ? readMktgFamilyExportMarker(saved.body, project, familyId) : null;
+    return marker && marker.expiresAt > Date.now() ? this.familyRunning(req, marker) : null;
+  }
+
+  /**
+   * Who holds the family and since when, for a response only: the name is resolved here, never stored and never
+   * logged, and an email or the stored subject is never returned in its place.
+   */
+  private async familyRunning(req: Request, marker: MktgFamilyExportMarker): Promise<MktgFamilyExportRunning> {
+    const startedByViewer = marker.creatorSubject === getEffectiveSub(req);
+    const author = startedByViewer
+      ? null
+      : await this.authors.resolveAuthor(req, marker.creatorSubject, 'mktg_family_export_starter', 'Export starter lookup unavailable');
+    const name = author?.name?.trim();
+    return { startedBy: isMktgDisplayName(name) && name !== marker.creatorSubject ? name : null, startedByViewer, startedAt: marker.startedAt };
+  }
+
+  private async familyActiveConflict(req: Request, holder: MktgFamilyExportMarker | null): Promise<ConflictError> {
+    const running = holder ? await this.familyRunning(req, holder) : null;
+    return new ConflictError('An export of this family is already running.', MKTG_FAMILY_EXPORT_ACTIVE, {
+      operation: 'mktg_family_export_start',
+      service: 'mktg_slides_export_service',
+      path: req.path,
+      clientMessage: MKTG_SLIDES_EXPORT_START_MESSAGES[MKTG_FAMILY_EXPORT_ACTIVE],
+      ...(running && { details: { ...running } }),
+    });
+  }
+
+  private markerInput(marker: MktgFamilyExportMarker): ObjectStorePutInput {
+    return { body: Buffer.from(JSON.stringify(marker), 'utf8'), contentType: MKTG_REVISION_CONTENT_TYPE, cacheControl: 'private, no-store' };
   }
 
   /** Common envelope verification/failure handling for every export scope. */
@@ -427,9 +664,18 @@ export class MktgSlidesExportService {
    * it goes before the end (the next visit would offer Create again and make
    * a second deck). A failed poll is logged and the next one tries again.
    * The timers never hold the process open; an export still running when the
-   * server stops is kept by the browser's own polls, as before.
+   * server stops is kept by the browser's own polls, as before. `onGiveUp`
+   * runs once when the deadline passes with the export still pending (a
+   * family export releases its marker there, so nothing waits on an export
+   * nobody is reading any more).
    */
-  private finishInBackground(req: Request, sessionId: string, read: () => Promise<{ status: string }>, logContext?: MktgSlidesExportLogContext): void {
+  private finishInBackground(
+    req: Request,
+    sessionId: string,
+    read: () => Promise<{ status: string }>,
+    logContext?: MktgSlidesExportLogContext,
+    onGiveUp?: () => Promise<void>
+  ): void {
     const deadline = Date.now() + MKTG_SLIDES_EXPORT_POLL.timeoutMs;
     const schedule = (): void => {
       if (Date.now() + MKTG_SLIDES_EXPORT_POLL.intervalMs > deadline) {
@@ -437,6 +683,7 @@ export class MktgSlidesExportService {
           session_id: sessionId,
           ...logContext,
         });
+        void onGiveUp?.();
         return;
       }
       setTimeout(() => void poll(), MKTG_SLIDES_EXPORT_POLL.intervalMs).unref();
