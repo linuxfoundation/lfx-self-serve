@@ -168,9 +168,10 @@ export type CreativeAssetUploadStatus = 'idle' | 'uploading' | 'error';
  * Which Implement-tab control a creative-asset upload belongs to. `CampaignService` keeps the latest
  * upload per owner, so a pick on one platform never cancels or takes over another's.
  * `google` is ONE owner across every Google image slot: a new pick in any slot replaces a Google
- * upload still running in another, as a second Meta pick replaces the first.
+ * upload still running in another, as a second Meta pick replaces the first. `meta-video` is ONE owner across the Meta
+ * variants' videos (#6332), apart from the Meta image's, so a video pick never cancels the image upload.
  */
-export type CreativeAssetUploadOwner = 'reddit' | 'meta' | 'linkedin' | 'google' | 'microsoft' | 'twitter';
+export type CreativeAssetUploadOwner = 'reddit' | 'meta' | 'meta-video' | 'linkedin' | 'google' | 'microsoft' | 'twitter';
 
 /**
  * The one non-image type a library upload pick takes (`enqueueCreativeAssetUploads`): a PDF for a LinkedIn document ad
@@ -1425,6 +1426,14 @@ export interface CampaignImplementationDraft {
   metaFormat?: MetaAdFormat;
   metaCarouselCards?: MetaCarouselCardDraft[];
   metaCarouselMessage?: string;
+  /**
+   * Each Meta variant's video as chosen (#6332), by the variant's position in the brief's copy, plus the one video upload
+   * still in flight. Round-trips whatever `metaVideoEnabled` says: the capability decides what is sent, not what is kept.
+   */
+  metaVariantVideos?: MetaVariantVideoDraft[];
+  metaVideoUploadPending?: MetaVideoUploadPending | null;
+  /** The videos uploaded on the tab with their file names (#6332), so a video keeps its name in the picker once no variant holds it. */
+  metaUploadedVideos?: MetaVariantVideoDraft[];
   /**
    * The Meta budget and its mode, which `submit()` sends as `budgetUsd`/`lifetimeBudget`.
    *
@@ -3352,6 +3361,52 @@ export interface MetaAdVariant {
   videoAssetId?: string;
 }
 
+/**
+ * One Meta variant's video as the Implement tab holds it (#6332): a stored MP4 picked or uploaded for ONE brief, `''` for
+ * none. Only a video stored for the open brief is ever sent, as that variant's `videoAssetId`.
+ */
+export interface MetaVariantVideoDraft {
+  assetId: string;
+  /** The uploaded file's name, `''` when picked from the library (campaign-service records none for a video). */
+  assetName: string;
+  assetBriefId: string;
+}
+
+/** The one Meta video upload still in flight (#6332): the variant it is for, the file's name and the brief it is stored for. */
+export interface MetaVideoUploadPending {
+  variant: number;
+  name: string;
+  briefId: string;
+}
+
+/** One Meta variant's video control as the Implement tab shows it (#6332). */
+export interface MetaVariantVideoView {
+  /** The picker's value: the video stored for the open brief, `''` for none. */
+  assetId: string;
+  options: LinkedInCarouselImageOption[];
+  /** Why the chosen video cannot be sent, `''` for none. */
+  problem: string;
+  uploading: boolean;
+  /** The upload's status line, `''` for none. */
+  status: string;
+  /** Why this variant's last upload failed, `''` for none. */
+  error: string;
+}
+
+/** A video stored on the Implement tab (#6332), and the tab's library revision once it was stored (see `metaVideosNewerThanRead`). */
+export interface MetaVideoStoredAt {
+  id: string;
+  revision: number;
+}
+
+/** The one Meta video upload as the Implement tab tracks it (#6332). */
+export interface MetaVideoUploadState {
+  status: CreativeAssetUploadStatus;
+  variant: number;
+  name: string;
+  error: string;
+}
+
 /** One Meta carousel card as the Implement tab edits it (#6331). `key` is the tab's own and is never sent. */
 export interface MetaCarouselCardDraft {
   key: string;
@@ -3418,6 +3473,8 @@ export interface MetaCreateRefusalInput {
   leadFormError: string | null;
   /** A carousel is chosen but this deployment no longer offers it (#6331). */
   carouselUnavailable?: boolean;
+  /** Why the variants' videos hold Create (#6332), `null` when clear; read only while no carousel is chosen. */
+  video?: string | null;
   /** Present only while a carousel is chosen (#6331): why its cards cannot be sent, or `null`. It replaces the variant check. */
   carousel?: { refusal: string | null };
 }
@@ -5287,8 +5344,10 @@ export interface CreativeAssetLibraryState {
   assets: StoredCreativeAsset[];
   /** The stored PDFs (campaign-service#665), carried by a `ready` read only; a LinkedIn document ad picks one. */
   documents?: StoredCreativeDocument[];
-  /** The stored videos, carried by a `ready` read only; a Reddit video post picks one (#6108 row 8). */
+  /** The stored MP4s, carried by a `ready` read only; a Reddit video post (#6108 row 8) or a Meta video ad (#6332) picks one. */
   videos?: StoredCreativeVideo[];
+  /** The Implement tab's library revision a `ready` read was made at (#6332), so a video stored after it is not judged by it. */
+  revision?: number;
 }
 
 /**

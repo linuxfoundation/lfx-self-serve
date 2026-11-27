@@ -409,6 +409,9 @@ describe('metaCreateRefusal', () => {
     [{ carouselUnavailable: true }, 'Meta Ads: carousel ads are not available right now. Choose single image ads as the ad format.'],
     [{ carousel: { refusal: 'Meta Ads: card 2 needs an image.' } }, 'Meta Ads: card 2 needs an image.'],
     [{ carousel: { refusal: null }, variants: [], pixelValid: false }, 'Meta Ads: fix the pixel.'],
+    // The variants' videos (#6332): after the copy check, before the placements; a carousel's cards replace them.
+    [{ video: 'Meta Ads: a video ad cannot use a lead form.', hasPlacement: false }, 'Meta Ads: a video ad cannot use a lead form.'],
+    [{ video: 'Meta Ads: x', carousel: { refusal: null }, pixelValid: false }, 'Meta Ads: fix the pixel.'],
   ] as [Partial<MetaCreateRefusalInput>, string][])('refuses %j with %j', (overrides, expected) => {
     expect(metaCreateRefusal({ ...clear, ...overrides })).toBe(expected);
   });

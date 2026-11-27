@@ -209,6 +209,7 @@ export * from './campaign-meta-ad-options.utils';
 export * from './campaign-meta-ad-option-views.utils';
 export * from './campaign-meta-carousel.utils';
 export * from './campaign-meta-video.utils';
+export * from './campaign-meta-video-form.utils';
 export * from './campaign-meta-lead-form.utils';
 export * from './campaign-meta-form.utils';
 export * from './campaign-meta-image.utils';

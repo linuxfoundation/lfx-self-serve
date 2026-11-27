@@ -217,6 +217,9 @@ export function metaCreateRefusal(input: MetaCreateRefusalInput): string | null 
     if (input.carousel.refusal !== null) return input.carousel.refusal;
   } else if (!input.variants.some((v) => v.primaryText.trim() && v.headline.trim())) {
     return 'Meta Ads: give at least one ad both primary text and a headline.';
+  } else if (input.video) {
+    // The variants' videos (#6332): already a whole message (`metaVideoCreateRefusal`).
+    return input.video;
   }
   if (!input.hasPlacement) return 'Meta Ads: choose at least one placement.';
   if (!input.pixelValid) return 'Meta Ads: fix the pixel.';
