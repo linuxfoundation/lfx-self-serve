@@ -66,6 +66,11 @@ const E2E_LAUNCH_PORT = (() => {
   }
 })();
 
+// The Marketing OS specs, the only ones the two WebKit projects run. `mktg-*` and not `mktg-os-*`:
+// three of them (mktg-documents-empty-state, mktg-faq-view-empty-state,
+// mktg-framework-view-empty-state) carry no `os` in the name and the narrower glob left them out.
+const MKTG_OS_SPECS = '**/mktg-*.spec.ts';
+
 export default defineConfig({
   testDir: './e2e',
   /* Run tests in files in parallel */
@@ -114,7 +119,7 @@ export default defineConfig({
     },
     {
       name: 'webkit',
-      testMatch: '**/mktg-os-*.spec.ts',
+      testMatch: MKTG_OS_SPECS,
       use: {
         ...devices['Desktop Safari'],
         storageState: 'playwright/.auth/user.json',
@@ -130,6 +135,17 @@ export default defineConfig({
         storageState: 'playwright/.auth/user.json',
       },
       // Use single worker for mobile to prevent resource contention
+      workers: 1,
+    },
+    {
+      name: 'mobile-safari',
+      testMatch: MKTG_OS_SPECS,
+      use: {
+        // WebKit with the iPhone viewport, touch and user agent: the nearest automation gets to
+        // Safari on iOS. It is not the phone (no AirPrint, no native print sheet).
+        ...devices['iPhone 14'],
+        storageState: 'playwright/.auth/user.json',
+      },
       workers: 1,
     },
   ],
