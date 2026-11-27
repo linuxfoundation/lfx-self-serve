@@ -347,8 +347,9 @@ export class AeoGeoRunComponent {
     this.error.set('');
     this.submitted.set(true);
     if (!this.validation().valid) return;
+    // A capability this browser still holds is the owner token of a run that may be going. It is forgotten only once the
+    // server accepts this start, or when the person discards that run; a refused start leaves it for "Open it".
     const stale = this.pending.loadActive(project, this.intake().agentId);
-    if (stale) this.pending.clear(stale.projectUid, stale.documentId);
     this.busy.set(true);
     this.error.set('');
     this.documentLink.set(null);
@@ -362,6 +363,7 @@ export class AeoGeoRunComponent {
     const conflictOf = (error: unknown) =>
       error instanceof HttpErrorResponse && error.status === 409 ? readMktgActiveRunConflict(error.error, this.intake().agentId) : null;
     const follow = (run: MktgPendingDocumentRun) => {
+      if (stale && stale.documentId !== run.documentId) this.pending.clear(stale.projectUid, stale.documentId);
       this.activeRun.set(run);
       return this.watchRun(run);
     };
@@ -395,7 +397,10 @@ export class AeoGeoRunComponent {
               onValue: (run) => {
                 this.generation = follow(run).pipe(takeUntilDestroyed(this.destroyRef)).subscribe();
               },
-              onDiscard: (fresh) => start(fresh.activeRunId),
+              onDiscard: (fresh) => {
+                this.pending.clear(project, fresh.documentId);
+                start(fresh.activeRunId);
+              },
               onOpen: (fresh) =>
                 void this.router.navigate(['..', 'documents', fresh.agentKey, fresh.documentId], {
                   relativeTo: this.route,
@@ -462,6 +467,11 @@ export class AeoGeoRunComponent {
           if (refused) {
             // The server closed this run (discarded, or replaced by a newer audit): nothing here can continue it.
             this.failRun(run, 'This audit was closed. Start a new audit.');
+            return EMPTY;
+          }
+          if (error instanceof HttpErrorResponse && error.status === 404) {
+            // The server holds no record of this audit (it was started before audits were tracked): no answer can reach it.
+            this.failRun(run, 'This audit can no longer take answers. Start a new audit.');
             return EMPTY;
           }
           console.error('Failed to acknowledge audit answers', error);

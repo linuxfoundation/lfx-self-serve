@@ -10,6 +10,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { MessageComponent } from '@components/message/message.component';
 import { MktgSkeletonComponent } from '@components/mktg-skeleton/mktg-skeleton.component';
 import {
+  AEO_GEO_INTAKE,
   MKTG_DOCUMENT_TYPES,
   MKTG_KIT_FAMILIES,
   MKTG_NOT_AVAILABLE_TEXT,
@@ -40,6 +41,7 @@ import {
   mktgRunRouteFor,
 } from '@lfx-one/shared/utils';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
+import { MktgPendingDocumentService } from '@services/mktg-pending-document.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
 import { isTransientHttpError } from '@shared/utils/http-error.utils';
@@ -106,6 +108,7 @@ export class MktgDocumentsComponent {
   private readonly listReread = new Subject<void>();
   private readonly userService = inject(UserService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly pendingDocuments = inject(MktgPendingDocumentService);
 
   // === Signals ===
   protected readonly loading = signal(true);
@@ -201,7 +204,7 @@ export class MktgDocumentsComponent {
     Object.fromEntries(
       this.runs().map((run) => {
         const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === run.agentKey);
-        if (type?.catalogAgentId && this.waitingForAnswers(type, run.state))
+        if (type?.catalogAgentId && this.waitingForAnswers(type, run.state) && this.answerableHere(run))
           return [
             run.runId,
             {
@@ -624,6 +627,15 @@ export class MktgDocumentsComponent {
    */
   private waitingForAnswers(type: MktgDocumentType, state?: MktgDocumentRunRow['state']): boolean {
     return !!type.catalogAgentId && state === 'questions';
+  }
+
+  /**
+   * An audit's questions are answered only with its capability, which lives in the browser that started it. Anywhere else
+   * (the creator on another browser, another writer) its intake would be a blank form, so the row opens the run's Document
+   * page instead, which says the audit is waiting for answers.
+   */
+  private answerableHere(run: MktgDocumentRunRow): boolean {
+    return run.agentKey !== AEO_GEO_INTAKE.agentId || this.pendingDocuments.load(run.project, run.documentId)?.agentId === AEO_GEO_INTAKE.agentId;
   }
 
   private navBadge(type: MktgDocumentType, documentCount: number, revisionCount: number): Pick<MktgDocumentNavItem, 'badge' | 'badgeClass'> {

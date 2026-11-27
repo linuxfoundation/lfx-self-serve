@@ -411,6 +411,61 @@ describe('AeoGeoRunComponent', () => {
     expect(start).toHaveBeenLastCalledWith(AEO_GEO_INTAKE, 'project-1', expect.anything(), active.activeRunId);
     expect(fixture.componentInstance['activeRun']()).toMatchObject({ sessionId: 'session-1' });
   });
+  it('leaves a running audit its capability when the second start is refused; only a confirmed discard clears it', async () => {
+    vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    // Another tab of this browser started the audit after this form loaded: its capability is found only on submit.
+    const running = { ...run(), documentId: 'run-0123456789abcdef01234567', sessionId: 'session-0' };
+    loadActive.mockReturnValueOnce(null).mockReturnValue(running);
+    const active = {
+      code: 'MKTG_RUN_ACTIVE',
+      message: 'Your AEO/GEO report run is in progress.',
+      startedBy: 'Another writer',
+      startedByViewer: true,
+      startedAt: '2026-10-19T10:00:00.000Z',
+      activeRunId: 'd'.repeat(64),
+      state: 'writing',
+      agentKey: 'aeo-geo',
+      documentId: running.documentId,
+    };
+    start.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 409, error: active })));
+    poll.mockReturnValue(of({ status: 'pending' }));
+    await render();
+    query('mktg-aeo-run-submit').click();
+    fixture.detectChanges();
+    const options = guardOpen.mock.calls[0][1];
+    // Refused: the audit still running keeps its owner token, so "Open it" finds it in this browser.
+    options.onOpen(options.conflict);
+    expect(clear).not.toHaveBeenCalled();
+    options.onDiscard(options.conflict);
+    expect(clear).toHaveBeenCalledWith('project-1', running.documentId);
+    expect(clear.mock.invocationCallOrder[0]).toBeLessThan(start.mock.invocationCallOrder[1]);
+  });
+  it('forgets an earlier capability only after the new start is accepted', async () => {
+    vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    const earlier = { ...run(), documentId: 'run-0123456789abcdef01234567', sessionId: 'session-0' };
+    loadActive.mockReturnValueOnce(null).mockReturnValue(earlier);
+    await render();
+    query('mktg-aeo-run-submit').click();
+    await fixture.whenStable();
+    expect(clear).toHaveBeenCalledExactlyOnceWith('project-1', earlier.documentId);
+    expect(start.mock.invocationCallOrder[0]).toBeLessThan(clear.mock.invocationCallOrder[0]);
+  });
+  it('ends an audit that can no longer take answers (404 from the answers endpoint) without re-reading the run', async () => {
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    const questions = aeoGeoRunQuestions(aeoGeoQuestionsFixture());
+    poll.mockReturnValue(of({ status: 'questions', questions, questionsId: 'questions-1' }));
+    await render();
+    query('mktg-aeo-run-submit').click();
+    await fixture.whenStable();
+    answerQuestions.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
+    fixture.componentInstance['onAnswers']([{ key: questions[0].key, text: 'An answer.', origin: 'edited' }]);
+    fixture.detectChanges();
+    expect(poll).toHaveBeenCalledTimes(1);
+    expect(navigate).not.toHaveBeenCalled();
+    expect(query('mktg-aeo-run-error').textContent).toContain('This audit can no longer take answers. Start a new audit.');
+    expect(clear).toHaveBeenCalledWith('project-1', run().documentId);
+    expect(query('mktg-aeo-run-form')).not.toBeNull();
+  });
   it.each([
     ['MKTG_RUN_ANSWERED', 'Synthetic Auditor already answered these — the agent is writing.'],
     ['MKTG_RUN_CLOSED', ''],

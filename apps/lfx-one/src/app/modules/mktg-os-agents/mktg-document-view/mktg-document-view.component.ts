@@ -2069,16 +2069,23 @@ export class MktgDocumentViewComponent {
     this.aeoActivityStartedAt.set(Number.isFinite(startedAt) ? startedAt : Date.now());
     // The server's record of this audit while no report is stored: the run tracker lists it on every writer's read.
     let tracked: MktgDocumentRunProgress | undefined;
+    // Following a run without its capability has one absolute end: the run's writing budget, counted from this view's
+    // first read of it as running (the public record carries no renewed deadline). A tab return or a focus never moves it.
+    let followUntil = 0;
     const read = () =>
-      revisionId
-        ? this.documentStore.getRevision(project, agentKey, documentId, revisionId)
-        : this.documentStore.getDocument(project, agentKey, documentId, false, undefined, canResume).pipe(
-            switchMap((detail) => {
-              const id = detail.current?.revisionId ?? detail.revisions.find((revision) => revision.latest)?.id ?? detail.revisions[0]?.id;
-              tracked = id ? undefined : detail.runs?.find((run) => run.documentId === documentId);
-              return id ? this.documentStore.getRevision(project, agentKey, documentId, id) : throwError(() => new HttpErrorResponse({ status: 404 }));
-            })
-          );
+      defer(() => {
+        // Each read stands alone: a run the server no longer lists must not be followed on what an earlier read said.
+        tracked = undefined;
+        return revisionId
+          ? this.documentStore.getRevision(project, agentKey, documentId, revisionId)
+          : this.documentStore.getDocument(project, agentKey, documentId, false, undefined, canResume).pipe(
+              switchMap((detail) => {
+                const id = detail.current?.revisionId ?? detail.revisions.find((revision) => revision.latest)?.id ?? detail.revisions[0]?.id;
+                tracked = id ? undefined : detail.runs?.find((run) => run.documentId === documentId);
+                return id ? this.documentStore.getRevision(project, agentKey, documentId, id) : throwError(() => new HttpErrorResponse({ status: 404 }));
+              })
+            );
+      });
     // The storage wait's budget is absolute from the moment this view first began waiting (persisted with the pending
     // record, so a tab return, a focus or a reload never moves it); research and answering time are not spent from it.
     // Only a record that cannot be anchored falls back to the run's savedAt.
@@ -2094,7 +2101,10 @@ export class MktgDocumentViewComponent {
         catchError((error: HttpErrorResponse) => {
           if (error.status === 404 && !canResume && (tracked?.state === 'writing' || tracked?.state === 'storing')) {
             // Opened without this browser's capability (another browser, another writer): the server is still running
-            // the audit and each read advances it, so the same read is repeated until the report is stored or the run ends.
+            // the audit and each read advances it, so the same read is repeated until the report is stored, the run ends,
+            // the server stops listing it (the next read's 404 is then final) or the run's deadline passes.
+            followUntil ||= Date.now() + MKTG_RUN_POLL.timeoutMs;
+            if (Date.now() >= followUntil) throw new TimeoutError();
             this.refreshWarning.set('');
             this.generating.set(true);
             return timer(MKTG_RUN_POLL.intervalMs).pipe(switchMap(() => attempt()));

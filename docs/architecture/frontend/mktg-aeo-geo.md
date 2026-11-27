@@ -33,7 +33,10 @@ closes that run and starts the new one. The accepted session is recorded with
 `startForOneOff`. The run page hands that 409 to the shared
 `MktgActiveRunGuardService` dialog ("Your AEO/GEO report run is in progress",
 "Started …"): "Open it" opens the run's document, "Discard and start over"
-re-sends the same audit with `discard`.
+re-sends the same audit with `discard`. A refused start leaves a capability this
+browser already holds in place, so "Open it" resumes that audit here; an earlier
+capability is cleared only once a start is accepted, and a confirmed discard
+clears the capability of the run it closes.
 The response includes a stable run-document id, the public `runId` and a creator-bound owner token.
 `MktgPendingDocumentService` retains that capability under the effective user,
 project and document, with the existing run TTL; it never travels in a URL.
@@ -52,7 +55,13 @@ The audit's result endpoint reads through the tracker (`ownedOneOffResult`), so 
 writer's Documents read advances the same record and stores the report as the creator's. The audit keeps its own receiver on
 the run and Document pages (its browser capability), not the shared run-progress view: opened without that capability (another
 browser, another writer, a Started runs row), the Document page shows the same generating state and re-reads until the
-recorded run is stored; a recorded run waiting for answers or failed is a plain line with Run again.
+recorded run is stored; a recorded run waiting for answers or failed is a plain line with Run again. That re-read
+trusts only its own answer: a run the server no longer lists (discarded, superseded or dismissed) is a 404 and ends on
+the plain not-found line, and the loop ends at `MKTG_RUN_POLL.timeoutMs` from the view's first read of the run as
+running ("The audit is taking longer than expected."), the server's writing budget, which a tab return never restarts.
+On the Documents page a Started runs row of an audit waiting for answers reads "Answer the questions" and opens the
+run page only in the browser that holds its capability; anywhere else the row reads "Open" and opens the run's
+Document page (`?run=`), where that waiting line explains it, never a blank intake form.
 Document reads preserve the shared client's poll/refresh arguments and use its trailing expected-404 flag only for the matching pending audit.
 
 While generating, the existing result endpoint projects Guild session events
@@ -77,6 +86,9 @@ as LinkedIn does) before posting a byte-compatible, protocol-guarded
 wins: any later one for that turn (a stale window, a retry after a lost
 response) is 409 `MKTG_RUN_ANSWERED` and sends nothing, and the run page shows
 "<name> already answered these — the agent is writing." and opens the report.
+A 404 from the answers endpoint (an audit started before audits were tracked has
+no run record) is final: the run page clears the capability and shows "This audit
+can no longer take answers. Start a new audit." without re-reading the run.
 The claim requires one answer per asked question, as the interactive stepper
 does; invalid answers are a 400 that leaves the turn unclaimed, and a delivery
 that fails after the claim keeps it. A history read still recognizes an answered

@@ -11,6 +11,7 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { NavigationEnd, provideRouter, Router } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import {
+  AEO_GEO_TIMEOUT_MESSAGE,
   BRAND_KIT_CONTRACT_ID,
   BRAND_KIT_INTAKE,
   FOUNDATION_MESSAGE_PRINT_BODY_CLASS,
@@ -1391,6 +1392,31 @@ describe('MktgDocumentViewComponent', () => {
       expect(query('mktg-document-view-generating')).toBeNull();
       expect(query('mktg-document-view-document')).not.toBeNull();
       expect(pending.waitForStorage).not.toHaveBeenCalled();
+      vi.useRealTimers();
+    });
+    it.each([
+      ['is no longer listed (404)', 'This document could not be found.'],
+      ['is still writing past its deadline', AEO_GEO_TIMEOUT_MESSAGE],
+    ] as const)('stops following an audit without its capability when the run %s: one line, no further reads', async (ending, line) => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+      const documentId = 'run-012345678901234567890123';
+      const writing = of({ ...detail, documentId, current: null, revisions: [], runs: [{ ...started('writing'), agentKey: 'aeo-geo' as const, documentId }] });
+      const gone = throwError(() => new HttpErrorResponse({ status: 404, error: { code: 'MKTG_DOCUMENT_NOT_FOUND' } }));
+      store.getDocument.mockReturnValueOnce(writing).mockReturnValue(ending.startsWith('is no longer') ? gone : writing);
+      await render('/documents/aeo-geo/run-012345678901234567890123');
+      expect(store.getDocument).toHaveBeenCalledTimes(1);
+      expect(query('mktg-document-view-generating')?.textContent).toContain('Generating your report');
+      // The creator discarded the run, or its writing budget ran out, before the next read.
+      const firstRead = Date.now();
+      if (ending.startsWith('is still')) vi.spyOn(Date, 'now').mockReturnValue(firstRead + MKTG_RUN_POLL.timeoutMs);
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+      await settle();
+      expect(store.getDocument).toHaveBeenCalledTimes(2);
+      expect(query('mktg-document-view-generating')).toBeNull();
+      expect(query('mktg-document-view-error')?.textContent).toContain(line);
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs * 4);
+      await settle();
+      expect(store.getDocument).toHaveBeenCalledTimes(2);
       vi.useRealTimers();
     });
     it.each([
