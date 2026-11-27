@@ -6052,10 +6052,7 @@
 
           <!-- Ad variants (#6108 row 6): headlines editable while each variant can become its own ad, else the brief's, read-only. -->
           @if (redditAdVariantsAvailable()) {
-            <lfx-reddit-ad-variants
-              [variants]="redditAdVariants()"
-              [perVariant]="redditAdPerVariantApplies()"
-              (variantsChange)="onRedditAdVariantsChange($event)" />
+            <lfx-reddit-ad-variants [variants]="redditAdVariants()" [check]="redditAdVariantsCheck()" (variantsChange)="onRedditAdVariantsChange($event)" />
           } @else if (redditAdVariants().length > 0) {
             <div>
               <label class="mb-2 block text-xs font-medium text-gray-700">Ad Variants ({{ redditAdVariants().length }})</label>

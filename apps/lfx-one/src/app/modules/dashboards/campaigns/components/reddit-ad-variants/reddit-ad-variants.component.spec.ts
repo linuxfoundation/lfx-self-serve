@@ -19,7 +19,7 @@ describe('RedditAdVariantsComponent', () => {
     await TestBed.configureTestingModule({ imports: [RedditAdVariantsComponent] }).compileComponents();
     fixture = TestBed.createComponent(RedditAdVariantsComponent);
     fixture.componentRef.setInput('variants', [{ headline: 'Brief headline', body: 'Brief body' }]);
-    fixture.componentRef.setInput('perVariant', true);
+    fixture.componentRef.setInput('check', 'every');
     fixture.detectChanges();
   });
 

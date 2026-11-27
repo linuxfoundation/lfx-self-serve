@@ -403,6 +403,7 @@ import type {
   MetaPlacement,
   MicrosoftKeyword,
   RedditAdVariant,
+  RedditAdVariantsCheck,
   RedditBriefSeed,
   RedditCallToAction,
   RedditConversionEvent,
@@ -576,6 +577,8 @@ import {
   redditAdPerVariantAuthorsPost,
   redditAdPerVariantRefusal,
   redditAdVariantsCapability,
+  redditAdVariantsCheck,
+  redditAdVariantsFirstHeadlineRefusal,
   redditAdVariantsInEffect,
   redditTargetingExclusionsDraftRefusal,
   redditTargetingExclusionsField,
@@ -1127,13 +1130,15 @@ export class ImplementationTabComponent implements OnInit {
     ...this.redditImageField(),
     variants: this.redditAdVariants(),
   }));
-  /** Whether each variant becomes its own ad: offered, an authored post, and 2 or more variants (campaign-service's `redditAdPerVariantApplies`). */
-  protected readonly redditAdPerVariantApplies = computed<boolean>(() => {
+  /** Which headlines the create reads, so which the editor marks and Create holds on (`redditAdVariantsCheck`). */
+  protected readonly redditAdVariantsCheck = computed<RedditAdVariantsCheck>(() => {
     const image = this.redditImageField();
     const imageUrl = 'imageUrl' in image ? image.imageUrl : '';
     const imageAssetId = 'imageAssetId' in image ? image.imageAssetId : '';
-    return (
-      this.redditAdVariantsAvailable() && this.redditAdVariants().length >= 2 && redditAdPerVariantAuthorsPost(this.redditPostUrl(), imageUrl, imageAssetId)
+    return redditAdVariantsCheck(
+      this.redditAdVariantsAvailable(),
+      redditAdPerVariantAuthorsPost(this.redditPostUrl(), imageUrl, imageAssetId),
+      this.redditAdVariants().length
     );
   });
 
@@ -4705,7 +4710,9 @@ export class ImplementationTabComponent implements OnInit {
           targetingExclusionsBlock: this.redditTargetingExclusionsBlock()?.message ?? null,
           targetingExclusionsRefusal: redditTargetingExclusionsDraftRefusal(this.redditTargetingExclusions(), this.redditTargetedLists()),
           deliveryRefusal: redditDeliveryRefusal(this.redditDelivery(), this.redditDeliveryCapabilities()),
-          variantsRefusal: redditAdPerVariantRefusal(this.redditAdVariantsConfig(), this.redditAdVariantsAvailable())?.message ?? null,
+          variantsRefusal:
+            redditAdPerVariantRefusal(this.redditAdVariantsConfig(), this.redditAdVariantsAvailable())?.message ??
+            redditAdVariantsFirstHeadlineRefusal(this.redditAdVariants(), this.redditAdVariantsCheck()),
         })
       : null;
     if (redditRefusal !== null) return redditRefusal;

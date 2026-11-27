@@ -7,6 +7,8 @@ import {
   redditAdPerVariantAuthorsPost,
   redditAdPerVariantRefusal,
   redditAdVariantsAdded,
+  redditAdVariantsCheck,
+  redditAdVariantsFirstHeadlineRefusal,
   redditAdVariantsFromDraft,
   redditAdVariantsInEffect,
   redditAdVariantsRemoved,
@@ -127,21 +129,51 @@ describe('redditAdVariantsFromDraft', () => {
   });
 });
 
+describe('redditAdVariantsCheck', () => {
+  it.each<[string, boolean, boolean, number, string]>([
+    ['every headline, one ad each', true, true, 2, 'every'],
+    ['the first headline on a one-ad authored post', true, true, 1, 'first'],
+    ['nothing with no variants beyond the first', true, true, 0, 'first'],
+    ['nothing while an existing post is promoted', true, false, 3, 'none'],
+    ['nothing while the editor is not offered', false, true, 3, 'none'],
+  ])('reads %s', (_name, enabled, authorsPost, count, expected) => {
+    expect(redditAdVariantsCheck(enabled, authorsPost, count)).toBe(expected);
+  });
+});
+
 describe('redditAdVariantViews', () => {
-  it.each<[string, ReturnType<typeof v>, boolean, string[], number[]]>([
-    ['good headlines', v('a', 'bb'), true, ['', ''], [1, 2]],
-    ['a blank headline while each variant is its own ad', v('a', '  '), true, ['', 'Enter a headline. Each variant becomes its own Reddit ad.'], [1, 0]],
-    ['a 301-character headline', v('x'.repeat(301), 'b'), true, ['Shorten the headline to 300 characters or fewer.', ''], [301, 1]],
-    ['300 emoji, counted once each', v('😀'.repeat(300), 'b'), true, ['', ''], [300, 1]],
-    ['no marks on the one-ad create', v(' ', 'x'.repeat(301)), false, ['', ''], [0, 301]],
-  ])('%s', (_name, variants, perVariant, errors, lengths) => {
-    const views = redditAdVariantViews(variants, perVariant);
+  const BLANK = 'Enter a headline. Each variant becomes its own Reddit ad.';
+  const LONG = 'Shorten the headline to 300 characters or fewer.';
+  it.each<[string, ReturnType<typeof v>, 'every' | 'first' | 'none', string[], number[]]>([
+    ['good headlines', v('a', 'bb'), 'every', ['', ''], [1, 2]],
+    ['a blank headline while each variant is its own ad', v('a', '  '), 'every', ['', BLANK], [1, 0]],
+    ['a 301-character headline', v('x'.repeat(301), 'b'), 'every', [LONG, ''], [301, 1]],
+    ['300 emoji, counted once each', v('😀'.repeat(300), 'b'), 'every', ['', ''], [300, 1]],
+    ['a long first headline on the one-ad authored post', v('x'.repeat(301)), 'first', [LONG], [301]],
+    ['a blank first headline there, which falls back to the event name', v(' '), 'first', [''], [0]],
+    ['no marks while an existing post is promoted', v(' ', 'x'.repeat(301)), 'none', ['', ''], [0, 301]],
+  ])('%s', (_name, variants, check, errors, lengths) => {
+    const views = redditAdVariantViews(variants, check);
     expect(views.map((view) => view.error)).toEqual(errors);
     expect(views.map((view) => view.length)).toEqual(lengths);
   });
 
   it('shows a missing body as blank', () => {
-    expect(redditAdVariantViews([{ headline: 'a' }], true)[0].body).toBe('');
+    expect(redditAdVariantViews([{ headline: 'a' }], 'every')[0].body).toBe('');
+  });
+});
+
+describe('redditAdVariantsFirstHeadlineRefusal', () => {
+  it.each<[string, ReturnType<typeof v>, 'every' | 'first' | 'none', string | null]>([
+    ['a 301-character first headline on the one-ad authored post', v('x'.repeat(301)), 'first', "Variant 1's headline is 301 characters."],
+    ['a 300-character one', v('x'.repeat(300)), 'first', null],
+    ['no variants', [], 'first', null],
+    ['one ad per variant, which redditAdPerVariantRefusal holds', v('x'.repeat(301), 'b'), 'every', null],
+    ['an existing post', v('x'.repeat(301)), 'none', null],
+  ])('%s', (_name, variants, check, expected) => {
+    const refusal = redditAdVariantsFirstHeadlineRefusal(variants, check);
+    if (expected === null) expect(refusal).toBeNull();
+    else expect(refusal).toContain(expected);
   });
 });
 

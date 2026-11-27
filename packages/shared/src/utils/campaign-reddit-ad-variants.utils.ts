@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { MAX_REDDIT_AD_VARIANTS, MAX_REDDIT_HEADLINE_LENGTH } from '../constants/campaign.constants';
-import type { RedditAdVariant, RedditAdVariantView, RedditConfigRefusal } from '../interfaces/campaign.interface';
+import type { RedditAdVariant, RedditAdVariantsCheck, RedditAdVariantView, RedditConfigRefusal } from '../interfaces/campaign.interface';
 import { foldKey } from './campaign-linkedin-config.utils';
 import { goTrimSpace } from './campaign-linkedin.utils';
 
@@ -151,18 +151,39 @@ export function redditAdVariantsFromDraft(value: unknown): RedditAdVariant[] | u
 }
 
 /**
- * Each variant as the editor shows it. `perVariant` is whether each variant becomes its own ad (an authored post with
- * 2 or more variants, while the capability is on): only then is a blank or over-long headline marked, since the one-ad
- * create falls back to the event name for a blank first headline and reads no other.
+ * Which headlines the create reads, so which the editor marks and Create holds on. Nothing while the editor is not
+ * offered (the brief's variants go out as before) or while an existing post is promoted (its post keeps its own
+ * headline). On an authored post, every headline once there are 2 or more variants (one ad each), else only variant 1's,
+ * which heads the post: campaign-service refuses it over 300 characters, and falls back to the event name when blank.
  */
-export function redditAdVariantViews(variants: readonly RedditAdVariant[], perVariant: boolean): RedditAdVariantView[] {
-  return variants.map((variant) => {
+export function redditAdVariantsCheck(enabled: boolean, authorsPost: boolean, variantCount: number): RedditAdVariantsCheck {
+  if (!enabled || !authorsPost) return 'none';
+  return variantCount >= 2 ? 'every' : 'first';
+}
+
+/** How to fix variant `index`'s headline of `length` code points under `check`, or `''`. */
+function redditAdVariantHeadlineError(check: RedditAdVariantsCheck, index: number, length: number): string {
+  if (check === 'none' || (check === 'first' && index > 0)) return '';
+  if (check === 'every' && length === 0) return 'Enter a headline. Each variant becomes its own Reddit ad.';
+  return length > MAX_REDDIT_HEADLINE_LENGTH ? `Shorten the headline to ${MAX_REDDIT_HEADLINE_LENGTH} characters or fewer.` : '';
+}
+
+/** Each variant as the editor shows it, marked only where the create reads it (`redditAdVariantsCheck`). */
+export function redditAdVariantViews(variants: readonly RedditAdVariant[], check: RedditAdVariantsCheck): RedditAdVariantView[] {
+  return variants.map((variant, i) => {
     const length = [...goTrimSpace(variant.headline)].length;
-    let error = '';
-    if (perVariant && length === 0) error = 'Enter a headline. Each variant becomes its own Reddit ad.';
-    else if (perVariant && length > MAX_REDDIT_HEADLINE_LENGTH) error = `Shorten the headline to ${MAX_REDDIT_HEADLINE_LENGTH} characters or fewer.`;
-    return { headline: variant.headline, body: variant.body ?? '', length, error };
+    return { headline: variant.headline, body: variant.body ?? '', length, error: redditAdVariantHeadlineError(check, i, length) };
   });
+}
+
+/**
+ * Why the one-ad create that authors its post cannot go out (`check` is `first`): variant 1's headline heads the post and
+ * is over Reddit's limit. `null` otherwise; with 2 or more variants `redditAdPerVariantRefusal` holds them instead.
+ */
+export function redditAdVariantsFirstHeadlineRefusal(variants: readonly RedditAdVariant[], check: RedditAdVariantsCheck): string | null {
+  if (check !== 'first' || variants.length === 0) return null;
+  const length = [...goTrimSpace(variants[0].headline)].length;
+  return length > MAX_REDDIT_HEADLINE_LENGTH ? `Variant 1's headline is ${length} characters. Reddit allows at most ${MAX_REDDIT_HEADLINE_LENGTH}.` : null;
 }
 
 /** The variants with variant `index`'s headline replaced; its body is kept as preview text. */

@@ -2,9 +2,9 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <fieldset class="flex flex-col gap-3" aria-describedby="reddit-ad-variants-hint" data-testid="reddit-ad-variants">
-  <legend class="float-left text-xs font-medium text-gray-700">Ad variants ({{ variants().length }}/{{ maxVariants }})</legend>
+  <legend class="float-left text-xs font-medium text-gray-700">Ad Variants ({{ variants().length }}/{{ maxVariants }})</legend>
   <p id="reddit-ad-variants-hint" class="text-xs text-gray-500" data-testid="reddit-ad-variants-hint">
-    @if (perVariant()) {
+    @if (check() === 'every') {
       Each variant becomes its own Reddit ad, with its own post.
     } @else {
       With an image and 2 or more variants, each variant becomes its own Reddit ad. With a Post URL, the existing post is promoted as it is.

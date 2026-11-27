@@ -3065,6 +3065,13 @@ export interface RedditAdVariant {
   body?: string;
 }
 
+/**
+ * Which headlines a Reddit create reads (#6108 row 6, `redditAdVariantsCheck`): `every` when each variant becomes its own
+ * ad, `first` on the one-ad create that authors its post (variant 1 heads the post), `none` when an existing post is
+ * promoted or the editor is not offered.
+ */
+export type RedditAdVariantsCheck = 'every' | 'first' | 'none';
+
 /** One variant as the Reddit variants editor shows it (#6108 row 6, `redditAdVariantViews`). */
 export interface RedditAdVariantView {
   headline: string;
@@ -3072,7 +3079,7 @@ export interface RedditAdVariantView {
   body: string;
   /** The trimmed headline's length in code points, as Reddit counts it. */
   length: number;
-  /** How to fix the headline, or `''`: only while each variant becomes its own ad. */
+  /** How to fix the headline, or `''`: only for a headline the create reads (`RedditAdVariantsCheck`). */
   error: string;
 }
 

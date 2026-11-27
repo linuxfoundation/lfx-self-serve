@@ -3,7 +3,7 @@
 
 import { Component, computed, input, model } from '@angular/core';
 import { MAX_REDDIT_AD_VARIANTS, MAX_REDDIT_HEADLINE_LENGTH } from '@lfx-one/shared/constants';
-import type { RedditAdVariant, RedditAdVariantView } from '@lfx-one/shared/interfaces';
+import type { RedditAdVariant, RedditAdVariantsCheck, RedditAdVariantView } from '@lfx-one/shared/interfaces';
 import { redditAdVariantsAdded, redditAdVariantsRemoved, redditAdVariantsWithHeadline, redditAdVariantViews } from '@lfx-one/shared/utils';
 import { UiButtonComponent } from '@shared/uikit/button/button.component';
 import { UiInputComponent } from '@shared/uikit/input/input.component';
@@ -20,13 +20,13 @@ import { UiInputComponent } from '@shared/uikit/input/input.component';
   templateUrl: './reddit-ad-variants.component.html',
 })
 export class RedditAdVariantsComponent {
+  /** Which headlines the create reads (`redditAdVariantsCheck`): `every` when each variant becomes its own ad. */
+  public readonly check = input<RedditAdVariantsCheck>('none');
   public readonly variants = model.required<RedditAdVariant[]>();
-  /** Whether each variant becomes its own ad: an authored post with 2 or more variants. */
-  public readonly perVariant = input(false);
 
   protected readonly maxVariants = MAX_REDDIT_AD_VARIANTS;
   protected readonly maxHeadline = MAX_REDDIT_HEADLINE_LENGTH;
-  protected readonly views = computed<RedditAdVariantView[]>(() => redditAdVariantViews(this.variants(), this.perVariant()));
+  protected readonly views = computed<RedditAdVariantView[]>(() => redditAdVariantViews(this.variants(), this.check()));
 
   protected onHeadlineChange(index: number, headline: string): void {
     this.variants.update((variants) => redditAdVariantsWithHeadline(variants, index, headline));
