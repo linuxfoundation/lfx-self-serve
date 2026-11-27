@@ -54,11 +54,16 @@ describe('linkedInDraftFields', () => {
     carouselCards: [{ key: 'card-1', imageAssetId: 'img', imageAssetBriefId: 'b1', headline: 'Keynote', destinationUrl: '' }],
     carouselIntroText: 'Meet the speakers',
     document: { assetId: 'pdf', assetBriefId: 'b1', title: 'Prospectus', introText: 'Sponsor us' },
+    boostPost: 'urn:li:share:1',
     customTargeting: true,
     targetingDraft: { clauses: [{ skills: [{ urn: 'urn:li:skill:1', name: 'Go' }] }], exclude: {}, segmentsAccountId: null },
     objectiveDraft: { objective: 'conversions', conversions: ['104012'], conversionsOwner: 'tlf|' },
     deliveryOptions: { audienceExpansion: true, audienceNetwork: false },
   };
+
+  it('carries the boost post as typed', () => {
+    expect(linkedInDraftFields(state).linkedInBoostPost).toBe('urn:li:share:1');
+  });
 
   it('carries a copy of the delivery options', () => {
     const fields = linkedInDraftFields(state);
@@ -123,6 +128,7 @@ describe('linkedInDraftRestore', () => {
     ['video', 'video'],
     ['carousel', 'carousel'],
     ['document', 'document'],
+    ['boost', 'boost'],
     ['slideshow', undefined],
   ])('restores a stored format %s as %s', (stored, expected) => {
     // A stored draft is replayed from JSON, so an unknown format is possible.
@@ -134,6 +140,15 @@ describe('linkedInDraftRestore', () => {
     const stored = { assetId: 'pdf', assetBriefId: 'b1', title: 'Prospectus', introText: 'Sponsor us' };
     expect(linkedInDraftRestore(draft({ linkedInDocument: stored })).document).toEqual(stored);
     expect(linkedInDraftRestore(draft({})).document).toBeUndefined();
+  });
+
+  it.each([
+    ['a post', 'urn:li:share:1', 'urn:li:share:1'],
+    ['an empty post', '', ''],
+    ['none', undefined, undefined],
+    ['a post that is not text', 7, undefined],
+  ])('restores a stored boost post: %s', (_name, stored, expected) => {
+    expect(linkedInDraftRestore(draft({ linkedInBoostPost: stored as string | undefined })).boostPost).toBe(expected);
   });
 
   it('restores carousel cards whose fields are text, and the intro text, present-only', () => {

@@ -1194,6 +1194,8 @@ export class CampaignsComponent {
   protected readonly briefCampaignsLinkedInCarouselEnabled = signal<boolean | null>(null);
   /** Whether the LinkedIn section offers document ads (`CampaignListResult.linkedInDocumentEnabled`, campaign-service#665). */
   protected readonly briefCampaignsLinkedInDocumentEnabled = signal<boolean | null>(null);
+  /** Whether the LinkedIn section offers boosting an existing post (`CampaignListResult.linkedInBoostEnabled`, campaign-service#673). */
+  protected readonly briefCampaignsLinkedInBoostEnabled = signal<boolean | null>(null);
   /** Whether the LinkedIn section offers a target cost (`CampaignListResult.linkedInTargetCostEnabled`, campaign-service#674). */
   protected readonly briefCampaignsLinkedInTargetCostEnabled = signal<boolean | null>(null);
   /** Whether the LinkedIn section offers its delivery options (`CampaignListResult.linkedInDeliveryOptionsEnabled`, campaign-service#667). */
@@ -3433,6 +3435,7 @@ export class CampaignsComponent {
         this.briefCampaignsLinkedInLeadGenEnabled.set(null);
         this.briefCampaignsLinkedInCarouselEnabled.set(null);
         this.briefCampaignsLinkedInDocumentEnabled.set(null);
+        this.briefCampaignsLinkedInBoostEnabled.set(null);
         this.briefCampaignsLinkedInTargetCostEnabled.set(null);
         this.briefCampaignsLinkedInDeliveryOptionsEnabled.set(null);
         this.briefCampaignsMicrosoftAssetUploadEnabled.set(null);
@@ -6541,6 +6544,7 @@ export class CampaignsComponent {
           this.briefCampaignsLinkedInLeadGenEnabled.set(result.linkedInLeadGenEnabled);
           this.briefCampaignsLinkedInCarouselEnabled.set(result.linkedInCarouselEnabled);
           this.briefCampaignsLinkedInDocumentEnabled.set(result.linkedInDocumentEnabled);
+          this.briefCampaignsLinkedInBoostEnabled.set(result.linkedInBoostEnabled);
           this.briefCampaignsLinkedInTargetCostEnabled.set(result.linkedInTargetCostEnabled);
           this.briefCampaignsLinkedInDeliveryOptionsEnabled.set(result.linkedInDeliveryOptionsEnabled);
           this.briefCampaignsMicrosoftAssetUploadEnabled.set(result.microsoftAssetUploadEnabled);
@@ -6611,6 +6615,7 @@ export class CampaignsComponent {
           this.briefCampaignsLinkedInLeadGenEnabled.set(null);
           this.briefCampaignsLinkedInCarouselEnabled.set(null);
           this.briefCampaignsLinkedInDocumentEnabled.set(null);
+          this.briefCampaignsLinkedInBoostEnabled.set(null);
           this.briefCampaignsLinkedInTargetCostEnabled.set(null);
           this.briefCampaignsLinkedInDeliveryOptionsEnabled.set(null);
           this.briefCampaignsMicrosoftAssetUploadEnabled.set(null);
@@ -6726,6 +6731,7 @@ export class CampaignsComponent {
       this.briefCampaignsLinkedInLeadGenEnabled.set(null);
       this.briefCampaignsLinkedInCarouselEnabled.set(null);
       this.briefCampaignsLinkedInDocumentEnabled.set(null);
+      this.briefCampaignsLinkedInBoostEnabled.set(null);
       this.briefCampaignsLinkedInTargetCostEnabled.set(null);
       this.briefCampaignsLinkedInDeliveryOptionsEnabled.set(null);
       this.briefCampaignsMicrosoftAssetUploadEnabled.set(null);
@@ -6811,6 +6817,7 @@ export class CampaignsComponent {
             this.briefCampaignsLinkedInLeadGenEnabled.set(result.linkedInLeadGenEnabled);
             this.briefCampaignsLinkedInCarouselEnabled.set(result.linkedInCarouselEnabled);
             this.briefCampaignsLinkedInDocumentEnabled.set(result.linkedInDocumentEnabled);
+            this.briefCampaignsLinkedInBoostEnabled.set(result.linkedInBoostEnabled);
             this.briefCampaignsLinkedInTargetCostEnabled.set(result.linkedInTargetCostEnabled);
             this.briefCampaignsLinkedInDeliveryOptionsEnabled.set(result.linkedInDeliveryOptionsEnabled);
             this.briefCampaignsMicrosoftAssetUploadEnabled.set(result.microsoftAssetUploadEnabled);
@@ -6879,6 +6886,7 @@ export class CampaignsComponent {
             this.briefCampaignsLinkedInLeadGenEnabled.set(null);
             this.briefCampaignsLinkedInCarouselEnabled.set(null);
             this.briefCampaignsLinkedInDocumentEnabled.set(null);
+            this.briefCampaignsLinkedInBoostEnabled.set(null);
             this.briefCampaignsLinkedInTargetCostEnabled.set(null);
             this.briefCampaignsLinkedInDeliveryOptionsEnabled.set(null);
             this.briefCampaignsMicrosoftAssetUploadEnabled.set(null);

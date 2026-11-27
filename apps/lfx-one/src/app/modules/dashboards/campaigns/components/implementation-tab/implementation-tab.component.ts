@@ -518,6 +518,11 @@ import {
   linkedInDocumentCreateRefusal,
   linkedInDocumentFieldsForCreate,
   linkedInDocumentGatedWarning,
+  linkedInBoostChosen,
+  linkedInBoostCreateRefusal,
+  linkedInBoostFieldsForCreate,
+  linkedInBoostPostError,
+  linkedInBoostUnavailable,
   emptyLinkedInTargetingDraft,
   emptyLinkedInObjectiveDraft,
   linkedInLeadGenChosen,
@@ -1180,6 +1185,12 @@ export class ImplementationTabComponent implements OnInit {
 
   /** @see linkedInDocumentEnabled — an explicit yes, never a `null`. */
   protected readonly linkedInDocumentAvailable = computed<boolean>(() => this.linkedInDocumentEnabled() === true);
+
+  /** Whether the LinkedIn section offers boosting an existing post (`CampaignListResult.linkedInBoostEnabled`, campaign-service#673). */
+  public readonly linkedInBoostEnabled = input<boolean | null>(null);
+
+  /** @see linkedInBoostEnabled — an explicit yes, never a `null`. */
+  protected readonly linkedInBoostAvailable = computed<boolean>(() => this.linkedInBoostEnabled() === true);
 
   /**
    * Whether a LinkedIn create's automatic bidding may carry a target cost (`CampaignListResult.linkedInTargetCostEnabled`,
@@ -2134,12 +2145,20 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly linkedInDocumentGatedWarning = computed<string>(() =>
     linkedInDocumentGatedWarning(this.linkedInDocumentSelected() && this.linkedInLeadGenSelected())
   );
+  /** The post URN a boost sponsors, as typed (campaign-service#673), carried in the draft. */
+  protected readonly linkedInBoostPost = signal('');
+  /** Whether this create is a boost (campaign-service#673): chosen, and offered on an explicit yes. */
+  protected readonly linkedInBoostSelected = computed<boolean>(() => linkedInBoostChosen(this.linkedInFormat(), this.linkedInBoostEnabled()));
+  /** The error under the boost's post field, or `''`. */
+  protected readonly linkedInBoostPostError = computed<string>(() => linkedInBoostPostError(this.linkedInBoostPost()));
   /** The Ad format picker's hint: what the chosen format needs (#5764 rows 18–19). */
   protected readonly linkedInFormatHint = computed<string>(() => {
     if (this.linkedInFormat() === 'text') return "Text ads are a headline and description on LinkedIn's desktop right rail. They need a manual bid.";
     if (this.linkedInFormat() === 'video') return 'Video ads play an MP4 in the feed. Every ad needs its own video, and video ads have no description.';
     if (this.linkedInFormat() === 'carousel') return 'A carousel is one post of 2 to 10 swipeable square image cards, each with its own headline and link.';
     if (this.linkedInFormat() === 'document') return 'A document ad is one post of a PDF members page through in the feed, such as a prospectus or report.';
+    if (this.linkedInFormat() === 'boost')
+      return "A boost sponsors a post your company's LinkedIn page already published, as it is. The ad copy and image come from the post.";
     return 'Single image ads show an image with the intro text and headline in the feed.';
   });
   /**
@@ -2466,8 +2485,9 @@ export class ImplementationTabComponent implements OnInit {
    * (campaign-service#665) holds no upload, so while one is chosen any upload is orphaned and holds nothing.
    */
   private readonly linkedInImageUploadOrphaned = computed(() => {
-    // Likewise a document (campaign-service#665), whose PDF is picked from the library.
-    if (this.linkedInCarouselSelected() || this.linkedInDocumentSelected()) return linkedInImageUploadOrphaned(this.linkedInImageSlot(), []);
+    // Likewise a document (campaign-service#665), whose PDF is picked from the library, and a boost (#673), which uploads nothing.
+    if (this.linkedInCarouselSelected() || this.linkedInDocumentSelected() || this.linkedInBoostSelected())
+      return linkedInImageUploadOrphaned(this.linkedInImageSlot(), []);
     return linkedInImageUploadOrphaned(this.linkedInImageSlot(), this.linkedInTextAdsSelected() ? this.linkedInTextAds() : this.linkedInVariants());
   });
   protected readonly linkedInImageUploadStatus = signal<CreativeAssetUploadStatus>('idle');
@@ -4295,10 +4315,11 @@ export class ImplementationTabComponent implements OnInit {
    * Why Create is blocked for an uploaded LinkedIn image this tab still holds but cannot send, or
    * `null` — `metaImageAssetBlock`'s sibling, less the pasted URL LinkedIn does not have. The first
    * blocked variant's, or text ad's while Text Ads are chosen (#5764 row 19); each shows its own beside its picker. None
-   * while a carousel or a document is chosen (campaign-service#665): they pick stored assets, and the hidden variants send nothing.
+   * while a carousel or a document is chosen (campaign-service#665), since they pick stored assets, or while a boost is chosen
+   * (campaign-service#673), which uploads nothing; the hidden variants send nothing.
    */
   protected readonly linkedInImageAssetBlock: Signal<CampaignLinkedInImageAssetBlock | null> = computed(() => {
-    if (this.linkedInCarouselSelected() || this.linkedInDocumentSelected()) return null;
+    if (this.linkedInCarouselSelected() || this.linkedInDocumentSelected() || this.linkedInBoostSelected()) return null;
     const views = this.linkedInTextAdsSelected() ? this.linkedInTextAdImageViews() : this.linkedInVariantViews();
     return views.find((view) => view.imageBlock !== null)?.imageBlock ?? null;
   });
@@ -5956,7 +5977,9 @@ export class ImplementationTabComponent implements OnInit {
 
   /** The Ad format picker's value as a format: anything else reads as single image ads. */
   protected onLinkedInFormatSelect(value: unknown): void {
-    this.onLinkedInFormatChange(value === 'text' || value === 'video' || value === 'carousel' || value === 'document' ? value : 'single_image');
+    this.onLinkedInFormatChange(
+      value === 'text' || value === 'video' || value === 'carousel' || value === 'document' || value === 'boost' ? value : 'single_image'
+    );
   }
 
   /**
@@ -5978,6 +6001,12 @@ export class ImplementationTabComponent implements OnInit {
   /** The carousel editor's cards as edited (campaign-service#665). */
   protected onLinkedInCarouselCardsChange(cards: LinkedInCarouselCardDraft[]): void {
     this.linkedInCarouselCards.set(cards);
+    this.emitDraft();
+  }
+
+  /** The boost's post URN as typed (campaign-service#673). */
+  protected onLinkedInBoostPostChange(value: string): void {
+    this.linkedInBoostPost.set(value);
     this.emitDraft();
   }
 
@@ -9394,11 +9423,12 @@ export class ImplementationTabComponent implements OnInit {
    * The LinkedIn creatives for the request (#5764 row 19, campaign-service#665): `format: 'text'`, the text ads and no
    * variants while Text Ads are chosen and offered; `format: 'carousel'`, the cards, the intro text and no variants while a
    * carousel is chosen and offered; `format: 'document'`, the PDF, title, intro text and no variants while a document is
-   * chosen and offered; else the variants exactly as before (no `format` key), each with its video while video ads are chosen.
+   * chosen and offered; `format: 'boost'`, the post and no variants while a boost is chosen and offered (campaign-service#673);
+   * else the variants exactly as before (no `format` key), each with its video while video ads are chosen.
    */
   private linkedInCreativesField(): Pick<
     LinkedInCampaignCreateRequest,
-    'variants' | 'format' | 'textAds' | 'carouselCards' | 'carouselIntroText' | 'documentAssetId' | 'documentTitle' | 'documentIntroText'
+    'variants' | 'format' | 'textAds' | 'carouselCards' | 'carouselIntroText' | 'documentAssetId' | 'documentTitle' | 'documentIntroText' | 'boostPost'
   > {
     // Video ads (#5764 row 18) are the single-image request with a video on each variant, and no image or description.
     if (this.linkedInVideoSelected()) {
@@ -9415,15 +9445,18 @@ export class ImplementationTabComponent implements OnInit {
     }
     // A document (campaign-service#665) is one creative built from its PDF, and sends no variants.
     if (this.linkedInDocumentSelected()) return linkedInDocumentFieldsForCreate(this.linkedInDocument(), this.briefPersistence().briefId ?? '');
+    // A boost (campaign-service#673) sponsors its post as it is, and sends no variants.
+    if (this.linkedInBoostSelected()) return linkedInBoostFieldsForCreate(this.linkedInBoostPost());
     if (!this.linkedInTextAdsSelected()) return { variants: this.linkedInVariantsSent() };
     const textAds = linkedInTextAdsForCreate(this.linkedInTextAds(), this.linkedInAssetUploadAvailable(), this.briefPersistence().briefId ?? '');
     return { format: 'text', textAds, variants: [] };
   }
 
-  /** The request `format` the objective checks are run against: Text Ads, a carousel or a document while chosen and offered, else none. */
-  private linkedInFormatSent(): 'text' | 'carousel' | 'document' | undefined {
+  /** The request `format` the objective checks are run against: Text Ads, a carousel, a document or a boost while chosen and offered, else none. */
+  private linkedInFormatSent(): 'text' | 'carousel' | 'document' | 'boost' | undefined {
     if (this.linkedInTextAdsSelected()) return 'text';
     if (this.linkedInDocumentSelected()) return 'document';
+    if (this.linkedInBoostSelected()) return 'boost';
     return this.linkedInCarouselSelected() ? 'carousel' : undefined;
   }
 
@@ -9494,6 +9527,10 @@ export class ImplementationTabComponent implements OnInit {
             },
           }
         : {}),
+      // A boost chosen but not offered (off, or not read yet): held, never sent (campaign-service#673). While chosen, its
+      // post replaces the variant checks.
+      boostUnavailable: linkedInBoostUnavailable(this.linkedInFormat(), this.linkedInBoostEnabled()),
+      ...(this.linkedInBoostSelected() ? { boost: { refusal: linkedInBoostCreateRefusal(this.linkedInBoostPost()) } } : {}),
       ...(this.linkedInVideoSelected() ? { videoMissing: linkedInVideoMissing(this.linkedInVariants(), this.briefPersistence().briefId ?? '') } : {}),
       customTargetingUnavailable: this.linkedInCustomTargeting() && !this.linkedInTargetingAvailable(),
       // Custom targeting (#5764 rows 8–11) holds Create while its clauses cannot be sent, and replaces the profile checks.
@@ -9962,6 +9999,8 @@ export class ImplementationTabComponent implements OnInit {
     // The carousel cards and intro text as edited (campaign-service#665), present-only.
     if (linkedInRestore.carouselCards) this.linkedInCarouselCards.set(linkedInRestore.carouselCards);
     if (linkedInRestore.carouselIntroText !== undefined) this.linkedInCarouselIntroText.set(linkedInRestore.carouselIntroText);
+    // The boost's post as typed (campaign-service#673), present-only.
+    if (linkedInRestore.boostPost !== undefined) this.linkedInBoostPost.set(linkedInRestore.boostPost);
     // The document ad as edited (campaign-service#665), present-only.
     if (linkedInRestore.document) this.linkedInDocument.set(linkedInRestore.document);
     // Custom targeting and its clauses as edited (#5764 rows 8–11), present-only.
@@ -10495,6 +10534,7 @@ export class ImplementationTabComponent implements OnInit {
         carouselCards: this.linkedInCarouselCards(),
         carouselIntroText: this.linkedInCarouselIntroText(),
         document: this.linkedInDocument(),
+        boostPost: this.linkedInBoostPost(),
         customTargeting: this.linkedInCustomTargeting(),
         targetingDraft: this.linkedInTargetingDraft(),
         objectiveDraft: this.linkedInObjectiveDraft(),
@@ -10849,6 +10889,7 @@ export class ImplementationTabComponent implements OnInit {
     this.linkedInCarouselCards.set([]);
     this.linkedInCarouselIntroText.set('');
     this.linkedInDocument.set(emptyLinkedInDocumentDraft());
+    this.linkedInBoostPost.set('');
     this.linkedInCustomTargeting.set(false);
     this.linkedInTargetingDraft.set(emptyLinkedInTargetingDraft());
     this.linkedInObjectiveDraft.set(emptyLinkedInObjectiveDraft());

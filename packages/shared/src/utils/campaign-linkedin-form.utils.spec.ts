@@ -197,6 +197,14 @@ describe('linkedInCreateRefusal', () => {
     ],
     ['a document that can be sent, with no variants', { document: { refusal: null }, variantCount: 0 }, null],
     ['a document that cannot be sent', { document: { refusal: 'LinkedIn Ads: Choose the PDF.' } }, 'LinkedIn Ads: Choose the PDF.'],
+    // A boost (campaign-service#673): held rather than sent as image ads, and its post replaces the variant checks.
+    [
+      'a boost no longer offered',
+      { boostUnavailable: true },
+      'LinkedIn Ads: boosting a post is not available right now. Choose single image ads as the ad format.',
+    ],
+    ['a boost that can be sent, with no variants', { boost: { refusal: null }, variantCount: 0 }, null],
+    ['a boost that cannot be sent', { boost: { refusal: 'LinkedIn Ads: Choose the post.' } }, 'LinkedIn Ads: Choose the post.'],
     [
       'custom targeting no longer offered',
       { customTargetingUnavailable: true },

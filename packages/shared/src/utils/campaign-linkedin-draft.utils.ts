@@ -57,6 +57,7 @@ export function linkedInDraftFields(
   | 'linkedInCarouselCards'
   | 'linkedInCarouselIntroText'
   | 'linkedInDocument'
+  | 'linkedInBoostPost'
   | 'linkedInCustomTargeting'
   | 'linkedInTargetingDraft'
   | 'linkedInObjectiveDraft'
@@ -77,6 +78,7 @@ export function linkedInDraftFields(
     linkedInCarouselCards: state.carouselCards.map((card) => ({ ...card })),
     linkedInCarouselIntroText: state.carouselIntroText,
     linkedInDocument: { ...state.document },
+    linkedInBoostPost: state.boostPost,
     linkedInCustomTargeting: state.customTargeting,
     linkedInTargetingDraft: structuredClone(state.targetingDraft),
     linkedInObjectiveDraft: { ...state.objectiveDraft, conversions: [...state.objectiveDraft.conversions] },
@@ -104,10 +106,14 @@ export function linkedInDraftRestore(draft: LinkedInDraftSnapshot): LinkedInDraf
   if (draft.linkedInImageUploadFailedMessage && draft.linkedInImageUploadFailedBriefId) {
     restore.failedUpload = { message: draft.linkedInImageUploadFailedMessage, briefId: draft.linkedInImageUploadFailedBriefId };
   }
-  // Text Ads (#5764 row 19), video ads (row 18), carousels and documents (campaign-service#665): present-only, so an older draft keeps the single-image default. An
+  // Text Ads (#5764 row 19), video ads (row 18), carousels, documents (campaign-service#665) and boosts (#673): present-only, so an older draft keeps the single-image default. An
   // unknown format restores nothing.
   const format = draft.linkedInFormat;
-  if (format === 'single_image' || format === 'text' || format === 'video' || format === 'carousel' || format === 'document') restore.format = format;
+  if (format === 'single_image' || format === 'text' || format === 'video' || format === 'carousel' || format === 'document' || format === 'boost') {
+    restore.format = format;
+  }
+  // The boost's post as typed (campaign-service#673): present-only, as text. Sent only while the boost is offered.
+  if (typeof draft.linkedInBoostPost === 'string') restore.boostPost = draft.linkedInBoostPost;
   // The document ad (campaign-service#665): present-only, with every field as text.
   const document = linkedInDocumentDraftFromStored(draft.linkedInDocument);
   if (document) restore.document = document;

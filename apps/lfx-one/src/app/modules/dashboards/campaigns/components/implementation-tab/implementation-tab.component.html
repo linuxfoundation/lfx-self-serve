@@ -4176,7 +4176,7 @@
               [owner]="linkedInSegmentsOwner()"
               [available]="linkedInConversionsAvailable()"
               [leadGenAvailable]="linkedInLeadGenAvailable()"
-              [leadGenOffered]="!linkedInCarouselSelected()"
+              [leadGenOffered]="!linkedInCarouselSelected() && !linkedInBoostSelected()"
               [documentChosen]="linkedInDocumentSelected()"
               [targetCostOffered]="linkedInTargetCostFieldShown()"
               [draft]="linkedInObjectiveDraft()"
@@ -4227,13 +4227,14 @@
           </div>
 
           <!-- The ad format (#5764 rows 18–19, campaign-service#665), offered on an explicit yes from `linkedInTextAdsAvailable()`,
-               `linkedInVideoAdsAvailable()`, `linkedInCarouselAvailable()` or `linkedInDocumentAvailable()`, and kept on screen while a
+               `linkedInVideoAdsAvailable()`, `linkedInCarouselAvailable()`, `linkedInDocumentAvailable()` or `linkedInBoostAvailable()`, and kept on screen while a
                choice can no longer be sent, so the operator can switch back. -->
           @if (
             linkedInTextAdsAvailable() ||
             linkedInVideoAdsAvailable() ||
             linkedInCarouselAvailable() ||
             linkedInDocumentAvailable() ||
+            linkedInBoostAvailable() ||
             linkedInFormat() !== 'single_image'
           ) {
             <lfx-ui-select
@@ -4258,6 +4259,10 @@
               <!-- Offered with lead generation too: a gated document opens the form after its free preview pages (campaign-service#665). -->
               @if (linkedInDocumentAvailable() || linkedInFormat() === 'document') {
                 <lfx-ui-option value="document" label="Document" />
+              }
+              <!-- Only on an explicit yes, and not with lead generation: a boosted post carries no form (campaign-service#673). -->
+              @if ((linkedInBoostAvailable() && !linkedInLeadGenSelected()) || linkedInFormat() === 'boost') {
+                <lfx-ui-option value="boost" label="Boost an existing post" />
               }
             </lfx-ui-select>
           }
@@ -4296,6 +4301,19 @@
               [gatedWarning]="linkedInDocumentGatedWarning()"
               (upload)="onLinkedInDocumentUpload($event)"
               data-testid="implementation-linkedin-document" />
+          } @else if (linkedInBoostSelected()) {
+            <!-- A boost (campaign-service#673) sponsors a published post as it is: no ad copy, image or call to action of its own. -->
+            <div class="flex flex-col gap-1" data-testid="implementation-linkedin-boost">
+              <lfx-ui-input
+                label="Post to boost"
+                size="small"
+                placeholder="urn:li:share:7400000000000000000"
+                [value]="linkedInBoostPost()"
+                (valueChange)="onLinkedInBoostPostChange($event)"
+                [error]="linkedInBoostPostError()"
+                hint='A public post your company&apos;s LinkedIn page published. On the post, open the menu, choose "Embed this post", and copy the urn:li:share:… or urn:li:ugcPost:… from the embed code.'
+                data-testid="implementation-linkedin-boost-post" />
+            </div>
           } @else {
             <!-- Ad variants: each one is its own LinkedIn ad, with its own copy and, when uploads are on, its own image (#5547). -->
             <fieldset class="flex flex-col gap-3" aria-describedby="linkedin-variants-hint" data-testid="implementation-linkedin-variants">
