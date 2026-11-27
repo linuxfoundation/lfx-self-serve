@@ -1,0 +1,39 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-1" data-testid="reddit-pixel-picker">
+  @switch (view().mode) {
+    @case ('loading') {
+      <p class="text-xs text-gray-500" data-testid="reddit-pixel-picker-loading">{{ loadingText }}</p>
+    }
+    @case ('select') {
+      <lfx-ui-select
+        label="Conversion pixel (optional)"
+        size="small"
+        [value]="heldId()"
+        (valueChange)="onPick($event)"
+        hint="The pixels on the Reddit ad account. Keep the default to use the pixel on this project's Reddit connection."
+        data-testid="reddit-pixel-picker-select">
+        <lfx-ui-option value="" label="Use the connection's pixel" />
+        @if (view().heldIdUnlisted) {
+          <lfx-ui-option [value]="heldId()" [label]="'Pixel ' + heldId() + ' (not listed)'" />
+        }
+        @for (choice of view().choices; track choice.value) {
+          <lfx-ui-option [value]="choice.value" [label]="choice.label" />
+        }
+      </lfx-ui-select>
+      @if (view().note; as note) {
+        <p class="text-xs text-gray-500" data-testid="reddit-pixel-picker-note">{{ note }}</p>
+      }
+    }
+    @case ('text') {
+      <lfx-ui-input
+        label="Conversion Pixel ID (optional)"
+        size="small"
+        [hint]="view().note ?? typedHint"
+        [value]="pixelId()"
+        (valueChange)="onType($event)"
+        data-testid="reddit-pixel-picker-id" />
+    }
+  }
+</div>

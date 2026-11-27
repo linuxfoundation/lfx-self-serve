@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { REDDIT_PIXEL_ID_PATTERN } from '../constants/campaign.constants';
-import type { RedditPixelOption, RedditPixelsResult } from '../interfaces/campaign.interface';
+import { REDDIT_PIXEL_ID_PATTERN, REDDIT_PIXEL_PICKER_REASONS, REDDIT_PIXEL_PICKER_TRUNCATED } from '../constants/campaign.constants';
+import type { RedditPixelOption, RedditPixelPickerState, RedditPixelPickerView, RedditPixelsResult } from '../interfaces/campaign.interface';
 
 /**
  * The Reddit pixel read (#6108 row 5): campaign-service's `GET /projects/{project_id}/reddit-ads/pixels`
@@ -45,5 +45,33 @@ export function redditPixelsFromPayload(payload: unknown): RedditPixelsResult | 
     pixels,
     pixelCount: pixels.length,
     truncated: body['truncated'] === true,
+  };
+}
+
+/**
+ * Why the pixel list cannot be offered for a failed read with this HTTP status (0 when there was none): the 403 a caller
+ * without `global_marketing_ops` gets, or a read that failed. Either way the typed-id box stays the way in.
+ */
+export function redditPixelPickerReason(status: number): string {
+  return status === 403 ? REDDIT_PIXEL_PICKER_REASONS.restricted : REDDIT_PIXEL_PICKER_REASONS.failed;
+}
+
+/**
+ * What the pixel picker shows for a read and the held pixel id: a select over the listed pixels (each `name (id)`, or the
+ * id alone for an unnamed one) once there are any, keeping a held id the list does not hold as its own option; otherwise
+ * the typed-id box, with why. Blank is always "use the connection's pixel".
+ */
+export function redditPixelPickerView(state: RedditPixelPickerState, heldId: string): RedditPixelPickerView {
+  if (state.status === 'loading') return { mode: 'loading', choices: [], heldIdUnlisted: false, note: null };
+  if (state.status !== 'loaded' || state.pixels.length === 0) {
+    const note = state.status === 'loaded' ? REDDIT_PIXEL_PICKER_REASONS.empty : state.reason;
+    return { mode: 'text', choices: [], heldIdUnlisted: false, note };
+  }
+  const held = heldId.trim();
+  return {
+    mode: 'select',
+    choices: state.pixels.map((pixel) => ({ value: pixel.id, label: pixel.name.trim() === '' ? pixel.id : `${pixel.name} (${pixel.id})` })),
+    heldIdUnlisted: held !== '' && !state.pixels.some((pixel) => pixel.id === held),
+    note: state.truncated ? REDDIT_PIXEL_PICKER_TRUNCATED : null,
   };
 }

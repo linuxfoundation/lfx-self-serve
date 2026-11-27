@@ -1,0 +1,57 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@if (budgetTypeEnabled() || placementsEnabled()) {
+  <div class="flex flex-col gap-3" data-testid="reddit-delivery">
+    @if (budgetTypeEnabled()) {
+      <lfx-ui-select
+        label="Budget type"
+        hint="Lifetime spends the budget over the whole flight; daily spends it each day."
+        size="small"
+        [value]="delivery().budgetType"
+        (valueChange)="onBudgetTypeChange($event)"
+        data-testid="reddit-delivery-budget-type">
+        @for (budgetType of budgetTypes; track budgetType) {
+          <lfx-ui-option [value]="budgetType" [label]="budgetTypeLabels[budgetType]" />
+        }
+      </lfx-ui-select>
+    }
+    @if (placementsEnabled()) {
+      <fieldset class="flex flex-col gap-2" data-testid="reddit-delivery-placements">
+        <legend class="mb-1 text-xs font-medium text-gray-700">Placements</legend>
+        <div class="flex flex-wrap items-center gap-3">
+          @for (row of placementRows(); track row.value) {
+            <lfx-ui-checkbox
+              [label]="row.label"
+              [checked]="row.on"
+              [disabled]="row.locked"
+              (checkedChange)="onPlacementToggle(row.value, $event)"
+              [attr.data-testid]="'reddit-delivery-placement-' + row.value" />
+          }
+        </div>
+      </fieldset>
+      <fieldset class="flex flex-col gap-2" data-testid="reddit-delivery-platforms">
+        <legend class="mb-1 text-xs font-medium text-gray-700">Devices</legend>
+        <div class="flex flex-wrap items-center gap-3">
+          @for (row of platformRows(); track row.value) {
+            <lfx-ui-checkbox
+              [label]="row.label"
+              [checked]="row.on"
+              [disabled]="row.locked"
+              (checkedChange)="onPlatformToggle(row.value, $event)"
+              [attr.data-testid]="'reddit-delivery-platform-' + row.value" />
+          }
+        </div>
+      </fieldset>
+      <p class="text-xs text-gray-500" data-testid="reddit-delivery-hint">At least one placement and one device stay selected.</p>
+      <lfx-ui-toggle
+        label="Expand targeting: let Reddit reach similar people beyond this targeting"
+        [checked]="delivery().expandTargeting"
+        (checkedChange)="onExpandTargetingChange($event)"
+        data-testid="reddit-delivery-expand-targeting" />
+      @if (refusal(); as refused) {
+        <p role="alert" class="text-xs text-red-600" data-testid="reddit-delivery-error">{{ refused }}</p>
+      }
+    }
+  </div>
+}
