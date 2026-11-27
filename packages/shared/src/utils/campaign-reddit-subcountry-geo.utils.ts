@@ -165,7 +165,8 @@ export function redditSubCountryGeoField(subCountry: readonly string[], enabled:
 /**
  * Why the held locations break campaign-service's rules against the geo targets and excluded countries the create sends,
  * or `null`: {@link redditSubCountryGeoRefusal} with the flag on, run only when the list is sent. An excluded country
- * added after a location inside it is caught here rather than when the location was added.
+ * added after a location inside it is caught here rather than when the location was added. The message names the held
+ * id beside its position, since the chips are not numbered; the ids are the operator's own, already on screen.
  */
 export function redditSubCountryGeoDraftRefusal(
   subCountry: readonly string[],
@@ -175,7 +176,8 @@ export function redditSubCountryGeoDraftRefusal(
 ): string | null {
   const field = redditSubCountryGeoField(subCountry, enabled);
   if (field.subCountryGeoTargets === undefined) return null;
-  return redditSubCountryGeoRefusal({ geoTargets, excludedGeoTargets, ...field }, true)?.message ?? null;
+  const message = redditSubCountryGeoRefusal({ geoTargets, excludedGeoTargets, ...field }, true)?.message ?? null;
+  return message?.replace(/^Location (\d+)/, (named, position: string) => `${named} (${subCountry[Number(position) - 1]})`) ?? null;
 }
 
 /** A stored draft list as the editor holds it: the strings of an array, else `undefined` (the empty list stands). */

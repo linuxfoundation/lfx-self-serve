@@ -2432,12 +2432,16 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly redditSentGeoTargets = computed<string[]>(() =>
     redditGeoTargetsBesideSubCountry(this.redditEffectiveGeoTargets(), this.redditSubCountryGeoTargets(), this.redditSubCountryGeoEnabled())
   );
+  /** The excluded countries a Reddit create sends, which no location may lie in: the editor and the Create check read the same list. */
+  protected readonly redditSentExcludedGeoTargets = computed<string[]>(
+    () => redditTargetingExclusionsField(this.redditTargetingExclusions(), this.redditTargetingExclusionsEnabled()).excludedGeoTargets ?? []
+  );
   /** Why the locations cannot be sent with the geo targets and excluded countries the create sends, or `null`; holds Create. */
   protected readonly redditSubCountryGeoRefusal = computed<string | null>(() =>
     redditSubCountryGeoDraftRefusal(
       this.redditSubCountryGeoTargets(),
       this.redditSentGeoTargets(),
-      redditTargetingExclusionsField(this.redditTargetingExclusions(), this.redditTargetingExclusionsEnabled()).excludedGeoTargets ?? [],
+      this.redditSentExcludedGeoTargets(),
       this.redditSubCountryGeoEnabled()
     )
   );

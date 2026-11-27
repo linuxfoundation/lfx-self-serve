@@ -6005,7 +6005,7 @@
           @if (redditSubCountryGeoAvailable()) {
             <div class="mb-4">
               <lfx-reddit-subcountry-geo
-                [excludedGeoTargets]="redditTargetingExclusions().excludedGeoTargets"
+                [excludedGeoTargets]="redditSentExcludedGeoTargets()"
                 [refusal]="redditSubCountryGeoRefusal()"
                 [locations]="redditSubCountryGeoTargets()"
                 (locationsChange)="onRedditSubCountryGeoChange($event)" />

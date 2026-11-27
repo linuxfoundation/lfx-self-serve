@@ -159,9 +159,9 @@ describe('redditSubCountryGeoField', () => {
 describe('redditSubCountryGeoDraftRefusal', () => {
   it.each<[string, string[], string[], string[], boolean | null, string | null]>([
     ['locations beside other countries', ['US-CA'], ['GB'], [], true, null],
-    ['a location inside an excluded country, added after it', ['CA:6167865'], [], ['CA'], true, 'inside an excluded country'],
+    ['a location inside an excluded country, added after it', ['CA:6167865'], [], ['CA'], true, 'Location 1 (CA:6167865) is inside an excluded country'],
     ['a location inside a targeted country', ['US-CA'], ['US'], [], true, 'already target'],
-    ['a malformed restored entry', ['nope'], [], [], true, 'Location 1 is not a Reddit region'],
+    ['a malformed restored entry, named by its id', ['US-CA', 'nope'], [], [], true, 'Location 2 (nope) is not a Reddit region'],
     ['nothing while off, as nothing is sent', ['nope'], [], [], false, null],
     ['nothing with no location', [], ['US'], [], true, null],
   ])('%s', (_name, list, geoTargets, excluded, enabled, expected) => {
