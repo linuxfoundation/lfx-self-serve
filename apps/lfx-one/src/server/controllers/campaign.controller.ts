@@ -1389,7 +1389,7 @@ export class CampaignController {
         return;
       }
 
-      // An uploaded Meta image is refused, not dropped, on the same terms as the Reddit one below.
+      // An uploaded Meta image is refused, not dropped, on the same terms as the Reddit one (`redditCreateConfigRefusal`).
       const unservedMetaAssetField = this.unservedMetaAssetField(body);
       if (unservedMetaAssetField !== null) {
         next(
@@ -1440,45 +1440,16 @@ export class CampaignController {
         return;
       }
 
-      // An uploaded Reddit image is refused, not dropped, when this deployment cannot use it — the
-      // same reasoning as `bidding` above. The form never sends it in that state
-      // (`redditAssetUploadEnabled` hides the upload control).
-      const unservedRedditAssetField = this.unservedRedditAssetField(body);
-      if (unservedRedditAssetField !== null) {
-        next(
-          ServiceValidationError.forField(unservedRedditAssetField, 'uploaded Reddit images are not enabled on this deployment; supply an image URL instead', {
-            operation: 'campaign_create',
-            service: 'campaign_controller',
-          })
-        );
-        return;
-      }
-
-      // A per-campaign Reddit pixel is refused, not dropped, when the legacy creator will serve the
-      // create — it never reads the field, so the campaign would quietly use (or fail for want of)
-      // the connection's pixel instead of the one the operator chose. A non-string pixel is refused
-      // on EITHER arm, since campaign-service decodes the field into a Go string. The form never
-      // sends a pixel on the legacy arm (`redditConversionPixelEnabled` hides the control) (#3484).
-      const redditPixelRefusal = this.redditConversionPixelRefusal(body);
-      if (redditPixelRefusal !== null) {
-        next(
-          ServiceValidationError.forField('redditConfig.conversionPixelId', redditPixelRefusal, {
-            operation: 'campaign_create',
-            service: 'campaign_controller',
-          })
-        );
-        return;
-      }
-
-      // Reddit's config refusals (#6108 rows 1-3 and 5-9): each feature refused, never dropped, while this deployment
-      // cannot send it, and held to campaign-service's rules, in its PreflightCreate order. Only for a create that
-      // selects Reddit: campaign-service pre-checks only the selected platforms, so these refusals never block another
-      // platform's create. The rules are table rows in `campaign-reddit-create.utils.spec.ts` and each feature's own spec.
-      // Not gated, on purpose: the image-asset, pixel and bidding checks above, since `redditConfig` is forwarded
-      // whatever is selected, and the custom-audiences access check below: those ids on the shared ad account are named
-      // only by a caller holding `global_marketing_ops` on the project, as campaign-service requires (403), and never on
-      // a check that failed (503).
+      // Reddit's config refusals (#6108 rows 1-3 and 5-9, plus `bidding`, the uploaded image and the per-campaign pixel):
+      // each feature refused, never dropped, while this deployment cannot send it, and held to campaign-service's rules,
+      // in its PreflightCreate order. Only for a create that selects Reddit: campaign-service pre-checks and dispatches
+      // only the selected platforms, so these refusals never block another platform's create. The rules are table rows
+      // in `campaign-reddit-create.utils.spec.ts` and each feature's own spec.
+      // Not gated, on purpose: the custom-audiences access check below, because a permission check is never loosened.
+      // Those ids on the shared ad account are named only by a caller holding `global_marketing_ops` on the project, as
+      // campaign-service requires (403), and never on a check that failed (503).
       const redditConfigRefused = redditCreateConfigRefusal(platforms, body?.redditConfig, {
+        bidding: canCreateWithBidding(),
         conversionEvent: canSetRedditConversionEvent(),
         customAudiences: canSetRedditCustomAudiences(),
         targetingExclusions: canSetRedditTargetingExclusions(),
@@ -1487,7 +1458,9 @@ export class CampaignController {
         demographics: canSetRedditDemographics(),
         budgetType: canSetRedditBudgetType(),
         video: canSetRedditVideo(),
+        imageAsset: canUseRedditCreativeAssets(),
         adPerVariant: canSetRedditAdPerVariant(),
+        conversionPixel: canSetRedditConversionPixel(),
       });
       if (redditConfigRefused !== null) {
         throw ServiceValidationError.forField(redditConfigRefused.field, redditConfigRefused.message, {
@@ -7524,43 +7497,8 @@ export class CampaignController {
   }
 
   /**
-   * `redditConfig.imageAssetId` when this deployment cannot honour it, else `null`.
-   *
-   * `in`, as for bidding: an explicit `imageAssetId: null` is still the field, and campaign-service
-   * would refuse it. Off means either the legacy creator serves (it never reads the field, so the
-   * campaign would have no ad) or campaign-service's URL signing is unconfigured (it refuses). A video post's
-   * `videoAssetId` and `thumbnailAssetId` are refused in that state too, by `redditVideoRefusal`: its gate,
-   * `canSetRedditVideo`, needs this same capability.
-   */
-  private unservedRedditAssetField(body: CampaignCreateRequest): string | null {
-    if (canUseRedditCreativeAssets()) return null;
-    const config: unknown = body?.redditConfig;
-    if (config !== null && typeof config === 'object' && 'imageAssetId' in config) return 'redditConfig.imageAssetId';
-    return null;
-  }
-
-  /**
-   * Why `redditConfig.conversionPixelId` cannot be sent, or `null` when it can.
-   *
-   * A value that is not a string is refused on EITHER arm: campaign-service decodes the field into
-   * a Go `string`, so it could only fail there as an opaque decode error, never succeed. Otherwise,
-   * absent, `null` and a blank string all mean "use the connection's pixel" upstream, which is
-   * exactly what the legacy creator does anyway, so only a real pixel is refused, and only while the
-   * legacy creator serves — refusing a blank would fail a create that loses nothing on either arm.
-   */
-  private redditConversionPixelRefusal(body: CampaignCreateRequest): string | null {
-    const config: unknown = body?.redditConfig;
-    if (config === null || typeof config !== 'object' || !('conversionPixelId' in config)) return null;
-    const pixel: unknown = config.conversionPixelId;
-    if (pixel === undefined || pixel === null) return null;
-    if (typeof pixel !== 'string') return 'the Reddit conversion pixel must be text';
-    if (canSetRedditConversionPixel() || pixel.trim() === '') return null;
-    return "a per-campaign Reddit conversion pixel is not supported on this deployment; leave it blank to use the connection's own pixel";
-  }
-
-  /**
    * The first `metaConfig.variants[i].imageAssetId` when this deployment cannot honour it, else
-   * `null`. `in`, as for the Reddit field: an explicit `imageAssetId: null` is still the field.
+   * `null`. `in`, as for `bidding`: an explicit `imageAssetId: null` is still the field.
    */
   private unservedMetaAssetField(body: CampaignCreateRequest): string | null {
     if (canUseMetaCreativeAssets()) return null;
@@ -7801,7 +7739,7 @@ export class CampaignController {
 
   /**
    * Whether `microsoftConfig.imageAssetId` is present while this deployment cannot honour it. `in`,
-   * as for the Reddit field: an explicit `imageAssetId: null` is still the field.
+   * as for `bidding`: an explicit `imageAssetId: null` is still the field.
    */
   private unservedMicrosoftAssetField(body: CampaignCreateRequest): boolean {
     if (canUseMicrosoftCreativeAssets()) return false;
@@ -7809,10 +7747,13 @@ export class CampaignController {
     return config !== null && typeof config === 'object' && 'imageAssetId' in config;
   }
 
-  /** The first lane config carrying `bidding` while this deployment cannot honour it (see `createCampaign`), or `null`. */
+  /**
+   * The first lane config carrying `bidding` while this deployment cannot honour it (see `createCampaign`), or `null`.
+   * Reddit's is `redditCreateConfigRefusal`'s, judged only when the create selects Reddit.
+   */
   private unservedBiddingField(body: CampaignCreateRequest): string | null {
     if (canCreateWithBidding()) return null;
-    for (const key of ['linkedInConfig', 'metaConfig', 'microsoftConfig', 'redditConfig', 'twitterConfig'] as const) {
+    for (const key of ['linkedInConfig', 'metaConfig', 'microsoftConfig', 'twitterConfig'] as const) {
       const config: unknown = body?.[key];
       // `in`, not a truthiness test: an explicit `bidding: null` is still a bidding field, and
       // campaign-service would refuse it rather than read it as automatic.
