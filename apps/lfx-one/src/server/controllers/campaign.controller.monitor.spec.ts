@@ -1877,6 +1877,21 @@ describe('account-wide monitor scope', () => {
     expect(svcLinkedIn).toHaveBeenCalledWith(expect.anything(), 'tlf', '512345678', 30, 'account');
   });
 
+  it('prefers LINKEDIN_AD_ACCOUNT_ID over the configured default on an account-wide system-account read', async () => {
+    flags(true);
+    vi.stubEnv('LINKEDIN_AD_ACCOUNT_ID', '533333333');
+    checkProjectGlobalMarketingOpsStrict.mockResolvedValueOnce(true);
+    svcConnection.mockRejectedValueOnce(
+      MicroserviceError.fromMicroserviceResponse(404, 'Not Found', { code: '404', message: 'not found' }, 'LFX_V2_CAMPAIGN_SERVICE', '/p')
+    );
+    svcLinkedIn.mockResolvedValueOnce({ ...labeledPayload(), account_id: '533333333' });
+
+    await new CampaignController().getLinkedInMonitor(buildReq({ project: 'tlf', accountWide: 'true' }), buildRes(), vi.fn());
+
+    expect(svcLinkedIn).toHaveBeenCalledWith(expect.anything(), 'tlf', '533333333', 30, 'account');
+    vi.unstubAllEnvs();
+  });
+
   it("names LinkedIn's configured LF account on an account-wide system-account read, and drops the project-only wording", async () => {
     flags(true);
     checkProjectGlobalMarketingOpsStrict.mockResolvedValueOnce(true);

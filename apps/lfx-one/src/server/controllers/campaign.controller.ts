@@ -6992,7 +6992,7 @@ export class CampaignController {
    * The LF account an ACCOUNT-WIDE read names when the project has no account of its own and the platform's fallback
    * names none (#6209): campaign-service otherwise picks the account the project's campaigns were created under, which
    * a project with none recorded does not have, so the read would come back empty. Google Ads: the configured
-   * `GADS_CUSTOMER_ID`; LinkedIn: the configured default account, else the first configured one. `undefined`
+   * `GADS_CUSTOMER_ID`; LinkedIn: `LINKEDIN_AD_ACCOUNT_ID`, then the configured default, then the first listed. `undefined`
    * (campaign-service picks) when unset.
    */
   private accountWideFallbackAccount(provider: CampaignServiceMonitorProvider): string | undefined {
@@ -7001,7 +7001,12 @@ export class CampaignController {
       return /^[0-9]+$/.test(customer) ? customer : undefined;
     }
     if (provider === 'linkedin-ads') {
-      // The configured default first, as the account list and the LinkedIn service resolve an unspecified account.
+      // Resolved as the LinkedIn service resolves an unspecified account (getAccountId): LINKEDIN_AD_ACCOUNT_ID, then
+      // the configured default, and only then the first listed account.
+      const fromEnv = (process.env['LINKEDIN_AD_ACCOUNT_ID'] ?? '').trim();
+      if (/^[0-9]+$/.test(fromEnv)) {
+        return fromEnv;
+      }
       const config = getLinkedInConfig();
       return config.defaultAccountId || config.accounts[0]?.accountId || undefined;
     }
