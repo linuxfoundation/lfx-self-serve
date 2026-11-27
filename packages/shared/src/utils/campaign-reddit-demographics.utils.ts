@@ -2,13 +2,22 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  DEFAULT_REDDIT_SCHEDULE_WINDOW,
   REDDIT_DEMOGRAPHIC_KEYS,
   REDDIT_GENDERS,
   REDDIT_LANGUAGES,
   REDDIT_MAX_SCHEDULE_WINDOWS,
   REDDIT_SCHEDULE_WINDOW_KEYS,
 } from '../constants/campaign.constants';
-import type { RedditConfigRefusal } from '../interfaces/campaign.interface';
+import type {
+  RedditConfigRefusal,
+  RedditDemographicsDraft,
+  RedditDemographicsField,
+  RedditGender,
+  RedditLanguage,
+  RedditScheduleWindow,
+  RedditScheduleWindowKey,
+} from '../interfaces/campaign.interface';
 import { googleAdsToUpperCode } from './campaign-google-assets.utils';
 import { foldKey } from './campaign-linkedin-config.utils';
 import { goTrimSpace } from './campaign-linkedin.utils';
@@ -146,4 +155,129 @@ export function redditDemographicsRefusal(raw: unknown, enabled: boolean): Reddi
     if (refusal !== null) return { field: fieldOf('schedule'), message: refusal };
   }
   return null;
+}
+
+// === The Implement tab's gender, language and dayparting editor (#6108 row 9) ===
+
+/** Whether the editor is offered and its choices sent: only an explicit yes from `CampaignListResult.redditDemographicsEnabled`. */
+export function redditDemographicsCapability(enabled: boolean | null): boolean {
+  return enabled === true;
+}
+
+/** Every gender, every language, any time: the editor's defaults, which send nothing. */
+export function emptyRedditDemographicsDraft(): RedditDemographicsDraft {
+  return { gender: '', languages: [], schedule: [] };
+}
+
+/** Whether any choice differs from its default, which is when the draft carries them. */
+export function redditDemographicsHeld(draft: RedditDemographicsDraft): boolean {
+  return draft.gender !== '' || draft.languages.length > 0 || draft.schedule.length > 0;
+}
+
+/**
+ * The `redditConfig` keys a create carries: nothing unless the capability is an explicit yes, and then only the choices
+ * that differ from their default, so nothing changes for a create until one is set.
+ */
+export function redditDemographicsField(draft: RedditDemographicsDraft, enabled: boolean | null): RedditDemographicsField {
+  if (!redditDemographicsCapability(enabled)) return {};
+  return {
+    ...(draft.gender !== '' ? { gender: draft.gender } : {}),
+    ...(draft.languages.length > 0 ? { languages: [...draft.languages] } : {}),
+    ...(draft.schedule.length > 0 ? { schedule: draft.schedule.map((window) => ({ ...window })) } : {}),
+  };
+}
+
+/**
+ * Why the held choices would be refused, or `null`: {@link redditDemographicsRefusal} with the flag on, run only on what
+ * {@link redditDemographicsField} sends. The editor cannot pick an unknown value or an out-of-range hour, so in practice
+ * this names a window that starts where it ends, a repeated window, or a restored list over the cap.
+ */
+export function redditDemographicsDraftRefusal(draft: RedditDemographicsDraft, enabled: boolean | null): string | null {
+  const field = redditDemographicsField(draft, enabled);
+  if (Object.keys(field).length === 0) return null;
+  return redditDemographicsRefusal(field, true)?.message ?? null;
+}
+
+/** The gender a select value picks: `FEMALE` or `MALE`, else `''` (every gender). */
+export function redditGenderChoice(value: string | null): RedditGender | '' {
+  return REDDIT_GENDERS.find((gender) => gender === value) ?? '';
+}
+
+/** The languages a multi-select's values pick, keeping only Reddit's codes, each once, in the order picked. */
+export function redditLanguagesChoice(values: readonly string[]): RedditLanguage[] {
+  const picked = values.filter((value): value is RedditLanguage => REDDIT_LANGUAGES.some((language) => language === value));
+  return [...new Set(picked)];
+}
+
+/**
+ * The schedule with one more window, or unchanged at the cap: the first is {@link DEFAULT_REDDIT_SCHEDULE_WINDOW}, and
+ * each later one the last window moved one day on (Saturday wraps to Sunday), so adding builds a weekday-by-weekday schedule.
+ * A move that would repeat a window already held moves on another day, then an hour, so an added window is never one
+ * campaign-service would refuse as a repeat (7 days by 24 hours of distinct starts is more than the cap). Both ends move
+ * as hours of the week, so an hour past midnight carries into the next day and the window keeps its length.
+ */
+export function redditScheduleWindowAdded(schedule: readonly RedditScheduleWindow[]): RedditScheduleWindow[] {
+  if (schedule.length >= REDDIT_MAX_SCHEDULE_WINDOWS) return [...schedule];
+  const last = schedule.at(-1);
+  if (!last) return [{ ...DEFAULT_REDDIT_SCHEDULE_WINDOW }];
+  const held = new Set(schedule.map(scheduleWindowKey));
+  for (let hours = 0; hours < 24; hours++) {
+    for (let days = 1; days <= 7; days++) {
+      const offset = days * 24 + hours;
+      const start = (last.startDay * 24 + last.startHour + offset) % HOURS_PER_WEEK;
+      const end = (last.endDay * 24 + last.endHour + offset) % HOURS_PER_WEEK;
+      const next = { startDay: Math.floor(start / 24), startHour: start % 24, endDay: Math.floor(end / 24), endHour: end % 24 };
+      if (!held.has(scheduleWindowKey(next))) return [...schedule, next];
+    }
+  }
+  return [...schedule];
+}
+
+const HOURS_PER_WEEK = 7 * 24;
+
+function scheduleWindowKey(window: RedditScheduleWindow): string {
+  return `${window.startDay}|${window.startHour}|${window.endDay}|${window.endHour}`;
+}
+
+/** The schedule with window `index`'s `key` set from a select value; a value that is not a whole number (a cleared select) changes nothing. */
+export function redditScheduleWindowWith(
+  schedule: readonly RedditScheduleWindow[],
+  index: number,
+  key: RedditScheduleWindowKey,
+  value: string | null
+): RedditScheduleWindow[] {
+  const number = value === null || value.trim() === '' ? Number.NaN : Number(value);
+  if (!Number.isInteger(number)) return [...schedule];
+  return schedule.map((window, i) => (i === index ? { ...window, [key]: number } : window));
+}
+
+/** The schedule without window `index`. */
+export function redditScheduleWindowRemoved(schedule: readonly RedditScheduleWindow[], index: number): RedditScheduleWindow[] {
+  return schedule.filter((_window, i) => i !== index);
+}
+
+/** A stored window the editor can show: an object whose four fields are whole numbers, days 0-6 and hours 0-23. */
+function editableWindow(value: unknown): RedditScheduleWindow | null {
+  const record = plainRecord(value);
+  if (!record) return null;
+  const [startDay, startHour, endDay, endHour] = REDDIT_SCHEDULE_WINDOW_KEYS.map((key) => record[key]);
+  const day = (n: unknown): n is number => Number.isInteger(n) && (n as number) >= 0 && (n as number) <= 6;
+  const hour = (n: unknown): n is number => Number.isInteger(n) && (n as number) >= 0 && (n as number) <= 23;
+  return day(startDay) && hour(startHour) && day(endDay) && hour(endHour) ? { startDay, startHour, endDay, endHour } : null;
+}
+
+/**
+ * A stored draft's choices as the editor holds them, or `undefined` when the draft carries none (the defaults stand):
+ * a gender only when it is `FEMALE` or `MALE`, only Reddit's language codes, and only windows the editor can show.
+ */
+export function redditDemographicsFromDraft(value: unknown): RedditDemographicsDraft | undefined {
+  const record = plainRecord(value);
+  if (!record) return undefined;
+  const languages = Array.isArray(record['languages']) ? record['languages'] : [];
+  const schedule = Array.isArray(record['schedule']) ? record['schedule'] : [];
+  return {
+    gender: redditGenderChoice(typeof record['gender'] === 'string' ? record['gender'] : null),
+    languages: redditLanguagesChoice(languages.filter((entry): entry is string => typeof entry === 'string')),
+    schedule: schedule.map(editableWindow).filter((window): window is RedditScheduleWindow => window !== null),
+  };
 }

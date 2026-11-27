@@ -3,8 +3,22 @@
 
 import { describe, expect, it } from 'vitest';
 
+import type { RedditDemographicsDraft } from '../interfaces/campaign.interface';
+
 import { REDDIT_LANGUAGES, REDDIT_MAX_SCHEDULE_WINDOWS } from '../constants/campaign.constants';
-import { redditDemographicsRefusal } from './campaign-reddit-demographics.utils';
+import {
+  redditDemographicsCapability,
+  redditDemographicsDraftRefusal,
+  redditDemographicsField,
+  redditDemographicsFromDraft,
+  redditDemographicsHeld,
+  redditDemographicsRefusal,
+  redditGenderChoice,
+  redditLanguagesChoice,
+  redditScheduleWindowAdded,
+  redditScheduleWindowRemoved,
+  redditScheduleWindowWith,
+} from './campaign-reddit-demographics.utils';
 
 const GENDER = 'redditConfig.gender';
 const LANGUAGES = 'redditConfig.languages';
@@ -85,5 +99,147 @@ describe('redditDemographicsRefusal', () => {
   it('never echoes a caller value', () => {
     const refusals = [{ gender: '<script>' }, { languages: ['<script>'] }].map((raw) => redditDemographicsRefusal(raw, true)?.message);
     expect(refusals.every((message) => message !== undefined && !message.includes('<script>'))).toBe(true);
+  });
+});
+
+// The Implement tab's editor (#6108 row 9).
+const NONE: RedditDemographicsDraft = { gender: '', languages: [], schedule: [] };
+const SET: RedditDemographicsDraft = { gender: 'MALE', languages: ['EN', 'DE'], schedule: [monday] };
+
+describe('redditDemographicsCapability', () => {
+  it.each<[boolean | null, boolean]>([
+    [true, true],
+    [false, false],
+    [null, false],
+  ])('%s offers the editor: %s', (enabled, expected) => {
+    expect(redditDemographicsCapability(enabled)).toBe(expected);
+  });
+});
+
+describe('redditDemographicsHeld', () => {
+  it.each<[string, RedditDemographicsDraft, boolean]>([
+    ['nothing set', NONE, false],
+    ['a gender', { ...NONE, gender: 'FEMALE' }, true],
+    ['a language', { ...NONE, languages: ['FR'] }, true],
+    ['a window', { ...NONE, schedule: [monday] }, true],
+  ])('%s: %s', (_name, draft, expected) => {
+    expect(redditDemographicsHeld(draft)).toBe(expected);
+  });
+});
+
+describe('redditDemographicsField', () => {
+  it.each<[string, RedditDemographicsDraft, boolean | null, object]>([
+    ['every choice on a yes', SET, true, { gender: 'MALE', languages: ['EN', 'DE'], schedule: [monday] }],
+    ['only the set choices', { ...NONE, languages: ['FR'] }, true, { languages: ['FR'] }],
+    ['nothing at the defaults', NONE, true, {}],
+    ['nothing while unanswered', SET, null, {}],
+    ['nothing once off', SET, false, {}],
+  ])('sends %s', (_name, draft, enabled, expected) => {
+    expect(redditDemographicsField(draft, enabled)).toEqual(expected);
+  });
+});
+
+describe('redditDemographicsDraftRefusal', () => {
+  const same = { startDay: 2, startHour: 8, endDay: 2, endHour: 8 };
+  it.each<[string, RedditDemographicsDraft, boolean | null, string | null]>([
+    ['sendable choices', SET, true, null],
+    ['nothing set', NONE, true, null],
+    ['a window that starts where it ends', { ...NONE, schedule: [same] }, true, 'Window 1 starts where it ends'],
+    ['a repeated window', { ...NONE, schedule: [monday, { ...monday }] }, true, 'Window 2 repeats'],
+    ['too many windows', { ...NONE, schedule: windows(REDDIT_MAX_SCHEDULE_WINDOWS + 1) }, true, `at most ${REDDIT_MAX_SCHEDULE_WINDOWS}`],
+    ['nothing while off, as nothing is sent', { ...NONE, schedule: [same] }, false, null],
+  ])('%s', (_name, draft, enabled, expected) => {
+    const refusal = redditDemographicsDraftRefusal(draft, enabled);
+    if (expected === null) expect(refusal).toBeNull();
+    else expect(refusal).toContain(expected);
+  });
+});
+
+describe('redditGenderChoice and redditLanguagesChoice', () => {
+  it.each<[string | null, string]>([
+    ['FEMALE', 'FEMALE'],
+    ['MALE', 'MALE'],
+    ['', ''],
+    [null, ''],
+    ['female', ''],
+  ])('reads gender %j as %j', (value, expected) => {
+    expect(redditGenderChoice(value)).toBe(expected);
+  });
+
+  it.each<[string[], string[]]>([
+    [
+      ['EN', 'DE'],
+      ['EN', 'DE'],
+    ],
+    [['EN', 'XX', 'EN'], ['EN']],
+    [[], []],
+  ])('reads languages %j as %j', (values, expected) => {
+    expect(redditLanguagesChoice(values)).toEqual(expected);
+  });
+});
+
+describe('redditScheduleWindowAdded', () => {
+  it.each<[string, RedditDemographicsDraft['schedule'], RedditDemographicsDraft['schedule']]>([
+    ['the default first', [], [monday]],
+    ['the last window moved a day on', [monday], [monday, { ...monday, startDay: 2, endDay: 2 }]],
+    [
+      'Saturday wrapping to Sunday',
+      [{ startDay: 6, startHour: 20, endDay: 0, endHour: 2 }],
+      [
+        { startDay: 6, startHour: 20, endDay: 0, endHour: 2 },
+        { startDay: 0, startHour: 20, endDay: 1, endHour: 2 },
+      ],
+    ],
+  ])('adds %s', (_name, schedule, expected) => {
+    expect(redditScheduleWindowAdded(schedule)).toEqual(expected);
+  });
+
+  it('skips a window already held: the 8th from Monday moves an hour on rather than repeat window 1', () => {
+    let schedule: RedditDemographicsDraft['schedule'] = [];
+    for (let i = 0; i < 8; i++) schedule = redditScheduleWindowAdded(schedule);
+    expect(schedule[7]).toEqual({ startDay: 1, startHour: 10, endDay: 1, endHour: 18 });
+    expect(redditDemographicsDraftRefusal({ ...NONE, schedule }, true)).toBeNull();
+  });
+
+  it('carries an hour past midnight into the next day, so an added window keeps its length', () => {
+    let schedule: RedditDemographicsDraft['schedule'] = [{ startDay: 1, startHour: 20, endDay: 1, endHour: 23 }];
+    for (let i = 0; i < 7; i++) schedule = redditScheduleWindowAdded(schedule);
+    expect(schedule[7]).toEqual({ startDay: 1, startHour: 21, endDay: 2, endHour: 0 });
+  });
+
+  it('adds nothing at the cap', () => {
+    expect(redditScheduleWindowAdded(windows(REDDIT_MAX_SCHEDULE_WINDOWS))).toHaveLength(REDDIT_MAX_SCHEDULE_WINDOWS);
+  });
+});
+
+describe('redditScheduleWindowWith and redditScheduleWindowRemoved', () => {
+  const two = [monday, { ...monday, startDay: 2, endDay: 2 }];
+  it.each<[string, string | null, RedditDemographicsDraft['schedule']]>([
+    ['a picked hour', '20', [monday, { ...monday, startDay: 2, endDay: 2, endHour: 20 }]],
+    ['nothing for a cleared select', null, two],
+    ['nothing for a blank value', ' ', two],
+    ['nothing for a non-integer', '1.5', two],
+  ])('sets %s', (_name, value, expected) => {
+    expect(redditScheduleWindowWith(two, 1, 'endHour', value)).toEqual(expected);
+  });
+
+  it('removes one window', () => {
+    expect(redditScheduleWindowRemoved(two, 0)).toEqual([two[1]]);
+  });
+});
+
+describe('redditDemographicsFromDraft', () => {
+  it.each<[string, unknown, unknown]>([
+    ['nothing stored', undefined, undefined],
+    ['not an object', 'MALE', undefined],
+    ['the choices as stored', SET, SET],
+    [
+      'only what the editor can show',
+      { gender: 'other', languages: ['EN', 3, 'XX'], schedule: [monday, null, { ...monday, endHour: 24 }, { ...monday, startDay: 1.5 }] },
+      { gender: '', languages: ['EN'], schedule: [monday] },
+    ],
+    ['lists that are not lists', { gender: 'FEMALE', languages: 'EN', schedule: {} }, { gender: 'FEMALE', languages: [], schedule: [] }],
+  ])('reads %s', (_name, stored, expected) => {
+    expect(redditDemographicsFromDraft(stored)).toEqual(expected);
   });
 });

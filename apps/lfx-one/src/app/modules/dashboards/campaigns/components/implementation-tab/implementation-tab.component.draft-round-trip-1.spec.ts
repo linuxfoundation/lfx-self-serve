@@ -774,6 +774,39 @@ describe('ImplementationTabComponent per-platform draft round-trip', () => {
     expect(sent).not.toHaveProperty('subCountryGeoTargets');
   });
 
+  // Reddit gender, languages and dayparting (#6108 row 9): the rules are in `campaign-reddit-demographics.utils.spec.ts`; this
+  // tests the wiring, driven through the editor's binding so a handler that never emits fails here.
+  it('carries gender, languages and a schedule through a tab round-trip into the request, sends none once off, and clears them on a brief switch', async () => {
+    const mountWithDemographics = async (draft: CampaignImplementationDraft | null, enabled: boolean) => {
+      const mounted = await mount(draft);
+      mounted.fixture.componentRef.setInput('redditDemographicsEnabled', enabled);
+      at(mounted.fixture).selectedPlatforms.set(['reddit-ads']);
+      mounted.fixture.detectChanges();
+      await mounted.fixture.whenStable();
+      return mounted;
+    };
+    const chosen = { gender: 'FEMALE', languages: ['EN', 'DE'], schedule: [{ startDay: 1, startHour: 9, endDay: 1, endHour: 17 }] };
+
+    const first = await mountWithDemographics(null, true);
+    expect(first.latest()).not.toHaveProperty('redditDemographics');
+    first.fixture.debugElement.query(By.css('lfx-reddit-demographics')).triggerEventHandler('demographicsChange', chosen);
+    const draft = first.latest();
+    expect(draft).toMatchObject({ redditDemographics: chosen });
+    await switchBrief(first.fixture, otherBrief());
+    expect(first.latest()).not.toHaveProperty('redditDemographics');
+    first.fixture.destroy();
+
+    const second = await mountWithDemographics(draft, true);
+    expect(submitReddit(second.fixture)).toMatchObject(chosen);
+    second.fixture.destroy();
+    createCampaign.mockClear();
+
+    const off = (await mountWithDemographics(draft, false)).fixture;
+    expect(off.nativeElement.querySelector('lfx-reddit-demographics')).toBeNull();
+    const sent = submitReddit(off);
+    for (const key of ['gender', 'languages', 'schedule']) expect(sent).not.toHaveProperty(key);
+  });
+
   // Reddit delivery choices and the pixel picker (#6108 row 5): the rules are in `campaign-reddit-delivery.utils.spec.ts`
   // and `campaign-reddit-pixels.utils.spec.ts`; this tests the wiring.
   it('carries delivery choices and a picked pixel through a tab round-trip and into the request', async () => {

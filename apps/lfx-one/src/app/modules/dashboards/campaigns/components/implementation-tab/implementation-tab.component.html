@@ -6098,6 +6098,17 @@
             </div>
           }
 
+          <!-- Gender, languages and dayparting (#6108 row 9): only while this deployment sends them
+               (LFX_CUTOVER_CAMPAIGN_SERVICE_REDDIT_GENDER_LANGUAGE_DAYPARTING); off, the section is as before. -->
+          @if (redditDemographicsAvailable()) {
+            <div class="mb-4">
+              <lfx-reddit-demographics
+                [refusal]="redditDemographicsRefusal()"
+                [demographics]="redditDemographics()"
+                (demographicsChange)="onRedditDemographicsChange($event)" />
+            </div>
+          }
+
           <!-- Subreddits and interests (#6108 row 4): editable while campaign-service resolves them, else the brief's, read-only. -->
           @if (redditTargetingListsAvailable()) {
             <div class="mb-4">

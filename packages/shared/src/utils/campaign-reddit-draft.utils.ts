@@ -22,6 +22,7 @@ import { redditAdVariantsFromDraft } from './campaign-reddit-ad-variants.utils';
 import { redditConversionEventFromDraft } from './campaign-reddit-conversion-event.utils';
 import { redditCustomAudienceIdsFromDraft } from './campaign-reddit-custom-audiences.utils';
 import { redditDeliveryDraftFields, redditDeliveryFromDraft } from './campaign-reddit-delivery.utils';
+import { emptyRedditDemographicsDraft, redditDemographicsFromDraft, redditDemographicsHeld } from './campaign-reddit-demographics.utils';
 import { redditSubCountryGeoFromDraft } from './campaign-reddit-subcountry-geo.utils';
 import { redditTargetingExclusionsFromDraft } from './campaign-reddit-targeting-exclusions.utils';
 import { redditTargetingListFromDraft } from './campaign-reddit-targeting-lists.utils';
@@ -62,6 +63,16 @@ export function redditDraftFields(state: RedditDraftState): RedditDraftSnapshot 
     redditExcludedGeoTargets: [...state.targetingExclusions.excludedGeoTargets],
     // Only once a location is added (#6108 row 7), so a draft that never used them is unchanged.
     ...(state.subCountryGeoTargets.length > 0 ? { redditSubCountryGeoTargets: [...state.subCountryGeoTargets] } : {}),
+    // Only once a gender, language or window is set (#6108 row 9), so a draft that never used them is unchanged.
+    ...(redditDemographicsHeld(state.demographics)
+      ? {
+          redditDemographics: {
+            gender: state.demographics.gender,
+            languages: [...state.demographics.languages],
+            schedule: state.demographics.schedule.map((window) => ({ ...window })),
+          },
+        }
+      : {}),
     ...(state.editedTargetingLists
       ? {
           redditEditedSubreddits: [...state.editedTargetingLists.subreddits],
@@ -121,6 +132,9 @@ export function redditDraftRestore(draft: RedditDraftSnapshot): RedditDraftResto
   // The regions, cities and DMAs (#6108 row 7) when they are an array, keeping only its strings.
   const subCountryGeoTargets = redditSubCountryGeoFromDraft(draft.redditSubCountryGeoTargets);
   if (subCountryGeoTargets !== undefined) restore.subCountryGeoTargets = subCountryGeoTargets;
+  // The gender, languages and schedule (#6108 row 9) when they are an object, each unreadable value at its default.
+  const demographics = redditDemographicsFromDraft(draft.redditDemographics);
+  if (demographics !== undefined) restore.demographics = demographics;
   const subreddits = redditTargetingListFromDraft(draft.redditEditedSubreddits);
   const interests = redditTargetingListFromDraft(draft.redditEditedInterests);
   if (subreddits !== undefined || interests !== undefined) {
@@ -138,6 +152,7 @@ export function redditDraftRestore(draft: RedditDraftSnapshot): RedditDraftResto
  * default, and the lists seeded only from Reddit copy emptied, so a brief without any opens on none. The pixel form and
  * the uploaded image are not here: the form is reset in place, and the image is scoped to its brief. The video post's
  * picks (#6108 row 8) are cleared: they belong to the brief they were picked from, and a held one changes what is sent.
+ * The gender, languages and schedule (#6108 row 9) go back to every gender, every language and any time.
  */
 export function redditBriefReset(): RedditBriefReset {
   return {
@@ -157,6 +172,7 @@ export function redditBriefReset(): RedditBriefReset {
       excludedGeoTargets: [...DEFAULT_REDDIT_TARGETING_EXCLUSIONS.excludedGeoTargets],
     },
     subCountryGeoTargets: [],
+    demographics: emptyRedditDemographicsDraft(),
     delivery: {
       ...DEFAULT_REDDIT_DELIVERY,
       placements: [...DEFAULT_REDDIT_DELIVERY.placements],
