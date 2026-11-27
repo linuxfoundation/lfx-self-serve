@@ -5912,7 +5912,8 @@ export class ImplementationTabComponent implements OnInit {
   protected onLinkedInDocumentUpload(files: File[]): void {
     const briefId = this.briefPersistence().briefId ?? '';
     const projectSlug = this.activeFoundationSlug();
-    if (!briefId || !projectSlug) return;
+    // The editor holds its upload while a delete runs; this also refuses a pick that lands after it started.
+    if (!briefId || !projectSlug || this.linkedInDocumentDeletingId() !== '') return;
     this.campaignService.enqueueCreativeAssetUploads(files, projectSlug, briefId, { documents: true });
   }
 

@@ -38,10 +38,12 @@ describe('CreativeLibraryUploadComponent', () => {
   let fixture: ComponentFixture<CreativeLibraryUploadComponent>;
   let queue: ReturnType<typeof signal<CreativeAssetQueueItem[]>>;
   let service: Record<string, ReturnType<typeof vi.fn> | unknown>;
+  let deleting: ReturnType<typeof signal<{ briefId: string; id: string } | null>>;
 
   const build = async (listCreativeAssets: ReturnType<typeof vi.fn> = vi.fn(() => of(LIBRARY))): Promise<void> => {
     TestBed.resetTestingModule();
     queue = signal<CreativeAssetQueueItem[]>([]);
+    deleting = signal<{ briefId: string; id: string } | null>(null);
     service = {
       creativeAssetUploadQueue: queue.asReadonly(),
       listCreativeAssets,
@@ -50,7 +52,7 @@ describe('CreativeLibraryUploadComponent', () => {
       cancelCreativeAssetUploads: vi.fn(),
       clearCreativeAssetUploadQueue: vi.fn(),
       deleteCreativeAsset: vi.fn(() => of(undefined)),
-      creativeVideoDeleting: signal(null).asReadonly(),
+      creativeVideoDeleting: deleting.asReadonly(),
     };
     await TestBed.configureTestingModule({
       imports: [CreativeLibraryUploadComponent],
@@ -119,6 +121,24 @@ describe('CreativeLibraryUploadComponent', () => {
     setQueue([item('d', 'failed')]);
     (q('creative-library-upload-retry-d')?.querySelector('button') as HTMLButtonElement).click();
     expect(service['retryCreativeAssetUpload']).toHaveBeenCalledWith('d');
+  });
+
+  // A delete running holds every upload start: identical bytes would answer with the asset being deleted. The rule is
+  // rows in `campaign-creative-asset-queue.utils.spec.ts`.
+  it('holds Retry, the pickers and their change while a stored asset is being deleted', () => {
+    setQueue([item('d', 'failed')]);
+    const retryButton = q('creative-library-upload-retry-d')?.querySelector('button') as HTMLButtonElement;
+    deleting.set({ briefId: BRIEF_ID, id: 'd-1' });
+    fixture.detectChanges();
+
+    expect(q('creative-library-upload-retry-d')).toBeNull();
+    expect((q('creative-library-upload-files') as HTMLInputElement).disabled).toBe(true);
+    expect((q('creative-library-upload-folder') as HTMLInputElement).disabled).toBe(true);
+    expect(q('creative-library-upload-held')).not.toBeNull();
+    retryButton.click();
+    pick('creative-library-upload-files', [new File([new Uint8Array(4)], 'a.png', { type: 'image/png' })]);
+    expect(service['retryCreativeAssetUpload']).not.toHaveBeenCalled();
+    expect(service['enqueueCreativeAssetUploads']).not.toHaveBeenCalled();
   });
 
   it('announces a run once as it starts, not each file it sends', () => {

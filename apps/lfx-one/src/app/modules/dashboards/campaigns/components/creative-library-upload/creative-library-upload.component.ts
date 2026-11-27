@@ -14,7 +14,13 @@ import type {
   LinkedInStoredDocumentRow,
   LinkedInStoredVideoRow,
 } from '@lfx-one/shared/interfaces';
-import { formatFileSize, linkedInStoredDocumentRows, linkedInStoredVideoRows } from '@lfx-one/shared/utils';
+import {
+  creativeAssetQueueRetryable,
+  creativeAssetUploadAllowed,
+  formatFileSize,
+  linkedInStoredDocumentRows,
+  linkedInStoredVideoRows,
+} from '@lfx-one/shared/utils';
 import { FileSizePipe } from '@pipes/file-size.pipe';
 import { CampaignService } from '@services/campaign.service';
 import { serverAuthoredMessage } from '@shared/utils/http-error.utils';
@@ -78,9 +84,11 @@ export class CreativeLibraryUploadComponent {
       ...item,
       statusLabel: CREATIVE_ASSET_QUEUE_STATUS_VIEW[item.status].label,
       statusBadge: CREATIVE_ASSET_QUEUE_STATUS_VIEW[item.status].badge,
-      retryable: this.available() === true && (item.status === 'failed' || item.status === 'cancelled'),
+      retryable: creativeAssetQueueRetryable(item.status, this.available(), this.deletingAssetId() !== ''),
     }))
   );
+  /** Whether the pickers may start an upload: never while a stored asset's delete runs (`creativeAssetUploadAllowed`). */
+  protected readonly uploadAllowed = computed(() => creativeAssetUploadAllowed(this.available(), this.deletingAssetId() !== ''));
   protected readonly running = computed(() => this.items().some((item) => item.status === 'waiting' || item.status === 'uploading'));
   /**
    * Files the library now holds. `present` counts too: a first attempt can store the image and lose
@@ -147,13 +155,16 @@ export class CreativeLibraryUploadComponent {
     const files = Array.from(input.files ?? []);
     // Cleared so picking the same files again (after a refusal is fixed) still fires `change`.
     input.value = '';
-    if (files.length === 0 || this.briefId() === '' || this.projectSlug() === '') {
+    // The pickers are disabled while a delete runs; this also refuses a change that lands after it started.
+    if (!this.uploadAllowed() || files.length === 0 || this.briefId() === '' || this.projectSlug() === '') {
       return;
     }
     this.campaignService.enqueueCreativeAssetUploads(files, this.projectSlug(), this.briefId(), { folder });
   }
 
   protected retry(item: CreativeAssetQueueItem): void {
+    // Retry is hidden while a delete runs (`creativeAssetQueueRetryable`); this also refuses a click that lands after it started.
+    if (!creativeAssetQueueRetryable(item.status, this.available(), this.deletingAssetId() !== '')) return;
     this.campaignService.retryCreativeAssetUpload(item.id);
   }
 
