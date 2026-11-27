@@ -1805,6 +1805,32 @@ describe('MktgDocumentViewComponent', () => {
     expect(store.listDocuments).toHaveBeenCalledWith(PROJECT.uid);
   });
 
+  it.each([
+    { state: 'discarded' as const, closedBy: 'Synthetic writer', message: 'This run was discarded by Synthetic writer at 19 Oct 2026, 13:00.' },
+    { state: 'discarded' as const, closedBy: null, message: 'This run was discarded at 19 Oct 2026, 13:00.' },
+    { state: 'superseded' as const, closedBy: null, message: 'A newer run replaced this one.' },
+  ])('names a $state Member run instead of a title placeholder that never resolves (by $closedBy)', async ({ state, closedBy, message }) => {
+    const progress = memberProgress(state);
+    progress.runs = progress.runs?.map((run) => ({ ...run, closedBy, closedAt: '2026-10-19T13:00:00Z' }));
+    store.getDocument.mockReturnValue(of(progress));
+    await render('/documents/member-360/run-0123456789abcdef01234567?run=' + 'b'.repeat(64));
+    expect(query('mktg-document-view-closed-message')?.textContent?.trim()).toBe(message);
+    expect(query('mktg-document-view-newer-run')?.textContent?.trim()).toBe('View started runs');
+    expect(query('mktg-document-view-title')?.textContent?.trim()).toBe('Member 360');
+    // No loading placeholder is left on a settled closed-run page: each one is announced as "Loading…".
+    expect(query('mktg-document-view-title-loading')).toBeNull();
+    expect(harness.routeNativeElement?.querySelector('lfx-mktg-skeleton')).toBeNull();
+    expect(harness.routeNativeElement?.textContent).not.toContain('Loading');
+    expect(store.getRevision).not.toHaveBeenCalled();
+  });
+
+  it('keeps the Member title placeholder while an open run has no period yet', async () => {
+    store.getDocument.mockReturnValue(of(memberProgress('writing')));
+    await render('/documents/member-360/run-0123456789abcdef01234567?run=' + 'b'.repeat(64));
+    expect(query('mktg-document-view-title-loading')).not.toBeNull();
+    expect(query('mktg-document-view-title')).toBeNull();
+  });
+
   it('hides cached creator activity immediately on a viewer change without re-reading the Member document', async () => {
     store.getDocument.mockReturnValue(of(memberProgress('questions')));
     await render('/documents/member-360/run-0123456789abcdef01234567');
