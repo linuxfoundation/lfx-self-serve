@@ -138,17 +138,18 @@ export class PublicCalendarPageComponent {
         distinctUntilChanged((a, b) => a?.entry.key === b?.entry.key),
         switchMap((data) => {
           if (!data) return of(null);
-          const ref = this.modal.open(PublicCalendarMeetingModalComponent, { data });
-          // Leaving the date in the URL, or the page, closes its modal.
+          const ref = this.modal.open<boolean, PublicCalendarMeetingModalData>(PublicCalendarMeetingModalComponent, { data });
+          // Leaving the date in the URL, or the page, closes its modal; a modal that went to a meeting page keeps the URL.
           return ref.closed.pipe(
-            map(() => data),
+            map((left) => (left ? null : data)),
             finalize(() => ref.close())
           );
         }),
         takeUntilDestroyed()
       )
       .subscribe((closed) => {
-        if (closed && this.meetingKey() === closed.entry.key) this.updateQuery({ meeting: null });
+        // Compares resolved dates: a live occurrence's link may have opened its archived row.
+        if (closed && this.openMeeting()?.entry.key === closed.entry.key) this.updateQuery({ meeting: null });
       });
   }
 
@@ -237,7 +238,9 @@ export class PublicCalendarPageComponent {
       const key = this.meetingKey();
       // Waits for the group names too: the open modal keeps the data it opened with.
       if (!key || !this.browser() || this.directory() === null) return null;
-      const item = this.items().find(({ entry }) => entry.key === key);
+      // A live date's key, `{series}-{occurrence seconds}`, names its archived row, `{series}-{ms}`, once that replaces it.
+      const archived = /^(.+)-(\d{10})$/.exec(key);
+      const item = this.items().find(({ entry }) => entry.key === key || (!!archived && entry.key === `${archived[1]}-${archived[2]}000`));
       if (!item) return null;
       const uids = item.meeting.committee_uids ?? [];
       const groups = (this.directory() ?? []).filter((group) => uids.includes(group.uid)).map((group) => group.name);

@@ -241,6 +241,7 @@ export const MEETINGS_HOME_CALENDAR_MONTH_CHIPS = 3;
 /** Label, look and icon of each public calendar modal action. */
 export const PUBLIC_CALENDAR_MODAL_ACTIONS: Record<PublicCalendarModalAction, PublicCalendarModalActionStyle> = {
   join: { label: 'Join meeting', variant: 'primary', icon: 'fa-light fa-video' },
+  'add-to-calendar': { label: 'Add to calendar', variant: 'secondary', icon: 'fa-light fa-calendar-plus' },
   register: { label: 'Register', variant: 'primary', icon: '' },
   'sign-in': { label: 'Sign in', variant: 'secondary-accent', icon: '' },
   'sign-in-register': { label: 'Sign in to register', variant: 'secondary-accent', icon: '' },
@@ -253,6 +254,7 @@ export const PUBLIC_CALENDAR_MODAL_ACTIONS: Record<PublicCalendarModalAction, Pu
 /** The public calendar modal's details before or without anything loaded. */
 export const PUBLIC_CALENDAR_MODAL_NO_DETAILS: PublicCalendarModalDetails = {
   loading: false,
+  failed: false,
   invited: false,
   access: false,
   recording: false,

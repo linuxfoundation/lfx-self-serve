@@ -56,7 +56,8 @@
     >
   }
 
-  <ng-container modalActions>
+  <!-- Wraps on phones, so every action stays reachable. -->
+  <div modalActions class="flex w-full flex-wrap items-center justify-end gap-[8px]">
     <lfx-ui-button class="mr-auto" variant="tertiary-accent" size="large" (click)="openPage()" data-testid="public-calendar-modal-page"
       >View meeting page</lfx-ui-button
     >
@@ -72,5 +73,5 @@
         >
       }
     }
-  </ng-container>
+  </div>
 </lfx-ui-modal>

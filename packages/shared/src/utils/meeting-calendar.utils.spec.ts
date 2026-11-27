@@ -18,6 +18,7 @@ import {
   publicMeetingToCalendarEvents,
   publicMeetingToCalendarGridEntries,
   toPublicCalendarItems,
+  buildPublicMeetingIcs,
   resolvePublicCalendarModalState,
   resolveMeetingCalendarClickRoute,
   resolvePublicCalendarLegend,
@@ -315,9 +316,59 @@ describe('publicMeetingToCalendarGridEntries', () => {
   });
 });
 
+describe('buildPublicMeetingIcs', () => {
+  it('folds a long title without losing line separators', () => {
+    const title = `${'A'.repeat(70)}\u2028Beta`;
+    const meeting: PublicCalendarMeeting = {
+      id: 'meeting-2',
+      title,
+      start_time: '2026-10-01T15:00:00Z',
+      duration: 60,
+      timezone: 'UTC',
+      meeting_type: null,
+      restricted: false,
+      recurrence: null,
+    };
+
+    expect(buildPublicMeetingIcs(meeting).replace(/\r\n /g, '')).toContain(`SUMMARY:${title}`);
+  });
+
+  it('lists every uncancelled date of the series under the feed UIDs, escaping the title', () => {
+    const ics = buildPublicMeetingIcs(
+      {
+        id: 'meeting-1',
+        title: 'Board; budget, Q4',
+        start_time: '2026-10-01T15:00:00Z',
+        duration: 60,
+        timezone: 'UTC',
+        meeting_type: 'Board',
+        restricted: false,
+        recurrence: null,
+        cancelled_occurrences: ['2'],
+        occurrences: [
+          { occurrence_id: '1', start_time: '2026-10-01T15:00:00Z', duration: 30 },
+          { occurrence_id: '2', start_time: '2026-10-08T15:00:00Z', duration: 30 },
+          { occurrence_id: '3', start_time: '2026-10-15T15:00:00Z', duration: 30 },
+        ],
+      },
+      new Date('2026-10-10T12:00:00Z')
+    );
+
+    expect(ics.startsWith('BEGIN:VCALENDAR\r\n')).toBe(true);
+    // UIDs match the project feed's, so a subscribed calendar doesn't list the dates twice.
+    expect([...ics.matchAll(/^UID:([^@\r]+)@(\S+)$/gm)].map((match) => [match[1], match[2] === ['lfx', 'linuxfoundation', 'org'].join('.')])).toEqual([
+      ['meeting-1-1', true],
+      ['meeting-1-3', true],
+    ]);
+    expect(ics).toContain('DTSTART:20261015T150000Z\r\nDTEND:20261015T153000Z');
+    expect(ics).toContain('SEQUENCE:0\r\nSUMMARY:Board\\; budget\\, Q4\r\nDESCRIPTION:Board\\; budget\\, Q4');
+  });
+});
+
 describe('resolvePublicCalendarModalState', () => {
   const facts = (over: Partial<PublicCalendarModalFacts> = {}): PublicCalendarModalFacts => ({
     signedIn: false,
+    failed: false,
     past: false,
     live: false,
     restricted: false,
@@ -346,7 +397,7 @@ describe('resolvePublicCalendarModalState', () => {
       [],
     ],
     ['restricted, signed out', facts({ restricted: true }), 'Invite only', "Only invited guests can join. Sign in to check if you're invited.", ['sign-in']],
-    ['restricted, invited', facts({ restricted: true, signedIn: true, invited: true }), "You're invited", null, []],
+    ['restricted, invited', facts({ restricted: true, signedIn: true, invited: true }), "You're invited", null, ['add-to-calendar']],
     ['restricted, invited, live', facts({ restricted: true, signedIn: true, invited: true, live: true }), "You're invited", null, ['join']],
     [
       'restricted, not invited',
@@ -356,9 +407,36 @@ describe('resolvePublicCalendarModalState', () => {
       [],
     ],
     ['public, live', facts({ live: true }), null, null, ['join']],
-    ['public, signed out', facts(), null, null, ['sign-in-register']],
-    ['public, registered', facts({ signedIn: true, invited: true }), 'Registered', "You'll get the join link by email before the meeting starts.", []],
-    ['public, not registered', facts({ signedIn: true }), null, null, ['register']],
+    [
+      'details failed, public',
+      facts({ signedIn: true, failed: true }),
+      null,
+      "We couldn't load your details for this meeting. Try again in a moment.",
+      ['add-to-calendar'],
+    ],
+    [
+      'details failed, public, live',
+      facts({ signedIn: true, failed: true, live: true }),
+      null,
+      "We couldn't load your details for this meeting. Try again in a moment.",
+      ['join'],
+    ],
+    [
+      'details failed, restricted',
+      facts({ signedIn: true, failed: true, restricted: true }),
+      null,
+      "We couldn't load your details for this meeting. Try again in a moment.",
+      [],
+    ],
+    ['public, signed out', facts(), null, null, ['add-to-calendar', 'sign-in-register']],
+    [
+      'public, registered',
+      facts({ signedIn: true, invited: true }),
+      'Registered',
+      "You'll get the join link by email before the meeting starts.",
+      ['add-to-calendar'],
+    ],
+    ['public, not registered', facts({ signedIn: true }), null, null, ['add-to-calendar', 'register']],
   ])('%s', (_case, input, badge, note, actions) => {
     const state = resolvePublicCalendarModalState(input);
 

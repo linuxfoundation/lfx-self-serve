@@ -278,9 +278,42 @@ export function toPublicCalendarItems(meetings: readonly PublicCalendarMeeting[]
   return [...items.values()].sort((a, b) => Date.parse(a.entry.startTime) - Date.parse(b.entry.startTime));
 }
 
+/**
+ * An .ics file with every date of a public meeting's series, cancelled ones left out, keyed like the project calendar feed.
+ * shortcut: a browser copy of the server ics.helper events, folding by characters, not octets. revisit: when ics.helper moves to shared.
+ */
+export function buildPublicMeetingIcs(meeting: PublicCalendarMeeting, now = new Date()): string {
+  const stamp = (iso: string): string => new Date(iso).toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+  const summary = meeting.title
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '')
+    .replace(/\\/g, '\\\\')
+    .replace(/[;,]/g, (char) => `\\${char}`)
+    .replace(/\r\n|\r|\n/g, '\\n');
+  const fold = (line: string): string => line.match(/[\s\S]{1,74}/gu)?.join('\r\n ') ?? line;
+  const events = publicMeetingToCalendarGridEntries(meeting, now).flatMap((entry) => [
+    'BEGIN:VEVENT',
+    `UID:${entry.key}@lfx.linuxfoundation.org`,
+    `DTSTAMP:${stamp(now.toISOString())}`,
+    `DTSTART:${stamp(entry.startTime)}`,
+    `DTEND:${stamp(addMinutesToDate(entry.startTime, entry.durationMinutes).toISOString())}`,
+    'SEQUENCE:0',
+    fold(`SUMMARY:${summary}`),
+    fold(`DESCRIPTION:${summary}`),
+    'END:VEVENT',
+  ]);
+  return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//LFX//Calendar//EN', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', ...events, 'END:VCALENDAR'].join('\r\n');
+}
+
 /** The badge, note and actions of the public calendar meeting modal for what is known about the viewer and the date. */
 export function resolvePublicCalendarModalState(facts: PublicCalendarModalFacts): PublicCalendarModalState {
-  const { signedIn, past, live, restricted, invited, recording, summary, access } = facts;
+  const { signedIn, failed, past, live, restricted, invited, recording, summary, access } = facts;
+  if (failed) {
+    const note = { text: "We couldn't load your details for this meeting. Try again in a moment.", warning: true };
+    if (past) return { badge: { label: 'Ended', tone: 'neutral', variant: 'outline' }, note, actions: [] };
+    // Joining or saving a public meeting doesn't depend on the viewer; registering and invite-only access do.
+    return { badge: null, note, actions: restricted ? [] : [live ? 'join' : 'add-to-calendar'] };
+  }
   if (past && signedIn && !access) {
     const text = "Only the meeting's invited guests can see its recording and summary.";
     return { badge: { label: 'Ended', tone: 'neutral', variant: 'outline' }, note: { text, warning: true }, actions: [] };
@@ -297,19 +330,19 @@ export function resolvePublicCalendarModalState(facts: PublicCalendarModalFacts)
     return { badge: inviteOnly, note: { text: "Only invited guests can join. Sign in to check if you're invited.", warning: false }, actions: ['sign-in'] };
   }
   if (restricted && invited) {
-    return { badge: { label: "You're invited", tone: 'success', variant: 'subtle' }, note: null, actions: live ? ['join'] : [] };
+    return { badge: { label: "You're invited", tone: 'success', variant: 'subtle' }, note: null, actions: [live ? 'join' : 'add-to-calendar'] };
   }
   if (restricted) {
     const text = 'Only invited guests can join this meeting. Contact the organizers if you think you should be invited.';
     return { badge: inviteOnly, note: { text, warning: true }, actions: [] };
   }
   if (live) return { badge: null, note: null, actions: ['join'] };
-  if (!signedIn) return { badge: null, note: null, actions: ['sign-in-register'] };
+  if (!signedIn) return { badge: null, note: null, actions: ['add-to-calendar', 'sign-in-register'] };
   if (invited) {
     const text = "You'll get the join link by email before the meeting starts.";
-    return { badge: { label: 'Registered', tone: 'success', variant: 'subtle' }, note: { text, warning: false }, actions: [] };
+    return { badge: { label: 'Registered', tone: 'success', variant: 'subtle' }, note: { text, warning: false }, actions: ['add-to-calendar'] };
   }
-  return { badge: null, note: null, actions: ['register'] };
+  return { badge: null, note: null, actions: ['add-to-calendar', 'register'] };
 }
 
 /**
