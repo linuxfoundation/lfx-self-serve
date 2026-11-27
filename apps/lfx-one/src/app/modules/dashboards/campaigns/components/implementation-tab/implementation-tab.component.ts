@@ -582,6 +582,10 @@ import {
   redditAdVariantsInEffect,
   redditTargetingExclusionsDraftRefusal,
   redditTargetingExclusionsField,
+  redditGeoTargetsBesideSubCountry,
+  redditSubCountryGeoCapability,
+  redditSubCountryGeoDraftRefusal,
+  redditSubCountryGeoField,
   redditBudgetCopy,
   redditDeliveryField,
   redditDeliveryRefusal,
@@ -706,6 +710,7 @@ import { LinkedInDocumentEditorComponent } from '../linkedin-document-editor/lin
 import { MetaAudienceTargetingComponent } from '../meta-audience-targeting/meta-audience-targeting.component';
 import { RedditCustomAudiencesComponent } from '../reddit-custom-audiences/reddit-custom-audiences.component';
 import { RedditTargetingExclusionsComponent } from '../reddit-targeting-exclusions/reddit-targeting-exclusions.component';
+import { RedditSubCountryGeoComponent } from '../reddit-subcountry-geo/reddit-subcountry-geo.component';
 import { RedditTargetingListsComponent } from '../reddit-targeting-lists/reddit-targeting-lists.component';
 import { RedditDeliveryComponent } from '../reddit-delivery/reddit-delivery.component';
 import { RedditAdVariantsComponent } from '../reddit-ad-variants/reddit-ad-variants.component';
@@ -800,6 +805,7 @@ let linkedInVariantKeySequence = 0;
     MetaAudienceTargetingComponent,
     RedditCustomAudiencesComponent,
     RedditTargetingExclusionsComponent,
+    RedditSubCountryGeoComponent,
     RedditTargetingListsComponent,
     RedditDeliveryComponent,
     RedditAdVariantsComponent,
@@ -1070,6 +1076,13 @@ export class ImplementationTabComponent implements OnInit {
   public readonly redditTargetingExclusionsEnabled = input<boolean | null>(null);
   /** @see redditTargetingExclusionsEnabled — an explicit yes, never a `null`. */
   protected readonly redditTargetingExclusionsAvailable = computed<boolean>(() => redditTargetingExclusionsCapability(this.redditTargetingExclusionsEnabled()));
+  /**
+   * Whether this deployment sends Reddit regions, cities and DMAs (`CampaignListResult.redditSubCountryGeoEnabled`,
+   * #6108 row 7). `null` until the parent has an answer, which hides the editor and sends the geo targets as before.
+   */
+  public readonly redditSubCountryGeoEnabled = input<boolean | null>(null);
+  /** @see redditSubCountryGeoEnabled — an explicit yes, never a `null`. */
+  protected readonly redditSubCountryGeoAvailable = computed<boolean>(() => redditSubCountryGeoCapability(this.redditSubCountryGeoEnabled()));
   /**
    * Whether campaign-service resolves Reddit subreddits and interests before creating anything
    * (`CampaignListResult.redditTargetingResolutionEnabled`, #6108 row 4), so the two lists are offered for editing.
@@ -2413,10 +2426,30 @@ export class ImplementationTabComponent implements OnInit {
   protected readonly redditBudgetCopy = computed<RedditBudgetCopy>(() => redditBudgetCopy(this.redditDelivery(), this.redditDeliveryCapabilities()));
   /** The Reddit subreddits and countries to exclude (#6108 row 3), kept whatever the capability says; only the request is gated. */
   protected readonly redditTargetingExclusions = signal<RedditTargetingExclusionsDraft>(redditBriefReset().targetingExclusions);
+  /** The Reddit regions, cities and DMAs to target (#6108 row 7), kept whatever the capability says; only the request is gated. */
+  protected readonly redditSubCountryGeoTargets = signal<string[]>(redditBriefReset().subCountryGeoTargets);
+  /** The geo targets a Reddit create sends: each location's country dropped while the locations are sent (`redditGeoTargetsBesideSubCountry`). */
+  protected readonly redditSentGeoTargets = computed<string[]>(() =>
+    redditGeoTargetsBesideSubCountry(this.redditEffectiveGeoTargets(), this.redditSubCountryGeoTargets(), this.redditSubCountryGeoEnabled())
+  );
+  /** The excluded countries a Reddit create sends, which no location may lie in: the editor and the Create check read the same list. */
+  protected readonly redditSentExcludedGeoTargets = computed<string[]>(
+    () => redditTargetingExclusionsField(this.redditTargetingExclusions(), this.redditTargetingExclusionsEnabled()).excludedGeoTargets ?? []
+  );
+  /** Why the locations cannot be sent with the geo targets and excluded countries the create sends, or `null`; holds Create. */
+  protected readonly redditSubCountryGeoRefusal = computed<string | null>(() =>
+    redditSubCountryGeoDraftRefusal(
+      this.redditSubCountryGeoTargets(),
+      this.redditSentGeoTargets(),
+      this.redditSentExcludedGeoTargets(),
+      this.redditSubCountryGeoEnabled()
+    )
+  );
   /** The targeting a Reddit create sends, which the exclusions must not overlap. */
   protected readonly redditTargetedLists = computed<RedditTargetedLists>(() => ({
     subreddits: this.redditEffectiveSubreddits(),
-    geoTargets: this.redditEffectiveGeoTargets(),
+    geoTargets: this.redditSentGeoTargets(),
+    ...redditSubCountryGeoField(this.redditSubCountryGeoTargets(), this.redditSubCountryGeoEnabled()),
   }));
   /** Why Create is held for exclusions the capability has not confirmed, or `null` — held, never dropped. */
   protected readonly redditTargetingExclusionsBlock = computed<CampaignRedditTargetingExclusionsBlock | null>(() =>
@@ -4701,7 +4734,9 @@ export class ImplementationTabComponent implements OnInit {
     const redditRefusal = redditSelected
       ? redditCreateRefusal({
           budgetUsd: this.redditBudgetUsd(),
-          geoTargetCount: this.redditEffectiveGeoTargets().length,
+          // The locations count too: a create that replaces every country with locations sends no geo targets (#6108 row 7).
+          geoTargetCount: this.redditSentGeoTargets().length + (this.redditSubCountryGeoAvailable() ? this.redditSubCountryGeoTargets().length : 0),
+          subCountryGeoRefusal: this.redditSubCountryGeoRefusal(),
           videoGoalError: this.redditVideoGoalError(),
           videoPostError: this.redditVideoPostError(),
           conversionEventBlock: this.redditConversionEventBlock()?.message ?? null,
@@ -5970,6 +6005,12 @@ export class ImplementationTabComponent implements OnInit {
   /** The exclusion lists, kept in the draft. */
   protected onRedditTargetingExclusionsChange(exclusions: RedditTargetingExclusionsDraft): void {
     this.redditTargetingExclusions.set(exclusions);
+    this.emitDraft();
+  }
+
+  /** The regions, cities and DMAs, kept in the draft (#6108 row 7). */
+  protected onRedditSubCountryGeoChange(locations: string[]): void {
+    this.redditSubCountryGeoTargets.set(locations);
     this.emitDraft();
   }
 
@@ -7831,7 +7872,8 @@ export class ImplementationTabComponent implements OnInit {
               // The SAME derivation the preview renders. Reading `[form.countryCode]` here instead
               // would let the two disagree: a cleared country code previews nothing and dispatches
               // [''], which the operator cannot see and Reddit cannot use.
-              geoTargets: this.redditEffectiveGeoTargets(),
+              // Less each location's country while the locations are sent (#6108 row 7).
+              geoTargets: this.redditSentGeoTargets(),
               // The normalised list, matching the preview above for the same reason geoTargets
               // does: dispatch strips an optional `r/`, so sending the raw value would submit
               // something the operator was never shown.
@@ -7859,6 +7901,8 @@ export class ImplementationTabComponent implements OnInit {
               ...redditCustomAudiencesField(this.redditCustomAudiences(), this.redditCustomAudiencesEnabled()),
               // The same for the excluded communities and countries (#6108 row 3).
               ...redditTargetingExclusionsField(this.redditTargetingExclusions(), this.redditTargetingExclusionsEnabled()),
+              // The regions, cities and DMAs, only on an explicit yes and once one is added (#6108 row 7).
+              ...redditSubCountryGeoField(this.redditSubCountryGeoTargets(), this.redditSubCountryGeoEnabled()),
               // Only what differs from campaign-service's default, and nothing a capability does not confirm (#6108 row 5).
               ...redditDeliveryField(this.redditDelivery(), this.redditDeliveryCapabilities()),
               // Omitted when blank rather than sent empty: upstream treats an empty `postUrl` as
@@ -10145,6 +10189,7 @@ export class ImplementationTabComponent implements OnInit {
     if (redditRestore.conversionEvent !== undefined) this.redditConversionEvent.set(redditRestore.conversionEvent);
     if (redditRestore.customAudiences !== undefined) this.redditCustomAudiences.set(redditRestore.customAudiences);
     if (redditRestore.targetingExclusions !== undefined) this.redditTargetingExclusions.set(redditRestore.targetingExclusions);
+    if (redditRestore.subCountryGeoTargets !== undefined) this.redditSubCountryGeoTargets.set(redditRestore.subCountryGeoTargets);
     if (redditRestore.delivery !== undefined) this.redditDelivery.set(redditRestore.delivery);
     if (redditRestore.editedTargetingLists !== undefined) this.redditEditedTargetingLists.set(redditRestore.editedTargetingLists);
     if (redditRestore.editedVariants !== undefined) this.redditEditedVariants.set(redditRestore.editedVariants);
@@ -10735,6 +10780,7 @@ export class ImplementationTabComponent implements OnInit {
         conversionEvent: this.redditConversionEvent(),
         customAudiences: this.redditCustomAudiences(),
         targetingExclusions: this.redditTargetingExclusions(),
+        subCountryGeoTargets: this.redditSubCountryGeoTargets(),
         editedTargetingLists: this.redditEditedTargetingLists(),
         delivery: this.redditDelivery(),
         editedVariants: this.redditEditedVariants(),
@@ -10795,6 +10841,7 @@ export class ImplementationTabComponent implements OnInit {
     this.redditConversionEvent.set(redditReset.conversionEvent);
     this.redditCustomAudiences.set(redditReset.customAudiences);
     this.redditTargetingExclusions.set(redditReset.targetingExclusions);
+    this.redditSubCountryGeoTargets.set(redditReset.subCountryGeoTargets);
     this.redditDelivery.set(redditReset.delivery);
     this.redditEditedTargetingLists.set(null);
     this.redditEditedVariants.set(null);

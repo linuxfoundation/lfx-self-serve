@@ -99,6 +99,8 @@ export function redditCreateRefusal(input: RedditCreateRefusalInput): string | n
   if (input.targetingExclusionsBlock !== null) return `Reddit Ads: ${input.targetingExclusionsBlock}`;
   // Exclusions campaign-service would refuse, including one the targeting now overlaps (`redditTargetingExclusionsDraftRefusal`).
   if (input.targetingExclusionsRefusal !== null) return `Reddit Ads: ${input.targetingExclusionsRefusal}`;
+  // Regions, cities and DMAs campaign-service would refuse (`redditSubCountryGeoDraftRefusal`, #6108 row 7), in its order.
+  if (input.subCountryGeoRefusal !== null) return `Reddit Ads: ${input.subCountryGeoRefusal}`;
   // At least one placement and one device (`redditDeliveryRefusal`, #6108 row 5).
   if (input.deliveryRefusal !== null) return `Reddit Ads: ${input.deliveryRefusal}`;
   // Variants campaign-service would refuse while each becomes its own ad (`redditAdPerVariantRefusal`, #6108 row 6).
