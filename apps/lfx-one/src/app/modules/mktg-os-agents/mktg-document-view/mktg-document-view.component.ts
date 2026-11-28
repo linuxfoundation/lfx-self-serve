@@ -2093,7 +2093,9 @@ export class MktgDocumentViewComponent {
                 tracked = id ? undefined : detail.runs?.find((run) => run.documentId === documentId);
                 if (id) return this.documentStore.getRevision(project, agentKey, documentId, id);
                 // A run record the server could not read says nothing about the audit: a transient failure, as on the living
-                // document's receiver. The poller retries it; a follow's deadline (`followUntil`) is kept across the retry.
+                // document's receiver. The poller retries it; a follow's deadline (`followUntil`) is kept across the retry
+                // and ends it too, so a record that stays unreadable cannot hold the retrying line past the run's budget.
+                if (detail.progressUnavailable && followUntil && Date.now() >= followUntil) return throwError(() => new TimeoutError());
                 return throwError(() => new HttpErrorResponse({ status: detail.progressUnavailable ? 503 : 404 }));
               })
             );

@@ -17,10 +17,11 @@ import {
   MKTG_POLL_RETRYING_TEXT,
   MKTG_RUN_POLL,
 } from '@lfx-one/shared/constants';
-import { MktgKitFilter } from '@lfx-one/shared/interfaces';
+import { MktgKitFilter, MktgRunCapabilityLookup } from '@lfx-one/shared/interfaces';
 import { resolveMktgFamilyActions, resolveMktgFamilyNextStep, resolveMktgFamilyRun } from '@lfx-one/shared/utils';
 import { ProjectContextService } from '@services/project-context.service';
 import { MktgKitService } from '@services/mktg-kit.service';
+import { MktgPendingDocumentService } from '@services/mktg-pending-document.service';
 import { createVisibilityPoll } from '@shared/utils/visibility-poll.util';
 import { MktgKitTabsComponent } from '../components/mktg-kit-tabs/mktg-kit-tabs.component';
 import { MktgKitStatusComponent } from '../components/mktg-kit-status/mktg-kit-status.component';
@@ -38,6 +39,7 @@ export class MktgKitComponent {
   private readonly context = inject(ProjectContextService);
   private readonly document = inject(DOCUMENT);
   private readonly platform = inject(PLATFORM_ID);
+  private readonly pendingDocuments = inject(MktgPendingDocumentService);
   protected readonly kit = inject(MktgKitService);
   protected readonly filters = MKTG_KIT_FILTERS;
   protected readonly showComingSoon = MKTG_KIT_SHOW_COMING_SOON;
@@ -99,6 +101,8 @@ export class MktgKitComponent {
   }
 
   private initCards() {
+    // An audit waiting for answers links to its questions only in the browser that holds its capability.
+    const capability: MktgRunCapabilityLookup = (project, documentId) => this.pendingDocuments.load(project, documentId);
     return computed(() =>
       this.kit.families().map((family) => {
         const actions = resolveMktgFamilyActions(family, {
@@ -107,7 +111,7 @@ export class MktgKitComponent {
           approvedFramework: !!this.kit.documents()?.approvedFramework,
         });
         const rows = Object.values(actions.rows).map(({ row }) => {
-          const run = resolveMktgFamilyRun(row.asset.agentKey, this.kit.documents()?.runs, [], row.document);
+          const run = resolveMktgFamilyRun(row.asset.agentKey, this.kit.documents()?.runs, [], row.document, capability);
           const link = run?.link;
           return { ...row, run: link ? { ...run, link: { ...link, queryParams: { ...this.kit.projectQueryParams(), ...link.queryParams } } } : null };
         });

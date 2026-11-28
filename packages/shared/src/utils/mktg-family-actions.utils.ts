@@ -11,6 +11,7 @@ import {
   MKTG_FAMILY_WRITE_REQUIRED,
 } from '../constants/mktg-family-actions.constants';
 import { mktgFamilyExportAgentKeys } from './mktg-family-export.utils';
+import { isMktgRunAnswerableHere } from './mktg-navigation.utils';
 import {
   MKTG_KIT_EXCLUDED_AGENT_IDS,
   MKTG_KIT_FRAMEWORK_AGENT_ID,
@@ -22,13 +23,19 @@ import type { MktgFamilyActionContext, MktgFamilyActions, MktgFamilyHeaderAction
 import type { MktgKitAssetRow, MktgKitFamilyView } from '../interfaces/mktg-kit.interface';
 import type { MktgDocumentRunProgress } from '../interfaces/mktg-document-run.interface';
 import type { MktgDocumentListItem } from '../interfaces/mktg-document-store.interface';
+import type { MktgRunCapabilityLookup } from '../interfaces/mktg-run.interface';
 
-/** Optional run overlay only; stored-asset actions and Kit Next step keep their existing policy. Links are relative to the Kit root. */
+/**
+ * Optional run overlay only; stored-asset actions and Kit Next step keep their existing policy. Links are relative to the Kit root.
+ * `capability` reads this browser's pending-document store: a run waiting for answers links to its questions only where
+ * the person can answer them (`isMktgRunAnswerableHere`); without it the safe link is the run's Document page.
+ */
 export function resolveMktgFamilyRun(
   agentKey: string | null | undefined,
   runs: readonly MktgDocumentRunProgress[] = [],
   prefix: string[] = [],
-  document?: MktgDocumentListItem | null
+  document?: MktgDocumentListItem | null,
+  capability: MktgRunCapabilityLookup = () => null
 ): Pick<MktgFamilyHeaderAction, 'label' | 'caption' | 'link'> | null {
   const type = MKTG_DOCUMENT_TYPES.find((candidate) => candidate.agentKey === agentKey);
   if (!type?.catalogAgentId || !isMktgFamilyAgentAvailable(type.catalogAgentId)) return null;
@@ -46,17 +53,19 @@ export function resolveMktgFamilyRun(
     approved.number > 0 &&
     typeof approved.revisionId === 'string' &&
     approved.revisionId.trim().length > 0;
+  const waiting = run.state === 'questions';
+  const answerable = waiting && isMktgRunAnswerableHere(run, capability);
   let caption = approvedDocument ? 'Approved · new version being written' : 'Writing…';
   if (type.kind !== 'living') caption = 'In progress…';
-  if (run.state === 'questions') caption = 'Waiting for your answers';
+  // Not answerable here: the caption promises nothing this person can do, and the Document page says where to answer.
+  if (waiting) caption = answerable ? 'Waiting for your answers' : 'Waiting for answers';
   return {
-    label: run.state === 'questions' ? 'Answer the questions' : 'Open',
+    label: answerable ? 'Answer the questions' : 'Open',
     caption,
-    // B2 seam: move writing to the run-page receiver here; all questions already use their catalog run page.
-    link:
-      run.state === 'questions'
-        ? { commands: [...prefix, type.catalogAgentId], queryParams: {} }
-        : { commands: [...prefix, 'documents', run.agentKey, run.documentId], queryParams: { run: run.runId } },
+    // B2 seam: move writing to the run-page receiver here; all answerable questions already use their catalog run page.
+    link: answerable
+      ? { commands: [...prefix, type.catalogAgentId], queryParams: {} }
+      : { commands: [...prefix, 'documents', run.agentKey, run.documentId], queryParams: { run: run.runId } },
   };
 }
 
