@@ -36,10 +36,69 @@ export interface MktgReportFindings {
   warnings: MktgReportWarning[];
 }
 
+/** A source a revision did not read itself: the version named read it. */
+export interface MktgInheritedSource {
+  source: string;
+  version: number;
+}
+
+/** A source a revision did not try itself: the version named could not read it. */
+export interface MktgInheritedFailedSource {
+  name: string;
+  reason: string;
+  version: number;
+}
+
+/** A failed-source finding of the version named. */
+export interface MktgInheritedFailedFinding extends MktgReportFailedSource {
+  version: number;
+}
+
+/** A missing-asset finding of the version named; a carried one always names its fix. */
+export interface MktgInheritedMissingAsset extends MktgReportMissingAsset {
+  fix: string;
+  version: number;
+}
+
+/** A warning of the version named. */
+export interface MktgInheritedWarning extends MktgReportWarning {
+  version: number;
+}
+
+/** The run-scoped findings a revision inherited, each row with the version whose run produced it. */
+export interface MktgInheritedFindings {
+  sources_failed: MktgInheritedFailedFinding[];
+  missing_assets: MktgInheritedMissingAsset[];
+  warnings: MktgInheritedWarning[];
+}
+
+/**
+ * What a redraft or a check inherits from the version it revises (`report.inherited`): that run's sources and
+ * run-scoped findings, each row marked with the version whose run produced it. Computed by the agent from the
+ * PREVIOUS RUN block of its intake; never this run's own reads, which stay in the report's own lists.
+ */
+export interface MktgReportInherited {
+  /** The stored version this run revised: every row's `version` is this one or an older one. */
+  from_version: number;
+  sources_read: MktgInheritedSource[];
+  sources_failed: MktgInheritedFailedSource[];
+  findings: MktgInheritedFindings;
+}
+
+/**
+ * The stored version's own run, as a revision's form takes it (`previous_run`): the stored envelope's `report` and,
+ * when it has one, its `quality` (the read ledger). The renderer keeps only what the agent's carry reads.
+ */
+export interface MktgPreviousRun {
+  report?: unknown;
+  quality?: unknown;
+}
+
 /**
  * The agent's reviewer report. Sidecar metadata, never revision content. The v1 fields are always there; the v2
  * fields are optional, and an agent whose report carries `findings` gets the Brand Kit's Sources-tab groups and
- * approve dialog. A v1 report (no `findings`) renders as it always did.
+ * approve dialog. A v1 report (no `findings`) renders as it always did. `inherited` is there only on a redraft or a
+ * check whose intake carried the stored version's run.
  */
 export interface MktgAssetReport {
   sources_read: string[];
@@ -48,6 +107,7 @@ export interface MktgAssetReport {
   notes: string;
   version?: typeof MKTG_REPORT_V2;
   findings?: MktgReportFindings;
+  inherited?: MktgReportInherited;
 }
 
 /** The enums a v2-report validator may close: the Brand Kit's own; the family leaves them open. */

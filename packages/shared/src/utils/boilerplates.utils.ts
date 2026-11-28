@@ -62,8 +62,9 @@ import { MktgBoilerplatesAsset, MktgRunAnswer, MktgRunQuestion } from '../interf
 import { foundationMessageBasisLinks, foundationMessageQuestionLabel } from './foundation-message.utils';
 import { mktgAnswerProblem } from './mktg-run-answers.utils';
 import { MKTG_ANSWERS_INCOMPLETE_MESSAGE } from '../constants/mktg-run.constants';
-import { MKTG_REPORT_V2_KEYS } from '../constants/mktg-asset.constants';
+import { MKTG_REPORT_INHERITED_KEY, MKTG_REPORT_V2_KEYS } from '../constants/mktg-asset.constants';
 import { extractMktgEnvelopeCandidates } from './mktg-envelope.utils';
+import { mktgReportInheritedErrors, renderMktgPreviousRun } from './mktg-previous-run.utils';
 import { mktgReportV2Errors } from './mktg-report-v2.utils';
 import { MKTG_INTAKE_ANSWER_LIMITS } from '../constants/mktg-intake.constants';
 import { validateMktgIntakeAnswerLengths } from './mktg-intake-validation.utils';
@@ -317,6 +318,7 @@ export function renderBoilerplatesFormText(payload: BoilerplatesFormPayload, now
       guardBoilerplatesText(JSON.stringify(revision.previous, null, 2)),
       '--- END PREVIOUS ---'
     );
+    lines.push(...renderMktgPreviousRun(revision.previous_run, revision.prior_version, guardBoilerplatesText));
   }
   return lines.join('\n');
 }
@@ -517,11 +519,13 @@ function reportErrors(report: unknown): string[] {
     return ['report must be an object'];
   }
   const errors: string[] = [];
-  const extra = Object.keys(report).filter((key) => !['sources_read', 'sources_failed', 'gaps', 'notes', ...MKTG_REPORT_V2_KEYS].includes(key));
+  const extra = Object.keys(report).filter(
+    (key) => !['sources_read', 'sources_failed', 'gaps', 'notes', ...MKTG_REPORT_V2_KEYS, MKTG_REPORT_INHERITED_KEY].includes(key)
+  );
   if (extra.length > 0) {
     errors.push(`report has unknown keys: ${extra.join(', ')}`);
   }
-  errors.push(...mktgReportV2Errors(report));
+  errors.push(...mktgReportV2Errors(report), ...mktgReportInheritedErrors(report));
   if (!Array.isArray(report['sources_read']) || !report['sources_read'].every(isText)) {
     errors.push('report.sources_read must be an array of non-empty strings');
   }

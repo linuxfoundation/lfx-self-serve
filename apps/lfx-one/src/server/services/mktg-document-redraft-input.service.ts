@@ -66,6 +66,9 @@ export class MktgDocumentRedraftInputService {
     };
     const descriptor = { ...context, schema: MKTG_REDRAFT_CONTEXT_SCHEMA, runId: '0'.repeat(64) };
     if (!readMktgRedraftContext(descriptor) || Buffer.byteLength(JSON.stringify(descriptor)) > MKTG_REDRAFT_CONTEXT_MAX_BYTES) throw this.invalid();
+    // The stored version's own run: the renderer keeps only what the agent's carry reads and ends the intake with it as the PREVIOUS RUN block,
+    // so the new version lists the sources this one read as inherited.
+    const previousRun = { report: data['report'], quality: data['quality'] };
     if (agent === MKTG_KIT_FRAMEWORK_KEY) {
       if (!isFoundationMessageEnvelope(data)) throw this.invalid();
       const base = data;
@@ -84,6 +87,7 @@ export class MktgDocumentRedraftInputService {
             prior_version: base.version,
             previous: { ...base.content },
             comments: comments.map((row) => ({ field: row.anchor.key, comment: row.text })),
+            previous_run: previousRun,
           },
         }),
       };
@@ -113,6 +117,7 @@ export class MktgDocumentRedraftInputService {
           brand_page_url: base.inputs.brand_page_url ?? undefined,
           messaging_framework: messaging,
           comments: comments.map((row) => ({ passage: row.anchor.passage ?? '', comment: row.text })),
+          previous_run: previousRun,
         }),
       };
     }
@@ -137,6 +142,7 @@ export class MktgDocumentRedraftInputService {
             prior_version: data.version,
             previous: data.content,
             comments: comments.map((row) => ({ field: row.anchor.key, comment: row.text })),
+            previous_run: previousRun,
           },
         }),
       };
@@ -159,6 +165,7 @@ export class MktgDocumentRedraftInputService {
           prior_version: base.version,
           previous: base.content,
           comments: comments.map((row) => ({ field: row.anchor.key, comment: row.text })),
+          previous_run: previousRun,
         },
       }),
     };

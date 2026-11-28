@@ -20,7 +20,7 @@ import {
   FOUNDATION_MESSAGE_VIEW_TABS,
 } from '../constants/foundation-message.constants';
 import type { MktgArtifactPersistReceipt, MktgArtifactStoredResponse } from './mktg-artifact.interface';
-import type { MktgAssetReport } from './mktg-asset.interface';
+import type { MktgAssetReport, MktgPreviousRun } from './mktg-asset.interface';
 import type {
   MktgRunAnswer,
   MktgRunAnswersBody,
@@ -305,6 +305,8 @@ export interface FoundationMessageRedraftRevision {
   /** The stored `{ mf, icp, mh, nums }`. */
   previous: Record<string, unknown>;
   comments: FoundationMessageReviewComment[];
+  /** The stored version's own run (`{ report, quality? }`): rendered as the PREVIOUS RUN block, so the new version carries its sources as inherited. */
+  previous_run?: MktgPreviousRun;
 }
 
 /** A check: the stored JSON a person edited by hand; no comments. */
@@ -313,6 +315,8 @@ export interface FoundationMessageCheckRevision {
   prior_version: number;
   /** The stored `{ mf, icp, mh, nums }`, as edited. */
   previous: Record<string, unknown>;
+  /** The stored version's own run (`{ report, quality? }`): rendered as the PREVIOUS RUN block, so the new version carries its sources as inherited. */
+  previous_run?: MktgPreviousRun;
 }
 
 /** The optional revision block of the form. */

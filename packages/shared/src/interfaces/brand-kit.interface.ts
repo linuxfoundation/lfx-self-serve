@@ -27,7 +27,7 @@ import {
 } from '../constants/brand-kit.constants';
 import type { BrandKitIconColours } from './brand-kit-icons.interface';
 import type { MktgArtifactPersistReceipt, MktgArtifactStoredResponse } from './mktg-artifact.interface';
-import type { MktgAssetReport } from './mktg-asset.interface';
+import type { MktgAssetReport, MktgPreviousRun } from './mktg-asset.interface';
 import type {
   MktgIntakeLogoFile,
   MktgRunAnswer,
@@ -539,6 +539,8 @@ export interface BrandKitRedraftFormPayload {
   /** Required by the agent even though its schema permits an omitted framework. */
   messaging_framework: Record<string, unknown>;
   comments: { passage: string; comment: string }[];
+  /** The stored version's own run (`{ report, quality? }`): rendered as the PREVIOUS RUN block, so the new version carries its sources as inherited. */
+  previous_run?: MktgPreviousRun;
 }
 
 /** What the BFF layers onto the validated answers to build the form. */
