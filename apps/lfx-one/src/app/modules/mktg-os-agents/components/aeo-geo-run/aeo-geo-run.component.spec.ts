@@ -603,6 +603,7 @@ describe('AeoGeoRunComponent', () => {
     expect(add).toHaveBeenCalledExactlyOnceWith({
       severity: 'warn',
       summary: 'Your answers may not have reached the agent. If the report does not arrive, start a new audit.',
+      sticky: true,
     });
     expect(add.mock.invocationCallOrder[0]).toBeLessThan(navigate.mock.invocationCallOrder[0]);
     expect(markWriting).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'session-1' }));

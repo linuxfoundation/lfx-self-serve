@@ -562,7 +562,12 @@ export class AeoGeoRunComponent {
         // After a failed answers POST a pending result says only that the server holds the turn's claim: the answers were
         // delivered, or the delivery failed after the claim. One notice that is true both ways; this result ends the watch.
         if (afterFailedSend) {
-          this.messages.add({ severity: 'warn', summary: 'Your answers may not have reached the agent. If the report does not arrive, start a new audit.' });
+          // Sticky: the page opens the report in the same moment, and this line is the only word that the send may have failed.
+          this.messages.add({
+            severity: 'warn',
+            summary: 'Your answers may not have reached the agent. If the report does not arrive, start a new audit.',
+            sticky: true,
+          });
         }
         this.openDocument(run);
       }
