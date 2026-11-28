@@ -1426,10 +1426,8 @@ describe('MktgDocumentViewComponent', () => {
       const documentId = 'run-012345678901234567890123';
       const unstored = { ...detail, documentId, current: null, revisions: [] };
       const writing = of({ ...unstored, runs: [{ ...started('writing'), agentKey: 'aeo-geo' as const, documentId }] });
-      store.getDocument
-        .mockReturnValueOnce(writing)
-        .mockReturnValueOnce(of({ ...unstored, runs: [], progressUnavailable: true }))
-        .mockReturnValue(writing);
+      const unreadable = of({ ...unstored, runs: [], progressUnavailable: true });
+      store.getDocument.mockReturnValueOnce(writing).mockReturnValueOnce(unreadable).mockReturnValueOnce(writing).mockReturnValue(unreadable);
       await render('/documents/aeo-geo/run-012345678901234567890123');
       const firstRead = Date.now();
       await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
@@ -1443,11 +1441,13 @@ describe('MktgDocumentViewComponent', () => {
       expect(store.getDocument).toHaveBeenCalledTimes(3);
       expect(query('mktg-document-view-generating')?.textContent).toContain('Generating your report');
       expect(query('mktg-document-view-error')).toBeNull();
-      // The retry never moved the follow's deadline.
+      // The retry never moved the follow's deadline, and the deadline ends the follow on a record that is unreadable again.
       vi.spyOn(Date, 'now').mockReturnValue(firstRead + MKTG_RUN_POLL.timeoutMs);
       await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
       await settle();
+      expect(store.getDocument).toHaveBeenCalledTimes(4);
       expect(query('mktg-document-view-error')?.textContent).toContain(AEO_GEO_TIMEOUT_MESSAGE);
+      expect(query('mktg-document-view-refresh-warning')).toBeNull();
       vi.useRealTimers();
     });
     it.each([
