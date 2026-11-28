@@ -55,11 +55,11 @@ const sentenceOf = (value: unknown): string | null => lineOf(value, MKTG_INHERIT
 
 /** How two source names compare: the scheme, a leading "www.", trailing slashes and case never split one source in two. */
 function sourceKey(name: string): string {
-  return name
-    .trim()
-    .replace(/^https?:\/\/(?:www\.)?/i, '')
-    .replace(/\/+$/, '')
-    .toLowerCase();
+  const key = name.trim().replace(/^https?:\/\/(?:www\.)?/i, '');
+  // Trailing slashes go in one pass from the end: `/\/+$/` retries from every slash of a long run that does not close the name.
+  let end = key.length;
+  while (end > 0 && key.charCodeAt(end - 1) === 47) end--;
+  return key.slice(0, end).toLowerCase();
 }
 
 /** Whether a stored row names the LFX standard metrics, however its agent words that line. */
