@@ -16,8 +16,8 @@
  */
 
 import { expect, test } from '@playwright/test';
+import { MKTG_FAMILY_PRINT_FAQ_LAYOUT } from '@lfx-one/shared/constants';
 import { MKTG_FAMILY_PRINT_BODY_CLASS } from '@lfx-one/shared/constants/mktg-family-export.constants';
-import { MKTG_FAMILY_PRINT_FAQ_LAYOUT } from '@lfx-one/shared/constants/mktg-family-print.constants';
 import { FAQ_ANSWER_QUESTIONS, FAQ_LIST_ITEMS, faqAnswersContent } from '../src/app/shared/testing/mktg-faq-answers-test-data';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 import { nativeAssetRevisionResponse, openAssetDocument } from './helpers/mktg-os-asset-views.helper';

@@ -25,9 +25,8 @@
  */
 
 import { expect, test } from '@playwright/test';
+import { MKTG_FAMILY_PRINT_FAQ_LAYOUT, MKTG_PORTRAIT_PAGE } from '@lfx-one/shared/constants';
 import { MKTG_FAMILY_PRINT_BODY_CLASS } from '@lfx-one/shared/constants/mktg-family-export.constants';
-import { MKTG_FAMILY_PRINT_FAQ_LAYOUT } from '@lfx-one/shared/constants/mktg-family-print.constants';
-import { MKTG_PORTRAIT_PAGE } from '@lfx-one/shared/constants/mktg-portrait-print.constants';
 import { mktgFamilyPrintFaqAnswerParas } from '@lfx-one/shared/utils/mktg-family-print.utils';
 import { mktgPortraitBlockHeight } from '@lfx-one/shared/utils/mktg-portrait-print.utils';
 import {
