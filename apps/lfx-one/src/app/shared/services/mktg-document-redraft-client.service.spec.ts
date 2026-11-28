@@ -8,7 +8,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { Subject } from 'rxjs';
 import type { MktgObservedRunResult } from '@lfx-one/shared/interfaces';
-import { MKTG_RUN_STORAGE_TTL_MS } from '@lfx-one/shared/constants';
+import { MKTG_RUN_CLOSED, MKTG_RUN_STORAGE_TTL_MS } from '@lfx-one/shared/constants';
 import { mktgCommentFixture, mktgCommentScopeFixture } from '@shared/testing/mktg-comments-test-service';
 import { MktgDocumentRedraftClientService } from './mktg-document-redraft-client.service';
 import { MktgDocumentCommentsService } from './mktg-document-comments.service';
@@ -282,6 +282,20 @@ describe('comments-only redraft transport/recovery', () => {
     expect(client.canRelease(scope)).toBe(false);
     client.release(scope).subscribe({ error: () => undefined });
     http.expectNone((request) => request.url.includes('/release'));
+    http.expectNone(path);
+  });
+  it('ends a redraft whose run the server closed (409 MKTG_RUN_CLOSED): the intent goes, the comments are read again, nothing is re-sent', () => {
+    const progress: unknown[] = [];
+    const done = vi.fn();
+    client.send(scope, 1).subscribe({ next: (event) => progress.push(event), error: done, complete: done });
+    http.expectOne(path).flush({ sessionId: 'synthetic-session', ownerToken: 'synthetic-proof', runId: 'c'.repeat(64), priorVersion: 1 });
+    refresh.mockClear();
+    result.error(new HttpErrorResponse({ status: 409, error: { code: MKTG_RUN_CLOSED } }));
+    expect(progress.at(-1)).toEqual({ type: 'failed', message: 'This redraft was closed. The comments are reopened; send again explicitly.' });
+    expect(done).toHaveBeenCalledExactlyOnceWith();
+    expect(client.hasAcceptedAttempt(scope)).toBe(false);
+    expect(client.hasIntent(scope)).toBe(false);
+    expect(refresh).toHaveBeenCalledOnce();
     http.expectNone(path);
   });
   it('cancels on effective-subject change without exposing the prior capability or late landing', () => {

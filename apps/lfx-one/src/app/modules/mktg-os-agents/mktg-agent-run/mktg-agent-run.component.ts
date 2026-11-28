@@ -98,6 +98,7 @@ import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
 import { isTransientHttpError } from '@shared/utils/http-error.utils';
+import { isMktgRunClosedError } from '@shared/utils/mktg-run-closed.util';
 import { mktgRunAnsweredElsewhereNotice } from '@shared/utils/mktg-run-answered-notice.utils';
 import { readUntilReachable } from '@shared/utils/visibility-poll.util';
 
@@ -2226,6 +2227,7 @@ export class MktgAgentRunComponent {
       .subscribe({
         next: (progress) => this.onProgress(progress, projectUid),
         error: (error: unknown) => {
+          if (this.followClosedRun(error, pending.attempt?.runId)) return;
           const errorType = error instanceof Error ? error.name : typeof error;
           console.error('Failed to re-check Marketing OS run', error instanceof HttpErrorResponse ? { status: error.status } : { errorType });
           this.discardPendingNavigation();
@@ -2410,6 +2412,7 @@ export class MktgAgentRunComponent {
         next: (progress) => this.onProgress(progress, projectUid),
         error: (error: unknown) => {
           if (owner !== this.userService.user()?.sub || projectUid !== this.projectContext.activeContextUid()) return;
+          if (this.followClosedRun(error, this.runAttempts.load(projectUid, agent.id)?.attempt?.runId)) return;
           this.discardPendingNavigation();
           this.navigating.set(false);
           this.recheckingAttempt.set(false);
@@ -2425,6 +2428,31 @@ export class MktgAgentRunComponent {
           this.phase.set('form');
         },
       });
+  }
+
+  /**
+   * The result poll's answer for a run the server closed (409 MKTG_RUN_CLOSED: discarded, or replaced by a newer run).
+   * Not a failure and nothing to retry: the page follows the run's record instead, whose reader shows the closed-run
+   * line and the way to the current run. False for any other error, or for a run with no record to follow.
+   */
+  private followClosedRun(error: unknown, runId: string | undefined): boolean {
+    if (!runId || !this.assetType || !isMktgRunClosedError(error)) return false;
+    this.discardPendingNavigation();
+    this.navigating.set(false);
+    this.recheckingAttempt.set(false);
+    this.writingStretch.set(false);
+    this.clearQuestions();
+    this.runFailed.set(false);
+    this.errorText.set('');
+    this.publicWaitingText.set('');
+    this.phase.set('running');
+    this.checkingRun.set(true);
+    this.discoveredRunId.set(runId);
+    this.publicReceiver.set(true);
+    const observer = this.publicProgressView();
+    if (observer && observer.runId() === runId) observer.recheck();
+    else this.publicRefreshKey.update((value) => value + '1');
+    return true;
   }
 
   /** Consume entry intent only after acceptance, without changing this visit's Sources state. */

@@ -2810,6 +2810,37 @@ describe('MktgDocumentViewComponent', () => {
     vi.useRealTimers();
   });
 
+  it.each(['discarded', 'superseded'] as const)(
+    'treats a kit result poll refused as closed (409 MKTG_RUN_CLOSED) as no failure: the record read ends on the %s run',
+    async (state) => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+      const pending = preparedPending();
+      pending.attempt = {
+        runId: 'b'.repeat(64),
+        priorVersion: 0,
+        session: { agentId: pending.request.agentId, sessionId: 'synthetic-closed-session', ownerToken: 'synthetic-proof' },
+      };
+      vi.mocked(TestBed.inject(MktgRunAttemptService).consume).mockReturnValue({ subject: subject(), pending });
+      vi.mocked(TestBed.inject(MktgAgentRunService).resume).mockReturnValue(
+        throwError(() => new HttpErrorResponse({ status: 409, error: { code: MKTG_RUN_CLOSED } }))
+      );
+      // The result poll's refusal arrives before a record read lists the run as closed.
+      store.getDocument.mockReturnValueOnce(of({ ...detail, runs: [started('writing')] }));
+      store.getDocument.mockReturnValue(of({ ...detail, runs: [{ ...started('writing'), state }] }));
+      await render('/documents/brand-kit/living?generation=synthetic-closed-handoff');
+      expect(query('mktg-document-view-failure-reply')).toBeNull();
+      expect(query('mktg-document-view-closed-run')).toBeNull();
+      await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs);
+      await settle();
+      expect(query('mktg-document-view-closed-message')?.textContent?.trim()).toBe(
+        state === 'discarded' ? 'This run was discarded.' : 'A newer run replaced this one.'
+      );
+      expect(query('mktg-document-view-failure-reply')).toBeNull();
+      expect(query('mktg-document-view-error')).toBeNull();
+      vi.useRealTimers();
+    }
+  );
+
   it.each([false, true])('does not synchronously replace a one-off handoff without a run id (attempt present: %s)', async (hasAttempt) => {
     const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.agentKey === 'linkedin-post');
     const intake = MKTG_AGENT_INTAKES[type?.catalogAgentId ?? ''];

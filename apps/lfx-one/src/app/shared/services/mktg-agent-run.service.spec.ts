@@ -10,6 +10,7 @@ import {
   LINKEDIN_POST_INTAKE,
   MKTG_RUN_FAILURE_REASON,
   MKTG_RUN_ACTIVE,
+  MKTG_RUN_CLOSED,
   MKTG_RUN_PERSIST_RETRY_MAX_ATTEMPTS,
   MKTG_RUN_POLL,
   MKTG_RUN_STORAGE_KEY_PREFIX,
@@ -32,7 +33,7 @@ import {
 import { renderMktgIntakeMessage } from '@lfx-one/shared/utils';
 import { UserService } from '@services/user.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { concatMap, NEVER, of, Subject, throwError, TimeoutError, timer } from 'rxjs';
+import { concatMap, NEVER, Observable, of, Subject, throwError, TimeoutError, timer } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MktgAgentRunService } from './mktg-agent-run.service';
@@ -1134,10 +1135,12 @@ describe('MktgAgentRunService', () => {
       expect(events.some((event) => event.type === 'persisted')).toBe(false);
     });
 
-    it.each([401, 403])(
+    // 409 is the closed run (MKTG_RUN_CLOSED): discarded or replaced, it stores nothing more.
+    it.each([401, 403, 409])(
       'latches a refused retry poll (%s): the document stays, no further poll or wake sends the same credentials, nothing claims a server copy',
       async (status) => {
-        resultResponses = [READY_NO_RECEIPT, new HttpErrorResponse({ status, statusText: 'Refused' }), READY_WITH_RECEIPT];
+        const refusal = new HttpErrorResponse({ status, statusText: 'Refused', ...(status === 409 && { error: { code: MKTG_RUN_CLOSED } }) });
+        resultResponses = [READY_NO_RECEIPT, refusal, READY_WITH_RECEIPT];
         const events: MktgGenerateProgress[] = [];
         let error: unknown;
         let completed = false;
@@ -1559,6 +1562,35 @@ describe('MktgAgentRunService', () => {
       expect(events).toHaveLength(2);
       expect(events[1]).toMatchObject({ type: 'questions', pending: { questionsId: 'def67890', questions: [QUESTIONS[1]] } });
     });
+
+    it.each(['generate', 'answers', 'resume'] as const)(
+      'leaves the stored attempt as it is when the %s result poll is refused for a closed run; any other refusal marks it failed',
+      async (leg) => {
+        const attempts = TestBed.inject(MktgRunAttemptService);
+        const pending: MktgRunQuestionsPending = {
+          attempt: { session: { agentId: 'foundation-setup', sessionId: 'sess-2', ownerToken: 'token-2' }, priorVersion: 0 },
+          questionsId: 'abc12345',
+          questions: QUESTIONS,
+        };
+        const poll = (): Observable<MktgGenerateProgress> => {
+          if (leg === 'generate') return service.generate(mfRequest());
+          if (leg === 'answers') return service.answerQuestions(mfRequest(), pending, ANSWERS);
+          return service.resume({ request: mfRequest(), state: 'writing', attempt: pending.attempt, updatedAt: new Date().toISOString() });
+        };
+        // A discarded or replaced run did not fail (409 MKTG_RUN_CLOSED); a poll refused for another reason did.
+        for (const [code, state] of [
+          [MKTG_RUN_CLOSED, 'writing'],
+          [MKTG_RUN_ACTIVE, 'failed'],
+        ] as const) {
+          resultResponses = [new HttpErrorResponse({ status: 409, error: { code } })];
+          let error: unknown;
+          poll().subscribe({ error: (err) => (error = err) });
+          await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs);
+          expect((error as HttpErrorResponse).error).toEqual({ code });
+          expect(attempts.load('proj-1', 'foundation-setup')?.state).toBe(state);
+        }
+      }
+    );
 
     it('fails the answers round on a rejected POST without touching the stored run', () => {
       const existing = mfStoredV1Run();

@@ -46,7 +46,6 @@ import {
   MKTG_AGENTS,
   MKTG_NOT_AVAILABLE_TEXT,
   MKTG_POLL_RETRYING_TEXT,
-  MKTG_RUN_CLOSED,
   MKTG_RUN_POLL,
   MKTG_DOCUMENT_PROGRESS_POLL,
   VISIBILITY_POLL_WAKE_DEBOUNCE_MS,
@@ -185,6 +184,7 @@ import { MktgAgentRunService } from '@services/mktg-agent-run.service';
 import { MktgRunAttemptService } from '@services/mktg-run-attempt.service';
 import { MktgRunAnswersService } from '@services/mktg-run-answers.service';
 import { isTransientHttpError } from '@shared/utils/http-error.utils';
+import { isMktgRunClosedError } from '@shared/utils/mktg-run-closed.util';
 import { mktgRunAnsweredNoticeAsLanded } from '@shared/utils/mktg-run-answered-notice.utils';
 import { createVisibilityPoll, pollBackoffDelayMs } from '@shared/utils/visibility-poll.util';
 
@@ -870,7 +870,7 @@ export class MktgDocumentViewComponent {
                   }
                   // The server closed this run (discarded, or replaced by a newer one) and reads it no further: not a failure
                   // to confirm. The record read beside this poll shows the closed-run line and the way to the newer run.
-                  if (this.isRunClosed(error)) return EMPTY;
+                  if (isMktgRunClosedError(error)) return EMPTY;
                   const errorType = error instanceof Error ? error.name : typeof error;
                   console.error('Failed to confirm Marketing OS run', error instanceof HttpErrorResponse ? { status: error.status } : { errorType });
                   this.unconfirmed.set(true);
@@ -1949,11 +1949,6 @@ export class MktgDocumentViewComponent {
     return MKTG_NOT_AVAILABLE_TEXT.revision;
   }
 
-  /** The result endpoint's answer for a discarded or replaced run: 409 MKTG_RUN_CLOSED, final. */
-  private isRunClosed(error: unknown): boolean {
-    return error instanceof HttpErrorResponse && error.status === 409 && error.error?.code === MKTG_RUN_CLOSED;
-  }
-
   // === Private helpers ===
   private onProgress(progress: MktgGenerateProgress, pending: MktgPendingGeneration): void {
     if (progress.type === 'submitted' || progress.type === 'restored' || progress.type === 'failed' || progress.type === 'refused') {
@@ -2158,12 +2153,12 @@ export class MktgDocumentViewComponent {
           // audit's own deadline and everything else, HTTP or not, is final.
           if (!refused && !(error instanceof TimeoutError) && isTransientHttpError(error)) throw error;
           // A closed run stays closed: like a refused read, no wake sends its poll again.
-          denied = status === 401 || status === 403 || this.isRunClosed(error);
+          denied = status === 401 || status === 403 || isMktgRunClosedError(error);
           if (refused) this.errorText.set(error.message);
           else if (error === runPageUnopened) this.errorText.set('This audit is not finished. Open AEO/GEO from the kit to continue it.');
           else if (error instanceof TimeoutError) this.errorText.set(AEO_GEO_TIMEOUT_MESSAGE);
           // The server closed this run (discarded, or replaced by a newer audit) and reads it no further: Run again is below.
-          else if (this.isRunClosed(error)) this.errorText.set('This audit was closed. Start a new audit.');
+          else if (isMktgRunClosedError(error)) this.errorText.set('This audit was closed. Start a new audit.');
           else if (status === 404 && !canResume && tracked?.state === 'questions')
             this.errorText.set('This audit is waiting for answers. Answer them in the browser where it was started, or run a new audit.');
           else if (status === 404 && !canResume && tracked?.state === 'failed') this.errorText.set('The audit ended without a report. Start a new audit.');

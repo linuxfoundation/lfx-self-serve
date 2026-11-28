@@ -74,6 +74,7 @@ import {
 } from 'rxjs';
 
 import { isTransientHttpError } from '@shared/utils/http-error.utils';
+import { isMktgRunClosedError } from '@shared/utils/mktg-run-closed.util';
 import { createVisibilityPoll } from '@shared/utils/visibility-poll.util';
 
 import { UserService } from './user.service';
@@ -256,7 +257,9 @@ export class MktgAgentRunService {
     return acknowledged.pipe(
       switchMap((attempt) => {
         if (scope !== this.runScope()) return EMPTY;
-        return concat(of<MktgGenerateProgress>({ type: 'submitted' }), this.awaitOutcome(request, attempt)).pipe(catchError(failed));
+        return concat(of<MktgGenerateProgress>({ type: 'submitted' }), this.awaitOutcome(request, attempt)).pipe(
+          catchError((error: unknown) => (isMktgRunClosedError(error) ? throwError(() => error) : failed(error)))
+        );
       })
     );
   }
@@ -303,15 +306,17 @@ export class MktgAgentRunService {
       project: request.projectUid,
       questionsId: pending.questionsId,
     };
+    let accepted = false;
     return this.http.post<MktgRunAnswersResponse>(answersPath, body).pipe(
       take(1),
       tap(() => {
         this.assertSubject(subject);
+        accepted = true;
         this.track(request, { attempt: pending.attempt, answered, pendingQuestions: undefined, state: 'writing' });
       }),
       switchMap(() => concat(of<MktgGenerateProgress>({ type: 'submitted' }), this.awaitOutcome(request, pending.attempt, answered))),
       catchError((error: unknown) => {
-        if (subject === this.attempts.subject()) {
+        if (subject === this.attempts.subject() && !(accepted && isMktgRunClosedError(error))) {
           this.track(request, { state: 'failed' });
         }
         return throwError(() => error);
@@ -319,7 +324,12 @@ export class MktgAgentRunService {
     );
   }
 
-  /** Resume polls the SAME accepted attempt; only a fresh prepared draft can submit, never a storage restore. */
+  /**
+   * Resume polls the SAME accepted attempt; only a fresh prepared draft can submit, never a storage restore.
+   * A result poll the server refused because it closed the run (409 MKTG_RUN_CLOSED) leaves the stored attempt as it is,
+   * here and in the polls of {@link generate} and {@link answerQuestions}: a discarded or replaced run did not fail, and
+   * marking it would write this window's copy over a newer run's attempt that another window stored under the same key.
+   */
   public resume(pending: MktgPendingGeneration): Observable<MktgGenerateProgress> {
     if (pending.request.intake.oneOffDocument && (!pending.request.documentId || pending.attempt?.documentId !== pending.request.documentId)) {
       return throwError(() => new Error('The accepted one-off has no matching document destination.'));
@@ -339,7 +349,7 @@ export class MktgAgentRunService {
     const answered = pending.answered ?? (pending.answeredQuestionsId ? { questions: [], answers: [], questionsId: pending.answeredQuestionsId } : undefined);
     return this.awaitOutcome(pending.request, pending.attempt, answered).pipe(
       catchError((error: unknown) => {
-        if (subject === this.attempts.subject()) {
+        if (subject === this.attempts.subject() && !isMktgRunClosedError(error)) {
           this.track(pending.request, { state: 'failed' });
         }
         return throwError(() => error);
@@ -754,7 +764,8 @@ export class MktgAgentRunService {
       !!response.persistence && response.version === result.version && mktgRunResultIdentity(response, false) === payloadDigest;
     let firstWindow = true;
     // A refused poll (401/403) ends this watch: the same credentials are not sent again, by a tick or a wake (RFC 9110
-    // §15.5.4); the run keeps its document and nothing claims the server copy exists. Other failures spend one attempt.
+    // §15.5.4); the run keeps its document and nothing claims the server copy exists. So does a run the server closed
+    // (409 MKTG_RUN_CLOSED): it stores nothing more. Other failures spend one attempt.
     let denied = false;
     const refused = new Subject<void>();
     const observe = () => {
@@ -767,7 +778,7 @@ export class MktgAgentRunService {
           this.http.post<MktgRunResultResponse>(intake.endpoints.result, body).pipe(
             catchError((error: HttpErrorResponse) => {
               console.error('Marketing OS run persistence check failed', { status: error.status });
-              if (error.status === 401 || error.status === 403) {
+              if (error.status === 401 || error.status === 403 || isMktgRunClosedError(error)) {
                 denied = true;
                 refused.next();
                 return EMPTY;
