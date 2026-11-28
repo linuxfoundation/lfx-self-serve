@@ -7,7 +7,7 @@ import { provideRouter, Router } from '@angular/router';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ProjectContextService } from '@services/project-context.service';
 import { MktgBoilerplatesAsset } from '@lfx-one/shared/interfaces';
-import { boilerplatesReportV2Envelope } from '@lfx-one/shared/utils/__fixtures__/mktg-report-v2.fixture';
+import { boilerplatesReportV2Envelope, mktgRedraftReportFixture } from '@lfx-one/shared/utils/__fixtures__/mktg-report-v2.fixture';
 import { MessageService } from 'primeng/api';
 import { provideMktgCommentsStub, mktgCommentScopeFixture } from '@shared/testing/mktg-comments-test-service';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -207,6 +207,23 @@ describe('MktgBoilerplatesViewComponent', () => {
     expect(query('mktg-report-findings-missing-fix')?.textContent?.trim()).toBe('Fix: Answer it on a redraft, or add the fact to the request notes.');
     expect(query('mktg-report-findings-warnings-item')).toBeNull();
     expect(query('mktg-report-findings-warnings-empty')?.textContent?.trim()).toBe('No warnings.');
+  });
+
+  it('lists what a redraft inherited with the version that read it or could not, and counts the inherited failure on the tab', async () => {
+    await render({ ...ASSET, report: mktgRedraftReportFixture() });
+    // No gap and no failure of its own: the one source version 1 could not read still needs a look.
+    expect(query('mktg-boilerplates-view-gap-count')?.textContent).toContain('1');
+    query('mktg-boilerplates-view-tab-sources')?.click();
+    await fixture.whenStable();
+
+    expect(query('mktg-boilerplates-view-sources-read-empty')).toBeNull();
+    const read = query('mktg-report-inherited-read');
+    expect(read?.querySelectorAll('li')).toHaveLength(6);
+    expect(read?.textContent).toContain('LFX record: Agentic AI Foundation (agentic-ai-foundation)');
+    expect(read?.querySelector('[data-testid="mktg-report-inherited-marker"]')?.textContent).toBe('Read in version 1');
+    expect(query('mktg-boilerplates-view-sources-failed-empty')).toBeNull();
+    expect(query('mktg-report-inherited-failed')?.textContent).toContain('https://aaif.io/press');
+    expect(query('mktg-report-inherited-failed')?.textContent).toContain('Could not be read in version 1');
   });
 
   it('adds no findings card for a v1 report, whose failed sources list as before', async () => {

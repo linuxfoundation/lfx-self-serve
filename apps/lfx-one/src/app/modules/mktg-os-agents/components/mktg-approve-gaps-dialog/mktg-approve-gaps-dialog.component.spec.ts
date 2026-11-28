@@ -4,7 +4,12 @@
 import { TestBed } from '@angular/core/testing';
 import type { BrandKitReport, MktgApproveGapsDialogData, MktgAssetReport } from '@lfx-one/shared/interfaces';
 import { brandKitReportV2RulesFixture } from '@lfx-one/shared/utils/__fixtures__/brand-kit-report-v2-rules.fixture';
-import { boilerplatesReportV2Envelope, faqReportV2Envelope, frameworkReportV2Fixture } from '@lfx-one/shared/utils/__fixtures__/mktg-report-v2.fixture';
+import {
+  boilerplatesReportV2Envelope,
+  faqReportV2Envelope,
+  frameworkReportV2Fixture,
+  mktgRedraftReportFixture,
+} from '@lfx-one/shared/utils/__fixtures__/mktg-report-v2.fixture';
 import { DynamicDialogConfig } from 'primeng/dynamicdialog';
 import { describe, expect, it } from 'vitest';
 import { MktgApproveGapsDialogComponent } from './mktg-approve-gaps-dialog.component';
@@ -141,6 +146,28 @@ describe('Approval with open gaps dialog', () => {
     expect(query(framework, 'mktg-document-view-approve-gaps')).toBeNull();
   });
 
+  it('lists what a redraft inherited after the run’s own, marked with its version: approving accepts the source version 1 could not read too', async () => {
+    const report: MktgAssetReport = {
+      ...mktgRedraftReportFixture(),
+      findings: { sources_failed: [{ source: 'https://aaif.io/blog', kind: 'link', reason: 'The page timed out.' }], missing_assets: [], warnings: [] },
+    };
+    report.inherited?.findings.missing_assets.push({ asset: 'press_release', reason: 'No press release was found.', fix: 'Add it as a link.', version: 1 });
+    const root = await render(report);
+    expect(queryAll(root, 'mktg-document-view-approve-failed-item').map(lines)).toEqual([
+      ['https://aaif.io/blog', 'The page timed out.'],
+      ['https://aaif.io/press', 'This page does not exist on the site (the server answered 404).', 'HTTP 404', 'Could not be read in version 1'],
+    ]);
+    expect(queryAll(root, 'mktg-document-view-approve-failed-item-inherited')).toHaveLength(1);
+    expect(queryAll(root, 'mktg-document-view-approve-missing-item').map(lines)).toEqual([
+      ['Press release', 'No press release was found.', 'Fix: Add it as a link.', 'Missing in version 1'],
+    ]);
+    // A redraft that failed nothing itself still opens on the two groups, for the inherited failure alone.
+    TestBed.resetTestingModule();
+    const inheritedOnly = await render(mktgRedraftReportFixture());
+    expect(queryAll(inheritedOnly, 'mktg-document-view-approve-failed-item').map(lines)).toHaveLength(1);
+    expect(query(inheritedOnly, 'mktg-document-view-approve-failed-item-inherited')?.textContent).toBe('Could not be read in version 1');
+  });
+
   it('shows the boilerplates agent’s real v2 findings: its open question by the family label with its fix, no Failed section, and its one unmirrored gap under Gaps', async () => {
     const boilerplates = await render(boilerplatesReportV2Envelope().report);
     expect(query(boilerplates, 'mktg-document-view-approve-failed')).toBeNull();
@@ -217,6 +244,17 @@ describe('Approval with open gaps dialog', () => {
     TestBed.resetTestingModule();
     const other = await render(report);
     expect(queryAll(other, 'mktg-document-view-approve-gaps-item').map((item) => item.textContent?.trim())).toEqual(['The member count is not stated.']);
+  });
+
+  it('keeps a Brand Kit’s gaps in view when only inherited rows fill the two groups, with or without its own findings', async () => {
+    const redraft: MktgAssetReport = { ...mktgRedraftReportFixture(), gaps: ['Missing evidence'] };
+    const legacy: MktgAssetReport = { sources_read: [], sources_failed: [], gaps: redraft.gaps, notes: '', inherited: redraft.inherited };
+    for (const report of [redraft, legacy]) {
+      TestBed.resetTestingModule();
+      const kit = await render(report, true);
+      expect(query(kit, 'mktg-document-view-approve-failed-item-inherited')?.textContent).toBe('Could not be read in version 1');
+      expect(queryAll(kit, 'mktg-document-view-approve-gaps-item').map((item) => item.textContent?.trim())).toEqual(['Missing evidence']);
+    }
   });
 
   it('lists leftover gaps the old way when a v2 report has nothing in either findings group', async () => {

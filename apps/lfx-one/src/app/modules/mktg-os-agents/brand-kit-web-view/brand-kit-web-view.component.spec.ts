@@ -16,6 +16,7 @@ import { brandKitReportV2Fixture } from '@lfx-one/shared/utils/__fixtures__/bran
 import { brandKitReportV2RulesFixture } from '@lfx-one/shared/utils/__fixtures__/brand-kit-report-v2-rules.fixture';
 import { mktgAcceptedSnapshotOf } from '@lfx-one/shared/utils';
 import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
+import { mktgRedraftReportFixture } from '@lfx-one/shared/utils/__fixtures__/mktg-report-v2.fixture';
 import { NEVER, of } from 'rxjs';
 import { isMktgDocumentCommentAnchor, readMktgDocumentCommentField } from '@lfx-one/shared/utils';
 import { provideMktgCommentsStub, mktgCommentScopeFixture } from '@shared/testing/mktg-comments-test-service';
@@ -668,6 +669,34 @@ describe('BrandKitWebViewComponent', () => {
       expect(query('brand-kit-web-view-warnings')?.querySelectorAll('[data-testid="brand-kit-web-view-accepted"]')).toHaveLength(accepted.warnings.length);
       // The per-item markers replace the derived line.
       expect(query('brand-kit-web-view-gaps-accepted')).toBeNull();
+    });
+
+    it('lists what a redraft inherited in each card after the run’s own, with the version that produced it, and counts the inherited failures on the tab', async () => {
+      const kit = brandKitTestRevision();
+      const inherited = mktgRedraftReportFixture().inherited;
+      inherited?.sources_failed.push({ name: 'https://cdn.example.org/logos.zip', reason: 'Not readable from a link.', version: 1 });
+      inherited?.findings.missing_assets.push({ asset: 'logo_symbol', reason: 'No symbol was uploaded.', fix: 'Upload the symbol as SVG.', version: 1 });
+      inherited?.findings.warnings.push({ code: 'font_unverified', text: 'The typeface could not be verified.', version: 1 });
+      kit.report = { sources_read: ['logo.svg'], sources_failed: [], gaps: [], notes: '', inherited };
+      fixture.componentRef.setInput('kit', kit);
+      await fixture.whenStable();
+      expect(tab('sources').textContent?.trim()).toBe('Sources and gaps (2)');
+      await open('sources');
+
+      const markers = (testId: string): (string | null)[] =>
+        Array.from(query(testId)?.querySelectorAll('[data-testid="mktg-report-inherited-marker"]') ?? []).map((marker) => marker.textContent);
+      expect(query('brand-kit-web-view-sources-read')?.querySelectorAll('li')).toHaveLength(1);
+      expect(query('mktg-report-inherited-read')?.textContent).toContain('LFX standard metrics');
+      expect(markers('mktg-report-inherited-read')).toEqual(Array.from({ length: 6 }, () => 'Read in version 1'));
+      // The kit's own title for a logo package it could not read from a link, and the family's line for the page.
+      expect(query('brand-kit-web-view-sources-failed-empty')).toBeNull();
+      expect(query('mktg-report-inherited-failed')?.textContent).toContain('Logo package (ZIP) — cdn.example.org');
+      expect(markers('mktg-report-inherited-failed')).toEqual(['Could not be read in version 1', 'Could not be read in version 1']);
+      expect(query('brand-kit-web-view-missing-assets-empty')).toBeNull();
+      expect(query('mktg-report-inherited-missing')?.textContent).toContain('Fix: Upload the symbol as SVG.');
+      expect(markers('mktg-report-inherited-missing')).toEqual(['Missing in version 1']);
+      expect(query('brand-kit-web-view-warnings-empty')).toBeNull();
+      expect(markers('mktg-report-inherited-warnings')).toEqual(['Noted in version 1']);
     });
 
     it('says so where the run left nothing to report, and leaves the Sources and gaps tab uncounted', async () => {

@@ -4,13 +4,15 @@
 // Structural contract of the shared report-findings cards and the generic approve dialog on the family's documents: the
 // `mktg-report-findings-*` and `<view>-sources-failed-detail` test ids on each of the three Sources tabs, the dialog
 // found by its confirm test id (never its words, which are the content spec's) carrying each agent's Failed, Missing and
-// Gaps items, a clean v2 report rendering the empty-state ids, and a v1 report rendering none of the findings ids. Every read
+// Gaps items, a clean v2 report rendering the empty-state ids, a v1 report rendering none of the findings ids, and a
+// redraft's inherited rows under their own `mktg-report-inherited-*` ids inside the cards. Every read
 // and write is stubbed with the agents' real AAIF v2 envelopes.
 
 import type { MktgAssetReport } from '@lfx-one/shared/interfaces';
 import { expect, test } from '@playwright/test';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 import { openAssetDocument, reportV2DraftRevisionResponse, type ReportV2AgentKey } from './helpers/mktg-os-asset-views.helper';
+import { mktgRedraftReportFixture } from '@lfx-one/shared/utils/__fixtures__/mktg-report-v2.fixture';
 
 /**
  * Each agent's view, and how many failed sources, missing assets, warnings and unmirrored gaps its real envelope carries (no
@@ -102,6 +104,48 @@ for (const { key, failed, missing, gaps } of VIEWS) {
     await expect(dialog).toBeHidden();
   });
 }
+
+test('a redraft’s inherited rows carry their own test ids inside the Sources cards, in place of the empty-state ids, and the approve dialog marks the inherited item', async ({
+  page,
+}, info) => {
+  await openAssetDocument(page, 'foundation-message', 200, true, false, reportV2DraftRevisionResponse('foundation-message', mktgRedraftReportFixture()));
+  await page.getByTestId('mktg-framework-view-tab-sources').click();
+  const counts: [string, number][] = [
+    ['mktg-report-inherited-read', 1],
+    ['mktg-report-inherited-failed', 1],
+    ['mktg-report-inherited-failed-detail', 1],
+    // Six sources read and one that could not be: one marker a row.
+    ['mktg-report-inherited-marker', 7],
+    ['mktg-report-inherited-missing', 0],
+    ['mktg-report-inherited-warnings', 0],
+    ['mktg-framework-view-sources-read', 0],
+    ['mktg-framework-view-sources-read-empty', 0],
+    ['mktg-framework-view-sources-failed-empty', 0],
+    ['mktg-report-findings-missing-empty', 1],
+    ['mktg-report-findings-warnings-empty', 1],
+  ];
+  for (const [id, count] of counts) {
+    await expect(page.getByTestId(id), id).toHaveCount(count);
+  }
+  // Each inherited list is its card's own child: inside the tab panel, none wider than it.
+  const panelBox = await page.getByTestId('mktg-framework-view-panel-sources').boundingBox();
+  for (const id of ['mktg-report-inherited-read', 'mktg-report-inherited-failed']) {
+    const box = await page.getByTestId(id).boundingBox();
+    if (!panelBox || !box) throw new Error(`The Sources panel and ${id} must be rendered`);
+    expect(box.x, JSON.stringify({ id, panelBox, box })).toBeGreaterThanOrEqual(panelBox.x - 1);
+    expect(box.x + box.width, JSON.stringify({ id, panelBox, box })).toBeLessThanOrEqual(panelBox.x + panelBox.width + 1);
+  }
+  await page.screenshot({ path: info.outputPath('framework-sources-inherited.png'), fullPage: true });
+
+  await page.getByTestId('mktg-document-view-approve').getByRole('button').click();
+  const dialog = page.getByRole('dialog').filter({ has: page.getByTestId('mktg-document-view-approve-confirm') });
+  await expect(dialog.getByTestId('mktg-document-view-approve-confirm')).toBeVisible();
+  await expect(dialog.getByTestId('mktg-document-view-approve-failed-item')).toHaveCount(1);
+  await expect(dialog.getByTestId('mktg-document-view-approve-failed-item-inherited')).toHaveCount(1);
+  await expect(dialog.getByTestId('mktg-document-view-approve-missing')).toHaveCount(0);
+  await dialog.getByTestId('mktg-document-view-approve-cancel').getByRole('button').click();
+  await expect(dialog).toBeHidden();
+});
 
 test('a clean v2 report renders the empty-state ids under both cards and opens no dialog on Approve', async ({ page }, info) => {
   await openAssetDocument(page, 'foundation-message', 200, true, false, reportV2DraftRevisionResponse('foundation-message', CLEAN_V2_REPORT));

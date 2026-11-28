@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { MKTG_REPORT_V2 } from '../constants/mktg-asset.constants';
+import type { MKTG_INHERITED_GROUPS, MKTG_REPORT_V2 } from '../constants/mktg-asset.constants';
 import type { MktgRevisionApproval, MktgRevisionAuthor, MktgRevisionResponse } from './mktg-document-store.interface';
 
 /**
@@ -97,8 +97,8 @@ export interface MktgPreviousRun {
 /**
  * The agent's reviewer report. Sidecar metadata, never revision content. The v1 fields are always there; the v2
  * fields are optional, and an agent whose report carries `findings` gets the Brand Kit's Sources-tab groups and
- * approve dialog. A v1 report (no `findings`) renders as it always did. `inherited` is there only on a redraft or a
- * check whose intake carried the stored version's run.
+ * approve dialog. A v1 report (no `findings`) renders as it always did, with any rows it inherited after its own.
+ * `inherited` is there only on a redraft or a check whose intake carried the stored version's run.
  */
 export interface MktgAssetReport {
   sources_read: string[];
@@ -140,7 +140,8 @@ export interface MktgReportWarningItem {
 
 /**
  * The Sources tab's findings from a report, in the agent's plain words: a v2 report's three groups; a v1 report's
- * legacy failed list in `failed`, nothing missing and no warning, with `hasFindings` false so the tab adds no card.
+ * legacy failed list in `failed`, nothing missing and no warning, with `hasFindings` false, so the tab adds no card
+ * for a report that inherited neither a missing asset nor a warning (one that did gets both cards, as a v2 report does).
  */
 export interface MktgReportFindingsView {
   hasFindings: boolean;
@@ -149,10 +150,30 @@ export interface MktgReportFindingsView {
   warnings: MktgReportWarningItem[];
 }
 
+/** The lists of the Sources tab a revision may inherit rows into: the sources read, and the three findings groups. */
+export type MktgReportInheritedGroup = (typeof MKTG_INHERITED_GROUPS)[number];
+
+/** What stands beside a row a revision inherited: the version whose run produced it, in words ("Read in version 1"). */
+export interface MktgInheritedMarker {
+  marker: string;
+}
+
+/**
+ * The rows a revision inherited (`report.inherited`) as the Sources tab lists them after the run's own, each in its
+ * own row's shape with its marker. A failed source is listed once: its finding, or its legacy row when the version
+ * that could not read it wrote no finding. Every list is empty for a report that inherited nothing.
+ */
+export interface MktgReportInheritedView {
+  read: ({ source: string } & MktgInheritedMarker)[];
+  failed: (MktgReportFailedItem & MktgInheritedMarker)[];
+  missing: (MktgReportMissingItem & MktgInheritedMarker)[];
+  warnings: (MktgReportWarningItem & MktgInheritedMarker)[];
+}
+
 /**
  * What the document view hands the approve dialog: the viewed revision's report as the agent wrote it, and whether the
  * document is the Brand Kit's (read from the document type, never from the report's shape), whose dialog lists no Gaps
- * group.
+ * group under its own findings.
  */
 export interface MktgApproveGapsDialogData {
   report: MktgAssetReport;

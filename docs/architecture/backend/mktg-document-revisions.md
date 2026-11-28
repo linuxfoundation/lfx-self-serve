@@ -633,7 +633,9 @@ those rows into the new envelope as `report.inherited`, each marked with the
 version whose run produced it, apart from the report's own lists, which stay what
 the redraft read itself. The four envelope validators check that key when it is
 present (`mktgReportInheritedErrors`, the agents' `inheritedSchema`), and it is
-stored with the rest of the report in the sidecar.
+stored with the rest of the report in the sidecar. The Sources and gaps tab lists
+those rows after the run's own, each with the version that produced it (see
+[Marketing kit](../frontend/marketing-kit.md#inherited-rows-on-the-sources-and-gaps-tab)).
 
 Adds retry bounded ETag comparisons with `putConditionalObject`. Retrying the
 same request preserves the original comment ID/time; reusing it for different

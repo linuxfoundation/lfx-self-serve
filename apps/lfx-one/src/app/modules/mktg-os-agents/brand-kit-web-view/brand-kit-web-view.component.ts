@@ -28,6 +28,7 @@ import {
   BRAND_KIT_MODE_LABELS,
   BRAND_KIT_PRINT_BODY_CLASS,
   BRAND_KIT_PRINT_ONLY_CLASS,
+  BRAND_KIT_REPORT_ASSET_LABELS,
   BRAND_KIT_SOURCES_EMPTY_LINES,
   BRAND_KIT_SOURCES_GROUP_TITLES,
   BRAND_KIT_WEB_VIEW_TABS,
@@ -49,6 +50,7 @@ import {
   brandKitChapterBasisLabel,
   brandKitChapterRuleBases,
   brandKitChapterSummaries,
+  brandKitFailedSourceTitle,
   brandKitReportRules,
   brandKitSourcesView,
   buildBrandKitBookView,
@@ -56,6 +58,7 @@ import {
   mktgAssetHeaderFallback,
   mktgPrintBrand,
   mktgPrintDocumentTitle,
+  mktgReportInheritedView,
 } from '@lfx-one/shared/utils';
 import { MktgPrintService } from '@services/mktg-print.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -65,6 +68,7 @@ import { MktgBrandKitPrintComponent } from '../mktg-brand-kit-print/mktg-brand-k
 import { MktgSlidesExportComponent } from '../mktg-slides-export/mktg-slides-export.component';
 import { MktgFieldCommentsComponent } from '../components/mktg-field-comments/mktg-field-comments.component';
 import { MktgBrandKitIconSamplesComponent } from '../components/mktg-brand-kit-icon-samples/mktg-brand-kit-icon-samples.component';
+import { MktgReportInheritedComponent } from '../components/mktg-report-inherited/mktg-report-inherited.component';
 
 // The Brand Kit on screen, as an app page in the Messaging Framework view's
 // look (hand test, 18 Oct: "more like a website — a proper app — not a
@@ -92,6 +96,7 @@ import { MktgBrandKitIconSamplesComponent } from '../components/mktg-brand-kit-i
     MktgSlidesExportComponent,
     MktgFieldCommentsComponent,
     MktgBrandKitIconSamplesComponent,
+    MktgReportInheritedComponent,
   ],
   templateUrl: './brand-kit-web-view.component.html',
 })
@@ -164,6 +169,8 @@ export class BrandKitWebViewComponent {
   protected readonly fixPrefix = BRAND_KIT_MISSING_FIX_PREFIX;
   /** The Sources tab's groups, in the agent's words, each item marked when this approval's snapshot accepted it. */
   protected readonly sourcesView = computed(() => brandKitSourcesView(this.kit().report, this.approval(), this.versionNumber(), this.kit().kit.dark));
+  /** The rows the revision inherited from the version it revises, as the Sources tab lists them after the run's own. */
+  protected readonly inheritedView = computed(() => mktgReportInheritedView(this.kit().report, BRAND_KIT_REPORT_ASSET_LABELS, brandKitFailedSourceTitle));
   /** Under an approved revision's gaps when the approval predates the snapshot: accepted at that approval, still open. */
   protected readonly acceptedGapsNote = computed(() =>
     this.sourcesView().legacyApproval ? describeMktgAcceptedGaps(this.kit().report, this.approval(), this.versionNumber()) : null
@@ -185,8 +192,8 @@ export class BrandKitWebViewComponent {
   protected readonly pdfTooltip = computed(() => (this.printView() ? '' : this.approvalRequiredNote));
   protected readonly versionNumber = computed(() => this.version() ?? this.kit().version);
   protected readonly modeLabel = computed(() => (this.kit().mode === 'draft' ? '' : BRAND_KIT_MODE_LABELS[this.kit().mode]));
-  /** What the reviewer should look at: the gaps and the sources that failed (the findings' list when the report has one). */
-  protected readonly gapCount = computed(() => this.sourcesView().gaps.length + this.sourcesView().failed.length);
+  /** What the reviewer should look at: the gaps and the sources that failed (the findings' list when the report has one), the inherited ones counted as the run's own. */
+  protected readonly gapCount = computed(() => this.sourcesView().gaps.length + this.sourcesView().failed.length + this.inheritedView().failed.length);
   /** The report's notes as lines. */
   protected readonly reportNotes = computed(() =>
     this.kit()

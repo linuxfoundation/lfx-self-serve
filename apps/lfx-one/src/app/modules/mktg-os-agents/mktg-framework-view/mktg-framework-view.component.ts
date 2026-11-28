@@ -59,11 +59,13 @@ import {
   foundationMessageNumberRows,
   mktgPrintDocumentTitle,
   mktgReportFindingsView,
+  mktgReportInheritedView,
 } from '@lfx-one/shared/utils';
 import { MktgPrintService } from '@services/mktg-print.service';
 import { createMktgAssetTab } from '../utils/mktg-asset-tab.util';
 import { MktgAssetMetaComponent } from '../components/mktg-asset-meta/mktg-asset-meta.component';
 import { MktgReportFindingsComponent } from '../components/mktg-report-findings/mktg-report-findings.component';
+import { MktgReportInheritedComponent } from '../components/mktg-report-inherited/mktg-report-inherited.component';
 import { MktgDocumentCommentsService } from '@services/mktg-document-comments.service';
 
 import { MktgFrameworkPrintComponent } from '../mktg-framework-print/mktg-framework-print.component';
@@ -101,6 +103,7 @@ import { MktgFieldCommentsComponent } from '../components/mktg-field-comments/mk
     MktgSlidesExportComponent,
     MktgFieldCommentsComponent,
     MktgReportFindingsComponent,
+    MktgReportInheritedComponent,
   ],
   templateUrl: './mktg-framework-view.component.html',
 })
@@ -159,6 +162,8 @@ export class MktgFrameworkViewComponent {
   protected readonly report = computed(() => this.asset()?.report ?? null);
   /** The report's findings as the Sources tab shows them: a v2 report's three groups, a v1 report's failed list alone. */
   protected readonly reportFindings = computed(() => mktgReportFindingsView(this.report(), MKTG_REPORT_ASSET_LABELS));
+  /** The rows the revision inherited from the version it revises, as the Sources tab lists them after the run's own. */
+  protected readonly inheritedView = computed(() => mktgReportInheritedView(this.report(), MKTG_REPORT_ASSET_LABELS));
   protected readonly findings = computed(() => this.asset()?.checks.findings ?? []);
   protected readonly ready = computed(() => this.state() === 'ready' && this.content() !== null);
   protected readonly title = computed(() => `${this.projectName()} Messaging framework`);

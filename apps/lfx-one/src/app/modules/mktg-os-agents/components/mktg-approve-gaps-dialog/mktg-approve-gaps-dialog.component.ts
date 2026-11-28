@@ -22,13 +22,16 @@ import { DynamicDialogConfig } from 'primeng/dynamicdialog';
 
 // What the reviewer accepts by approving: the sources that could not be read
 // and the open gaps, as before, and, for any agent whose report carries the
-// v2 findings, the failed sources and missing assets in the Sources tab's
-// words and shape, then the gaps no missing asset stands for; for a Brand
-// Kit, also the colour conflicts the kit resolved and the chapters whose rules
-// the LF reference supplied rather than the project. The buttons are the dialog's footer (MktgApproveGapsFooterComponent).
-// The dialog's data is the report as every agent writes it, and whether the
-// document is the Brand Kit's (the document type's word, not the report's
-// shape); the v2 fields are read only where they are there, so a v1 report
+// v2 findings or inherited a failed source or a missing asset, the failed
+// sources and missing assets in the Sources tab's words and shape (the rows a
+// revision inherited after the run's own, each with the version that produced
+// it), then the gaps no missing asset stands for; for a Brand Kit, also the
+// colour conflicts the kit resolved and the chapters whose rules the LF
+// reference supplied rather than the project. The buttons are the dialog's
+// footer (MktgApproveGapsFooterComponent). The dialog's data is the report as
+// every agent writes it, and whether the document is the Brand Kit's (the
+// document type's word, not the report's shape); the v2 and inherited fields
+// are read only where they are there, so a v1 report that inherited nothing
 // renders unchanged.
 @Component({
   selector: 'lfx-mktg-approve-gaps-dialog',
@@ -38,14 +41,19 @@ export class MktgApproveGapsDialogComponent {
   private readonly config = inject(DynamicDialogConfig<MktgApproveGapsDialogData>);
 
   public readonly report = this.config.data?.report;
-  /** Whether the document is the Brand Kit's, by its document type: its dialog lists no Gaps group. */
+  /** Whether the document is the Brand Kit's, by its document type: its own missing assets stand for its gaps, so its dialog lists no Gaps group under them. */
   public readonly brandKit = this.config.data?.brandKit ?? false;
-  /** Any agent's v2 report: its failed sources and missing assets as the Sources tab words them; both empty for a v1 report. */
+  /** Any agent's report: the run's own failed sources and missing assets as the Sources tab words them (a report without findings gives its legacy failed sources), then the rows the revision inherited, marked with their version; both empty for a v1 report that inherited nothing. */
   public readonly findings = brandKitApproveFindings(this.report);
-  /** Whether a v2 report has a failed source or a missing asset to show: then the top list is the two groups, else today's list. */
+  /** Whether the report has a failed source or a missing asset to show, its own or inherited: then the top list is the two groups, else today's list. */
   public readonly showsFindings = this.findings.failed.length > 0 || this.findings.missing.length > 0;
-  /** Under the two groups, another agent's gaps lines that no missing asset mirrors, as written; none for the kit or a v1 report. */
-  public readonly gaps = this.showsFindings && !this.brandKit ? mktgReportUnmirroredGaps(this.report) : [];
+  /**
+   * Under the two groups, the gaps lines that no missing asset mirrors, as written; none for a v1 report that inherited
+   * nothing, whose gaps stay in today's list. The Brand Kit takes none while its own findings fill a group. When only
+   * inherited rows (or, without findings, its legacy failed sources) fill them, its gaps are listed here: without those
+   * rows the dialog would have fallen through to today's list, which shows them.
+   */
+  public readonly gaps = this.showsFindings && !(this.brandKit && this.ownFindingsShown()) ? mktgReportUnmirroredGaps(this.report) : [];
   /** The colour conflicts, each value with its source in words and the kept one marked; empty for a v1 report. */
   public readonly colorConflicts = brandKitColorConflictViews(this.report);
   /** One line per chapter the LF reference supplied rules to; empty for a v1 report. */
@@ -62,5 +70,11 @@ export class MktgApproveGapsDialogComponent {
     // The dialog opens read from its top: focus the content itself, not the first button at its foot,
     // which the browser would scroll a long list down to (the dialog's own focusOnShow is off).
     afterNextRender(() => this.root().nativeElement.focus({ preventScroll: true }));
+  }
+
+  /** Whether the run's own v2 findings put a row in either group; false for a report without findings. */
+  private ownFindingsShown(): boolean {
+    const own = this.report?.findings;
+    return !!own && (own.sources_failed.length > 0 || own.missing_assets.length > 0);
   }
 }

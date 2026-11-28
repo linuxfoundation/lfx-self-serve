@@ -54,7 +54,7 @@ const nameOf = (value: unknown): string | null => lineOf(value, MKTG_INHERITED_N
 const sentenceOf = (value: unknown): string | null => lineOf(value, MKTG_INHERITED_SENTENCE_MAX_CHARS);
 
 /** How two source names compare: the scheme, a leading "www.", trailing slashes and case never split one source in two. */
-function sourceKey(name: string): string {
+export function mktgInheritedSourceKey(name: string): string {
   const key = name.trim().replace(/^https?:\/\/(?:www\.)?/i, '');
   // Trailing slashes go in one pass from the end: `/\/+$/` retries from every slash of a long run that does not close the name.
   let end = key.length;
@@ -64,7 +64,7 @@ function sourceKey(name: string): string {
 
 /** Whether a stored row names the LFX standard metrics, however its agent words that line. */
 function isLfxMetrics(name: string): boolean {
-  return sourceKey(name) === sourceKey(MKTG_INHERITED_LFX_METRICS_SOURCE) || MKTG_INHERITED_LFX_METRICS_REGEX.test(name.trim());
+  return mktgInheritedSourceKey(name) === mktgInheritedSourceKey(MKTG_INHERITED_LFX_METRICS_SOURCE) || MKTG_INHERITED_LFX_METRICS_REGEX.test(name.trim());
 }
 
 const liftOwnRead: Lift = (row) => (typeof row === 'string' ? nameOf(row) : null);

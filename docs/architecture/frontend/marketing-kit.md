@@ -86,6 +86,40 @@ an approval that carries the snapshot, each listed item reads "Accepted when vN 
 later run is a new revision, with its own approval). An approval made before the snapshot existed marks
 nothing and keeps the derived line under the gaps ("Accepted when vN was approved; still open.").
 
+### Inherited rows on the Sources and gaps tab
+
+A redraft's report carries the rows it inherited from the version it revises (`report.inherited`,
+see [revisions](../backend/mktg-document-revisions.md)). The Framework, FAQ, Boilerplates and Brand
+Kit views list them in the same cards as the run's own rows, after them, through one component,
+`lfx-mktg-report-inherited`, fed by one pure builder, `mktgReportInheritedView` in
+`@lfx-one/shared/utils`. An inherited row reads as the run's own row of that card does, and its
+last line, in the tab's small grey text, names the version whose run produced it
+(`MKTG_INHERITED_MARKERS`): **Read in version N** under a source read, **Could not be read in
+version N** under a failed source, **Missing in version N** under a missing asset and **Noted in
+version N** under a warning. A card's empty line ("Nothing was read.", "No source failed.") shows
+only when the card has no row of either kind.
+
+The agent carries a source a version could not read twice, as its legacy row (`sources_failed`)
+and as its finding (`findings.sources_failed`). The view lists it once, as the finding; a legacy
+row stays only when no finding names its source (compared by `mktgInheritedSourceKey`: scheme,
+`www.`, trailing slashes and case apart).
+
+Inherited failures and findings count as the run's own, because the document still rests on them:
+
+- the readiness line (`describeMktgAssetReadiness`) counts inherited sources in its total and
+  inherited failed sources in "N of M sources could not be read";
+- the count on the Sources and gaps tab (Boilerplates, Brand Kit) adds the inherited failed sources;
+- the approve dialog opens for an inherited failed source or missing asset (`mktgReportHasOpenGaps`)
+  and lists them after the run's own in Failed sources and Missing assets, each with its marker
+  (`brandKitApproveFindings`); a gap an inherited missing asset mirrors is not repeated under Gaps.
+  A Brand Kit, whose dialog lists no Gaps group under its own findings, lists its gaps there when
+  only inherited rows fill the two groups, so a gap the list showed before a redraft is not lost.
+
+An inherited read or warning alone never opens the dialog, as the run's own does not. The approval
+snapshot (`accepted`) still lists the run's own items only, so an inherited row carries no
+"Accepted when vN was approved" line. The printed documents (Download PDF) and the Family page's
+source count read the run's own lists.
+
 At the Family header's shared 800px content-query threshold, the title stays left of the tiles;
 tiles use two columns at laptop width and four at 980px content width. Below 800px they sit
 under the title. These thresholds reserve headroom for the navigation and page gutters.

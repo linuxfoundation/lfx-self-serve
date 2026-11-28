@@ -313,6 +313,8 @@ export interface BrandKitApproveFailedItem {
   title: string;
   text: string;
   detail: string | null;
+  /** On a row the revision inherited: "Could not be read in version N". Absent on the run's own. */
+  marker?: string;
 }
 
 /** A missing asset as the approve dialog lists it: the asset's label, the agent's plain reason and, when it names one, the fix. */
@@ -320,9 +322,11 @@ export interface BrandKitApproveMissingItem {
   title: string;
   text: string;
   fix: string | null;
+  /** On a row the revision inherited: "Missing in version N". Absent on the run's own. */
+  marker?: string;
 }
 
-/** What a v2 report's approve dialog lists first, in the Sources tab's words; both empty for a v1 report. */
+/** What the approve dialog lists first, in the Sources tab's words: the run's own rows, then the inherited ones; both empty for a v1 report that inherited nothing. */
 export interface BrandKitApproveFindings {
   failed: BrandKitApproveFailedItem[];
   missing: BrandKitApproveMissingItem[];
@@ -390,8 +394,8 @@ export interface BrandKitSourcesView {
 
 /**
  * The skill's report: shown to the reviewer, never stored as content. The v1 fields are always there; the v2 fields
- * (brand-kit ≥ 2.2.0) are optional. A v1 report shows its legacy sources_failed list under Failed sources, and the
- * v2 groups show their empty lines.
+ * (brand-kit ≥ 2.2.0) are optional. A v1 report shows its legacy sources_failed list under Failed sources, and each
+ * v2 group shows its empty line unless the revision inherited a row into it.
  */
 export interface BrandKitReport extends MktgAssetReport {
   version?: typeof BRAND_KIT_REPORT_V2;

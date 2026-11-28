@@ -4,9 +4,10 @@
 <div #root class="flex flex-col gap-4 outline-none" tabindex="-1" data-testid="mktg-document-view-approve-confirm">
   @if (report; as data) {
     @if (showsFindings) {
-      <!-- A v2 report: what the agent could not read and did not find, in the Sources tab's words and shape; a gap a missing asset mirrors is not
-           repeated, and another agent's gaps no missing asset stands for follow under Gaps. A v2 report with nothing in either group falls
-           through to the list below, so leftover gaps still show. -->
+      <!-- A report with a failed source or a missing asset, its own or inherited: what the agent could not read and did not find, in the Sources
+           tab's words and shape, the rows the revision inherited after the run's own with the version that produced them; a gap a missing asset
+           mirrors is not repeated, and the gaps no missing asset stands for follow under Gaps (for the Brand Kit, only when its own findings fill
+           neither group). A report with nothing in either group falls through to the list below, so leftover gaps still show. -->
       @if (findings.failed.length) {
         <section class="flex flex-col gap-2" data-testid="mktg-document-view-approve-failed">
           <h3 class="text-sm font-semibold text-gray-900">{{ groupTitles.failed }}</h3>
@@ -17,6 +18,9 @@
                 <span class="text-xs text-amber-700" data-testid="mktg-document-view-approve-failed-item-reason">{{ failed.text }}</span>
                 @if (failed.detail) {
                   <span class="text-xs text-gray-500" data-testid="mktg-document-view-approve-failed-item-detail">{{ failed.detail }}</span>
+                }
+                @if (failed.marker) {
+                  <span class="text-xs text-gray-500" data-testid="mktg-document-view-approve-failed-item-inherited">{{ failed.marker }}</span>
                 }
               </li>
             }
@@ -33,6 +37,9 @@
                 <span class="text-xs text-amber-700" data-testid="mktg-document-view-approve-missing-item-reason">{{ missing.text }}</span>
                 @if (missing.fix) {
                   <span class="text-xs text-gray-700" data-testid="mktg-document-view-approve-missing-item-fix">{{ fixPrefix }}{{ missing.fix }}</span>
+                }
+                @if (missing.marker) {
+                  <span class="text-xs text-gray-500" data-testid="mktg-document-view-approve-missing-item-inherited">{{ missing.marker }}</span>
                 }
               </li>
             }

@@ -8,7 +8,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ProjectContextService } from '@services/project-context.service';
 import { MktgFaqAsset, MktgDocumentComment, MktgDocumentCommentScope, MktgRevisionApproval, MktgRevisionSummary } from '@lfx-one/shared/interfaces';
 import { provideMktgCommentsStub, mktgCommentScopeFixture, mktgCommentFixture } from '@shared/testing/mktg-comments-test-service';
-import { faqReportV2Envelope } from '@lfx-one/shared/utils/__fixtures__/mktg-report-v2.fixture';
+import { faqReportV2Envelope, mktgRedraftReportFixture } from '@lfx-one/shared/utils/__fixtures__/mktg-report-v2.fixture';
 import {
   FAQ_INJECTED_ANSWER,
   FAQ_LIST_ANSWER,
@@ -355,6 +355,21 @@ describe('MktgFaqViewComponent', () => {
     expect(text('mktg-report-findings-warnings-text')).toContain('Is AAIF controlled by one AI company?');
     expect(query('mktg-report-findings-warnings-source-link')).toBeNull();
     expect(query('mktg-report-findings-warnings-empty')).toBeNull();
+  });
+
+  it('lists what a redraft inherited in each card after the run’s own, with the version that read it or could not', async () => {
+    host.asset.set({ ...ASSET, report: { ...mktgRedraftReportFixture(), sources_read: ['https://aaif.io/faq'] } });
+    query('mktg-faq-view-tab-sources')?.click();
+    await fixture.whenStable();
+    expect(query('mktg-faq-view-sources-read')?.querySelectorAll('li')).toHaveLength(1);
+    expect(query('mktg-report-inherited-read')?.querySelectorAll('li')).toHaveLength(6);
+    expect(text('mktg-report-inherited-read')).toContain('LFX standard metrics');
+    expect(query('mktg-report-inherited-read')?.querySelector('[data-testid="mktg-report-inherited-marker"]')?.textContent).toBe('Read in version 1');
+    // The run itself failed nothing: the inherited failure stands alone, without "No source failed."
+    expect(query('mktg-faq-view-sources-failed')).toBeNull();
+    expect(query('mktg-faq-view-sources-failed-empty')).toBeNull();
+    expect(text('mktg-report-inherited-failed')).toContain('https://aaif.io/press');
+    expect(text('mktg-report-inherited-failed')).toContain('Could not be read in version 1');
   });
 
   it('adds no findings card for a v1 report, whose failed sources list as before', async () => {

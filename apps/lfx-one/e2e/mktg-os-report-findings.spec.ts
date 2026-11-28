@@ -13,6 +13,7 @@ import type { MktgAssetReport } from '@lfx-one/shared/interfaces';
 import { expect, test, type Page } from '@playwright/test';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 import { openAssetDocument, reportV2DraftRevisionResponse, type ReportV2AgentKey } from './helpers/mktg-os-asset-views.helper';
+import { mktgRedraftReportFixture } from '@lfx-one/shared/utils/__fixtures__/mktg-report-v2.fixture';
 
 /**
  * Each agent's view and its test-id prefix (the Sources tab and the failed-sources list are the view's own, the findings
@@ -246,5 +247,41 @@ test.describe('Report findings on every agent’s document', () => {
     await expect(page.getByTestId('mktg-document-view-approval-state')).toHaveText('Approved');
     await expect(page.getByRole('dialog')).toHaveCount(0);
     await page.screenshot({ path: info.outputPath('framework-approved-directly.png'), fullPage: true });
+  });
+
+  test('a redraft of a stored framework shows what it inherited: version 1’s LFX record and metrics as read in version 1, counted in the readiness line and listed in the approve dialog', async ({
+    page,
+  }, info) => {
+    // The run re-read nothing; `inherited` is the block the framework agent's own code made from version 1's stored run.
+    await openAssetDocument(page, 'foundation-message', 200, true, false, reportV2DraftRevisionResponse('foundation-message', mktgRedraftReportFixture()));
+    await expect(page.getByTestId('mktg-document-view-readiness')).toHaveText('Ready — 1 of 7 sources could not be read.');
+    await page.getByTestId('mktg-framework-view-tab-sources').click();
+    const read = page.getByTestId('mktg-report-inherited-read').getByRole('listitem');
+    await expect(read).toHaveCount(6);
+    await expect(read.nth(4)).toContainText('LFX record: Agentic AI Foundation (agentic-ai-foundation)');
+    await expect(read.nth(4).getByTestId('mktg-report-inherited-marker')).toHaveText('Read in version 1');
+    await expect(read.nth(5)).toContainText('LFX standard metrics');
+    await expect(read.nth(5).getByTestId('mktg-report-inherited-marker')).toHaveText('Read in version 1');
+    // No row of the run's own, and no empty line over the inherited ones.
+    await expect(page.getByTestId('mktg-framework-view-sources-read-empty')).toHaveCount(0);
+    await expect(page.getByTestId('mktg-framework-view-sources-failed-empty')).toHaveCount(0);
+    const failed = page.getByTestId('mktg-report-inherited-failed');
+    await expect(failed.getByRole('listitem')).toHaveCount(1);
+    await expect(failed).toContainText('https://aaif.io/press');
+    await expect(failed).toContainText(FAILED_REASON);
+    await expect(failed.getByTestId('mktg-report-inherited-marker')).toHaveText('Could not be read in version 1');
+    await page.screenshot({ path: info.outputPath('framework-sources-inherited.png'), fullPage: true });
+
+    const writes = recordApproveWrites(page);
+    await page.getByTestId('mktg-document-view-approve').getByRole('button').click();
+    const dialog = page.getByRole('dialog', { name: 'Approve with open gaps?' });
+    const item = dialog.getByTestId('mktg-document-view-approve-failed-item');
+    await expect(item).toHaveCount(1);
+    await expect(item).toContainText('https://aaif.io/press');
+    await expect(item.getByTestId('mktg-document-view-approve-failed-item-inherited')).toHaveText('Could not be read in version 1');
+    await page.screenshot({ path: info.outputPath('framework-approve-inherited.png'), fullPage: true });
+    await dialog.getByTestId('mktg-document-view-approve-cancel').getByRole('button').click();
+    await expect(dialog).toBeHidden();
+    expect(writes).toHaveLength(0);
   });
 });

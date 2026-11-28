@@ -19,13 +19,20 @@ import {
   MktgRevisionApproval,
   MktgAssetHeaderMetadata,
 } from '@lfx-one/shared/interfaces';
-import { boilerplatesLengthRows, describeMktgAcceptedGaps, mktgAssetHeaderFallback, mktgReportFindingsView } from '@lfx-one/shared/utils';
+import {
+  boilerplatesLengthRows,
+  describeMktgAcceptedGaps,
+  mktgAssetHeaderFallback,
+  mktgReportFindingsView,
+  mktgReportInheritedView,
+} from '@lfx-one/shared/utils';
 import { MessageService } from 'primeng/api';
 
 import { createMktgAssetTab } from '../utils/mktg-asset-tab.util';
 import { MktgAssetMetaComponent } from '../components/mktg-asset-meta/mktg-asset-meta.component';
 import { MktgFieldCommentsComponent } from '../components/mktg-field-comments/mktg-field-comments.component';
 import { MktgReportFindingsComponent } from '../components/mktg-report-findings/mktg-report-findings.component';
+import { MktgReportInheritedComponent } from '../components/mktg-report-inherited/mktg-report-inherited.component';
 
 // The Boilerplates view: the asset's own app page inside the mktg-os-agents
 // module, in the framework view's look (full width, a tab bar, white cards).
@@ -36,7 +43,7 @@ import { MktgReportFindingsComponent } from '../components/mktg-report-findings/
 // host enables per-length comments on stored assets; previews stay read-only.
 @Component({
   selector: 'lfx-mktg-boilerplates-view',
-  imports: [NgClass, MktgAssetMetaComponent, ButtonComponent, MktgFieldCommentsComponent, MktgReportFindingsComponent],
+  imports: [NgClass, MktgAssetMetaComponent, ButtonComponent, MktgFieldCommentsComponent, MktgReportFindingsComponent, MktgReportInheritedComponent],
   templateUrl: './mktg-boilerplates-view.component.html',
 })
 export class MktgBoilerplatesViewComponent {
@@ -76,6 +83,8 @@ export class MktgBoilerplatesViewComponent {
   protected readonly report = computed(() => this.asset().report);
   /** The report's findings as the Sources tab shows them: a v2 report's three groups, a v1 report's failed list alone. */
   protected readonly reportFindings = computed(() => mktgReportFindingsView(this.report(), MKTG_REPORT_ASSET_LABELS));
+  /** The rows the revision inherited from the version it revises, as the Sources tab lists them after the run's own. */
+  protected readonly inheritedView = computed(() => mktgReportInheritedView(this.report(), MKTG_REPORT_ASSET_LABELS));
   protected readonly findings = computed(() => this.asset().checks.findings);
   protected readonly noSourceFailedNote = MKTG_ASSET_NO_SOURCE_FAILED_MESSAGE;
   protected readonly gapsTitle = MKTG_REPORT_GAPS_TITLE;
@@ -89,8 +98,8 @@ export class MktgBoilerplatesViewComponent {
       .map((line) => line.trim())
       .filter((line) => line !== '')
   );
-  /** What the reviewer should look at: the gaps and the sources that could not be read. */
-  protected readonly gapCount = computed(() => this.report().gaps.length + this.report().sources_failed.length);
+  /** What the reviewer should look at: the gaps and the sources that could not be read, the inherited ones counted as the run's own. */
+  protected readonly gapCount = computed(() => this.report().gaps.length + this.report().sources_failed.length + this.inheritedView().failed.length);
   /** Screen-reader copy confirmation for the live region — the visible button flip alone is never announced. */
   protected readonly copiedAnnouncement = computed(() => {
     const index = this.copiedIndex();
