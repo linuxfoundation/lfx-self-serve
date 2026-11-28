@@ -103,7 +103,7 @@
             [questions]="questions()"
             [projectName]="projectName()"
             [previousAnswers]="previousAnswers()"
-            [busy]="answering() || runLookupFailed()"
+            [busy]="answering() || !!unconfirmedSend() || runLookupFailed()"
             [allowNoneFor]="noneAllowedQuestionIds"
             (answered)="onAnswers($event)" />
         </div>
