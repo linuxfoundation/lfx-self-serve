@@ -115,7 +115,17 @@ no run record) is final: the run page clears the capability and shows "This audi
 can no longer take answers. Start a new audit." without re-reading the run.
 The claim requires one answer per asked question, as the interactive stepper
 does; invalid answers are a 400 that leaves the turn unclaimed, and a delivery
-that fails after the claim keeps it. A history read still recognizes an answered
+that fails after the claim keeps it. A claimed turn is never offered again: while
+Guild still shows it open (the delivery is in flight, or failed after the claim)
+the result endpoint answers `pending`, not the same `questions`
+(`ownedOneOffResult`, shared with LinkedIn), so after a failed answers POST the
+run page's re-read opens the report instead of a stepper whose second send could
+only be refused. The same questions come back only when the server did not take
+the turn (the POST failed before the claim); they are offered with the answers
+kept and the retry goes through. When the answers never reached the agent, the
+report page waits to the run's deadline ("The audit is taking longer than
+expected.") and the tracker fails the run at its writing deadline, as for any
+audit that stops; a new audit before then gets the active-run dialog. A history read still recognizes an answered
 turn so a reload does not ask again; history is never read as a report.
 A plain transport/domain-confirmation refusal stays an error on the run page,
 with no invented question round or report. Malformed questions fail visibly.

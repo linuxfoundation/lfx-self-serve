@@ -70,6 +70,10 @@ link answers, source word count and original profile-initialization permission f
 reconciliation; the controller applies no completion policy. It reuses the fetched record
 and resolved outcome for tracking, without a duplicate pre-write record/result lookup.
 The existing post-write metadata winner confirmation remains unchanged.
+A `questions` result for a turn the record has already claimed is answered `pending`: Guild keeps reporting that
+turn until the agent writes something newer, and for good when the answers' delivery failed after the claim, and a
+browser poll that does not hold the answered id (a reload, or a send that failed) would otherwise be sent back to
+questions the server refuses with 409 `MKTG_RUN_ANSWERED`.
 A poll for a stored run that is discarded or superseded is refused before the result is read (409 `MKTG_RUN_CLOSED`),
 so a late post is never stored for a closed run; the Document page treats that answer as no failure and ends on the
 record's closed-run line.
