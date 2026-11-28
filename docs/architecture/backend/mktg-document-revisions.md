@@ -448,7 +448,12 @@ Only one observed ETag wins. A lost/stale claim is 409 `MKTG_RUN_ANSWERED`, with
 the stored subject, and `answeredAt` is ISO or null for unknown legacy attribution. The message is
 “Already answered by <name>”, or “Already answered” when no name is available. Public progress immediately
 reads `writing`; an old questions result cannot reopen the answered block. A send failure does not roll
-back the claim because delivery may be uncertain; it must not invite a second answers message.
+back the claim because delivery may be uncertain; it must not invite a second answers message. The one-off
+creator result (`ownedOneOffResult`, LinkedIn and AEO/GEO) holds to that too: a `questions` result whose
+`questionsId` the record has claimed is answered `pending` (with its activity), so a page that re-reads the
+run after a failed answers POST is not handed a turn its next send could only get 409 for; an unclaimed turn
+and a later turn with a new id are returned as `questions`. Only a poll that could not read the record (the
+transient-storage fallback) returns what Guild reports unchanged.
 The four kit creator-token answer endpoints require project and questions id and use this same claim
 before their existing domain senders, passing the validated answers into the same stored-key coverage check. LinkedIn's dedicated route requires the recorded one-off creator and performs read-only event/turn/key validation plus rendering before the claim; only delivery follows it, with no second events lookup. AEO/GEO's dedicated route does the same with its own questions check: a turn Guild no longer waits on goes to the claim unsent, so a stale window gets the 409 rather than a 400. A preparation failure leaves the questions unclaimed, while uncertain delivery retains the claim. The public writer route still refuses one-offs.
 No client owner token or session id is trusted or returned by the public route; the ACK is

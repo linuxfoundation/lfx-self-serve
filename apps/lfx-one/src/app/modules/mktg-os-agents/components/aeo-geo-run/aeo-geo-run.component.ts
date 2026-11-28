@@ -483,7 +483,7 @@ export class AeoGeoRunComponent {
           }
           console.error('Failed to acknowledge audit answers', error);
           this.error.set('Your answers are kept. Checking whether the agent took them…');
-          return this.watchRun(run).pipe(map(() => undefined));
+          return this.watchRun(run, true).pipe(map(() => undefined));
         }),
         takeUntilDestroyed(this.destroyRef)
       )
@@ -526,10 +526,11 @@ export class AeoGeoRunComponent {
     });
   }
 
-  private watchRun(run: MktgPendingDocumentRun): Observable<MktgRunResultResponse> {
+  /** `afterFailedSend`: this watch re-reads the run because the page's own answers POST failed. */
+  private watchRun(run: MktgPendingDocumentRun, afterFailedSend = false): Observable<MktgRunResultResponse> {
     this.busy.set(true);
     return this.pending.poll(run, this.intake()).pipe(
-      tap((result) => this.onRunResult(run, result)),
+      tap((result) => this.onRunResult(run, result, afterFailedSend)),
       takeWhile(
         (result) => result.status === 'pending' && (result.transient === true || (run.phase !== 'writing' && Object.keys(this.answerValues()).length === 0)),
         true
@@ -550,14 +551,26 @@ export class AeoGeoRunComponent {
     );
   }
 
-  private onRunResult(run: MktgPendingDocumentRun, result: MktgRunResultResponse): void {
+  private onRunResult(run: MktgPendingDocumentRun, result: MktgRunResultResponse, afterFailedSend = false): void {
     if (result.transient) return;
     if (this.intake().liveActivity && result.activity) {
       this.activity.set(result.activity);
     }
     if (result.status === 'pending') {
       this.questions.set([]);
-      if (run.phase === 'writing' || Object.keys(this.answerValues()).length > 0) this.openDocument(run);
+      if (run.phase === 'writing' || Object.keys(this.answerValues()).length > 0) {
+        // After a failed answers POST a pending result says only that the server holds the turn's claim: the answers were
+        // delivered, or the delivery failed after the claim. One notice that is true both ways; this result ends the watch.
+        if (afterFailedSend) {
+          // Sticky: the page opens the report in the same moment, and this line is the only word that the send may have failed.
+          this.messages.add({
+            severity: 'warn',
+            summary: 'Your answers may not have reached the agent. If the report does not arrive, start a new audit.',
+            sticky: true,
+          });
+        }
+        this.openDocument(run);
+      }
     }
     if (result.status === 'questions' && result.questions?.length && result.questionsId) {
       this.questionsId = result.questionsId;

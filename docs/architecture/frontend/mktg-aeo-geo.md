@@ -115,7 +115,21 @@ no run record) is final: the run page clears the capability and shows "This audi
 can no longer take answers. Start a new audit." without re-reading the run.
 The claim requires one answer per asked question, as the interactive stepper
 does; invalid answers are a 400 that leaves the turn unclaimed, and a delivery
-that fails after the claim keeps it. A history read still recognizes an answered
+that fails after the claim keeps it. A claimed turn is not offered again while
+the run record can be read: as long as Guild still shows it open (the delivery
+is in flight, or failed after the claim) the result endpoint answers `pending`,
+not the same `questions` (`ownedOneOffResult`, shared with LinkedIn), so after a
+failed answers POST the run page's re-read opens the report instead of a stepper
+whose second send could only be refused. The exception, a poll whose record read
+fails transiently and so returns what Guild reports, is named in the
+`ownedOneOffResult` paragraph of
+[durable started runs](../backend/mktg-document-revisions.md#durable-started-runs).
+The same questions otherwise come back only when the server did not take
+the turn (the POST failed before the claim); they are offered with the answers
+kept and the retry goes through. When the answers never reached the agent, the
+report page waits to the run's deadline ("The audit is taking longer than
+expected.") and the tracker fails the run at its writing deadline, as for any
+audit that stops; a new audit before then gets the active-run dialog. A history read still recognizes an answered
 turn so a reload does not ask again; history is never read as a report.
 A plain transport/domain-confirmation refusal stays an error on the run page,
 with no invented question round or report. Malformed questions fail visibly.
@@ -181,7 +195,7 @@ press before the project's Brand Kit read settles (a kit, or the LF look after
 a failed read) is kept as one press and prints after the render that follows;
 the button stays enabled, and a document change or destruction drops the
 waiting press.
-No Markdown file is downloaded. Refusal and permanent polling failures clear recovery and offer Run again; there is no Check again button. A timeout keeps the capability until its TTL: “The audit is taking longer than expected.” stays as a plain line. The storage wait's deadline is absolute from when the wait started, so a tab return or window focus does not restart it; a wake re-reads the stored report once through the shared visibility poller. A late report is stored only when a result read happens; after the deadline the page makes none, and Run again starts fresh. A transient stored-report read outage keeps checking on its own behind the one plain line. Explicit Run again clears the old capability before re-entry or a fresh generation. A transient poll fallback is marked, never treated as proof that answers landed. It offers Run again, never comments, revision
+No Markdown file is downloaded. Refusal and permanent polling failures clear recovery and offer Run again; there is no Check again button. A timeout keeps the capability until its TTL: “The audit is taking longer than expected.” stays as a plain line. The storage wait's deadline is absolute from when the wait started, so a tab return or window focus does not restart it; a wake re-reads the stored report once through the shared visibility poller. A late report is stored only when a result read happens; after the deadline the page makes none, and Run again starts fresh. A transient stored-report read outage keeps checking on its own behind the one plain line. Explicit Run again clears the old capability before re-entry or a fresh generation. A transient poll fallback is marked and never opens the report; a `pending` read after the run page's own answers POST failed does open it, but proves the claim and not the delivery, so the page first shows one notice: “Your answers may not have reached the agent. If the report does not arrive, start a new audit.” (never after a POST that succeeded). The report page offers Run again, never comments, revision
 or restore controls for a report. Its single immutable revision row and About share the right column at laptop width and stack below on narrow screens.
 Slides export is a separate capability,
 not a simulated control here.
