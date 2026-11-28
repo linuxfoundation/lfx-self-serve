@@ -598,10 +598,34 @@ describe('AeoGeoRunComponent', () => {
     fixture.detectChanges();
     expect(query('mktg-run-questions')).toBeNull();
     expect(answerQuestions).toHaveBeenCalledTimes(1);
-    // No second send, so no "already answered" notice for a turn this page answered itself.
-    expect(add).not.toHaveBeenCalled();
+    // No second send, so no "already answered" notice for a turn this page answered itself. The pending proves the claim,
+    // not the delivery, so the page says so once before it opens the report.
+    expect(add).toHaveBeenCalledExactlyOnceWith({
+      severity: 'warn',
+      summary: 'Your answers may not have reached the agent. If the report does not arrive, start a new audit.',
+    });
+    expect(add.mock.invocationCallOrder[0]).toBeLessThan(navigate.mock.invocationCallOrder[0]);
     expect(markWriting).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'session-1' }));
     expect(navigate).toHaveBeenCalledExactlyOnceWith(['..', 'documents', 'aeo-geo', run().documentId], expect.anything());
+  });
+
+  it('after a successful answers POST shows no notice, on the send or on a later pending result', async () => {
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    const add = vi.spyOn(TestBed.inject(MessageService), 'add');
+    const questions = aeoGeoRunQuestions(aeoGeoQuestionsFixture());
+    poll.mockReturnValue(of({ status: 'questions', questions, questionsId: 'questions-1' }));
+    await render();
+    query('mktg-aeo-run-submit').click();
+    await fixture.whenStable();
+    fixture.componentInstance['onAnswers']([{ key: questions[0].key, text: 'A retained answer.', origin: 'edited' }]);
+    expect(navigate).toHaveBeenCalledOnce();
+    // The person comes back to the run page while the agent writes: the recovered run's pending opens the report again.
+    fixture.destroy();
+    loadActive.mockReturnValue({ ...run(), phase: 'writing' });
+    poll.mockReturnValue(of({ status: 'pending' }));
+    await render();
+    expect(navigate).toHaveBeenCalledTimes(2);
+    expect(add).not.toHaveBeenCalled();
   });
 
   it('after a 5xx on the answers POST offers the same questions again only when the result still reads them, and sends the retry', async () => {
