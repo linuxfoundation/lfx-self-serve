@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { MKTG_RUN_ACTIVE, MKTG_RUN_ANSWERED, MKTG_RUN_CLOSED } from '@lfx-one/shared/constants/mktg-run.constants';
+import { MKTG_RUN_ACTIVE, MKTG_RUN_ANSWERED, MKTG_RUN_CLOSED } from '@lfx-one/shared/constants';
 import { describe, expect, it } from 'vitest';
 import { isMktgRunClosedError } from './mktg-run-closed.util';
 
