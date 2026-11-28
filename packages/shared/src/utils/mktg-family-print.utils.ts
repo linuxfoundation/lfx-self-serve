@@ -12,6 +12,7 @@ import {
   MKTG_FAMILY_PRINT_COPY,
   MKTG_FAMILY_PRINT_COVER_STRIP_MEASURE,
   MKTG_FAMILY_PRINT_FAQ_LAYOUT,
+  MKTG_FAMILY_PRINT_FAQ_LIST_ITEM,
   MKTG_FAMILY_PRINT_FAQ_SOURCE_LABELS,
   MKTG_FAMILY_PRINT_HEAD_CAPS,
   MKTG_FAMILY_PRINT_HEAD_MEASURE,
@@ -132,13 +133,41 @@ export function mktgFamilyPrintFaqGroups(groups: readonly FaqGroupView[]): MktgF
   }));
 }
 
-/** The height one FAQ entry takes in a column `width` px wide: its padding, the question, the answer and the source chip's line when it prints one. */
+/**
+ * A FAQ answer as the book's page prints it, for the fit model: the blocks its restricted Markdown renders to. The faq
+ * agent writes plain sentences, or a lead-in and its `- ` items: a paragraph, then one indented line per item (the
+ * page's `p` and `ul > li`), `answerBlockGap` between two blocks and `itemGap` between two items. A plain line runs on
+ * in the paragraph or the item above it until a blank line, as Markdown joins it; each hard line is wrapped on its
+ * own, which is never fewer lines than the joined text takes. A plain answer of one line measures as it always did.
+ */
+export function mktgFamilyPrintFaqAnswerParas(answer: string): MktgPortraitFitPara[] {
+  const layout = MKTG_FAMILY_PRINT_FAQ_LAYOUT;
+  const paras: MktgPortraitFitPara[] = [];
+  let open: MktgPortraitFitPara | null = null;
+  for (const line of answer.split(/\r?\n|\v/)) {
+    const text = line.trim();
+    if (!text) {
+      open = null;
+      continue;
+    }
+    const item = MKTG_FAMILY_PRINT_FAQ_LIST_ITEM.exec(line);
+    if (!item && open) {
+      open.text += `\n${text}`;
+      continue;
+    }
+    const previous = paras[paras.length - 1];
+    const gap = item && previous?.indent ? layout.answerList.itemGap : layout.answerBlockGap;
+    open = { ...layout.answer, text: item ? (item[1] ?? '') : text, above: previous ? gap : layout.answer.above };
+    if (item) open.indent = layout.answerList.indent;
+    paras.push(open);
+  }
+  return paras.length > 0 ? paras : [{ text: '', ...layout.answer }];
+}
+
+/** The height one FAQ entry takes in a column `width` px wide: its padding, the question, the answer's blocks and the source chip's line when it prints one. */
 export function mktgFamilyPrintFaqEntryHeight(entry: MktgFamilyPrintFaqPlanGroup['questions'][number], width: number): number {
   const layout = MKTG_FAMILY_PRINT_FAQ_LAYOUT;
-  const paras: MktgPortraitFitPara[] = [
-    { text: entry.question, ...layout.question },
-    { text: entry.answer, ...layout.answer },
-  ];
+  const paras: MktgPortraitFitPara[] = [{ text: entry.question, ...layout.question }, ...mktgFamilyPrintFaqAnswerParas(entry.answer)];
   const text = paras.reduce((height, para) => height + mktgPortraitParaHeight(para, width), 0);
   return layout.entryPadding + text + (mktgFamilyPrintFaqSourceLabel(entry.source) ? layout.source : 0);
 }

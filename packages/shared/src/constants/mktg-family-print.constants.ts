@@ -96,9 +96,21 @@ export const MKTG_FAMILY_PRINT_FAQ_LAYOUT = {
   entryPadding: 26,
   question: { size: 13.5, line: 1.35, weight: 600 },
   answer: { size: 12, line: 1.55, above: 6 },
+  /** Between two blocks of an answer's restricted Markdown (a lead-in and its list, two paragraphs). */
+  answerBlockGap: 4,
+  /** An answer's list: the items' indent (the marker hangs in it) and the gap between two items. */
+  answerList: { indent: 16, itemGap: 2 },
   /** The source chip's line. */
   source: 24,
 } as const;
+
+/**
+ * A line of a FAQ answer that opens a list item in its Markdown (`- `, `* `, `+ ` or `1. `, indented or not), with the
+ * item's own text as its capture (absent for a marker with nothing after it): the lines the fit model measures as a list
+ * (mktgFamilyPrintFaqAnswerParas). The text opens on a character that is not white space, so the white space after the
+ * marker can be matched one way only and the expression cannot backtrack over it.
+ */
+export const MKTG_FAMILY_PRINT_FAQ_LIST_ITEM = /^[ \t]*(?:[-*+]|\d{1,9}[.)])[ \t]+(\S.*)?$/;
 
 /** The Sources page's fixed blocks: the conflicts' y and the Still open block's two y's (its lowest, under the conflicts printed), the page's bottom, the gap between the two blocks, and the rows' type for the fit model. */
 export const MKTG_FAMILY_PRINT_SOURCES_LAYOUT = {

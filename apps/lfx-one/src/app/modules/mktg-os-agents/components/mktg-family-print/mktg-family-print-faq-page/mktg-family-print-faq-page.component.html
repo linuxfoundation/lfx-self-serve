@@ -15,10 +15,13 @@
           </h2>
         }
         <article class="fpq-entry" data-testid="family-print-faq-entry">
-          <h3 class="fpq-entry__question">{{ shown.entry.question }}</h3>
-          <p class="fpq-entry__answer">{{ shown.entry.answer }}</p>
+          <h3 class="fpq-entry__question" data-testid="family-print-faq-question">{{ shown.entry.question }}</h3>
+          <!-- The answer is the agent's restricted Markdown, as on the FAQ tab: a plain answer is one paragraph, a lead-in
+               and its "- " lines a paragraph and a bulleted list; markup an answer carries never becomes an element. The
+               plan measures the same blocks (mktgFamilyPrintFaqAnswerParas). -->
+          <lfx-markdown-renderer class="fpq-entry__answer" [content]="shown.entry.answer" [restricted]="true" data-testid="family-print-faq-answer" />
           @if (shown.source) {
-            <p class="fpq-entry__source">
+            <p class="fpq-entry__source" data-testid="family-print-faq-source">
               <span class="pp-chip">{{ shown.source }}</span>
             </p>
           }
