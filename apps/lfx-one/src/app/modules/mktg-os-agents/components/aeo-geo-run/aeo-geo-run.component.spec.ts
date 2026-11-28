@@ -582,6 +582,55 @@ describe('AeoGeoRunComponent', () => {
     }
   });
 
+  it('after a 5xx on the answers POST opens the report on the next pending result: a claimed turn is not offered again', async () => {
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    const add = vi.spyOn(TestBed.inject(MessageService), 'add');
+    const questions = aeoGeoRunQuestions(aeoGeoQuestionsFixture());
+    poll.mockReturnValue(of({ status: 'questions', questions, questionsId: 'questions-1' }));
+    await render();
+    query('mktg-aeo-run-submit').click();
+    await fixture.whenStable();
+    // The server claimed the turn and Guild then refused the delivery: the claim stands, so the result endpoint reads the
+    // run as pending (`ownedOneOffResult`) even though Guild still shows the same questions open.
+    answerQuestions.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502 })));
+    poll.mockReturnValue(of({ status: 'pending' }));
+    fixture.componentInstance['onAnswers']([{ key: questions[0].key, text: 'A retained answer.', origin: 'edited' }]);
+    fixture.detectChanges();
+    expect(query('mktg-run-questions')).toBeNull();
+    expect(answerQuestions).toHaveBeenCalledTimes(1);
+    // No second send, so no "already answered" notice for a turn this page answered itself.
+    expect(add).not.toHaveBeenCalled();
+    expect(markWriting).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'session-1' }));
+    expect(navigate).toHaveBeenCalledExactlyOnceWith(['..', 'documents', 'aeo-geo', run().documentId], expect.anything());
+  });
+
+  it('after a 5xx on the answers POST offers the same questions again only when the result still reads them, and sends the retry', async () => {
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    const add = vi.spyOn(TestBed.inject(MessageService), 'add');
+    const questions = aeoGeoRunQuestions(aeoGeoQuestionsFixture());
+    poll.mockReturnValue(of({ status: 'questions', questions, questionsId: 'questions-1' }));
+    await render();
+    query('mktg-aeo-run-submit').click();
+    await fixture.whenStable();
+    // The send failed before the server took the turn (the result endpoint repeats only an unclaimed one): the same id comes back.
+    answerQuestions.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 502 })));
+    const answers = [{ key: questions[0].key, text: 'A retained answer.', origin: 'edited' as const }];
+    fixture.componentInstance['onAnswers'](answers);
+    fixture.detectChanges();
+    expect(query('mktg-run-questions')).not.toBeNull();
+    expect(query('mktg-aeo-run-error')).toBeNull();
+    expect(fixture.componentInstance['answerValues']()[questions[0].key]).toBe('A retained answer.');
+    expect(navigate).not.toHaveBeenCalled();
+    answerQuestions.mockReturnValue(of(undefined));
+    fixture.componentInstance['onAnswers'](answers);
+    expect(answerQuestions).toHaveBeenCalledTimes(2);
+    expect(answerQuestions).toHaveBeenLastCalledWith(expect.objectContaining({ sessionId: 'session-1' }), AEO_GEO_INTAKE, 'questions-1', [
+      { id: 'audience', text: 'A retained answer.', origin: 'edited' },
+    ]);
+    expect(add).not.toHaveBeenCalled();
+    expect(navigate).toHaveBeenCalledExactlyOnceWith(['..', 'documents', 'aeo-geo', run().documentId], expect.anything());
+  });
+
   it('does not turn a 503 after a failed answers POST into proof of writing, then accepts a real pending', async () => {
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
     const questions = aeoGeoRunQuestions(aeoGeoQuestionsFixture());

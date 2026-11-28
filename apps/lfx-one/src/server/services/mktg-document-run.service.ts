@@ -321,6 +321,12 @@ export class MktgDocumentRunService {
         logger.warning(req, 'mktg_run_record_result', 'Result returned; tracking may retry on a Documents read', { project, err });
       }
     }
+    // First answer wins: a questions turn this record has claimed is not offered again while Guild still shows it open
+    // (its answers are being delivered, or their delivery failed after the claim, which stands). A second answer would
+    // only be refused (409 MKTG_RUN_ANSWERED), so the creator's poll reads what the record says: the run is writing.
+    if (stored && result.status === 'questions' && !!result.questionsId && result.questionsId === stored.record.answeredQuestionsId) {
+      return { status: 'pending', ...(result.activity && { activity: result.activity }) };
+    }
     return result;
   }
 

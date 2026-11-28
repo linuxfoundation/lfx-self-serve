@@ -711,6 +711,26 @@ describe('MktgDocumentRunService core', () => {
       await service.ownedOneOffResult(creator, project, 'aeo-geo', session, {});
       expect(JSON.parse(stored().body)).toMatchObject({ state: 'writing', answeredQuestionsId: questionsId });
     });
+    it.each([
+      ['aeo-geo', flows.aeo],
+      ['linkedin-post', flows.linkedin],
+    ] as const)('does not offer a claimed %s questions turn again when Guild still shows it open (delivery failed after the claim)', async (agentId, read) => {
+      const creator = writerRequest('synthetic-one-off-creator');
+      await service.startForOneOff(creator, agentId, project, session);
+      const activity = [{ id: 'synthetic-step', kind: 'checking', label: 'Checking the answers', status: 'running' }];
+      read.mockResolvedValue({ status: 'questions', questionsId, questions, activity });
+      // A send that failed before the claim leaves the turn open: it is offered again and the retry goes through.
+      expect(await service.ownedOneOffResult(creator, project, agentId, session, {})).toMatchObject({ status: 'questions', questionsId, questions });
+      await service.claimSessionAnswers(creator, project, session, questionsId, agentId, answers);
+      // The claim stands and the answers never reached Guild, which keeps reporting the same turn: the poll reads writing,
+      // never questions a second answer could only be refused for.
+      expect(await service.ownedOneOffResult(creator, project, agentId, session, {})).toEqual({ status: 'pending', activity });
+      expect(JSON.parse(stored().body)).toMatchObject({ state: 'writing', answeredQuestionsId: questionsId });
+      // A turn the agent asks afterwards is a new one.
+      const next = 'd'.repeat(64);
+      read.mockResolvedValue({ status: 'questions', questionsId: next, questions });
+      expect(await service.ownedOneOffResult(creator, project, agentId, session, {})).toMatchObject({ status: 'questions', questionsId: next });
+    });
     it('binds creator transports to their catalog agent before using the same conditional claim', async () => {
       await waiting();
       const writer = writerRequest('synthetic-original-writer');
