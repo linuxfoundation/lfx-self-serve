@@ -172,7 +172,7 @@ export interface MktgReportInheritedView {
 /**
  * What the document view hands the approve dialog: the viewed revision's report as the agent wrote it, and whether the
  * document is the Brand Kit's (read from the document type, never from the report's shape), whose dialog lists no Gaps
- * group.
+ * group under its own findings.
  */
 export interface MktgApproveGapsDialogData {
   report: MktgAssetReport;

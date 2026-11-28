@@ -246,6 +246,17 @@ describe('Approval with open gaps dialog', () => {
     expect(queryAll(other, 'mktg-document-view-approve-gaps-item').map((item) => item.textContent?.trim())).toEqual(['The member count is not stated.']);
   });
 
+  it('keeps a Brand Kit’s gaps in view when only inherited rows fill the two groups, with or without its own findings', async () => {
+    const redraft: MktgAssetReport = { ...mktgRedraftReportFixture(), gaps: ['Missing evidence'] };
+    const legacy: MktgAssetReport = { sources_read: [], sources_failed: [], gaps: redraft.gaps, notes: '', inherited: redraft.inherited };
+    for (const report of [redraft, legacy]) {
+      TestBed.resetTestingModule();
+      const kit = await render(report, true);
+      expect(query(kit, 'mktg-document-view-approve-failed-item-inherited')?.textContent).toBe('Could not be read in version 1');
+      expect(queryAll(kit, 'mktg-document-view-approve-gaps-item').map((item) => item.textContent?.trim())).toEqual(['Missing evidence']);
+    }
+  });
+
   it('lists leftover gaps the old way when a v2 report has nothing in either findings group', async () => {
     const report: BrandKitReport = {
       sources_read: [],

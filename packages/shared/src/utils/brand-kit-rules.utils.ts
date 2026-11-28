@@ -45,8 +45,8 @@ function isBrandKitReport(report: MktgAssetReport): report is BrandKitReport {
  * What a v2 report's approve dialog lists first, in the Sources tab's words:
  * each source the agent could not read with its plain reason and detail, and
  * each asset it did not find with its label (or its id as written), reason
- * and fix. Any agent's report with findings; both empty for a v1 report,
- * whose dialog keeps its own list. The rows a revision inherited follow the
+ * and fix. Any agent's report with findings; both empty for a v1 report
+ * that inherited nothing, whose dialog keeps its own list. The rows a revision inherited follow the
  * run's own in each group, marked with the version that produced them:
  * approving accepts them too, since the document still rests on them. A
  * report that inherited rows but wrote no findings lists its legacy failed
@@ -104,7 +104,7 @@ export function mktgReportGapMirrorsReason(gap: string, reason: string): boolean
  * after the two findings groups, so an approver is told of every open gap. A gap is mirrored when it and some
  * `findings.missing_assets[].reason` speak of the same question (`mktgReportGapMirrorsReason`), an inherited missing
  * asset's included. Empty for a v1 report that inherited nothing (its gaps list as before). Agent-agnostic: the dialog,
- * which knows the document type, leaves the group out for the Brand Kit.
+ * which knows the document type, leaves the group out for a Brand Kit whose own findings fill a group.
  */
 export function mktgReportUnmirroredGaps(report: MktgAssetReport | null | undefined): string[] {
   const findings = report?.findings;

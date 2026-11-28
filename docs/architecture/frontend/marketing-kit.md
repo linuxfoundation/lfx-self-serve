@@ -112,6 +112,8 @@ Inherited failures and findings count as the run's own, because the document sti
 - the approve dialog opens for an inherited failed source or missing asset (`mktgReportHasOpenGaps`)
   and lists them after the run's own in Failed sources and Missing assets, each with its marker
   (`brandKitApproveFindings`); a gap an inherited missing asset mirrors is not repeated under Gaps.
+  A Brand Kit, whose dialog lists no Gaps group under its own findings, lists its gaps there when
+  only inherited rows fill the two groups, so a gap the list showed before a redraft is not lost.
 
 An inherited read or warning alone never opens the dialog, as the run's own does not. The approval
 snapshot (`accepted`) still lists the run's own items only, so an inherited row carries no
