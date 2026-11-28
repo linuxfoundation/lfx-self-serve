@@ -202,6 +202,9 @@ describe('mktgFamilyPrintFaqAnswerParas', () => {
     expect(height(words)).toBeCloseTo(type.above + lineHeight, 6);
     expect(height(`- ${words}`)).toBeCloseTo(type.above + 2 * lineHeight, 6);
     // Markdown joins a plain line to the item (or the paragraph) above it until a blank line; the other markers and a numbered item open one too.
+    // A marker followed by white space alone is an empty item, and a long run of tabs after a marker is read in one pass.
+    expect(mktgFamilyPrintFaqAnswerParas('- ').map((para) => para.text)).toEqual(['']);
+    expect(mktgFamilyPrintFaqAnswerParas(`*${'\t'.repeat(50_000)}\u2028`).length).toBe(1);
     expect(mktgFamilyPrintFaqAnswerParas('Lead-in\nruns on.\n\n* One\n  and more\n+ Two\n1. Three\n\nAfter the list.')).toEqual([
       { text: 'Lead-in\nruns on.', ...type },
       { ...item, text: 'One\nand more', above: answerBlockGap },

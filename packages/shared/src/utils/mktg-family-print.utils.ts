@@ -157,7 +157,7 @@ export function mktgFamilyPrintFaqAnswerParas(answer: string): MktgPortraitFitPa
     }
     const previous = paras[paras.length - 1];
     const gap = item && previous?.indent ? layout.answerList.itemGap : layout.answerBlockGap;
-    open = { ...layout.answer, text: item ? item[1] : text, above: previous ? gap : layout.answer.above };
+    open = { ...layout.answer, text: item ? (item[1] ?? '') : text, above: previous ? gap : layout.answer.above };
     if (item) open.indent = layout.answerList.indent;
     paras.push(open);
   }
