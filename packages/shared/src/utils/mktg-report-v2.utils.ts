@@ -6,7 +6,7 @@
 // each agent's envelope validator runs on the v2 fields, and the view model
 // the Sources tabs and the approve dialog read the findings through. One
 // reading for every agent; a v1 report (no `findings`) has none of it and
-// renders as it always did.
+// renders as it always did, with any rows it inherited after its own.
 
 import { MKTG_REPORT_BARE_URL_REGEX, MKTG_REPORT_LIST_MAX, MKTG_REPORT_TEXT_MAX_CHARS, MKTG_REPORT_V2 } from '../constants/mktg-asset.constants';
 import type { MktgAssetReport, MktgReportFindingsView, MktgReportV2Enums } from '../interfaces/mktg-asset.interface';
@@ -91,7 +91,8 @@ export function mktgReportAssetLabel(asset: string, labels: Readonly<Record<stri
  * The Sources tab's findings from a report, in the agent's plain words, never rewritten: a v2 report's failed
  * sources (source, reason, detail), missing assets (label or id, reason, fix) and warnings (text, source, a link only
  * for an http(s) address); a v1 report's legacy failed list as title and reason, nothing missing, no warning and
- * `hasFindings` false, so the tab adds no card. Null or no report gives the empty v1 view.
+ * `hasFindings` false, so the tab adds no card for a report that inherited neither a missing asset nor a warning (one
+ * that did gets both cards, as a v2 report does). Null or no report gives the empty v1 view.
  */
 export function mktgReportFindingsView(report: MktgAssetReport | null | undefined, labels: Readonly<Record<string, string>>): MktgReportFindingsView {
   const findings = report?.findings;

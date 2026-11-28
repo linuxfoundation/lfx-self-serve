@@ -97,8 +97,8 @@ export interface MktgPreviousRun {
 /**
  * The agent's reviewer report. Sidecar metadata, never revision content. The v1 fields are always there; the v2
  * fields are optional, and an agent whose report carries `findings` gets the Brand Kit's Sources-tab groups and
- * approve dialog. A v1 report (no `findings`) renders as it always did. `inherited` is there only on a redraft or a
- * check whose intake carried the stored version's run.
+ * approve dialog. A v1 report (no `findings`) renders as it always did, with any rows it inherited after its own.
+ * `inherited` is there only on a redraft or a check whose intake carried the stored version's run.
  */
 export interface MktgAssetReport {
   sources_read: string[];
@@ -140,7 +140,8 @@ export interface MktgReportWarningItem {
 
 /**
  * The Sources tab's findings from a report, in the agent's plain words: a v2 report's three groups; a v1 report's
- * legacy failed list in `failed`, nothing missing and no warning, with `hasFindings` false so the tab adds no card.
+ * legacy failed list in `failed`, nothing missing and no warning, with `hasFindings` false, so the tab adds no card
+ * for a report that inherited neither a missing asset nor a warning (one that did gets both cards, as a v2 report does).
  */
 export interface MktgReportFindingsView {
   hasFindings: boolean;
