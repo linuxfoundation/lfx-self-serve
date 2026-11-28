@@ -644,6 +644,9 @@ export interface MktgPendingDocumentRun {
   waitStartedAt?: string;
 }
 
+/** Reads this browser's capability for a run's document (the pending-document store); null where it holds none. */
+export type MktgRunCapabilityLookup = (project: string, documentId: string) => Pick<MktgPendingDocumentRun, 'agentId'> | null;
+
 /** Response of an agent's `generate` endpoint — the session to poll. */
 export interface MktgRunSessionResponse {
   /** Stable destination for a one-off run's Document view, returned before storage. */

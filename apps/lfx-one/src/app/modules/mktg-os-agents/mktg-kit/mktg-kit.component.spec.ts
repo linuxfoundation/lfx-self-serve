@@ -6,9 +6,10 @@ import { computed, PLATFORM_ID, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
 import { MktgKitService } from '@services/mktg-kit.service';
+import { MktgPendingDocumentService } from '@services/mktg-pending-document.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { resolveMktgKit, summarizeMktgKit } from '@lfx-one/shared/utils';
-import { MktgDocumentsResponse, MktgKitFamilyView } from '@lfx-one/shared/interfaces';
+import { MktgDocumentsResponse, MktgKitFamilyView, MktgRunCapabilityLookup } from '@lfx-one/shared/interfaces';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { of } from 'rxjs';
 import { MKTG_AGENTS, MKTG_KIT_FAMILIES, MKTG_NOT_AVAILABLE_TEXT, MKTG_POLL_RETRYING_TEXT, MKTG_RUN_POLL } from '@lfx-one/shared/constants';
@@ -24,7 +25,10 @@ describe('Marketing kit home', () => {
   const documents = signal<MktgDocumentsResponse | null>(null);
   const refresh = vi.fn(() => of(documents()));
   const context = signal({ uid: 'synthetic', slug: 'synthetic' });
+  // This browser's audit capabilities (the pending-document store); none unless a test says so.
+  const loadPending = vi.fn<MktgRunCapabilityLookup>(() => null);
   beforeEach(() => {
+    loadPending.mockReset().mockReturnValue(null);
     context.set({ uid: 'synthetic', slug: 'synthetic' });
     families.set(resolveMktgKit({ project: 'synthetic', groups: [] }));
     loading.set(false);
@@ -36,7 +40,11 @@ describe('Marketing kit home', () => {
     documents.set({ project: 'synthetic', groups: [] });
     TestBed.configureTestingModule({
       imports: [MktgKitComponent],
-      providers: [provideRouter([]), { provide: ProjectContextService, useValue: { activeContext: context, canWrite: signal(true) } }],
+      providers: [
+        provideRouter([]),
+        { provide: ProjectContextService, useValue: { activeContext: context, canWrite: signal(true) } },
+        { provide: MktgPendingDocumentService, useValue: { load: loadPending } },
+      ],
     });
     TestBed.overrideComponent(MktgKitComponent, {
       set: {
@@ -190,6 +198,34 @@ describe('Marketing kit home', () => {
       expect(link?.getAttribute('href')).toBe('/' + target + '?project=synthetic' + (questions ? '' : '&run=synthetic-run'));
     }
     expect(root.querySelector('[data-testid="mktg-kit-next-step-action"]')?.textContent).toContain('Create messaging framework');
+  });
+  it.each([true, false])('sends an audit waiting for answers to its questions only where its capability lives (here: %s)', async (here) => {
+    documents.set({
+      project: 'synthetic',
+      groups: [],
+      runs: [
+        {
+          agentKey: 'aeo-geo',
+          state: 'questions',
+          project: 'synthetic',
+          documentId: 'run-synthetic',
+          runId: 'synthetic-run',
+          startedAt: '2026-10-28T12:00:00Z',
+        },
+      ],
+    });
+    if (here) loadPending.mockReturnValue({ agentId: 'aeo-geo' });
+    const fixture = TestBed.createComponent(MktgKitComponent);
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    const status = root.querySelector('[data-testid="mktg-kit-asset-aeo-geo"] [data-testid="mktg-kit-run-status"]');
+    const link = status?.querySelector('[data-testid="mktg-kit-run-status-link"]');
+    expect(loadPending).toHaveBeenCalledWith('synthetic', 'run-synthetic');
+    // Without the capability (the creator on another browser, another writer) the run page would be a blank intake form:
+    // the card opens the run's Document page, which says the audit is waiting for answers.
+    expect(status?.querySelector('span')?.textContent).toBe(here ? 'Waiting for your answers' : 'Waiting for answers');
+    expect(link?.textContent).toBe(here ? 'Answer the questions' : 'Open');
+    expect(link?.getAttribute('href')).toBe(here ? '/aeo-geo?project=synthetic' : '/documents/aeo-geo/run-synthetic?project=synthetic&run=synthetic-run');
   });
   it.each(['writing', 'storing', 'questions'] as const)('keeps approval visible for %s without changing the run destination', async (state) => {
     families.update((views) =>

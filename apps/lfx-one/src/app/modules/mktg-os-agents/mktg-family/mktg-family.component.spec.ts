@@ -18,9 +18,10 @@ import {
   MKTG_POLL_RETRYING_TEXT,
   MKTG_RUN_POLL,
 } from '@lfx-one/shared/constants';
-import { MktgDocumentsResponse, MktgRevisionRef } from '@lfx-one/shared/interfaces';
+import { MktgDocumentsResponse, MktgRevisionRef, MktgRunCapabilityLookup } from '@lfx-one/shared/interfaces';
 import { resolveMktgKit } from '@lfx-one/shared/utils';
 import { MktgKitService } from '@services/mktg-kit.service';
+import { MktgPendingDocumentService } from '@services/mktg-pending-document.service';
 import { MktgDocumentStoreService } from '@services/mktg-document-store.service';
 import { MktgRebuildService } from '@services/mktg-rebuild.service';
 import { UserService } from '@services/user.service';
@@ -51,7 +52,10 @@ describe('Marketing family page', () => {
   const run = vi.fn(() => of({ project: 'synthetic', framework, chainId: 'chain', ownerToken: 'token', status: 'complete', steps: [] }));
   const writer = signal(false);
   const lastExport = vi.fn(() => of(null));
+  // This browser's audit capabilities (the pending-document store); none unless a test says so.
+  const loadPending = vi.fn<MktgRunCapabilityLookup>(() => null);
   beforeEach(() => {
+    loadPending.mockReset().mockReturnValue(null);
     MKTG_AGENTS.splice(0, MKTG_AGENTS.length, ...originalAgents);
     writer.set(true);
     lastExport.mockClear();
@@ -97,6 +101,7 @@ describe('Marketing family page', () => {
         },
         { provide: MktgFamilyExportService, useValue: { last: lastExport, running: () => null } },
         { provide: MktgDocumentStoreService, useValue: { getRevision: () => of(null) } },
+        { provide: MktgPendingDocumentService, useValue: { load: loadPending } },
         provideRouter([
           { path: 'project/mktg-os-agents/families/:familyId', component: MktgFamilyComponent },
           { path: '**', children: [] },
@@ -244,6 +249,41 @@ describe('Marketing family page', () => {
     expect(row?.textContent).not.toContain(status);
     expect(root?.querySelector('[data-testid="mktg-family-run-status"]')).toBeNull();
     expect(primary?.getAttribute('href')).toBe(primaryHref);
+  });
+
+  it.each([true, false])('sends an audit waiting for answers to its questions only where its capability lives (here: %s)', async (here) => {
+    documents.set({
+      project: 'synthetic',
+      groups: [],
+      runs: [
+        {
+          agentKey: 'aeo-geo',
+          state: 'questions',
+          project: 'synthetic',
+          documentId: 'run-synthetic',
+          runId: 'synthetic-run',
+          startedAt: '2026-10-28T12:00:00Z',
+        },
+      ],
+    });
+    if (here) loadPending.mockReturnValue({ agentId: 'aeo-geo' });
+    const harness = await RouterTestingHarness.create();
+    await harness.navigateByUrl('/project/mktg-os-agents/families/website-web?project=synthetic', MktgFamilyComponent);
+    const root = harness.routeNativeElement;
+    const row = root?.querySelector('[data-testid="mktg-family-state-aeo-geo"] [data-testid="mktg-family-run-status-row"]');
+    const header = root?.querySelector('[data-testid="mktg-family-run-status"]');
+    expect(loadPending).toHaveBeenCalledWith('synthetic', 'run-synthetic');
+    // Without the capability (the creator on another browser, another writer) the run page would be a blank intake form:
+    // the row and the header open the run's Document page, which says the audit is waiting for answers.
+    const caption = here ? 'Waiting for your answers' : 'Waiting for answers';
+    expect(row?.querySelector('span')?.textContent).toBe(caption);
+    expect(header?.querySelector('span')?.textContent).toBe('AEO/GEO scorecard · ' + caption);
+    for (const link of [row?.querySelector('[data-testid="mktg-family-run-status-link"]'), header?.querySelector('a')]) {
+      expect(link?.textContent?.trim()).toBe(here ? 'Answer the questions' : 'Open');
+      expect(link?.getAttribute('href')).toBe(
+        '/project/mktg-os-agents/' + (here ? 'aeo-geo?project=synthetic' : 'documents/aeo-geo/run-synthetic?project=synthetic&run=synthetic-run')
+      );
+    }
   });
 
   it.each(['writing', 'storing', 'questions'] as const)('shows approved + %s in the row and shared header presentation', async (state) => {

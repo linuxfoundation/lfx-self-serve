@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { describe, expect, it } from 'vitest';
-import { mktgKitRootPath, mktgRunRouteFor, mktgSentenceCaseLabel } from './mktg-navigation.utils';
+import { isMktgRunAnswerableHere, mktgKitRootPath, mktgRunRouteFor, mktgSentenceCaseLabel } from './mktg-navigation.utils';
 
 describe('Marketing kit route roots', () => {
   it.each([
@@ -27,6 +27,20 @@ describe('Marketing kit route roots', () => {
   ])('does not mistake a partial segment or query/fragment in %s for the Kit', (url) => expect(mktgKitRootPath(url)).toBe('/mktg-os-agents'));
   it('skips a containing segment before finding the real module segment', () => {
     expect(mktgKitRootPath('/mktg-os-agents-x/foundation/mktg-os-agents/faq')).toBe('/mktg-os-agents-x/foundation/mktg-os-agents');
+  });
+  it.each([
+    ['aeo-geo', 'aeo-geo', true],
+    ['aeo-geo', null, false],
+    ['aeo-geo', 'linkedin-post', false],
+    // Every other agent finds its own run on its run page: no capability is asked for.
+    ['linkedin-post', null, true],
+    ['member-360', null, true],
+    ['foundation-message', null, true],
+  ] as const)('answers a %s run here with the capability of %s: %s', (agentKey, held, expected) => {
+    const run = { agentKey, project: 'synthetic', documentId: 'run-synthetic' };
+    expect(
+      isMktgRunAnswerableHere(run, (project, documentId) => (held && project === run.project && documentId === run.documentId ? { agentId: held } : null))
+    ).toBe(expected);
   });
   it('builds Run again from the document type registry', () => {
     expect(mktgRunRouteFor('foundation-message', '/foundation/mktg-os-agents')).toEqual(['/foundation/mktg-os-agents', 'foundation-setup']);

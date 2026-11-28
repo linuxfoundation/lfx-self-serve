@@ -16,7 +16,7 @@ import {
   MKTG_RUN_NEW_MODE,
   MKTG_RUN_POLL,
 } from '@lfx-one/shared/constants';
-import { MktgRebuildNavigationIntent } from '@lfx-one/shared/interfaces';
+import { MktgRebuildNavigationIntent, MktgRunCapabilityLookup } from '@lfx-one/shared/interfaces';
 import {
   isMktgKitFamilyLive,
   mktgFamilyExportAgentKeys,
@@ -25,6 +25,7 @@ import {
   resolveMktgFamilyRun,
 } from '@lfx-one/shared/utils';
 import { MktgKitService } from '@services/mktg-kit.service';
+import { MktgPendingDocumentService } from '@services/mktg-pending-document.service';
 import { catchError, distinctUntilChanged, EMPTY, map, of, switchMap } from 'rxjs';
 import { MktgFamilyExportService } from '@services/mktg-family-export.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -61,6 +62,7 @@ export class MktgFamilyComponent {
   private readonly location = inject(Location);
   private readonly exports = inject(MktgFamilyExportService);
   private readonly context = inject(ProjectContextService);
+  private readonly pendingDocuments = inject(MktgPendingDocumentService);
   protected readonly kit = inject(MktgKitService);
 
   // Writable signals
@@ -80,13 +82,15 @@ export class MktgFamilyComponent {
     if (header?.link) return { ...this.runQueryParams().plain, ...header.link.queryParams };
     return header?.mode ? this.runQueryParams().fresh : this.runQueryParams().plain;
   });
-  protected readonly rows = computed(() =>
-    Object.values(this.actions()?.rows ?? {}).map((entry) => {
-      const run = resolveMktgFamilyRun(entry.row.asset.agentKey, this.kit.documents()?.runs, ['../../'], entry.row.document);
+  protected readonly rows = computed(() => {
+    // An audit waiting for answers links to its questions only in the browser that holds its capability.
+    const capability: MktgRunCapabilityLookup = (project, documentId) => this.pendingDocuments.load(project, documentId);
+    return Object.values(this.actions()?.rows ?? {}).map((entry) => {
+      const run = resolveMktgFamilyRun(entry.row.asset.agentKey, this.kit.documents()?.runs, ['../../'], entry.row.document, capability);
       const link = run?.link;
       return { ...entry, run: link ? { ...run, link: { ...link, queryParams: { ...this.kit.projectQueryParams(), ...link.queryParams } } } : null };
-    })
-  );
+    });
+  });
   protected readonly headerRun = this.initHeaderRun();
   /** Replace (never merge) query params: no creator/revision selectors travel to a new run. */
   protected readonly runQueryParams = computed(

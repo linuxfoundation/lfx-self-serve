@@ -23,7 +23,6 @@ import { ButtonComponent } from '@components/button/button.component';
 import { MessageComponent } from '@components/message/message.component';
 import { MktgSkeletonComponent } from '@components/mktg-skeleton/mktg-skeleton.component';
 import {
-  AEO_GEO_INTAKE,
   MKTG_DOCUMENT_TYPES,
   MKTG_KIT_FAMILIES,
   MKTG_NOT_AVAILABLE_TEXT,
@@ -46,6 +45,7 @@ import {
 import {
   describeMktgRevision,
   describeMktgRevisionAuthor,
+  isMktgRunAnswerableHere,
   resolveMktgKit,
   resolveMktgFamilyNextStep,
   mktgKitAssetLabel,
@@ -666,13 +666,9 @@ export class MktgDocumentsComponent {
     return !!type.catalogAgentId && state === 'questions';
   }
 
-  /**
-   * An audit's questions are answered only with its capability, which lives in the browser that started it. Anywhere else
-   * (the creator on another browser, another writer) its intake would be a blank form, so the row opens the run's Document
-   * page instead, which says the audit is waiting for answers.
-   */
+  /** The shared rule of the Kit and Family pages: an audit's questions are answered only where its capability lives. */
   private answerableHere(run: MktgDocumentRunRow): boolean {
-    return run.agentKey !== AEO_GEO_INTAKE.agentId || this.pendingDocuments.load(run.project, run.documentId)?.agentId === AEO_GEO_INTAKE.agentId;
+    return isMktgRunAnswerableHere(run, (project, documentId) => this.pendingDocuments.load(project, documentId));
   }
 
   private navBadge(type: MktgDocumentType, documentCount: number, revisionCount: number): Pick<MktgDocumentNavItem, 'badge' | 'badgeClass'> {

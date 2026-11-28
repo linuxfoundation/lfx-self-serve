@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { MKTG_AGENTS } from '../constants/mktg-os-agents.constants';
 import { LINKEDIN_POST_INTAKE, MKTG_AGENT_INTAKES } from '../constants/mktg-run.constants';
 import { MKTG_DOCUMENT_TYPES } from '../constants/mktg-document-store.constants';
@@ -107,7 +107,8 @@ describe('One rule for every family action', () => {
           runId: 'synthetic-run',
           startedAt: '2026-10-28T12:00:00Z',
         };
-        expect(resolveMktgFamilyRun(type.agentKey, [run])).toMatchObject({
+        // In the browser that holds the run's capability (only an audit needs one to be answered).
+        expect(resolveMktgFamilyRun(type.agentKey, [run], [], null, () => ({ agentId: type.agentKey }))).toMatchObject({
           caption: state === 'questions' ? 'Waiting for your answers' : 'In progress…',
           link:
             state === 'questions'
@@ -117,6 +118,40 @@ describe('One rule for every family action', () => {
       }
     }
   );
+  it.each([
+    ['in the browser that holds its capability', 'aeo-geo', 'Waiting for your answers', 'Answer the questions', ['../../', 'aeo-geo'], {}],
+    // Another writer, or the creator on another browser: the run page would be a blank intake form.
+    ['without its capability', null, 'Waiting for answers', 'Open', ['../../', 'documents', 'aeo-geo', 'run-synthetic'], { run: 'synthetic-run' }],
+    [
+      'with only another agent’s capability',
+      'linkedin-post',
+      'Waiting for answers',
+      'Open',
+      ['../../', 'documents', 'aeo-geo', 'run-synthetic'],
+      { run: 'synthetic-run' },
+    ],
+  ] as const)('links an audit waiting for answers where the person can act: %s', (_where, held, caption, label, commands, queryParams) => {
+    const run = {
+      agentKey: 'aeo-geo' as const,
+      state: 'questions' as const,
+      project: 'synthetic',
+      documentId: 'run-synthetic',
+      runId: 'synthetic-run',
+      startedAt: '2026-10-28T12:00:00Z',
+    };
+    const lookup = vi.fn(() => (held ? { agentId: held } : null));
+    expect(resolveMktgFamilyRun(run.agentKey, [run], ['../../'], null, lookup)).toEqual({ caption, label, link: { commands, queryParams } });
+    expect(lookup).toHaveBeenCalledExactlyOnceWith('synthetic', 'run-synthetic');
+    // No lookup supplied is the safe destination, never the blank form.
+    expect(resolveMktgFamilyRun(run.agentKey, [run], ['../../'])).toMatchObject({ caption: 'Waiting for answers', label: 'Open' });
+    // A capability matters only for the questions: an audit in progress opens its Document page either way.
+    expect(resolveMktgFamilyRun(run.agentKey, [{ ...run, state: 'writing' }], ['../../'], null, lookup)).toEqual({
+      caption: 'In progress…',
+      label: 'Open',
+      link: { commands: ['../../', 'documents', 'aeo-geo', 'run-synthetic'], queryParams: { run: 'synthetic-run' } },
+    });
+    expect(lookup).toHaveBeenCalledOnce();
+  });
   it.each(['writing', 'storing', 'questions'] as const)('preserves approved current while presenting %s without changing its link', (state) => {
     const run = {
       agentKey: 'foundation-message' as const,
