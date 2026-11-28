@@ -78,9 +78,14 @@ trusts only its own answer: a run the server no longer lists (discarded, superse
 the plain not-found line, while a read whose run record the server could not read (`progressUnavailable`, no revision)
 is a transient failure the shared poller retries on its capped backoff, and the loop ends at `MKTG_RUN_POLL.timeoutMs` from the view's first read of the run as
 running ("The audit is taking longer than expected."), the server's writing budget, which a tab return never restarts.
+That deadline ends the follow whether or not the run record can be read: a read past it whose record is unreadable
+(`progressUnavailable`) ends on the same line, so the retrying line never outlasts the run's budget.
 On the Documents page a Started runs row of an audit waiting for answers reads "Answer the questions" and opens the
 run page only in the browser that holds its capability; anywhere else the row reads "Open" and opens the run's
-Document page (`?run=`), where that waiting line explains it, never a blank intake form. A `writing` row always reads
+Document page (`?run=`), where that waiting line explains it, never a blank intake form. The Kit card and the Family
+row and header follow the same rule (`isMktgRunAnswerableHere`, shared by the three pages; `resolveMktgFamilyRun` takes
+the browser's capability lookup): with the capability, "Waiting for your answers" and "Answer the questions" open the
+run page; without it, "Waiting for answers" and "Open" open the run's Document page. A `writing` row always reads
 "Open" and opens the Document page; research is recorded as `writing`, so in the capability's browser that page
 forwards a run still in research to the run page, where questions that arrive later are shown.
 Document reads preserve the shared client's poll/refresh arguments and use its trailing expected-404 flag only for the matching pending audit.
