@@ -230,6 +230,24 @@ export class MktgRunAttemptService {
     }
   }
 
+  /**
+   * Clears ONE send, named by its `clientRequestId`, and nothing else under the revision's key: another window may have
+   * stored a newer send for the same revision since. This window's memory copy and the stored copy are compared with
+   * the id separately, because {@link loadRedraft} answers for storage with this window's (possibly older) memory copy.
+   */
+  public clearRedraftSend(scope: MktgDocumentCommentScope, clientRequestId: string): void {
+    const subject = this.subject();
+    if (!isPlatformBrowser(this.platformId) || !subject) return;
+    const key = this.redraftKey(scope, subject);
+    if (this.redrafts.get(key)?.clientRequestId === clientRequestId) this.redrafts.delete(key);
+    try {
+      const stored = JSON.parse(window.localStorage.getItem(key) ?? 'null') as Partial<MktgPendingRedraftIntent> | null;
+      if (stored?.clientRequestId === clientRequestId) window.localStorage.removeItem(key);
+    } catch {
+      /* An unreadable stored entry is not known to be this send; loadRedraft validates it on the next read. */
+    }
+  }
+
   public reserve(request: MktgGenerateRequest): MktgPendingGeneration {
     const pending: MktgPendingGeneration = { request, state: 'draft', updatedAt: new Date().toISOString() };
     this.save(pending);

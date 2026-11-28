@@ -135,7 +135,11 @@ export class MktgAgentRunService {
    */
   private readonly memoryRuns = new Map<string, MktgStoredAgentRun>();
 
-  /** Observe an already accepted redraft. Never Generate/chat/append fake intake answers or overwrite a stored form run. */
+  /**
+   * Observe an already accepted redraft. Never Generate/chat/append fake intake answers or overwrite a stored form run.
+   * A run the server closed (409 MKTG_RUN_CLOSED) errors this stream on the result poll and on the receipt retry
+   * alike, so the redraft's own closed-run handling runs in both.
+   */
   public observeAccepted(intake: MktgAgentIntake, attempt: MktgRunAttempt, projectUid: string): Observable<MktgObservedRunResult> {
     return defer(() => {
       if (!isPlatformBrowser(this.platformId)) return EMPTY;
@@ -145,7 +149,7 @@ export class MktgAgentRunService {
           concat(
             of(event),
             event.terminal && event.result.status === 'ready'
-              ? this.persistenceResults(intake, projectUid, attempt.session, event.result).pipe(map((result) => ({ result, terminal: true })))
+              ? this.persistenceResults(intake, projectUid, attempt.session, event.result, true).pipe(map((result) => ({ result, terminal: true })))
               : EMPTY
           )
         ),
@@ -750,12 +754,17 @@ export class MktgAgentRunService {
     );
   }
 
-  /** Same receipt/version/payload budget for both ordinary intakes and accepted comments-only runs. */
+  /**
+   * Same receipt/version/payload budget for both ordinary intakes and accepted comments-only runs.
+   * `forwardClosed` is the accepted redraft's: its closed run errors the stream with the 409, so the redraft settles
+   * its send. An ordinary generated document completes silently instead, since it is already rendered.
+   */
   private persistenceResults(
     intake: MktgAgentIntake,
     projectUid: string,
     session: MktgSessionInfo,
-    result: MktgRunResultResponse
+    result: MktgRunResultResponse,
+    forwardClosed = false
   ): Observable<MktgRunResultResponse> {
     if (!isPlatformBrowser(this.platformId) || !intake.persistsDocument || result.persistence || !projectUid) return EMPTY;
     const body = this.resultBody(session, projectUid);
@@ -765,7 +774,8 @@ export class MktgAgentRunService {
     let firstWindow = true;
     // A refused poll (401/403) ends this watch: the same credentials are not sent again, by a tick or a wake (RFC 9110
     // §15.5.4); the run keeps its document and nothing claims the server copy exists. So does a run the server closed
-    // (409 MKTG_RUN_CLOSED): it stores nothing more. Other failures spend one attempt.
+    // (409 MKTG_RUN_CLOSED): it stores nothing more, and with `forwardClosed` the 409 is rethrown past the poller (whose
+    // error event the switchMap below turns back into the error). Other failures spend one attempt.
     let denied = false;
     const refused = new Subject<void>();
     const observe = () => {
@@ -778,8 +788,10 @@ export class MktgAgentRunService {
           this.http.post<MktgRunResultResponse>(intake.endpoints.result, body).pipe(
             catchError((error: HttpErrorResponse) => {
               console.error('Marketing OS run persistence check failed', { status: error.status });
-              if (error.status === 401 || error.status === 403 || isMktgRunClosedError(error)) {
+              const closed = isMktgRunClosedError(error);
+              if (error.status === 401 || error.status === 403 || closed) {
                 denied = true;
+                if (closed && forwardClosed) return throwError(() => error);
                 refused.next();
                 return EMPTY;
               }

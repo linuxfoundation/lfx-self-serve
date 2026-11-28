@@ -270,8 +270,9 @@ export class MktgDocumentRedraftClientService {
         if (!isMktgRunClosedError(error)) return throwError(() => error);
         // The server closed this redraft's run (discarded, or replaced by a newer run) and settled its send as failed,
         // which reopens the comments. The poll is final (409 MKTG_RUN_CLOSED): the same run is not checked again.
+        // Only THIS send is cleared: another window may have stored a newer send for the same revision by now.
         this.assertOwner(owner, scope);
-        this.attempts.clearRedraft(scope);
+        this.attempts.clearRedraftSend(scope, intent.clientRequestId);
         this.comments.refresh();
         return of<MktgRedraftProgress>({ type: 'failed', message: 'This redraft was closed. The comments are reopened; send again explicitly.' });
       })

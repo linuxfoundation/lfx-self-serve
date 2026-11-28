@@ -192,6 +192,27 @@ describe('MktgAgentRunService', () => {
     expect(JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? '{}')).toEqual(original);
   });
 
+  it('errors an accepted redraft with the closed-run 409 of its receipt retry and polls no more', async () => {
+    const closed = new HttpErrorResponse({ status: 409, error: { code: MKTG_RUN_CLOSED } });
+    resultResponses = [{ status: 'ready', version: 2, documentMarkdown: '# Redraft' }, closed, { status: 'pending' }];
+    const received: MktgRunResultResponse[] = [];
+    let error: unknown;
+    service
+      .observeAccepted(
+        CHAT_INTAKE,
+        { session: { agentId: 'brand-kit', sessionId: 'accepted-session', ownerToken: 'synthetic-proof' }, priorVersion: 1 },
+        'proj-1'
+      )
+      .subscribe({ next: (event) => received.push(event.result), error: (err) => (error = err) });
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.initialDelayMs + MKTG_RUN_POLL.intervalMs);
+    expect(received).toEqual([{ status: 'ready', version: 2, documentMarkdown: '# Redraft' }]);
+    expect(error).toBe(closed);
+    httpPost.mockClear();
+    document.dispatchEvent(new Event('visibilitychange'));
+    await vi.advanceTimersByTimeAsync(MKTG_RUN_POLL.intervalMs * 3);
+    expect(httpPost).not.toHaveBeenCalled();
+  });
+
   it('never POSTs a dedicated one-off Generate through the shared resume service', () => {
     const error = vi.fn();
     service.generate({ ...generateRequest(), agentId: LINKEDIN_POST_INTAKE.agentId, intake: LINKEDIN_POST_INTAKE }).subscribe({ error });
