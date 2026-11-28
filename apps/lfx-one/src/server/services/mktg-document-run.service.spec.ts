@@ -1638,6 +1638,45 @@ describe('MktgDocumentRunService core', () => {
     expect(JSON.stringify([...objects])).toBe(before);
   });
 
+  it.each(types.flatMap((type) => (['discarded', 'superseded'] as const).map((state) => [state, type.agentKey] as const)))(
+    'refuses the result poll of a %s %s run and lets the open run through, reading no agent result',
+    async (state, agentKey) => {
+      await service.start(req, project, agentKey, session);
+      await expect(service.assertResultOpen(req, session, ` ${project} `)).resolves.toBeUndefined();
+      stored().metadata['state'] = state;
+      const before = JSON.stringify([...objects]);
+      await expect(service.assertResultOpen(req, session, project)).rejects.toMatchObject({ statusCode: 409, code: 'MKTG_RUN_CLOSED' });
+      // The record is looked up where the poll would store: no project, a malformed one or no writer grant stores nothing.
+      flows.get.mockClear();
+      await expect(service.assertResultOpen(req, session)).resolves.toBeUndefined();
+      await expect(service.assertResultOpen(req, session, 'other/project')).resolves.toBeUndefined();
+      flows.project.mockResolvedValueOnce({ uid: project, writer: false }).mockRejectedValueOnce(new MicroserviceError('Synthetic lookup', 503, 'TEST'));
+      await expect(service.assertResultOpen(req, session, project)).resolves.toBeUndefined();
+      await expect(service.assertResultOpen(req, session, project)).resolves.toBeUndefined();
+      expect(flows.get).not.toHaveBeenCalled();
+      // A session with no record in that project reads as before.
+      await expect(service.assertResultOpen(req, 'untracked-session', project)).resolves.toBeUndefined();
+      expect(flows.result).not.toHaveBeenCalled();
+      expect(flows.events).not.toHaveBeenCalled();
+      expect(JSON.stringify([...objects])).toBe(before);
+    }
+  );
+
+  it('lets a result poll through when the run record cannot be read for a moment, and fails on any other read error', async () => {
+    await service.start(req, project, types[0].agentKey, session);
+    stored().metadata['state'] = 'discarded';
+    flows.get.mockImplementationOnce(() => {
+      throw Object.assign(new Error('private provider message'), { $metadata: { httpStatusCode: 503 } });
+    });
+    await expect(service.assertResultOpen(req, session, project)).resolves.toBeUndefined();
+    expect(logger.warning).toHaveBeenCalledWith(req, 'mktg_run_result_open', expect.any(String), { project, status: 503, code: 'http' });
+    expect(JSON.stringify(vi.mocked(logger.warning).mock.calls)).not.toContain('private provider message');
+    flows.get.mockImplementationOnce(() => {
+      throw Object.assign(new Error('Non-transient synthetic permission failure'), { code: 'EACCES' });
+    });
+    await expect(service.assertResultOpen(req, session, project)).rejects.toMatchObject({ code: 'EACCES' });
+  });
+
   it('keeps selected closed records lightweight even when omitted from discovery', async () => {
     await service.start(req, project, types[0].agentKey, session);
     stored().metadata['state'] = 'discarded';

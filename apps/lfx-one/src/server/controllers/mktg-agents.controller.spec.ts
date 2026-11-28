@@ -19,6 +19,7 @@ const runMocks = vi.hoisted(() => ({
   catalogSlot: vi.fn(),
   slotReleased: vi.fn(),
   assertRunOpen: vi.fn(),
+  assertResultOpen: vi.fn(),
   startForCatalogAgent: vi.fn(),
   recordResultBestEffort: vi.fn(),
   resumeAfterQuestions: vi.fn(),
@@ -38,6 +39,7 @@ vi.mock('../services/mktg-document-run.service', () => ({
     public resolveProject = runMocks.resolveProject;
     public resolveCatalogProject = runMocks.resolveCatalogProject;
     public assertRunOpen = runMocks.assertRunOpen;
+    public assertResultOpen = runMocks.assertResultOpen;
     public startForCatalogAgent = runMocks.startForCatalogAgent;
     public recordResultBestEffort = runMocks.recordResultBestEffort;
     public resumeAfterQuestions = runMocks.resumeAfterQuestions;
@@ -317,6 +319,7 @@ describe('MktgAgentsController', () => {
     runMocks.resolveProject.mockReset().mockResolvedValue('proj-uid-1');
     runMocks.resolveCatalogProject.mockImplementation((req: unknown, _agentId: string, raw: unknown) => runMocks.resolveProject(req, raw));
     runMocks.assertRunOpen.mockReset().mockResolvedValue(undefined);
+    runMocks.assertResultOpen.mockReset().mockResolvedValue(undefined);
     runMocks.startForCatalogAgent.mockResolvedValue(publicRunId);
     runMocks.recordResultBestEffort.mockResolvedValue(undefined);
     runMocks.resumeAfterQuestions.mockResolvedValue(undefined);
@@ -1161,6 +1164,30 @@ describe('MktgAgentsController', () => {
     expect(guildMocks.resolveRunOutcome).toHaveBeenCalledWith(req, 'sess-1', pending);
     expect(runMocks.recordResultBestEffort).toHaveBeenCalledWith(req, 'sess-1', failed, 'proj-uid-1');
     expect(res.json).toHaveBeenCalledWith(failed);
+  });
+
+  it.each([
+    ['brandKitResult', brandKitMocks],
+    ['foundationMessageResult', foundationMessageMocks],
+    ['boilerplatesResult', boilerplatesMocks],
+    ['icpResult', icpMocks],
+    ['faqResult', faqMocks],
+  ] as const)('%s asks the tracker after owner proof and reads no result of a closed run', async (method, service) => {
+    const body = { sessionId: ' sess-1 ', ownerToken: 'token-1', project: ' proj-uid-1 ' };
+    tokenMocks.verifySessionOwnerToken.mockReturnValueOnce(false);
+    await controller[method](buildResultReq(body), buildRes(), next);
+    expect(runMocks.assertResultOpen).not.toHaveBeenCalled();
+    // Reading the result is what stores the document, so the refusal comes first (the real stack: mktg-agents-closed-run.controller.spec.ts).
+    const closed = new ConflictError('This run was closed.', 'MKTG_RUN_CLOSED');
+    runMocks.assertResultOpen.mockRejectedValueOnce(closed);
+    const req = buildResultReq(body);
+    const res = buildRes();
+    await controller[method](req, res, next);
+    expect(runMocks.assertResultOpen).toHaveBeenCalledExactlyOnceWith(req, 'sess-1', 'proj-uid-1');
+    expect(next).toHaveBeenLastCalledWith(closed);
+    expect(service.getResult).not.toHaveBeenCalled();
+    expect(runMocks.recordResultBestEffort).not.toHaveBeenCalled();
+    expect(res.json).not.toHaveBeenCalled();
   });
 
   describe('brandKitResult (POST /api/mktg-agents/brand-kit/result)', () => {

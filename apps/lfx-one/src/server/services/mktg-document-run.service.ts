@@ -330,6 +330,40 @@ export class MktgDocumentRunService {
     return result;
   }
 
+  /**
+   * A living document's result endpoint stores the document it reads, so the poll of a discarded or replaced run is
+   * refused before anything is read (409 MKTG_RUN_CLOSED), as `ownedOneOffResult` refuses a one-off's: a stale tab
+   * cannot bring that run back as a late revision. Owner proof precedes this check. The record is read in the partition
+   * the poll would store into, the caller's writable project, resolved as the write path resolves it: with none,
+   * nothing is stored and nothing is refused. A session with no record reads as before, and so does a poll whose
+   * record cannot be read for a moment (as `ownedOneOffResult`).
+   */
+  public async assertResultOpen(req: Request, sessionId: string, project?: string): Promise<void> {
+    const uid = project?.trim();
+    if (!uid || !MKTG_ARTIFACT_PARTITION_REGEX.test(uid)) return;
+    let partition: string | null = null;
+    try {
+      const authorized = await this.projects.getProjectById(req, uid, true);
+      if (authorized.writer && MKTG_ARTIFACT_PARTITION_REGEX.test(authorized.uid)) partition = authorized.uid;
+    } catch (err) {
+      logger.warning(req, 'mktg_run_result_open', 'Project unavailable; this result poll is not checked against its run record', { err });
+    }
+    if (!partition) return;
+    let stored: MktgStoredStartedRun | null = null;
+    try {
+      stored = await this.read(req, partition, `${this.prefix(partition)}${this.hash(sessionId)}.json`);
+    } catch (error) {
+      const classification = classifyTransientStorageError(error);
+      if (!classification.transient || error instanceof AuthorizationError || error instanceof ServiceValidationError) throw error;
+      logger.warning(req, 'mktg_run_result_open', 'Tracking read unavailable; this result poll is not checked against its run record', {
+        project: partition,
+        status: classification.status,
+        code: classification.code,
+      });
+    }
+    this.assertNotRetired(stored?.record.state);
+  }
+
   /** Dedicated forms submit first; the saved session, not a browser capability, owns completion. */
   public async startForOneOff(req: Request, agentId: string, project: string, sessionId: string, context?: MktgOneOffRunContext): Promise<string> {
     return this.start(req, project, this.oneOffType(agentId).agentKey, sessionId, 0, 'initial', { oneOff: context ?? {} });
