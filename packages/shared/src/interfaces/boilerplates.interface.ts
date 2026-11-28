@@ -8,7 +8,7 @@
 
 import type { BOILERPLATES_FORM_TYPE, BOILERPLATES_MODES, BOILERPLATES_VIEW_TABS } from '../constants/boilerplates.constants';
 import type { MktgArtifactPersistReceipt } from './mktg-artifact.interface';
-import type { MktgAssetReport } from './mktg-asset.interface';
+import type { MktgAssetReport, MktgPreviousRun } from './mktg-asset.interface';
 import type {
   MktgRunAnswersBody,
   MktgRunAnswersResponse,
@@ -97,6 +97,8 @@ export interface BoilerplatesRedraftRevision {
   prior_version: number;
   previous: BoilerplatesContent;
   comments: { field: string; comment: string }[];
+  /** The stored version's own run (`{ report, quality? }`): rendered as the PREVIOUS RUN block, so the new version carries its sources as inherited. */
+  previous_run?: MktgPreviousRun;
 }
 
 /** The agent's form, rendered as text; absent revision means a new draft. */

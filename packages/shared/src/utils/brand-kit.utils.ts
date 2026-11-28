@@ -93,6 +93,7 @@ import { MktgRunAnswer, MktgRunQuestion } from '../interfaces/mktg-run.interface
 import { buildMktgArtifactObjectKey } from './mktg-artifact.utils';
 import { formatFileSize } from './file.utils';
 import { extractMktgEnvelopeCandidates } from './mktg-envelope.utils';
+import { mktgReportInheritedErrors, renderMktgPreviousRun } from './mktg-previous-run.utils';
 import { mktgReportV2Errors } from './mktg-report-v2.utils';
 import { MKTG_INTAKE_ANSWER_LIMITS } from '../constants/mktg-intake.constants';
 import { validateMktgIntakeAnswerLengths } from './mktg-intake-validation.utils';
@@ -571,6 +572,7 @@ function renderBrandKitRedraftText(payload: BrandKitRedraftFormPayload, now: Dat
   } else {
     lines.push('--- STORED CHAPTERS (JSON) ---', guardBrandKitText(JSON.stringify(payload.chapters, null, 2)), '--- END STORED CHAPTERS ---');
   }
+  lines.push(...renderMktgPreviousRun(payload.previous_run, payload.prior_version, guardBrandKitText));
   return lines.join('\n');
 }
 
@@ -1013,7 +1015,7 @@ export function findBrandKitReportErrors(report: unknown): string[] {
   if (typeof report['notes'] !== 'string') {
     errors.push('report.notes must be a string');
   }
-  errors.push(...reportV2Errors(report));
+  errors.push(...reportV2Errors(report), ...mktgReportInheritedErrors(report));
   return errors;
 }
 

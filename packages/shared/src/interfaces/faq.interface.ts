@@ -11,7 +11,7 @@
 
 import { FAQ_DOCUMENT_KINDS, FAQ_MODES, FAQ_REVISION_MODES, FAQ_VIEW_TABS } from '../constants/faq.constants';
 import type { MktgArtifactPersistReceipt } from './mktg-artifact.interface';
-import type { MktgAssetReport } from './mktg-asset.interface';
+import type { MktgAssetReport, MktgPreviousRun } from './mktg-asset.interface';
 import type {
   MktgRunAnswersBody,
   MktgRunAnswersResponse,
@@ -146,6 +146,8 @@ export interface FaqFormRevision {
   prior_version: number;
   previous: FaqContent;
   comments: { field: string; comment: string }[];
+  /** The stored version's own run (`{ report, quality? }`): rendered as the PREVIOUS RUN block, so the new version carries its sources as inherited. */
+  previous_run?: MktgPreviousRun;
 }
 
 /** The agent's `faq_intake_form`, rendered as one text message (src/form.ts). */

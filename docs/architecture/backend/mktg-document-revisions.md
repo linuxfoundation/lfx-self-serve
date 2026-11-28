@@ -618,6 +618,23 @@ previous, comments: [{ field, comment }] }` in `faq_intake_form`, alongside the
 stored approved framework. The agent publishes a supplied answer with source
 label Notes; the host never edits the answer or its source itself.
 
+A redraft's intake ends with the stored version's own run, for the Framework,
+the FAQ, the Boilerplates and the Brand Kit alike. `MktgDocumentRedraftInputService`
+hands each renderer `previous_run: { report, quality }` from the stored sidecar,
+and the renderer writes it as the `PREVIOUS RUN` block (`renderMktgPreviousRun` in
+`mktg-previous-run.utils.ts`), the last block of the intake: the agent refuses a
+revision intake with any text after its last block. The block holds only what the
+agent's carry reads (`mktgCarriedKeysOf`, a mirror of `carriedKeysOf` in
+marketing-os-agents `agents/<agent>/src/inherited.ts`): the report's sources read
+and failed, its findings, the rows it had itself inherited and, of the read
+ledger, the LFX standard metrics row. Every text is cut to one line and the
+block's body stays within 60,000 characters, the agent's limit. The agent copies
+those rows into the new envelope as `report.inherited`, each marked with the
+version whose run produced it, apart from the report's own lists, which stay what
+the redraft read itself. The four envelope validators check that key when it is
+present (`mktgReportInheritedErrors`, the agents' `inheritedSchema`), and it is
+stored with the rest of the report in the sidecar.
+
 Adds retry bounded ETag comparisons with `putConditionalObject`. Retrying the
 same request preserves the original comment ID/time; reusing it for different
 content or an effective author conflicts. Concurrent adds preserve both entries.
