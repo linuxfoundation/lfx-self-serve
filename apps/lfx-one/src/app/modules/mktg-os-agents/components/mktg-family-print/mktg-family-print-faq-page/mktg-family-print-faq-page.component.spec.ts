@@ -6,6 +6,13 @@ import { MKTG_FAMILY_PRINT_LABELS, MKTG_FAMILY_PRINT_SEP } from '@lfx-one/shared
 import { FaqGroupView } from '@lfx-one/shared/interfaces';
 import { mktgFamilyPrintFaqGroups } from '@lfx-one/shared/utils';
 import { describe, expect, it } from 'vitest';
+import {
+  FAQ_ANSWER_QUESTIONS,
+  FAQ_LIST_ITEMS,
+  FAQ_LIST_LEAD_IN,
+  FAQ_PLAIN_ANSWER,
+  FAQ_PRICE_ANSWER,
+} from '../../../../../shared/testing/mktg-faq-answers-test-data';
 import { MktgFamilyPrintFaqPageComponent } from './mktg-family-print-faq-page.component';
 
 /** The stored FAQ: an unanswered question BEFORE the answered ones in About, so the stored index and the printed index differ. */
@@ -66,7 +73,8 @@ describe('MktgFamilyPrintFaqPageComponent', () => {
     ).toEqual(['About', 'Joining']);
     const entries = Array.from(root.querySelectorAll('[data-testid="family-print-faq-entry"]'));
     expect(entries.map((entry) => entry.querySelector('.fpq-entry__question')?.textContent)).toEqual(['What is it?', 'How do I join?']);
-    expect(entries[0].querySelector('.fpq-entry__answer')?.textContent).toBe('A synthetic project.');
+    // The answer is the restricted renderer's one paragraph (marked ends it with a newline).
+    expect(entries[0].querySelector('lfx-markdown-renderer.fpq-entry__answer p')?.textContent).toBe('A synthetic project.');
     expect(entries[0].querySelector('.pp-chip')?.textContent).toBe('Framework');
     // The run's `Notes` is an internal source label: no chip, and no label in its place.
     expect(entries[1].querySelector('.pp-chip')).toBeNull();
@@ -94,6 +102,47 @@ describe('MktgFamilyPrintFaqPageComponent', () => {
     ).toEqual(['About', `About ${MKTG_FAMILY_PRINT_LABELS.faqContinued}`]);
     expect(root.querySelectorAll('[data-testid="family-print-faq-continued"]')).toHaveLength(1);
     expect(root.textContent).not.toContain('Who runs it?');
+  });
+
+  it('prints an answer through the restricted Markdown renderer: a plain answer one paragraph, a lead-in and its items a paragraph and a list, markup never an element', async () => {
+    const answers = mktgFamilyPrintFaqGroups([
+      {
+        path: 'faq[0]',
+        name: 'About Synthetic Toolkit',
+        unanswered: 0,
+        questions: FAQ_ANSWER_QUESTIONS.map(([question, answer, source], index) => ({ path: `faq[0][1][${index}]`, question, answer, source, answered: true })),
+      },
+    ]);
+    const fixture = TestBed.createComponent(MktgFamilyPrintFaqPageComponent);
+    fixture.componentRef.setInput('groups', answers);
+    fixture.componentRef.setInput('columns', [
+      [
+        { group: 0, question: 0, heading: true },
+        { group: 0, question: 1, heading: false },
+      ],
+      [
+        { group: 0, question: 2, heading: true },
+        { group: 0, question: 3, heading: false },
+      ],
+    ]);
+    await fixture.whenStable();
+    const printed = Array.from((fixture.nativeElement as HTMLElement).querySelectorAll('[data-testid="family-print-faq-answer"]'));
+    expect(printed.map((answer) => answer.tagName.toLowerCase())).toEqual(Array(4).fill('lfx-markdown-renderer'));
+    const texts = (answer: Element, selector: string): (string | undefined)[] =>
+      Array.from(answer.querySelectorAll(selector)).map((element) => element.textContent?.trim());
+    // (a) and (c): one paragraph, the exact text, the thousands separators verbatim; no list.
+    expect(texts(printed[0], 'p')).toEqual([FAQ_PLAIN_ANSWER]);
+    expect(texts(printed[2], 'p')).toEqual([FAQ_PRICE_ANSWER]);
+    expect(printed[0].querySelector('ul')).toBeNull();
+    // (b): the lead-in paragraph, then one `li` per "- " line, in order, with no "- " left in the text.
+    expect(texts(printed[1], 'p')).toEqual([FAQ_LIST_LEAD_IN]);
+    expect(printed[1].querySelectorAll('p + ul')).toHaveLength(1);
+    expect(texts(printed[1], 'ul > li')).toEqual([...FAQ_LIST_ITEMS]);
+    // (d): the raw HTML, the script and the javascript: link are not elements; the sentence around them still prints.
+    expect(printed[3].querySelectorAll('img, script, [onerror], a')).toHaveLength(0);
+    expect(texts(printed[3], 'p')).toHaveLength(1);
+    expect(printed[3].textContent).toContain('the docs');
+    expect(printed[3].textContent).toContain('for details.');
   });
 
   it('repeats a heading only where the plan opens the group, and names its groups on a later page', async () => {

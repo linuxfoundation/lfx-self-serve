@@ -304,8 +304,9 @@ export async function expectFamilyBookFrames(book: Locator) {
 /**
  * The FAQ's question-and-answer pairs as the family book prints them, in reading order: the `family-print-faq-entry`
  * articles of the book's own FAQ pages (`faq-1`, `faq-2`, …; the left column, then the right). Each holds one
- * `family-print-faq-question`, one `family-print-faq-answer` and, when its source prints a chip, one
- * `family-print-faq-source`. The flowing `lfx-mktg-faq-print` (`mktg-faq-print-pair`) left the family PDF with the book (#5368).
+ * `family-print-faq-question`, one `family-print-faq-answer` (the restricted Markdown renderer's host: a paragraph, or a
+ * lead-in and its list) and, when its source prints a chip, one `family-print-faq-source`. The flowing
+ * `lfx-mktg-faq-print` (`mktg-faq-print-pair`) left the family PDF with the book (#5368).
  */
 export function familyBookFaqEntries(frame: FrameLocator): Locator {
   return frame.locator('lfx-mktg-family-print > [data-testid="lfx-mktg-portrait-page"][data-page-id^="faq-"]').getByTestId('family-print-faq-entry');

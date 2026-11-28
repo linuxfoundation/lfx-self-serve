@@ -5,11 +5,10 @@
  * FAQ answers as the faq agent writes them, on the FAQ page and in the family PDF.
  *
  * An answer is either plain sentences or one lead-in sentence followed by "- " lines. The page
- * renders it through the restricted Markdown renderer, so the lead-in is a paragraph and the
- * lines are a real bulleted list; a plain answer reads exactly as before; thousands separators
- * stay verbatim; injected HTML never reaches the DOM. The family PDF is the portrait book
- * (#5368): its FAQ page prints each answer's stored text as text, line for line, so the lead-in
- * and each "- " item stand on their own lines and nothing an answer carries becomes an element.
+ * and the print render it through the restricted Markdown renderer, so the lead-in is a paragraph
+ * and the lines are a real bulleted list; a plain answer reads exactly as before; thousands
+ * separators stay verbatim; injected HTML never reaches the DOM. The family PDF is the portrait
+ * book (#5368): the pairs are the entries of its own FAQ page, not the flowing `lfx-mktg-faq-print`.
  * The seeded revision is `faqAnswersContent()` (src/app/shared/testing/mktg-faq-answers-test-data.ts):
  * its four answers are the strings a tester reads on the served build.
  *
@@ -17,8 +16,8 @@
  *   A1  FAQ tab at 1440 and 390: the plain answer's text, the lead-in then five items in order,
  *       "$5,000 to $75,000" verbatim, nothing injected survives
  *   A2  Family PDF (Download PDF on /project/mktg-os-agents/families/positioning-brand, the isolated
- *       print frame): the book's FAQ page prints the four pairs; the list pair its lead-in and five
- *       items on six lines; the plain pairs one paragraph; markup an answer carries prints as typed
+ *       print frame): the book's FAQ page prints the four pairs; the list pair a paragraph and five
+ *       items, as tall as the plan measured it; the plain pairs one paragraph; nothing injected survives
  *
  * Every read is stubbed (`openAssetDocument`, `openFamilyExports`): no edit rights, no Guild key
  * and no live document store are needed. The Marketing OS pages are dark-launched behind
@@ -27,9 +26,13 @@
 
 import { expect, test } from '@playwright/test';
 import { MKTG_FAMILY_PRINT_BODY_CLASS } from '@lfx-one/shared/constants/mktg-family-export.constants';
+import { MKTG_FAMILY_PRINT_FAQ_LAYOUT } from '@lfx-one/shared/constants/mktg-family-print.constants';
+import { MKTG_PORTRAIT_PAGE } from '@lfx-one/shared/constants/mktg-portrait-print.constants';
+import { mktgFamilyPrintFaqAnswerParas } from '@lfx-one/shared/utils/mktg-family-print.utils';
+import { mktgPortraitBlockHeight } from '@lfx-one/shared/utils/mktg-portrait-print.utils';
 import {
   FAQ_ANSWER_QUESTIONS,
-  FAQ_INJECTED_ANSWER,
+  FAQ_LIST_ANSWER,
   FAQ_LIST_ITEMS,
   FAQ_LIST_LEAD_IN,
   FAQ_PLAIN_ANSWER,
@@ -39,7 +42,7 @@ import {
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 import { nativeAssetRevisionResponse, openAssetDocument } from './helpers/mktg-os-asset-views.helper';
 import { familyBookFaqEntries, openFamilyExports } from './helpers/mktg-os-family-export.helper';
-import { expectMktgPrintFrame, finishMktgPrintFrame, layoutMktgPrintFrame, mktgPrintedLines, stubMktgPrintFrame } from './helpers/mktg-print.helper';
+import { expectMktgPrintFrame, finishMktgPrintFrame, layoutMktgPrintFrame, stubMktgPrintFrame } from './helpers/mktg-print.helper';
 
 test.beforeEach(async ({ page }) => suppressCookieBanner(page));
 
@@ -96,7 +99,7 @@ for (const width of [1440, 390]) {
   });
 }
 
-test('A2: the family PDF prints the four pairs, the lead-in and each item on its own line, and a plain answer as one paragraph', async ({ page }, info) => {
+test('A2: the family PDF prints the lead-in as a paragraph and its items as a list, and a plain answer as one paragraph', async ({ page }, info) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await stubMktgPrintFrame(page);
   await openFamilyExports(page, { allAssets: true, faqContent: faqAnswersContent() });
@@ -113,29 +116,41 @@ test('A2: the family PDF prints the four pairs, the lead-in and each item on its
   await expect(pairs.getByTestId('family-print-faq-source')).toHaveText(FAQ_ANSWER_QUESTIONS.map(([, , source]) => source));
 
   // (a) and (c): one paragraph each, the exact text, thousands separators verbatim.
-  await expect(answers.nth(0)).toHaveText(FAQ_PLAIN_ANSWER);
-  await expect(answers.nth(2)).toHaveText(FAQ_PRICE_ANSWER);
+  await expect(answers.nth(0).locator('p')).toHaveText([FAQ_PLAIN_ANSWER]);
+  await expect(answers.nth(2).locator('p')).toHaveText([FAQ_PRICE_ANSWER]);
   await expect(answers.nth(2)).toContainText('$5,000 to $75,000');
-  // (b): the lead-in, then the five items, each on its own line as the answer is stored ("- " and the item), inside the
-  //      pair that stays together. The book prints the stored text; it does not draw the page's bulleted list. The lines
-  //      are read from the layout (six on paper, not one wrapped run), which WebKit's innerText does not report.
+  // (b): the lead-in paragraph, then the five items (no "- " left in them), inside the pair that stays together.
   const listAnswer = answers.nth(1);
-  expect(await mktgPrintedLines(listAnswer)).toEqual([FAQ_LIST_LEAD_IN, ...FAQ_LIST_ITEMS.map((item) => `- ${item}`)]);
-  await expect(listAnswer.locator('ul, li')).toHaveCount(0);
+  await expect(listAnswer.locator('p')).toHaveText([FAQ_LIST_LEAD_IN]);
+  await expect(listAnswer.locator('p + ul')).toHaveCount(1);
+  await expect(listAnswer.locator('ul > li')).toHaveText([...FAQ_LIST_ITEMS]);
+  await expect(listAnswer.locator('ul')).toHaveCSS('list-style-type', 'disc');
   await expect(pairs.nth(1)).toHaveCSS('break-inside', 'avoid');
-  // (d): nothing injected survives in print either: the answer prints as typed, as text, and no element comes of it.
-  await expect(answers.nth(3)).toHaveText(FAQ_INJECTED_ANSWER);
+  // (d): nothing injected survives in print either; the sentence around it still prints, in one paragraph.
   await expect(pairs.nth(3).locator('img, script, [onerror], a')).toHaveCount(0);
+  await expect(answers.nth(3).locator('p')).toHaveCount(1);
+  await expect(answers.nth(3)).toContainText('the docs');
   // The FAQ page's host is a block (MKTG_PORTRAIT_BLOCK_HOST): an inline host around a frame costs a blank sheet in Google Chrome.
   await expect(frame.locator('lfx-mktg-family-print-faq-page')).toHaveCSS('display', 'block');
-  // The answer prints in the book's typeface (the kit's, the question's), not the base layer's Inter.
-  const [questionFont, answerFont] = await pairs
+  // The lead-in and the items print in the book's typeface (the kit's, the question's), not the base layer's Inter.
+  const [questionFont, leadFont, itemFont] = await pairs
     .nth(1)
     .evaluate((pair) =>
-      ['family-print-faq-question', 'family-print-faq-answer'].map((id) => getComputedStyle(pair.querySelector(`[data-testid="${id}"]`) as Element).fontFamily)
+      ['[data-testid="family-print-faq-question"]', '[data-testid="family-print-faq-answer"] p', '[data-testid="family-print-faq-answer"] li'].map(
+        (selector) => getComputedStyle(pair.querySelector(selector) as Element).fontFamily
+      )
     );
-  expect(answerFont).toBe(questionFont);
-  expect(answerFont).not.toMatch(/Inter/);
+  expect(leadFont).toBe(questionFont);
+  expect(itemFont).toBe(questionFont);
+  expect(leadFont).not.toMatch(/Inter/);
+  // The plan measures what prints: the list answer's box is the fit model's blocks for it (six lines, the gap under the
+  // lead-in and the gaps between the items), so the book's columns are filled by the height the list really takes. It
+  // is never taller than the model; WebKit sets the 18.6px line on 18px, so it may be shorter by under a pixel a line.
+  const column = (MKTG_PORTRAIT_PAGE.contentWidth - MKTG_FAMILY_PRINT_FAQ_LAYOUT.columnGap) / 2;
+  const measured = mktgPortraitBlockHeight({ paras: mktgFamilyPrintFaqAnswerParas(FAQ_LIST_ANSWER) }, column) - MKTG_FAMILY_PRINT_FAQ_LAYOUT.answer.above;
+  const printed = await listAnswer.evaluate((element) => element.getBoundingClientRect().height);
+  expect(printed).toBeLessThan(measured + 0.5);
+  expect(printed).toBeGreaterThan(measured - (1 + FAQ_LIST_ITEMS.length));
 
   await page.screenshot({ path: info.outputPath('faq-answers-print.png'), fullPage: true });
   await page.emulateMedia({ media: 'screen' });

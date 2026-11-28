@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, input, Signal } from '@angular/core';
+import { MarkdownRendererComponent } from '@components/markdown-renderer/markdown-renderer.component';
 import {
   MKTG_FAMILY_PRINT_COPY,
   MKTG_FAMILY_PRINT_FAQ_LAYOUT,
@@ -18,13 +19,15 @@ import { MktgPortraitRectDirective } from '../../mktg-portrait/mktg-portrait-rec
  * One FAQ page of the family book: the two columns the plan filled by
  * height, each a run of question, answer and source chip under its group's
  * heading (a group split across columns or pages repeats its heading, with
- * the continued mark after it). The
+ * the continued mark after it). An answer prints through the restricted
+ * Markdown renderer, as on the FAQ tab: a lead-in and its "- " lines are a
+ * paragraph and a bulleted list. The
  * first page's intro counts the whole FAQ; a later page's names its groups.
  * Unanswered questions do not print; an internal source label prints no chip.
  */
 @Component({
   selector: 'lfx-mktg-family-print-faq-page',
-  imports: [MktgPortraitRectDirective],
+  imports: [MarkdownRendererComponent, MktgPortraitRectDirective],
   templateUrl: './mktg-family-print-faq-page.component.html',
   styleUrl: './mktg-family-print-faq-page.component.scss',
   styles: [MKTG_PORTRAIT_BLOCK_HOST],

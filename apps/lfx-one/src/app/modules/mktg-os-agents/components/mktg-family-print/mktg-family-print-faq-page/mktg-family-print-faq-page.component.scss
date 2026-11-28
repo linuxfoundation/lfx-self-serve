@@ -40,14 +40,67 @@
     color: var(--pp-dark);
   }
 
+  /* The renderer's host: the answer's type, which everything it renders inherits (below). */
   &__answer {
     margin-top: 6px;
     font: 400 12px/1.55 var(--pp-font);
     color: var(--pp-ink);
-    white-space: pre-line;
   }
 
   &__source {
     margin-top: 6px;
+  }
+}
+
+/* The answer's restricted Markdown (the faq agent writes plain sentences, or a lead-in and its "- " items), through
+   the shared renderer, whose screen rules are rem and Tailwind's prose: inside the entry every block is set in the
+   answer's own type and ink with no margin of its own, so the page prints what the plan measured
+   (mktgFamilyPrintFaqAnswerParas; MKTG_FAMILY_PRINT_FAQ_LAYOUT's answerBlockGap and answerList): 4px between two blocks,
+   a list indented 16px with its disc in the ink, 2px between two items. A list in an item keeps its item's indent, and
+   Markdown outside the agent's contract (a heading, a quote, code) prints as text of the answer's size. */
+:host ::ng-deep .fpq-entry__answer .prose {
+  max-width: none;
+  font: inherit;
+  color: inherit;
+
+  :is(h1, h2, h3, h4, h5, h6, p, ul, ol, li, blockquote, pre) {
+    margin: 0;
+    font: inherit;
+    color: inherit;
+  }
+
+  > :not(:first-child) {
+    margin-top: 4px;
+  }
+
+  pre {
+    white-space: pre-wrap;
+  }
+
+  ul {
+    padding-left: 16px;
+    list-style: disc;
+  }
+
+  ol {
+    padding-left: 16px;
+    list-style: decimal;
+  }
+
+  li {
+    padding-left: 0;
+  }
+
+  li + li,
+  li > :is(ul, ol) {
+    margin-top: 2px;
+  }
+
+  li > :is(ul, ol) {
+    padding-left: 0;
+  }
+
+  li::marker {
+    color: var(--pp-ink);
   }
 }

@@ -36,6 +36,7 @@ import {
   mktgFamilyPrintCutNote,
   mktgFamilyPrintDate,
   mktgFamilyPrintDocument,
+  mktgFamilyPrintFaqAnswerParas,
   mktgFamilyPrintFaqBalancedPages,
   mktgFamilyPrintFaqEntryHeight,
   mktgFamilyPrintFaqGroups,
@@ -164,6 +165,66 @@ describe('mktgFamilyPrintFaqGroups', () => {
     const [page] = mktgFamilyPrintFaqPages(printed);
     expect(page.columns[0][0]).toEqual({ group: 0, question: 0, heading: true });
     expect(printed[page.columns[0][0].group].questions[page.columns[0][0].question].question).toBe('What is it?');
+  });
+});
+
+describe('mktgFamilyPrintFaqAnswerParas', () => {
+  const { answer: type, answerBlockGap, answerList } = MKTG_FAMILY_PRINT_FAQ_LAYOUT;
+  const width = (MKTG_PORTRAIT_PAGE.contentWidth - MKTG_FAMILY_PRINT_FAQ_LAYOUT.columnGap) / 2;
+  const lineHeight = type.size * type.line;
+  const height = (answer: string): number => mktgFamilyPrintFaqAnswerParas(answer).reduce((sum, para) => sum + mktgPortraitParaHeight(para, width), 0);
+  const item = { ...type, above: answerList.itemGap, indent: answerList.indent };
+
+  it('measures a plain answer as the one paragraph it prints, as before the list', () => {
+    const plain = 'Synthetic Toolkit is an open source release toolkit for community projects.';
+    expect(mktgFamilyPrintFaqAnswerParas(plain)).toEqual([{ text: plain, ...type }]);
+    expect(height(plain)).toBe(mktgPortraitParaHeight({ text: plain, ...type }, width));
+    // An answer with no text still takes its line: an entry never measures shorter than it prints.
+    expect(mktgFamilyPrintFaqAnswerParas('')).toEqual([{ text: '', ...type }]);
+  });
+
+  it('measures a lead-in and its "- " lines as a paragraph and an indented list, the markers not text', () => {
+    const paras = mktgFamilyPrintFaqAnswerParas('The agents are:\n- Agent Router\n- Brand Kit\n- FAQ');
+    expect(paras).toEqual([
+      { text: 'The agents are:', ...type },
+      { ...item, text: 'Agent Router', above: answerBlockGap },
+      { ...item, text: 'Brand Kit' },
+      { ...item, text: 'FAQ' },
+    ]);
+    // Four lines, the gap under the lead-in and the two gaps between the items: what the page's `p + ul > li` take.
+    expect(height('The agents are:\n- Agent Router\n- Brand Kit\n- FAQ')).toBeCloseTo(type.above + 4 * lineHeight + answerBlockGap + 2 * answerList.itemGap, 6);
+  });
+
+  it('wraps an item in the list\u2019s narrower measure and runs a plain line on in the block above it', () => {
+    // Fifty characters fit the column's line and not the item's, 16px narrower: the same words take two lines as an item.
+    const words = 'A sentence of fifty characters, counted to its end';
+    expect(words).toHaveLength(50);
+    expect(height(words)).toBeCloseTo(type.above + lineHeight, 6);
+    expect(height(`- ${words}`)).toBeCloseTo(type.above + 2 * lineHeight, 6);
+    // Markdown joins a plain line to the item (or the paragraph) above it until a blank line; the other markers and a numbered item open one too.
+    expect(mktgFamilyPrintFaqAnswerParas('Lead-in\nruns on.\n\n* One\n  and more\n+ Two\n1. Three\n\nAfter the list.')).toEqual([
+      { text: 'Lead-in\nruns on.', ...type },
+      { ...item, text: 'One\nand more', above: answerBlockGap },
+      { ...item, text: 'Two' },
+      { ...item, text: 'Three' },
+      { text: 'After the list.', ...type, above: answerBlockGap },
+    ]);
+    // A hyphen that opens no item (no space after it, or inside a sentence) stays text.
+    expect(mktgFamilyPrintFaqAnswerParas('-not an item\nopen-source - really')).toEqual([{ text: '-not an item\nopen-source - really', ...type }]);
+  });
+
+  it('adds the answer\u2019s blocks to the entry the plan paginates', () => {
+    const entry = {
+      path: 'faq[0][1][0]',
+      question: 'Which agents does the family hold?',
+      answer: 'The agents are:\n- Agent Router\n- Brand Kit',
+      source: 'Docs',
+    };
+    const question = mktgPortraitParaHeight({ text: entry.question, ...MKTG_FAMILY_PRINT_FAQ_LAYOUT.question }, width);
+    expect(mktgFamilyPrintFaqEntryHeight(entry, width)).toBeCloseTo(
+      MKTG_FAMILY_PRINT_FAQ_LAYOUT.entryPadding + question + height(entry.answer) + MKTG_FAMILY_PRINT_FAQ_LAYOUT.source,
+      6
+    );
   });
 });
 
