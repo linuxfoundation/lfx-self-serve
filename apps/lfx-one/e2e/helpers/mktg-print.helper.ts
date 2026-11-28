@@ -130,6 +130,37 @@ export async function mktgPrintComputedPx(box: Locator, property: string): Promi
   return parseFloat(await box.evaluate((element, name) => getComputedStyle(element).getPropertyValue(name), property));
 }
 
+/**
+ * The lines a printed text box is laid out on, top to bottom: its characters grouped by the line each is drawn on (the
+ * character's own client rect), so a hard break kept by `white-space: pre-line` and a soft wrap both start a line; a
+ * blank line is not counted. Read from layout, never from `innerText`: WebKit's `innerText` returns a pre-line break as
+ * a space while it lays the text out on two lines, so it cannot say what is on paper.
+ */
+export async function mktgPrintedLines(box: Locator): Promise<string[]> {
+  return box.evaluate((element) => {
+    const lines = new Map<number, string>();
+    const walker = element.ownerDocument.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+    const range = element.ownerDocument.createRange();
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const text = node.textContent ?? '';
+      for (let index = 0; index < text.length; index++) {
+        range.setStart(node, index);
+        range.setEnd(node, index + 1);
+        // The character's drawn box: a break has none, and WebKit gives the character after a break an empty box at the
+        // end of the line above before its own.
+        const rect = Array.from(range.getClientRects()).find((box) => box.width > 0);
+        if (!rect) continue;
+        const top = Math.round(rect.top);
+        lines.set(top, (lines.get(top) ?? '') + text[index]);
+      }
+    }
+    return Array.from(lines.entries())
+      .sort(([above], [below]) => above - below)
+      .map(([, line]) => line.trim())
+      .filter(Boolean);
+  });
+}
+
 export async function expectMktgPrintCover(cover: Locator): Promise<void> {
   await expect(cover).toBeVisible();
   const box = await cover.boundingBox();

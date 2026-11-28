@@ -9,7 +9,10 @@
  *     an `lfx-markdown-renderer` host whose content is `shared-markdown-renderer-content`
  *   - a plain answer: one `p`, no `ul`; a lead-in and list: `p` then `ul` with one `li` per item
  *   - no `img`, `script`, `[onerror]` or `a` inside any answer
- *   - in print, every answered `mktg-faq-print-pair` holds one `mktg-faq-print-answer` with the same shapes
+ *   - in the family PDF (the portrait book, #5368) every answered question is one `family-print-faq-entry` in a
+ *     `family-print-faq-column` of the book's FAQ page, holding one `family-print-faq-question`, one
+ *     `family-print-faq-answer` and one `family-print-faq-source`; the answer is one `p` of text with no element
+ *     inside it (the stored text, its line breaks kept by `white-space: pre-line`); no `lfx-mktg-faq-print` in the frame
  */
 
 import { expect, test } from '@playwright/test';
@@ -17,8 +20,8 @@ import { MKTG_FAMILY_PRINT_BODY_CLASS } from '@lfx-one/shared/constants/mktg-fam
 import { FAQ_ANSWER_QUESTIONS, FAQ_LIST_ITEMS, faqAnswersContent } from '../src/app/shared/testing/mktg-faq-answers-test-data';
 import { suppressCookieBanner } from './helpers/account-settings-email.helper';
 import { nativeAssetRevisionResponse, openAssetDocument } from './helpers/mktg-os-asset-views.helper';
-import { openFamilyExports } from './helpers/mktg-os-family-export.helper';
-import { expectMktgPrintFrame, finishMktgPrintFrame, layoutMktgPrintFrame, stubMktgPrintFrame } from './helpers/mktg-print.helper';
+import { familyBookFaqEntries, openFamilyExports } from './helpers/mktg-os-family-export.helper';
+import { expectMktgPrintFrame, finishMktgPrintFrame, layoutMktgPrintFrame, mktgPrintedLines, stubMktgPrintFrame } from './helpers/mktg-print.helper';
 
 test.beforeEach(async ({ page }) => suppressCookieBanner(page));
 
@@ -60,37 +63,42 @@ test('FAQ answer structure in the family PDF frame', async ({ page }, info) => {
   await pdf.click();
   await expectMktgPrintFrame(page, MKTG_FAMILY_PRINT_BODY_CLASS, '[data-testid="family-export-print-document"]');
   const frame = await layoutMktgPrintFrame(page);
-  const pairs = frame.getByTestId('mktg-faq-print').getByTestId('mktg-faq-print-pair');
+  // The flowing FAQ print is not in the family PDF: the pairs are the entries of the book's own FAQ page, in its columns.
+  await expect(frame.locator('lfx-mktg-faq-print')).toHaveCount(0);
+  const pairs = familyBookFaqEntries(frame);
   await expect(pairs).toHaveCount(FAQ_ANSWER_QUESTIONS.length);
-  for (let q = 0; q < FAQ_ANSWER_QUESTIONS.length; q++) {
-    const pair = pairs.nth(q);
-    await expect(pair.getByTestId('mktg-faq-print-answer')).toHaveCount(1);
-    await expect(pair.getByTestId('mktg-faq-print-source')).toHaveCount(1);
-    await expect(pair.locator('img, script, [onerror], a')).toHaveCount(0);
-    await expect(pair).toHaveCSS('break-inside', 'avoid');
-  }
-  for (const q of [0, 2, 3]) {
-    await expect(pairs.nth(q).getByTestId('mktg-faq-print-answer').locator('p')).toHaveCount(1);
-    await expect(pairs.nth(q).getByTestId('mktg-faq-print-answer').locator('ul')).toHaveCount(0);
-  }
-  const listAnswer = pairs.nth(1).getByTestId('mktg-faq-print-answer');
-  await expect(listAnswer.locator('p + ul')).toHaveCount(1);
-  await expect(listAnswer.locator('ul > li')).toHaveCount(FAQ_LIST_ITEMS.length);
-  // The list prints with visible disc markers in the sheet's ink and typeface; the lead-in and its items are one size
-  // (styles.scss gives a bare `p` text-base/leading-normal, the printed answer's size since before this list; the `li` matches it).
-  await expect(listAnswer.locator('ul')).toHaveCSS('list-style-type', 'disc');
+  await expect(frame.getByTestId('family-print-faq-grid').getByTestId('family-print-faq-column').getByTestId('family-print-faq-entry')).toHaveCount(
+    FAQ_ANSWER_QUESTIONS.length
+  );
   const metrics = (element: Element) => {
     const style = getComputedStyle(element);
     return { color: style.color, fontSize: style.fontSize, lineHeight: style.lineHeight, fontFamily: style.fontFamily };
   };
-  const sheet = await frame.getByTestId('mktg-faq-print').evaluate(metrics);
-  const lead = await listAnswer.locator('p').evaluate(metrics);
-  const item = await listAnswer.locator('ul > li').first().evaluate(metrics);
-  expect({ color: item.color, fontFamily: item.fontFamily }).toEqual({ color: sheet.color, fontFamily: sheet.fontFamily });
-  expect({ fontSize: item.fontSize, lineHeight: item.lineHeight }).toEqual({ fontSize: lead.fontSize, lineHeight: lead.lineHeight });
-  // A plain printed answer keeps the same size and leading as the lead-in: one answer size across the sheet.
-  const plain = await pairs.nth(0).getByTestId('mktg-faq-print-answer').locator('p').evaluate(metrics);
-  expect({ fontSize: plain.fontSize, lineHeight: plain.lineHeight }).toEqual({ fontSize: lead.fontSize, lineHeight: lead.lineHeight });
+  const printed: ReturnType<typeof metrics>[] = [];
+  for (let q = 0; q < FAQ_ANSWER_QUESTIONS.length; q++) {
+    const pair = pairs.nth(q);
+    const answer = pair.getByTestId('family-print-faq-answer');
+    await expect(pair.getByTestId('family-print-faq-question')).toHaveCount(1);
+    await expect(answer).toHaveCount(1);
+    await expect(pair.getByTestId('family-print-faq-source')).toHaveCount(1);
+    // The answer is one paragraph of text: whatever it carries prints as characters, never as an element.
+    expect(await answer.evaluate((element) => element.tagName.toLowerCase())).toBe('p');
+    await expect(answer.locator('*')).toHaveCount(0);
+    await expect(pair.locator('img, script, [onerror], a, ul, li')).toHaveCount(0);
+    // Its stored line breaks print (a lead-in and its "- " lines), and a pair never splits across columns or pages.
+    await expect(answer).toHaveCSS('white-space', 'pre-line');
+    await expect(pair).toHaveCSS('break-inside', 'avoid');
+    printed.push(await answer.evaluate(metrics));
+  }
+  // The plain answers hold no line break; the list answer holds its lead-in and one line per item, and is laid out on as many.
+  const stored = async (q: number): Promise<number> => ((await pairs.nth(q).getByTestId('family-print-faq-answer').textContent()) ?? '').split('\n').length;
+  for (const q of [0, 2, 3]) expect(await stored(q)).toBe(1);
+  expect(await stored(1)).toBe(1 + FAQ_LIST_ITEMS.length);
+  expect(await mktgPrintedLines(pairs.nth(1).getByTestId('family-print-faq-answer'))).toHaveLength(1 + FAQ_LIST_ITEMS.length);
+  // One answer size, ink and typeface across the page, a plain answer and a list alike; the typeface is the question's.
+  for (const answer of printed) expect(answer).toEqual(printed[0]);
+  const question = await pairs.nth(0).getByTestId('family-print-faq-question').evaluate(metrics);
+  expect(printed[0].fontFamily).toBe(question.fontFamily);
   await page.screenshot({ path: info.outputPath('faq-answers-print-structure.png'), fullPage: true });
   await page.emulateMedia({ media: 'screen' });
   await finishMktgPrintFrame(page);

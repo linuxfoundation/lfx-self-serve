@@ -10,7 +10,7 @@ import {
   SELECTED_PROJECT_COOKIE_KEY,
 } from '@lfx-one/shared/constants';
 import type { FaqContent, MktgDocumentsResponse, MktgFamilyExportRunning, MktgRevisionResponse } from '@lfx-one/shared/interfaces';
-import { expect, Locator, Page } from '@playwright/test';
+import { expect, FrameLocator, Locator, Page } from '@playwright/test';
 import { familyExportMember, familyExportRecord, familyExportStarted } from '../../src/app/shared/testing/mktg-family-export-test-data';
 import { mockProjects } from '../fixtures/mock-data/projects.mock';
 import { suppressCookieBanner } from './account-settings-email.helper';
@@ -299,4 +299,14 @@ export async function expectFamilyBookFrames(book: Locator) {
     byId: (id: string): Locator => book.locator(own(id)),
     byIdPage: (id: string): number => (id.startsWith('opener-') ? frames.find((frame) => frame.id === id) : tail.find((frame) => frame.id === id))?.page ?? 0,
   };
+}
+
+/**
+ * The FAQ's question-and-answer pairs as the family book prints them, in reading order: the `family-print-faq-entry`
+ * articles of the book's own FAQ pages (`faq-1`, `faq-2`, …; the left column, then the right). Each holds one
+ * `family-print-faq-question`, one `family-print-faq-answer` and, when its source prints a chip, one
+ * `family-print-faq-source`. The flowing `lfx-mktg-faq-print` (`mktg-faq-print-pair`) left the family PDF with the book (#5368).
+ */
+export function familyBookFaqEntries(frame: FrameLocator): Locator {
+  return frame.locator('lfx-mktg-family-print > [data-testid="lfx-mktg-portrait-page"][data-page-id^="faq-"]').getByTestId('family-print-faq-entry');
 }
