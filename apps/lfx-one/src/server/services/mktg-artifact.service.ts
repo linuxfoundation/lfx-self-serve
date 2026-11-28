@@ -281,8 +281,12 @@ export class MktgArtifactService {
    * whose answer the writer check is read from. The resolved uid is gated
    * again below, because only that one becomes a storage key segment.
    *
-   * Called only once a ready envelope exists, so `pending` polls (the vast
-   * majority of a multi-minute generation) cost no upstream lookups.
+   * Called only once a ready envelope exists, so the write path adds no
+   * project lookup to a `pending` poll (the vast majority of a multi-minute
+   * generation). A living document's project-scoped poll still pays one
+   * project lookup and, for a writer, one run-record read, `pending` or not:
+   * its result endpoint's closed-run check
+   * (`MktgDocumentRunService.assertResultOpen`) runs before anything is read.
    *
    * Every refusal is a WARN, never an ERROR: the caller degrades by returning
    * the validated document without a receipt, exactly like a storage outage
