@@ -23,6 +23,7 @@ import {
   MKTG_RUN_UNREACHABLE_TEXT,
   MKTG_RUN_ACTIVE,
   MKTG_RUN_ANSWERED,
+  MKTG_RUN_CLOSED,
 } from '@lfx-one/shared/constants';
 import {
   MktgAgent,
@@ -2864,6 +2865,72 @@ describe('MktgAgentRunComponent', () => {
       expect(navigate).not.toHaveBeenCalled();
       expect(generate).toHaveBeenCalledTimes(origin === 'generate' ? 1 : 0);
       expect(answerQuestions).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['generate', 'discarded', 'This run was discarded.'],
+      ['generate', 'superseded', 'A newer run replaced this one.'],
+      ['resume', 'discarded', 'This run was discarded.'],
+      ['resume', 'superseded', 'A newer run replaced this one.'],
+    ] as const)('ends plainly when the %s result poll is refused for a %s run: the closed-run line, no error, no new start', async (origin, state, line) => {
+      await configure('browser', target.agentId);
+      await fill();
+      const type = MKTG_DOCUMENT_TYPES.find((entry) => entry.catalogAgentId === target.agentId);
+      if (!type) throw new Error('Missing registered document type');
+      const runId = 'b'.repeat(64);
+      const request: MktgGenerateRequest = {
+        agentId: target.agentId,
+        projectUid: PROJECT_1.uid,
+        intake: target,
+        answers: component['intakeForm'].getRawValue(),
+      };
+      const pending: MktgPendingGeneration = {
+        request,
+        state: 'writing',
+        updatedAt: new Date().toISOString(),
+        attempt: { session: { agentId: target.agentId, sessionId: 'synthetic-closed-session', ownerToken: 'synthetic-proof' }, runId, priorVersion: 0 },
+      };
+      const attempts = TestBed.inject(MktgRunAttemptService);
+      const progress = new Subject<MktgGenerateProgress>();
+      if (origin === 'generate') {
+        generate.mockReturnValue(progress);
+        component['onSubmit']();
+        await fixture.whenStable();
+        attempts.save(pending); // What the run service records at the ACK.
+        progress.next({ type: 'submitted' });
+      } else {
+        attempts.save(pending);
+        useRecordedStateFixture(target.agentId, runId, 'writing');
+        vi.spyOn(TestBed.inject(MktgAgentRunService), 'resume').mockReturnValue(progress);
+        activeContext.set(null);
+        await fixture.whenStable();
+        activeContext.set(PROJECT_1);
+      }
+      await fixture.whenStable();
+      expect(progress.observed).toBe(true);
+      // Someone discarded the run, or started a newer one: the server refuses this window's poll and the record reads closed.
+      const closed: MktgDocumentRunProgress = {
+        project: PROJECT_1.uid,
+        agentKey: type.agentKey,
+        documentId: 'living',
+        runId,
+        state,
+        startedAt: pending.updatedAt,
+      };
+      vi.mocked(TestBed.inject(MktgDocumentStoreService).getDocument).mockReturnValue(
+        of({ project: PROJECT_1.uid, type, documentId: 'living', approvedCurrent: null, revisions: [], runs: [closed] })
+      );
+      progress.error(new HttpErrorResponse({ status: 409, error: { code: MKTG_RUN_CLOSED } }));
+      await fixture.whenStable();
+      expect(query('mktg-run-progress-closed-message')?.textContent?.trim()).toBe(line);
+      expect(query('mktg-run-progress-current-link')).not.toBeNull();
+      expect(query('mktg-run-public-error')).toBeNull();
+      expect(query('mktg-agent-run-error')).toBeNull();
+      expect(query('mktg-run-progress-loading')).toBeNull();
+      expect(component['phase']()).toBe('running');
+      expect(component['runFailed']()).toBe(false);
+      expect(generate).toHaveBeenCalledTimes(origin === 'generate' ? 1 : 0);
+      expect(TestBed.inject(MktgAgentRunService).resume).toHaveBeenCalledTimes(origin === 'generate' ? 0 : 1);
     });
 
     it.each(['failed', 'refused'] as const)('opens a recorded %s run on the document failed card, not at checking', async (event) => {

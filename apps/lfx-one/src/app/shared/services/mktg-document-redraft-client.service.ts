@@ -34,6 +34,7 @@ import {
   readMktgRedraftBusyConflict,
 } from '@lfx-one/shared/utils';
 import { catchError, concat, concatMap, defer, EMPTY, filter, finalize, map, Observable, of, take, takeUntil, tap, throwError } from 'rxjs';
+import { isMktgRunClosedError } from '@shared/utils/mktg-run-closed.util';
 import { MktgRunAttemptService } from './mktg-run-attempt.service';
 import { MktgAgentRunService } from './mktg-agent-run.service';
 import { MktgDocumentCommentsService } from './mktg-document-comments.service';
@@ -264,6 +265,16 @@ export class MktgDocumentRedraftClientService {
           throw new Error('The stored result does not match the selected redraft.');
         this.attempts.clearRedraft(scope);
         return concat(activity$, of<MktgRedraftProgress>({ type: 'ready', location }));
+      }),
+      catchError((error: unknown) => {
+        if (!isMktgRunClosedError(error)) return throwError(() => error);
+        // The server closed this redraft's run (discarded, or replaced by a newer run) and settled its send as failed,
+        // which reopens the comments. The poll is final (409 MKTG_RUN_CLOSED): the same run is not checked again.
+        // Only THIS send is cleared: another window may have stored a newer send for the same revision by now.
+        this.assertOwner(owner, scope);
+        this.attempts.clearRedraftSend(scope, intent.clientRequestId);
+        this.comments.refresh();
+        return of<MktgRedraftProgress>({ type: 'failed', message: 'This redraft was closed. The comments are reopened; send again explicitly.' });
       })
     );
   }

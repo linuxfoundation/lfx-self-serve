@@ -552,6 +552,8 @@ export class MktgAgentsController {
     const startTime = logger.startOperation(req, 'brand_kit_result', {});
 
     try {
+      // A discarded or replaced run is refused before anything is read: reading its result is what stores it.
+      await this.documentRuns.assertResultOpen(req, validSessionId, validProjectUid);
       const result: BrandKitResultResponse = await this.guildService.resolveRunOutcome(
         req,
         validSessionId,
@@ -911,6 +913,8 @@ export class MktgAgentsController {
     const startTime = logger.startOperation(req, 'foundation_message_result', {});
 
     try {
+      // A discarded or replaced run is refused before anything is read: reading its result is what stores it.
+      await this.documentRuns.assertResultOpen(req, validSessionId, validProjectUid);
       const result: FoundationMessageResultResponse = await this.guildService.resolveRunOutcome(
         req,
         validSessionId,
@@ -1147,6 +1151,8 @@ export class MktgAgentsController {
     const startTime = logger.startOperation(req, 'boilerplates_result', {});
 
     try {
+      // A discarded or replaced run is refused before anything is read: reading its result is what stores it.
+      await this.documentRuns.assertResultOpen(req, validSessionId, validProjectUid);
       const result: BoilerplatesResultResponse = await this.guildService.resolveRunOutcome(
         req,
         validSessionId,
@@ -1350,6 +1356,8 @@ export class MktgAgentsController {
     const startTime = logger.startOperation(req, 'icp_result', {});
 
     try {
+      // A discarded or replaced run is refused before anything is read: reading its result is what stores it.
+      await this.documentRuns.assertResultOpen(req, validSessionId, validProjectUid);
       const result: IcpResultResponse = await this.guildService.resolveRunOutcome(
         req,
         validSessionId,
@@ -1655,6 +1663,8 @@ export class MktgAgentsController {
     const startTime = logger.startOperation(req, 'faq_result', {});
 
     try {
+      // A discarded or replaced run is refused before anything is read: reading its result is what stores it.
+      await this.documentRuns.assertResultOpen(req, validSessionId, validProjectUid);
       const result: FaqResultResponse = await this.guildService.resolveRunOutcome(
         req,
         validSessionId,

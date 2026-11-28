@@ -143,6 +143,36 @@ describe('MktgRunAttemptService', () => {
     expect(restored.loadRedraft(scope)).toEqual(intent);
   });
 
+  it('clears a redraft by its own send: memory and storage are each compared with the id, so a newer send for the same revision stays', () => {
+    const scope = { projectUid: request.projectUid, agentKey: 'foundation-message' as const, documentId: 'living', revisionId: `000001-${'a'.repeat(64)}` };
+    const closed = { scope, clientRequestId: 'send-one', commentIds: ['comment-one'], priorVersion: 1, updatedAt: new Date().toISOString() };
+    const newer = { ...closed, clientRequestId: 'send-two' };
+    const key = service['redraftKey'](scope, service.subject());
+    // The send still owns the revision: both copies go.
+    service.saveRedraft(closed);
+    service.clearRedraftSend(scope, closed.clientRequestId);
+    expect(service.loadRedraft(scope)).toBeNull();
+    expect(window.localStorage.getItem(key)).toBeNull();
+    // Another window replaced the stored send; this window's memory still holds the closed one.
+    service.saveRedraft(closed);
+    const other = TestBed.runInInjectionContext(() => new MktgRunAttemptService());
+    other.saveRedraft(newer);
+    expect(service.loadRedraft(scope)).toEqual(closed);
+    service.clearRedraftSend(scope, closed.clientRequestId);
+    expect(JSON.parse(window.localStorage.getItem(key) ?? 'null')).toEqual(newer);
+    expect(service.loadRedraft(scope)).toEqual(newer);
+    // Each copy is judged on its own: a stale stored copy of the closed send goes while memory keeps the newer one.
+    window.localStorage.setItem(key, JSON.stringify(closed));
+    other.clearRedraftSend(scope, closed.clientRequestId);
+    expect(window.localStorage.getItem(key)).toBeNull();
+    expect(other.loadRedraft(scope)).toEqual(newer);
+    // A stored entry that cannot be read is not known to be this send.
+    window.localStorage.setItem(key, '{');
+    other.clearRedraftSend(scope, newer.clientRequestId);
+    expect(window.localStorage.getItem(key)).toBe('{');
+    expect(other.loadRedraft(scope)).toBeNull();
+  });
+
   it.each(['a'.repeat(64), 'b'.repeat(8), 'invalid-digest'])('validates a one-off answered digest at save and reload: %s', (digest) => {
     const accepted = { ...request, agentId: LINKEDIN_POST_INTAKE.agentId, intake: LINKEDIN_POST_INTAKE, documentId: 'run-' + 'a'.repeat(24), answers: {} };
     service.save({

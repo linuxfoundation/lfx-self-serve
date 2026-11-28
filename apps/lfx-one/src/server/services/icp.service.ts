@@ -134,9 +134,13 @@ export class IcpService {
    *
    * `projectUid` is the LFX project the run is scoped to — it decides the
    * storage partition and is entitlement-checked before anything is written
-   * (see {@link persistEnvelope}). It is resolved lazily, only once a ready
-   * envelope exists, so a `pending` poll costs no upstream lookups. Without
-   * it the document is still returned; it is simply not persisted.
+   * (see {@link persistEnvelope}). Without it the document is still returned;
+   * it is simply not persisted. It is resolved lazily here, only once a ready
+   * envelope exists, so this method adds no project lookup to a `pending`
+   * poll. The poll as a whole is not free of one: the result endpoint first
+   * runs `MktgDocumentRunService.assertResultOpen`, which pays one project
+   * lookup (with its writer check) and, for a writer, one run-record read on
+   * every poll that carries a project scope, `pending` ones included.
    */
   public async getResult(req: Request, sessionId: string, projectUid?: string): Promise<IcpResultResponse> {
     if (await this.redrafts.forSession(req, sessionId)) {
@@ -277,8 +281,12 @@ export class IcpService {
    * answer the writer check is read from. The resolved uid is gated again
    * below, because only that one becomes a storage key segment.
    *
-   * Called only once a ready envelope exists, so `pending` polls (the vast
-   * majority of a multi-minute generation) cost no upstream lookups.
+   * Called only once a ready envelope exists, so the write path adds no
+   * project lookup to a `pending` poll (the vast majority of a multi-minute
+   * generation). A project-scoped poll still pays one project lookup and, for
+   * a writer, one run-record read, `pending` or not: the result endpoint's
+   * closed-run check (`MktgDocumentRunService.assertResultOpen`) runs before
+   * anything is read.
    */
   private async resolveWritablePartition(req: Request, projectUid?: string): Promise<string | null> {
     const uid = projectUid?.trim();

@@ -8,7 +8,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { Subject } from 'rxjs';
 import type { MktgObservedRunResult } from '@lfx-one/shared/interfaces';
-import { MKTG_RUN_STORAGE_TTL_MS } from '@lfx-one/shared/constants';
+import { FOUNDATION_MESSAGE_INTAKE, MKTG_RUN_CLOSED, MKTG_RUN_POLL, MKTG_RUN_STORAGE_TTL_MS } from '@lfx-one/shared/constants';
 import { mktgCommentFixture, mktgCommentScopeFixture } from '@shared/testing/mktg-comments-test-service';
 import { MktgDocumentRedraftClientService } from './mktg-document-redraft-client.service';
 import { MktgDocumentCommentsService } from './mktg-document-comments.service';
@@ -283,6 +283,84 @@ describe('comments-only redraft transport/recovery', () => {
     client.release(scope).subscribe({ error: () => undefined });
     http.expectNone((request) => request.url.includes('/release'));
     http.expectNone(path);
+  });
+  it('ends a redraft whose run the server closed (409 MKTG_RUN_CLOSED): the intent goes, the comments are read again, nothing is re-sent', () => {
+    const progress: unknown[] = [];
+    const done = vi.fn();
+    client.send(scope, 1).subscribe({ next: (event) => progress.push(event), error: done, complete: done });
+    http.expectOne(path).flush({ sessionId: 'synthetic-session', ownerToken: 'synthetic-proof', runId: 'c'.repeat(64), priorVersion: 1 });
+    refresh.mockClear();
+    result.error(new HttpErrorResponse({ status: 409, error: { code: MKTG_RUN_CLOSED } }));
+    expect(progress.at(-1)).toEqual({ type: 'failed', message: 'This redraft was closed. The comments are reopened; send again explicitly.' });
+    expect(done).toHaveBeenCalledExactlyOnceWith();
+    expect(client.hasAcceptedAttempt(scope)).toBe(false);
+    expect(client.hasIntent(scope)).toBe(false);
+    expect(window.localStorage.length).toBe(0);
+    expect(refresh).toHaveBeenCalledOnce();
+    http.expectNone(path);
+  });
+  it.each(['another window', 'this window'] as const)(
+    'leaves a newer send that %s stored for the same revision alone when the closed send hears its late 409',
+    (where) => {
+      const attempts = TestBed.inject(MktgRunAttemptService);
+      const progress: unknown[] = [];
+      client.send(scope, 1).subscribe((event) => progress.push(event));
+      http.expectOne(path).flush({ sessionId: 'synthetic-session', ownerToken: 'synthetic-proof', runId: 'c'.repeat(64), priorVersion: 1 });
+      const newer = {
+        scope,
+        clientRequestId: 'replacement-send',
+        commentIds: [rows()[0].id],
+        priorVersion: 1,
+        updatedAt: new Date().toISOString(),
+        attempt: { runId: 'd'.repeat(64), priorVersion: 1, session: { agentId: 'foundation-setup', sessionId: 'newer-session', ownerToken: 'newer-proof' } },
+      };
+      // Another window keeps its own memory: it shares only storage with this one, which still remembers the closed send.
+      const writer = where === 'this window' ? attempts : TestBed.runInInjectionContext(() => new MktgRunAttemptService());
+      writer.clearRedraft(scope);
+      writer.saveRedraft(newer);
+      const stored = Object.values(window.localStorage);
+      expect(stored).toHaveLength(1);
+      result.error(new HttpErrorResponse({ status: 409, error: { code: MKTG_RUN_CLOSED } }));
+      expect(progress.at(-1)).toEqual({ type: 'failed', message: 'This redraft was closed. The comments are reopened; send again explicitly.' });
+      // Storage keeps the newer send's recovery ID and owner capability; this window no longer answers with the closed one.
+      expect(Object.values(window.localStorage)).toEqual(stored);
+      expect(attempts.loadRedraft(scope)).toEqual(newer);
+      expect(client.hasAcceptedAttempt(scope)).toBe(true);
+      if (where === 'this window') {
+        window.localStorage.clear();
+        expect(attempts.loadRedraft(scope)).toEqual(newer);
+      }
+    }
+  );
+  it('hears the closure on the receipt retry of a ready result with no receipt: the send is settled, with nothing left to retry', () => {
+    vi.useFakeTimers();
+    try {
+      // The real accepted-run observer, over this spec's HTTP backend, in place of the stubbed stream.
+      const runs = TestBed.runInInjectionContext(() => new MktgAgentRunService());
+      observe.mockImplementation((...args: Parameters<MktgAgentRunService['observeAccepted']>) => runs.observeAccepted(...args));
+      const resultPath = FOUNDATION_MESSAGE_INTAKE.endpoints.result;
+      const progress: unknown[] = [];
+      const done = vi.fn();
+      client.send(scope, 1).subscribe({ next: (event) => progress.push(event), error: done, complete: done });
+      http.expectOne(path).flush({ sessionId: 'synthetic-session', ownerToken: 'synthetic-proof', runId: 'c'.repeat(64), priorVersion: 1 });
+      vi.advanceTimersByTime(MKTG_RUN_POLL.initialDelayMs);
+      http.expectOne(resultPath).flush({ status: 'ready', version: 2, documentMarkdown: '# Redraft' });
+      expect(progress.at(-1)).toEqual({ type: 'storing' });
+      expect(client.hasAcceptedAttempt(scope)).toBe(true);
+      refresh.mockClear();
+      vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs);
+      http.expectOne(resultPath).flush({ code: MKTG_RUN_CLOSED }, { status: 409, statusText: 'Conflict' });
+      expect(progress.at(-1)).toEqual({ type: 'failed', message: 'This redraft was closed. The comments are reopened; send again explicitly.' });
+      expect(done).toHaveBeenCalledExactlyOnceWith();
+      expect(client.hasIntent(scope)).toBe(false);
+      expect(window.localStorage.length).toBe(0);
+      expect(refresh).toHaveBeenCalledOnce();
+      vi.advanceTimersByTime(MKTG_RUN_POLL.intervalMs * 3);
+      http.expectNone(resultPath);
+      http.expectNone(path);
+    } finally {
+      vi.useRealTimers();
+    }
   });
   it('cancels on effective-subject change without exposing the prior capability or late landing', () => {
     const next = vi.fn();
