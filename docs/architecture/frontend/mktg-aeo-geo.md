@@ -78,8 +78,9 @@ trusts only its own answer: a run the server no longer lists (discarded, superse
 the plain not-found line, while a read whose run record the server could not read (`progressUnavailable`, no revision)
 is a transient failure the shared poller retries on its capped backoff, and the loop ends at `MKTG_RUN_POLL.timeoutMs` from the view's first read of the run as
 running ("The audit is taking longer than expected."), the server's writing budget, which a tab return never restarts.
-That deadline ends the follow whether or not the run record can be read: a read past it whose record is unreadable
-(`progressUnavailable`) ends on the same line, so the retrying line never outlasts the run's budget.
+Once the view has read the run as running, a read past that deadline that answers with an unreadable run record
+(`progressUnavailable`) ends on the same line. A view that never read the run as running has no deadline, and a read
+that fails in transport is still retried by the shared poller.
 On the Documents page a Started runs row of an audit waiting for answers reads "Answer the questions" and opens the
 run page only in the browser that holds its capability; anywhere else the row reads "Open" and opens the run's
 Document page (`?run=`), where that waiting line explains it, never a blank intake form. The Kit card and the Family
