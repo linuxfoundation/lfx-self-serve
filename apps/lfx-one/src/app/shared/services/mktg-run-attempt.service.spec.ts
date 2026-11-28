@@ -139,6 +139,7 @@ describe('MktgRunAttemptService', () => {
     restored.clearRedraft(scope);
     expect(restored.load(oneOff.projectUid, oneOff.agentId, oneOff.documentId)).not.toBeNull();
     restored.saveRedraft(intent);
+    restored.clear(oneOff.projectUid, oneOff.agentId, restored.subject(), oneOff.documentId);
     expect(restored.loadRedraft(scope)).toEqual(intent);
   });
 
