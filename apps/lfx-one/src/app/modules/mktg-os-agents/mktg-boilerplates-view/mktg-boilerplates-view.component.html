@@ -131,6 +131,8 @@
         id="mktg-boilerplates-panel-sources"
         aria-labelledby="mktg-boilerplates-tab-sources"
         data-testid="mktg-boilerplates-view-panel-sources">
+        <!-- The rows this revision inherited from the version it revises: listed in each card after the run's own, with the version that produced them. -->
+        @let inherited = inheritedView();
         <div class="flex flex-col gap-2 rounded-xl border border-gray-200 bg-white p-4">
           <h3 class="text-sm font-semibold text-gray-900">Sources read</h3>
           @if (report().sources_read.length > 0) {
@@ -141,9 +143,10 @@
                 </li>
               }
             </ul>
-          } @else {
+          } @else if (inherited.read.length === 0) {
             <p class="text-xs text-gray-500" data-testid="mktg-boilerplates-view-sources-read-empty">Nothing was read.</p>
           }
+          <lfx-mktg-report-inherited group="read" [view]="inherited" />
         </div>
         <!-- The agent's own words for what failed: a v2 report's findings (source, plain reason, small detail, as the kit's Failed sources card),
              a v1 report's list as before. The UI never rewrites a reason. -->
@@ -162,13 +165,14 @@
                 </li>
               }
             </ul>
-          } @else {
+          } @else if (inherited.failed.length === 0) {
             <p class="text-xs text-gray-500" data-testid="mktg-boilerplates-view-sources-failed-empty">{{ noSourceFailedNote }}</p>
           }
+          <lfx-mktg-report-inherited group="failed" [view]="inherited" />
         </div>
-        <!-- A v2 report: the kit's Missing assets and Warnings cards; a v1 report adds nothing here. -->
-        @if (findingsView.hasFindings) {
-          <lfx-mktg-report-findings [view]="findingsView" />
+        <!-- A v2 report: the kit's Missing assets and Warnings cards, the inherited rows after the run's own; a v1 report that inherited neither adds nothing here. -->
+        @if (findingsView.hasFindings || inherited.missing.length > 0 || inherited.warnings.length > 0) {
+          <lfx-mktg-report-findings [view]="findingsView" [inherited]="inherited" />
         }
         <div class="flex flex-col gap-2 rounded-xl border border-gray-200 bg-white p-4">
           <h3 class="text-sm font-semibold text-gray-900">{{ gapsTitle }}</h3>

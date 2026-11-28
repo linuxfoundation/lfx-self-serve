@@ -29,7 +29,7 @@ import { isMktgDocumentCommentAnchor } from '@lfx-one/shared/utils';
 import { provideMktgSlidesExportStub } from '@shared/testing/mktg-slides-export-test-service';
 import { provideMktgCommentsStub } from '@shared/testing/mktg-comments-test-service';
 import { brandKitTestRevision } from '@lfx-one/shared/utils/__fixtures__/brand-kit-revision.fixture';
-import { frameworkReportV2Fixture } from '@lfx-one/shared/utils/__fixtures__/mktg-report-v2.fixture';
+import { frameworkReportV2Fixture, mktgRedraftReportFixture } from '@lfx-one/shared/utils/__fixtures__/mktg-report-v2.fixture';
 import { NEVER, of } from 'rxjs';
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
@@ -393,6 +393,38 @@ describe('MktgFrameworkViewComponent', () => {
     expect(query('mktg-report-findings-missing-empty')?.textContent?.trim()).toBe('Nothing is missing.');
     expect(query('mktg-report-findings-warnings-item')).toBeNull();
     expect(query('mktg-report-findings-warnings-empty')?.textContent?.trim()).toBe('No warnings.');
+  });
+
+  it('shows what a redraft inherited apart from its own reads: version 1’s LFX record and metrics as read in version 1, the page version 1 could not read as not read in version 1', async () => {
+    host.asset.set({ ...ASSET, report: mktgRedraftReportFixture() });
+    host.state.set('ready');
+    await fixture.whenStable();
+    await tab('sources');
+    // The run re-read nothing: no list of its own, and no "Nothing was read." over the inherited rows.
+    expect(query('mktg-framework-view-sources-read')).toBeNull();
+    expect(query('mktg-framework-view-sources-read-empty')).toBeNull();
+    const read = Array.from(query('mktg-report-inherited-read')?.querySelectorAll('li') ?? []);
+    expect(read).toHaveLength(6);
+    expect(read.slice(-2).map((row) => Array.from(row.querySelectorAll('span > span')).map((line) => line.textContent))).toEqual([
+      ['LFX record: Agentic AI Foundation (agentic-ai-foundation)', 'Read in version 1'],
+      ['LFX standard metrics', 'Read in version 1'],
+    ]);
+    expect(query('mktg-framework-view-sources-failed-empty')).toBeNull();
+    const failed = query('mktg-report-inherited-failed');
+    expect(failed?.querySelectorAll('li')).toHaveLength(1);
+    expect(failed?.textContent).toContain('This page does not exist on the site (the server answered 404).');
+    expect(failed?.querySelector('[data-testid="mktg-report-inherited-marker"]')?.textContent).toBe('Could not be read in version 1');
+    // Nothing missing and no warning was inherited: those cards say so, as on a first draft.
+    expect(query('mktg-report-findings-missing-empty')?.textContent?.trim()).toBe('Nothing is missing.');
+    expect(query('mktg-report-findings-warnings-empty')?.textContent?.trim()).toBe('No warnings.');
+
+    // A redraft that read a page itself lists it first, as its own, and the inherited rows after it in the same card.
+    host.asset.set({ ...ASSET, report: { ...mktgRedraftReportFixture(), sources_read: ['https://aaif.io/blog'] } });
+    await fixture.whenStable();
+    const own = query('mktg-framework-view-sources-read');
+    expect(own?.querySelectorAll('li')).toHaveLength(1);
+    expect(own?.querySelector('[data-testid="mktg-report-inherited-marker"]')).toBeNull();
+    expect(own?.nextElementSibling?.querySelector('[data-testid="mktg-report-inherited-read"]')).not.toBeNull();
   });
 
   it('adds no findings card for a v1 report, whose failed sources list as before', async () => {

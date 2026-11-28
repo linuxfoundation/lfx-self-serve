@@ -101,6 +101,15 @@ export const MKTG_APPROVE_HEADER = 'Approve this version?';
 
 /** The report key a revision's carry adds; a validator strict to its keys allows it too. */
 export const MKTG_REPORT_INHERITED_KEY = 'inherited';
+/** The lists of the Sources tab a revision may inherit rows into: the sources read, then the findings groups. */
+export const MKTG_INHERITED_GROUPS = ['read', ...MKTG_REPORT_FINDINGS_GROUPS] as const;
+/** What stands beside an inherited row of each list, before the number of the version whose run produced it. */
+export const MKTG_INHERITED_MARKERS = {
+  read: 'Read in version',
+  failed: 'Could not be read in version',
+  missing: 'Missing in version',
+  warnings: 'Noted in version',
+} as const satisfies Record<(typeof MKTG_INHERITED_GROUPS)[number], string>;
 /** `report.inherited.sources_read` holds at most this many rows. */
 export const MKTG_INHERITED_SOURCES_MAX = 200;
 /** Every other list of `report.inherited` holds at most this many rows. */

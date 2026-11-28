@@ -23,13 +23,14 @@ import {
   MktgRevisionApproval,
   MktgRevisionSummary,
 } from '@lfx-one/shared/interfaces';
-import { describeMktgAcceptedGaps, faqGroupViews, mktgAssetHeaderFallback, mktgReportFindingsView } from '@lfx-one/shared/utils';
+import { describeMktgAcceptedGaps, faqGroupViews, mktgAssetHeaderFallback, mktgReportFindingsView, mktgReportInheritedView } from '@lfx-one/shared/utils';
 import { MktgDocumentCommentsService } from '@services/mktg-document-comments.service';
 import { MarkdownRendererComponent } from '@components/markdown-renderer/markdown-renderer.component';
 import { createMktgAssetTab } from '../utils/mktg-asset-tab.util';
 import { MktgAssetMetaComponent } from '../components/mktg-asset-meta/mktg-asset-meta.component';
 import { MktgFieldCommentsComponent } from '../components/mktg-field-comments/mktg-field-comments.component';
 import { MktgReportFindingsComponent } from '../components/mktg-report-findings/mktg-report-findings.component';
+import { MktgReportInheritedComponent } from '../components/mktg-report-inherited/mktg-report-inherited.component';
 
 // The FAQ asset view, an app page in the Messaging Framework view's look
 // (full width, a tab bar, white cards, the version chip): the FAQ itself —
@@ -39,7 +40,15 @@ import { MktgReportFindingsComponent } from '../components/mktg-report-findings/
 // gaps. Purely presentational: the run page and the Documents area feed it.
 @Component({
   selector: 'lfx-mktg-faq-view',
-  imports: [NgClass, RouterLink, MarkdownRendererComponent, MktgAssetMetaComponent, MktgFieldCommentsComponent, MktgReportFindingsComponent],
+  imports: [
+    NgClass,
+    RouterLink,
+    MarkdownRendererComponent,
+    MktgAssetMetaComponent,
+    MktgFieldCommentsComponent,
+    MktgReportFindingsComponent,
+    MktgReportInheritedComponent,
+  ],
   templateUrl: './mktg-faq-view.component.html',
 })
 export class MktgFaqViewComponent {
@@ -105,6 +114,8 @@ export class MktgFaqViewComponent {
   protected readonly report = computed(() => this.asset().report);
   /** The report's findings as the Sources tab shows them: a v2 report's three groups, a v1 report's failed list alone. */
   protected readonly reportFindings = computed(() => mktgReportFindingsView(this.report(), MKTG_REPORT_ASSET_LABELS));
+  /** The rows the revision inherited from the version it revises, as the Sources tab lists them after the run's own. */
+  protected readonly inheritedView = computed(() => mktgReportInheritedView(this.report(), MKTG_REPORT_ASSET_LABELS));
   protected readonly findings = computed(() => this.asset().checks.findings);
   protected readonly noSourceFailedNote = MKTG_ASSET_NO_SOURCE_FAILED_MESSAGE;
   protected readonly gapsTitle = MKTG_REPORT_GAPS_TITLE;

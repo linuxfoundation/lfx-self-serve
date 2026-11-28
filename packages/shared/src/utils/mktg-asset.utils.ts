@@ -5,12 +5,17 @@ import { MKTG_ACCEPTED_KEYS } from '../constants/mktg-asset.constants';
 import { MKTG_DOCUMENT_TYPES } from '../constants/mktg-document-store.constants';
 import type { MktgAssetHeaderMetadata, MktgAssetReport } from '../interfaces/mktg-asset.interface';
 import type { MktgDocumentAgentKey, MktgRevisionAccepted, MktgRevisionApproval, MktgRevisionResponse } from '../interfaces/mktg-document-store.interface';
+import { mktgReportInheritedView } from './mktg-report-inherited.utils';
 
-/** Completion is not source completeness; describe the viewed revision's report only. */
+/**
+ * Completion is not source completeness; describe the viewed revision's report only. The sources a revision inherited
+ * count as the run's own do, read or not: the document still rests on them.
+ */
 export function describeMktgAssetReadiness(report: MktgAssetReport | null): string {
-  const failed = report?.sources_failed.length ?? 0;
+  const inherited = mktgReportInheritedView(report, {});
+  const failed = (report?.sources_failed.length ?? 0) + inherited.failed.length;
   const gaps = report?.gaps.length ?? 0;
-  const total = failed + (report?.sources_read.length ?? 0);
+  const total = failed + (report?.sources_read.length ?? 0) + inherited.read.length;
   const clauses: string[] = [];
   if (failed) clauses.push(`${failed} of ${total} ${total === 1 ? 'source' : 'sources'} could not be read`);
   if (gaps) clauses.push(`${gaps} ${gaps === 1 ? 'gap' : 'gaps'}`);

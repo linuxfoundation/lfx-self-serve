@@ -313,6 +313,8 @@ export interface BrandKitApproveFailedItem {
   title: string;
   text: string;
   detail: string | null;
+  /** On a row the revision inherited: "Could not be read in version N". Absent on the run's own. */
+  marker?: string;
 }
 
 /** A missing asset as the approve dialog lists it: the asset's label, the agent's plain reason and, when it names one, the fix. */
@@ -320,9 +322,11 @@ export interface BrandKitApproveMissingItem {
   title: string;
   text: string;
   fix: string | null;
+  /** On a row the revision inherited: "Missing in version N". Absent on the run's own. */
+  marker?: string;
 }
 
-/** What a v2 report's approve dialog lists first, in the Sources tab's words; both empty for a v1 report. */
+/** What the approve dialog lists first, in the Sources tab's words: the run's own rows, then the inherited ones; both empty for a v1 report that inherited nothing. */
 export interface BrandKitApproveFindings {
   failed: BrandKitApproveFailedItem[];
   missing: BrandKitApproveMissingItem[];

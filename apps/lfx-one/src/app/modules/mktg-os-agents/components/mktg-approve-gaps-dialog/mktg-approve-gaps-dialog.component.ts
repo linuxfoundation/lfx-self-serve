@@ -23,7 +23,8 @@ import { DynamicDialogConfig } from 'primeng/dynamicdialog';
 // What the reviewer accepts by approving: the sources that could not be read
 // and the open gaps, as before, and, for any agent whose report carries the
 // v2 findings, the failed sources and missing assets in the Sources tab's
-// words and shape, then the gaps no missing asset stands for; for a Brand
+// words and shape (the rows a revision inherited after the run's own, each
+// with the version that produced it), then the gaps no missing asset stands for; for a Brand
 // Kit, also the colour conflicts the kit resolved and the chapters whose rules
 // the LF reference supplied rather than the project. The buttons are the dialog's footer (MktgApproveGapsFooterComponent).
 // The dialog's data is the report as every agent writes it, and whether the
@@ -40,7 +41,7 @@ export class MktgApproveGapsDialogComponent {
   public readonly report = this.config.data?.report;
   /** Whether the document is the Brand Kit's, by its document type: its dialog lists no Gaps group. */
   public readonly brandKit = this.config.data?.brandKit ?? false;
-  /** Any agent's v2 report: its failed sources and missing assets as the Sources tab words them; both empty for a v1 report. */
+  /** Any agent's v2 report: its failed sources and missing assets as the Sources tab words them, then the rows the revision inherited, marked with their version; both empty for a v1 report. */
   public readonly findings = brandKitApproveFindings(this.report);
   /** Whether a v2 report has a failed source or a missing asset to show: then the top list is the two groups, else today's list. */
   public readonly showsFindings = this.findings.failed.length > 0 || this.findings.missing.length > 0;

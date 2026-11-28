@@ -21,6 +21,7 @@ import type {
 } from '../interfaces/brand-kit.interface';
 import type { MktgAssetReport } from '../interfaces/mktg-asset.interface';
 import { brandKitConflictSourceLabel, brandKitFailedSourceTitle } from './brand-kit-sources.utils';
+import { mktgReportInheritedView } from './mktg-report-inherited.utils';
 import { mktgReportAssetLabel } from './mktg-report-v2.utils';
 
 /** The rule paths of the report are the envelope's: `chapters.<id>` followed by a member or an index. */
@@ -45,19 +46,25 @@ function isBrandKitReport(report: MktgAssetReport): report is BrandKitReport {
  * each source the agent could not read with its plain reason and detail, and
  * each asset it did not find with its label (or its id as written), reason
  * and fix. Any agent's report with findings; both empty for a v1 report,
- * whose dialog keeps its own list.
+ * whose dialog keeps its own list. The rows a revision inherited follow the
+ * run's own in each group, marked with the version that produced them:
+ * approving accepts them too, since the document still rests on them. A
+ * report that inherited rows but wrote no findings lists its legacy failed
+ * sources here, so nothing open is left out.
  */
 export function brandKitApproveFindings(report: MktgAssetReport | null | undefined): BrandKitApproveFindings {
   const findings = report?.findings;
-  if (!findings) return { failed: [], missing: [] };
-  return {
-    failed: findings.sources_failed.map((failed) => ({ title: brandKitFailedSourceTitle(failed.source), text: failed.reason, detail: failed.detail ?? null })),
-    missing: findings.missing_assets.map((missing) => ({
-      title: mktgReportAssetLabel(missing.asset, MKTG_REPORT_ASSET_LABELS),
-      text: missing.reason,
-      fix: missing.fix ?? null,
-    })),
-  };
+  if (!report || (!findings && !report.inherited)) return { failed: [], missing: [] };
+  const inherited = mktgReportInheritedView(report, MKTG_REPORT_ASSET_LABELS, brandKitFailedSourceTitle);
+  const failed = findings
+    ? findings.sources_failed.map((entry) => ({ title: brandKitFailedSourceTitle(entry.source), text: entry.reason, detail: entry.detail ?? null }))
+    : report.sources_failed.map((entry) => ({ title: brandKitFailedSourceTitle(entry.name), text: entry.reason, detail: null }));
+  const missing = (findings?.missing_assets ?? []).map((entry) => ({
+    title: mktgReportAssetLabel(entry.asset, MKTG_REPORT_ASSET_LABELS),
+    text: entry.reason,
+    fix: entry.fix ?? null,
+  }));
+  return { failed: [...failed, ...inherited.failed], missing: [...missing, ...inherited.missing] };
 }
 
 /** The prefix the boilerplates agent puts before an unanswered question in `report.gaps`. */
@@ -95,14 +102,14 @@ export function mktgReportGapMirrorsReason(gap: string, reason: string): boolean
 /**
  * The gaps lines of a v2 report that no missing asset stands for, as written: the approve dialog lists them under Gaps
  * after the two findings groups, so an approver is told of every open gap. A gap is mirrored when it and some
- * `findings.missing_assets[].reason` speak of the same question (`mktgReportGapMirrorsReason`). Empty for a v1 report
- * (its gaps list as before). Agent-agnostic: the dialog, which knows the document type, leaves the group out for the
- * Brand Kit.
+ * `findings.missing_assets[].reason` speak of the same question (`mktgReportGapMirrorsReason`), an inherited missing
+ * asset's included. Empty for a v1 report that inherited nothing (its gaps list as before). Agent-agnostic: the dialog,
+ * which knows the document type, leaves the group out for the Brand Kit.
  */
 export function mktgReportUnmirroredGaps(report: MktgAssetReport | null | undefined): string[] {
   const findings = report?.findings;
-  if (!report || !findings) return [];
-  const reasons = findings.missing_assets.map((missing) => missing.reason);
+  if (!report || (!findings && !report.inherited)) return [];
+  const reasons = [...(findings?.missing_assets ?? []), ...(report.inherited?.findings.missing_assets ?? [])].map((missing) => missing.reason);
   return report.gaps.filter((gap) => !reasons.some((reason) => mktgReportGapMirrorsReason(gap, reason)));
 }
 
@@ -179,7 +186,9 @@ export function brandKitColorConflictViews(report: MktgAssetReport | null | unde
  * Whether the report has something open that approving accepts: what the
  * approve dialog lists first. An open gap; for a report with the v2
  * findings, a source that could not be read or an asset not found (the
- * findings, which the legacy fields need not mirror); otherwise a legacy
+ * findings, which the legacy fields need not mirror); a source or an asset
+ * the revision inherited as failed or missing, which count as the run's own;
+ * otherwise a legacy
  * failed source: a v2 report whose two groups are empty falls back to the
  * legacy fields, as the dialog's list does. The dialog's header and the
  * decision to show it both read this, so they count what the list shows.
@@ -189,6 +198,10 @@ export function mktgReportHasOpenGaps(report: MktgAssetReport | null | undefined
   if (report.gaps.length > 0) return true;
   const findings = report.findings;
   if (findings && (findings.sources_failed.length > 0 || findings.missing_assets.length > 0)) return true;
+  const inherited = report.inherited;
+  if (inherited && (inherited.sources_failed.length > 0 || inherited.findings.sources_failed.length > 0 || inherited.findings.missing_assets.length > 0)) {
+    return true;
+  }
   return report.sources_failed.length > 0;
 }
 

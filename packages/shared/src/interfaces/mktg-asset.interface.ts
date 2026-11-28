@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { MKTG_REPORT_V2 } from '../constants/mktg-asset.constants';
+import type { MKTG_INHERITED_GROUPS, MKTG_REPORT_V2 } from '../constants/mktg-asset.constants';
 import type { MktgRevisionApproval, MktgRevisionAuthor, MktgRevisionResponse } from './mktg-document-store.interface';
 
 /**
@@ -147,6 +147,26 @@ export interface MktgReportFindingsView {
   failed: MktgReportFailedItem[];
   missing: MktgReportMissingItem[];
   warnings: MktgReportWarningItem[];
+}
+
+/** The lists of the Sources tab a revision may inherit rows into: the sources read, and the three findings groups. */
+export type MktgReportInheritedGroup = (typeof MKTG_INHERITED_GROUPS)[number];
+
+/** What stands beside a row a revision inherited: the version whose run produced it, in words ("Read in version 1"). */
+export interface MktgInheritedMarker {
+  marker: string;
+}
+
+/**
+ * The rows a revision inherited (`report.inherited`) as the Sources tab lists them after the run's own, each in its
+ * own row's shape with its marker. A failed source is listed once: its finding, or its legacy row when the version
+ * that could not read it wrote no finding. Every list is empty for a report that inherited nothing.
+ */
+export interface MktgReportInheritedView {
+  read: ({ source: string } & MktgInheritedMarker)[];
+  failed: (MktgReportFailedItem & MktgInheritedMarker)[];
+  missing: (MktgReportMissingItem & MktgInheritedMarker)[];
+  warnings: (MktgReportWarningItem & MktgInheritedMarker)[];
 }
 
 /**

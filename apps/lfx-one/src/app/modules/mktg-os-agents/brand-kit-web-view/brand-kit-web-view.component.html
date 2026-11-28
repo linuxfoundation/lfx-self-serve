@@ -762,6 +762,8 @@
         id="brand-kit-web-view-panel-sources"
         aria-labelledby="brand-kit-web-view-tab-sources"
         data-testid="brand-kit-web-view-panel-sources">
+        <!-- The rows this revision inherited from the version it revises: listed in each card after the run's own, with the version that produced them. -->
+        @let inherited = inheritedView();
         <div [class]="card">
           <h3 [class]="cardTitle">Sources read</h3>
           @if (v.report.sources_read.length > 0) {
@@ -772,9 +774,10 @@
                 </li>
               }
             </ul>
-          } @else {
+          } @else if (inherited.read.length === 0) {
             <p [class]="caption" data-testid="brand-kit-web-view-sources-read-empty">Nothing was read.</p>
           }
+          <lfx-mktg-report-inherited group="read" [view]="inherited" />
         </div>
         @let sources = sourcesView();
         <!-- The agent's own words for what failed, what is missing and what it noticed; the UI never rewrites a reason.
@@ -796,9 +799,10 @@
                 </li>
               }
             </ul>
-          } @else {
+          } @else if (inherited.failed.length === 0) {
             <p [class]="caption" data-testid="brand-kit-web-view-sources-failed-empty">{{ sourcesEmpty.failed }}</p>
           }
+          <lfx-mktg-report-inherited group="failed" [view]="inherited" />
         </div>
         <div [class]="card">
           <h3 [class]="cardTitle">{{ sourcesTitles.missing }}</h3>
@@ -817,9 +821,10 @@
                 </li>
               }
             </ul>
-          } @else {
+          } @else if (inherited.missing.length === 0) {
             <p [class]="caption" data-testid="brand-kit-web-view-missing-assets-empty">{{ sourcesEmpty.missing }}</p>
           }
+          <lfx-mktg-report-inherited group="missing" [view]="inherited" />
         </div>
         <div [class]="card">
           <h3 [class]="cardTitle">{{ sourcesTitles.warnings }}</h3>
@@ -846,9 +851,10 @@
                 </li>
               }
             </ul>
-          } @else {
+          } @else if (inherited.warnings.length === 0) {
             <p [class]="caption" data-testid="brand-kit-web-view-warnings-empty">{{ sourcesEmpty.warnings }}</p>
           }
+          <lfx-mktg-report-inherited group="warnings" [view]="inherited" />
         </div>
         <div [class]="card">
           <h3 [class]="cardTitle">{{ sourcesTitles.conflicts }}</h3>

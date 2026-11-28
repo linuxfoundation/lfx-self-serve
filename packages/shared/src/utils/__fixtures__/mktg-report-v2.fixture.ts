@@ -11,6 +11,7 @@ import { validateFoundationMessageEnvelope } from '../foundation-message.utils';
 import boilerplatesEnvelope from './boilerplates-report-v2.envelope.json';
 import faqEnvelope from './faq-report-v2.envelope.json';
 import frameworkEnvelope from './framework-report-v2.envelope.json';
+import previousRunGolden from './mktg-previous-run.golden.json';
 
 /**
  * The agent lanes' REAL report v2 envelopes for the Agentic AI Foundation (AAIF, `agentic-ai-foundation`, aaif.io), each
@@ -61,4 +62,22 @@ export function faqReportV2Envelope(): FaqEnvelope {
 /** The framework fixture's report on its own: a v2 report whose findings hold one failed source and nothing else. */
 export function frameworkReportV2Fixture(): MktgAssetReport {
   return frameworkReportV2Envelope().report;
+}
+
+/**
+ * A redraft's report: the run re-read nothing, and `inherited` is the block the framework agent's own `inheritedOf`
+ * made from version 1's stored run (mktg-previous-run.golden.json, byte for byte): the three aaif.io pages, the press
+ * release, the LFX record and the LFX standard metrics as read in version 1, and `https://aaif.io/press` as not read
+ * in version 1, as a legacy row and as its finding.
+ */
+export function mktgRedraftReportFixture(): MktgAssetReport {
+  return {
+    sources_read: [],
+    sources_failed: [],
+    gaps: [],
+    notes: 'Nothing was re-read: the sources stand as read in version 1.',
+    version: 2,
+    findings: { sources_failed: [], missing_assets: [], warnings: [] },
+    inherited: structuredClone(previousRunGolden.inherited),
+  };
 }

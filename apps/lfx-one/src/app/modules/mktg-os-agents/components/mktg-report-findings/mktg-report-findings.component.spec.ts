@@ -4,27 +4,30 @@
 import { Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { MKTG_REPORT_ASSET_LABELS } from '@lfx-one/shared/constants';
-import type { MktgAssetReport, MktgReportFindingsView } from '@lfx-one/shared/interfaces';
-import { faqReportV2Envelope } from '@lfx-one/shared/utils/__fixtures__/mktg-report-v2.fixture';
-import { mktgReportFindingsView } from '@lfx-one/shared/utils';
+import type { MktgAssetReport, MktgReportFindingsView, MktgReportInheritedView } from '@lfx-one/shared/interfaces';
+import { faqReportV2Envelope, mktgRedraftReportFixture } from '@lfx-one/shared/utils/__fixtures__/mktg-report-v2.fixture';
+import { mktgReportFindingsView, mktgReportInheritedView } from '@lfx-one/shared/utils';
 import { describe, expect, it } from 'vitest';
 import { MktgReportFindingsComponent } from './mktg-report-findings.component';
 
 @Component({
   selector: 'lfx-test-report-findings-host',
   imports: [MktgReportFindingsComponent],
-  template: `<lfx-mktg-report-findings [view]="view()" />`,
+  template: `<lfx-mktg-report-findings [view]="view()" [inherited]="inherited()" />`,
 })
 class HostComponent {
   // The FAQ agent's real envelope: one open question with a fix, two warnings without a source.
   public readonly view = signal<MktgReportFindingsView>(mktgReportFindingsView(faqReportV2Envelope().report, MKTG_REPORT_ASSET_LABELS));
+  /** Nothing inherited, as on a first draft. */
+  public readonly inherited = signal<MktgReportInheritedView>(mktgReportInheritedView(null, MKTG_REPORT_ASSET_LABELS));
 }
 
 describe('MktgReportFindingsComponent', () => {
-  const render = async (view?: MktgReportFindingsView): Promise<HTMLElement> => {
+  const render = async (view?: MktgReportFindingsView, inherited?: MktgReportInheritedView): Promise<HTMLElement> => {
     TestBed.configureTestingModule({ imports: [HostComponent] });
     const fixture = TestBed.createComponent(HostComponent);
     if (view) fixture.componentInstance.view.set(view);
+    if (inherited) fixture.componentInstance.inherited.set(inherited);
     await fixture.whenStable();
     return fixture.nativeElement as HTMLElement;
   };
@@ -86,5 +89,18 @@ describe('MktgReportFindingsComponent', () => {
     expect(text(root, 'mktg-report-findings-warnings-empty')).toBe('No warnings.');
     expect(query(root, 'mktg-report-findings-missing-item')).toBeNull();
     expect(query(root, 'mktg-report-findings-warnings-item')).toBeNull();
+  });
+
+  it('lists the rows a revision inherited in each card after the run’s own, and drops the empty line of a card that inherited one', async () => {
+    const report = mktgRedraftReportFixture();
+    report.inherited?.findings.missing_assets.push({ asset: 'press_release', reason: 'No press release was found.', fix: 'Add it as a link.', version: 1 });
+    const root = await render({ hasFindings: true, failed: [], missing: [], warnings: [] }, mktgReportInheritedView(report, MKTG_REPORT_ASSET_LABELS));
+    const missing = query(root, 'mktg-report-findings-missing');
+    expect(missing?.querySelector('[data-testid="mktg-report-inherited-missing"]')?.textContent).toContain('Press release');
+    expect(missing?.querySelector('[data-testid="mktg-report-inherited-marker"]')?.textContent).toBe('Missing in version 1');
+    expect(query(root, 'mktg-report-findings-missing-empty')).toBeNull();
+    // No warning was inherited: that card keeps its empty line.
+    expect(text(root, 'mktg-report-findings-warnings-empty')).toBe('No warnings.');
+    expect(query(root, 'mktg-report-inherited-warnings')).toBeNull();
   });
 });

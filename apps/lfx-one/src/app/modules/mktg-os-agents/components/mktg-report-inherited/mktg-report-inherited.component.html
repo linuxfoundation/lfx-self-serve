@@ -1,0 +1,78 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- One card's inherited rows, after the run's own: the same row, and under it the version whose run produced it. -->
+@let rows = view();
+@switch (group()) {
+  @case ('read') {
+    @if (rows.read.length > 0) {
+      <ul class="flex flex-col gap-1 text-sm text-gray-800 [overflow-wrap:anywhere]" data-testid="mktg-report-inherited-read">
+        @for (row of rows.read; track $index) {
+          <li class="flex items-start gap-2">
+            <i class="fa-light fa-check mt-1 shrink-0 text-xs text-emerald-600" aria-hidden="true"></i>
+            <span class="flex min-w-0 flex-col">
+              <span>{{ row.source }}</span>
+              <span class="text-xs text-gray-500" data-testid="mktg-report-inherited-marker">{{ row.marker }}</span>
+            </span>
+          </li>
+        }
+      </ul>
+    }
+  }
+  @case ('failed') {
+    @if (rows.failed.length > 0) {
+      <ul class="flex flex-col gap-1.5 text-sm [overflow-wrap:anywhere]" data-testid="mktg-report-inherited-failed">
+        @for (row of rows.failed; track $index) {
+          <li class="flex flex-col">
+            <span class="text-gray-800">{{ row.title }}</span>
+            <span class="text-xs text-amber-700">{{ row.text }}</span>
+            @if (row.detail) {
+              <span class="text-xs text-gray-500" data-testid="mktg-report-inherited-failed-detail">{{ row.detail }}</span>
+            }
+            <span class="text-xs text-gray-500" data-testid="mktg-report-inherited-marker">{{ row.marker }}</span>
+          </li>
+        }
+      </ul>
+    }
+  }
+  @case ('missing') {
+    @if (rows.missing.length > 0) {
+      <ul class="flex flex-col gap-1.5 text-sm" data-testid="mktg-report-inherited-missing">
+        @for (row of rows.missing; track $index) {
+          <li class="flex flex-col">
+            <span class="text-gray-800">{{ row.title }}</span>
+            <span class="text-xs text-amber-700">{{ row.text }}</span>
+            @if (row.fix) {
+              <span class="text-xs text-gray-700">{{ fixPrefix }}{{ row.fix }}</span>
+            }
+            <span class="text-xs text-gray-500" data-testid="mktg-report-inherited-marker">{{ row.marker }}</span>
+          </li>
+        }
+      </ul>
+    }
+  }
+  @case ('warnings') {
+    @if (rows.warnings.length > 0) {
+      <ul class="flex flex-col gap-1.5 text-sm" data-testid="mktg-report-inherited-warnings">
+        @for (row of rows.warnings; track $index) {
+          <li class="flex flex-col">
+            <span class="text-gray-800">{{ row.text }}</span>
+            @if (row.href) {
+              <a
+                class="text-xs text-blue-600 hover:text-blue-800 [overflow-wrap:anywhere]"
+                [href]="row.href"
+                target="_blank"
+                rel="noopener noreferrer"
+                data-testid="mktg-report-inherited-warnings-source-link"
+                >{{ row.source }}<span class="sr-only"> (opens in a new tab)</span></a
+              >
+            } @else if (row.source) {
+              <span class="text-xs text-gray-500">{{ row.source }}</span>
+            }
+            <span class="text-xs text-gray-500" data-testid="mktg-report-inherited-marker">{{ row.marker }}</span>
+          </li>
+        }
+      </ul>
+    }
+  }
+}
