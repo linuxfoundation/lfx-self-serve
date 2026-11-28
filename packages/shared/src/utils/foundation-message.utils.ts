@@ -79,6 +79,7 @@ import {
 } from '../interfaces/foundation-message.interface';
 import { MktgFrameworkAsset, MktgIntakeDocument, MktgRunAnswer, MktgRunAnswerOrigin, MktgRunQuestion } from '../interfaces/mktg-run.interface';
 import { extractMktgEnvelopeCandidates } from './mktg-envelope.utils';
+import { mktgReportInheritedErrors, renderMktgPreviousRun } from './mktg-previous-run.utils';
 import { mktgReportV2Errors } from './mktg-report-v2.utils';
 import { MKTG_INTAKE_ANSWER_LIMITS, MKTG_INTAKE_URL_MAX_CHARS } from '../constants/mktg-intake.constants';
 import { validateMktgIntakeAnswerLengths } from './mktg-intake-validation.utils';
@@ -365,6 +366,7 @@ function renderRevision(revision: FoundationMessageFormRevision | undefined): st
     guardFoundationMessageText(JSON.stringify(revision.previous, null, 2)),
     '--- END PREVIOUS ---'
   );
+  lines.push(...renderMktgPreviousRun(revision.previous_run, revision.prior_version, guardFoundationMessageText));
   return lines;
 }
 
@@ -777,6 +779,7 @@ function reportErrors(report: unknown): string[] {
   const any = { min: 0, max: Number.POSITIVE_INFINITY };
   return [
     ...mktgReportV2Errors(report),
+    ...mktgReportInheritedErrors(report),
     ...checkArray(`${at}.sources_read`, report['sources_read'], any, (entry, index) => textAt(`${at}.sources_read[${index}]`, entry)),
     ...checkArray(`${at}.sources_failed`, report['sources_failed'], any, (entry, index) =>
       isObject(entry) && isText(entry['name']) && isText(entry['reason']) ? [] : [`${at}.sources_failed[${index}] must be { name, reason }`]

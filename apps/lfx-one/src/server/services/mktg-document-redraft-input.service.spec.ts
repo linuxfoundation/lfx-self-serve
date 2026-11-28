@@ -82,6 +82,41 @@ describe('server-only redraft forms', () => {
       else expect(flows.capture).toHaveBeenCalledWith(req, stored.project, { mf: {}, mh: {} });
     }
   );
+  it.each(['foundation-message', 'brand-kit', 'boilerplates', 'faq'] as const)(
+    'ends the %s redraft with the stored run as the PREVIOUS RUN block: the keys the agent carries and nothing else',
+    async (agent) => {
+      const stored = view(agent);
+      stored.sidecar = {
+        ...stored.sidecar,
+        report: {
+          sources_read: ['https://example.test/', 'LFX record: Synthetic project'],
+          sources_failed: [{ name: 'https://example.test/press', reason: 'HTTP 404' }],
+          gaps: ['A stored gap.'],
+          notes: 'Stored notes.',
+        },
+        quality: {
+          reads: [
+            { key: 'lfx-record', kind: 'record', required: true, outcome: 'complete', pages_read: 1, bytes: 20, truncated: false },
+            { key: 'lfx-metrics', kind: 'metrics', required: false, outcome: 'complete', pages_read: 1, bytes: 10, truncated: false },
+          ],
+        },
+      };
+      const prepared = await new MktgDocumentRedraftInputService().prepare(req, stored, 'send-one', redraftContextFixture(agent).comments);
+      const carried = {
+        report: {
+          sources_read: ['https://example.test/', 'LFX record: Synthetic project'],
+          sources_failed: [{ name: 'https://example.test/press', reason: 'HTTP 404' }],
+        },
+        quality: { reads: [{ kind: 'metrics', outcome: 'complete' }] },
+      };
+      // The agent refuses a revision intake with any text after its last block, so the block is the end of the message.
+      const block = `--- PREVIOUS RUN (JSON, stored version 1) ---\n${JSON.stringify(carried, null, 2)}\n--- END PREVIOUS RUN ---`;
+      const lastBlockEnd = agent === 'brand-kit' ? '--- END STORED CHAPTERS ---' : '--- END PREVIOUS ---';
+      expect(prepared.message.endsWith(`${lastBlockEnd}\n${block}`)).toBe(true);
+      expect(prepared.message).not.toContain('Stored notes.');
+      expect(prepared.message).not.toContain('A stored gap.');
+    }
+  );
   it('renders the FAQ form from stored content and the approved framework, rejecting bad schema/hash/anchors or missing framework', async () => {
     const service = new MktgDocumentRedraftInputService();
     const stored = view('faq');

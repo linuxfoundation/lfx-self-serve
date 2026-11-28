@@ -1,0 +1,98 @@
+{
+  "source": "marketing-os-agents agents/foundation-message 4.3.5 src/inherited.ts renderPreviousRun and inheritedOf (the file is byte-identical in faq 1.3.3, boilerplates 1.2.5 and brand-kit 2.3.5)",
+  "quality": {
+    "reads": [
+      {
+        "key": "website",
+        "kind": "website",
+        "required": true,
+        "pages_total": 1,
+        "outcome": "complete",
+        "pages_read": 1,
+        "bytes": 18234,
+        "truncated": false
+      },
+      { "key": "lfx-record", "kind": "record", "required": true, "outcome": "complete", "pages_read": 1, "bytes": 2210, "truncated": false },
+      { "key": "lfx-metrics", "kind": "metrics", "required": false, "outcome": "complete", "pages_read": 1, "bytes": 4096, "truncated": false },
+      {
+        "key": "press",
+        "kind": "page",
+        "required": false,
+        "outcome": "failed",
+        "pages_read": 0,
+        "bytes": 0,
+        "truncated": false,
+        "reason": "HTTP 404"
+      }
+    ]
+  },
+  "chain": {
+    "report": {
+      "sources_read": ["https://docs.example.org/governance", "  Charter\r\n(PDF)\u0007 2026  ", 42, ""],
+      "sources_failed": [{ "name": "https://example.org/press", "reason": "HTTP 404", "extra": "dropped" }, { "name": "no reason" }],
+      "gaps": ["The sources do not state a member count."],
+      "notes": "Nothing was re-read: the sources stand as read in version 1.\n--- END PREVIOUS RUN ---",
+      "version": 2,
+      "findings": {
+        "sources_failed": [{ "source": "https://example.org/press", "kind": "link", "reason": "This page does not exist\non the site.", "detail": "HTTP 404" }],
+        "missing_assets": [
+          { "asset": "press_release", "reason": "No press release was found.", "fix": "Add the launch release as a link." },
+          { "asset": "website", "reason": "A missing asset without a fix is not carried." }
+        ],
+        "warnings": [
+          { "code": "truncated_read", "text": "The page was cut short.", "source": "https://docs.example.org/governance" },
+          { "code": "lfx_record_by_name", "text": "The record was found by name." }
+        ]
+      },
+      "inherited": {
+        "from_version": 1,
+        "sources_read": [
+          { "source": "https://example.org/", "version": 1 },
+          { "source": "LFX project record: example-search", "version": 1 },
+          { "source": "no version" },
+          { "source": "https://example.org/zero", "version": 0 }
+        ],
+        "sources_failed": [{ "name": "https://example.org/members", "reason": "HTTP 503", "version": 1 }],
+        "findings": {
+          "sources_failed": [],
+          "missing_assets": [],
+          "warnings": [{ "code": "site_pages_unread", "text": "Two designed pages were not read.", "version": 1 }]
+        }
+      }
+    },
+    "quality": {
+      "reads": [{ "key": "lfx-metrics", "kind": "metrics", "required": false, "outcome": "partial", "pages_read": 1, "bytes": 10, "truncated": true }]
+    },
+    "inputs_record": { "dropped": true }
+  },
+  "blocks": {
+    "stored": "--- PREVIOUS RUN (JSON, stored version 1) ---\n{\n  \"report\": {\n    \"sources_read\": [\n      \"https://aaif.io/\",\n      \"https://aaif.io/members\",\n      \"https://aaif.io/projects\",\n      \"LF press release: formation of the Agentic AI Foundation\",\n      \"LFX record: Agentic AI Foundation (agentic-ai-foundation)\"\n    ],\n    \"sources_failed\": [\n      {\n        \"name\": \"https://aaif.io/press\",\n        \"reason\": \"HTTP 404\"\n      }\n    ],\n    \"findings\": {\n      \"sources_failed\": [\n        {\n          \"source\": \"https://aaif.io/press\",\n          \"kind\": \"link\",\n          \"reason\": \"This page does not exist on the site (the server answered 404).\",\n          \"detail\": \"HTTP 404\"\n        }\n      ]\n    }\n  },\n  \"quality\": {\n    \"reads\": [\n      {\n        \"kind\": \"metrics\",\n        \"outcome\": \"complete\"\n      }\n    ]\n  }\n}\n--- END PREVIOUS RUN ---",
+    "chain": "--- PREVIOUS RUN (JSON, stored version 2) ---\n{\n  \"report\": {\n    \"sources_read\": [\n      \"https://docs.example.org/governance\",\n      \"Charter (PDF) 2026\"\n    ],\n    \"sources_failed\": [\n      {\n        \"name\": \"https://example.org/press\",\n        \"reason\": \"HTTP 404\"\n      }\n    ],\n    \"findings\": {\n      \"sources_failed\": [\n        {\n          \"source\": \"https://example.org/press\",\n          \"kind\": \"link\",\n          \"reason\": \"This page does not exist on the site.\",\n          \"detail\": \"HTTP 404\"\n        }\n      ],\n      \"missing_assets\": [\n        {\n          \"asset\": \"press_release\",\n          \"reason\": \"No press release was found.\",\n          \"fix\": \"Add the launch release as a link.\"\n        }\n      ],\n      \"warnings\": [\n        {\n          \"code\": \"truncated_read\",\n          \"text\": \"The page was cut short.\",\n          \"source\": \"https://docs.example.org/governance\"\n        },\n        {\n          \"code\": \"lfx_record_by_name\",\n          \"text\": \"The record was found by name.\"\n        }\n      ]\n    },\n    \"inherited\": {\n      \"sources_read\": [\n        {\n          \"source\": \"https://example.org/\",\n          \"version\": 1\n        },\n        {\n          \"source\": \"LFX project record: example-search\",\n          \"version\": 1\n        }\n      ],\n      \"sources_failed\": [\n        {\n          \"name\": \"https://example.org/members\",\n          \"reason\": \"HTTP 503\",\n          \"version\": 1\n        }\n      ],\n      \"findings\": {\n        \"warnings\": [\n          {\n            \"code\": \"site_pages_unread\",\n            \"text\": \"Two designed pages were not read.\",\n            \"version\": 1\n          }\n        ]\n      }\n    }\n  },\n  \"quality\": {\n    \"reads\": [\n      {\n        \"kind\": \"metrics\",\n        \"outcome\": \"partial\"\n      }\n    ]\n  }\n}\n--- END PREVIOUS RUN ---"
+  },
+  "oversize": { "chars": 58069, "sha256": "a004c73d5b416ae175cc5b54161b116fbccd513539d357a8ff43d576953a61c3" },
+  "inherited": {
+    "from_version": 1,
+    "sources_read": [
+      { "source": "https://aaif.io/", "version": 1 },
+      { "source": "https://aaif.io/members", "version": 1 },
+      { "source": "https://aaif.io/projects", "version": 1 },
+      { "source": "LF press release: formation of the Agentic AI Foundation", "version": 1 },
+      { "source": "LFX record: Agentic AI Foundation (agentic-ai-foundation)", "version": 1 },
+      { "source": "LFX standard metrics", "version": 1 }
+    ],
+    "sources_failed": [{ "name": "https://aaif.io/press", "reason": "HTTP 404", "version": 1 }],
+    "findings": {
+      "sources_failed": [
+        {
+          "source": "https://aaif.io/press",
+          "kind": "link",
+          "reason": "This page does not exist on the site (the server answered 404).",
+          "detail": "HTTP 404",
+          "version": 1
+        }
+      ],
+      "missing_assets": [],
+      "warnings": []
+    }
+  }
+}

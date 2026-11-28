@@ -91,3 +91,36 @@ export const MKTG_REPORT_ASSET_LABELS = {
 export const MKTG_APPROVE_HEADER_GAPS = 'Approve with open gaps?';
 /** The approve dialog's header when the report has only what the reviewer should see first (a Brand Kit's colour conflicts or LF-reference rules). */
 export const MKTG_APPROVE_HEADER = 'Approve this version?';
+
+// ---------------------------------------------------------------------------
+// What a revision inherits (`report.inherited`) and the PREVIOUS RUN block that carries it: a mirror of
+// marketing-os-agents `agents/<agent>/src/inherited.ts`, one byte-identical file for the framework, FAQ, boilerplates
+// and Brand Kit agents. The limits are the agents' own; the renderer fits the block under them, the validator holds
+// the envelope key to them.
+// ---------------------------------------------------------------------------
+
+/** The report key a revision's carry adds; a validator strict to its keys allows it too. */
+export const MKTG_REPORT_INHERITED_KEY = 'inherited';
+/** `report.inherited.sources_read` holds at most this many rows. */
+export const MKTG_INHERITED_SOURCES_MAX = 200;
+/** Every other list of `report.inherited` holds at most this many rows. */
+export const MKTG_INHERITED_ROWS_MAX = 50;
+/** A source, a name, a machine reason, a kind or a code: one line, at most this long. */
+export const MKTG_INHERITED_NAME_MAX_CHARS = 500;
+/** A sentence a person reads (a finding's reason, its fix, a warning's text): one line, at most this long. */
+export const MKTG_INHERITED_SENTENCE_MAX_CHARS = 300;
+/** The PREVIOUS RUN block's body is at most this many characters; the agent refuses an intake whose block is longer. */
+export const MKTG_PREVIOUS_RUN_MAX_CHARS = 60_000;
+/** The keys and brackets around the block's rows: an upper bound, so the rows are fitted under the rest. */
+export const MKTG_PREVIOUS_RUN_FRAME_CHARS = 1_000;
+/** The block's closing line. */
+export const MKTG_PREVIOUS_RUN_END = '--- END PREVIOUS RUN ---';
+/** The name the family gives the LFX standard metrics, and how a report's own wording of it is recognised. */
+export const MKTG_INHERITED_LFX_METRICS_SOURCE = 'LFX standard metrics';
+export const MKTG_INHERITED_LFX_METRICS_REGEX = /^LFX (?:standard )?metrics\b/i;
+/** Every run of white space and control characters (line breaks, tabs, the C0 and C1 controls, the line and paragraph separators, a byte-order mark). */
+// eslint-disable-next-line no-control-regex
+export const MKTG_INHERITED_BREAKS_REGEX = /[\s\u0000-\u001f\u007f-\u009f\u2028\u2029\ufeff]+/g;
+/** What a carried text may not hold (the agents' schema pattern): a line break or any other control character. */
+// eslint-disable-next-line no-control-regex
+export const MKTG_INHERITED_ONE_LINE_REGEX = /^[^\u0000-\u001f\u007f-\u009f\u2028\u2029]+$/;
