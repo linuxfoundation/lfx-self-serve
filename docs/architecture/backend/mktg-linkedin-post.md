@@ -74,6 +74,13 @@ A `questions` result for a turn the record has already claimed is answered `pend
 turn until the agent writes something newer, and for good when the answers' delivery failed after the claim, and a
 browser poll that does not hold the answered id (a reload, or a send that failed) would otherwise be sent back to
 questions the server refuses with 409 `MKTG_RUN_ANSWERED`.
+The dedicated run page follows the run record, not this result. When its own answers POST fails with anything but
+a 409 or 412, it re-reads the record at once and holds the stepper until that read returns, so no second send goes
+out for a turn the server may have claimed. A record still in `questions` (the server never took the turn) keeps the
+stepper, the answers and “Your answers could not be sent. They are kept — try again.” A record that has left
+`questions` opens the Document; when it reads `writing`, which proves the claim and not the delivery, the page first
+shows one notice that stays until dismissed: “Your answers may not have reached the agent. If the post does not
+arrive, start a new one.” (never after a POST that succeeded).
 A poll for a stored run that is discarded or superseded is refused before the result is read (409 `MKTG_RUN_CLOSED`),
 so a late post is never stored for a closed run; the Document page treats that answer as no failure and ends on the
 record's closed-run line.

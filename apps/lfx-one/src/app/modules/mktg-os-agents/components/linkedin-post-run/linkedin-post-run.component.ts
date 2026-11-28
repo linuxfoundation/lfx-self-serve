@@ -181,6 +181,11 @@ export class LinkedinPostRunComponent {
   protected readonly recordedRunId = computed(() => this.serverRun()?.runId ?? '');
   protected readonly previousAnswers = signal<Record<string, string>>({});
   protected readonly answering = signal(false);
+  /**
+   * This page's own answers POST failed and the run is being re-read: the line to show if the turn is still open. The
+   * stepper is held while it is set, because a second send for a turn the server claimed could only be refused.
+   */
+  protected readonly unconfirmedSend = signal('');
   protected readonly linkError = signal('');
   protected readonly explicitProfileSave = signal(false);
   protected readonly acceptedRequest = signal<MktgGenerateRequest | null>(null);
@@ -254,6 +259,7 @@ export class LinkedinPostRunComponent {
           this.questions.set([]);
           this.previousAnswers.set({});
           this.answering.set(false);
+          this.unconfirmedSend.set('');
           this.busy.set(false);
           this.loading.set(true);
           this.profileResolved.set(false);
@@ -410,6 +416,7 @@ export class LinkedinPostRunComponent {
     if (readMktgRetiredRunHint(run) && this.acceptedRequest() !== request) {
       this.generation?.unsubscribe();
       this.answering.set(false);
+      this.unconfirmedSend.set('');
       this.questionsPending = null;
       this.questions.set([]);
       this.pendingNotice.set(null);
@@ -418,6 +425,9 @@ export class LinkedinPostRunComponent {
       return;
     }
     if (this.answering() || this.acceptedRequest() === request) return;
+    // This read settles a failed answers POST of this page, when one is waiting on it.
+    const unconfirmed = this.unconfirmedSend();
+    this.unconfirmedSend.set('');
     if (run?.state === 'questions' && pending?.pendingQuestions) {
       this.checkingPending.set(false);
       this.pendingNotice.set({ documentId: run.documentId, state: 'questions' });
@@ -426,11 +436,14 @@ export class LinkedinPostRunComponent {
         this.questions.set(pending.pendingQuestions.questions);
         this.editing.set(false);
       }
+      // The server did not take the turn, so the send can be tried again. Set again: a failed read in between replaced the line.
+      if (unconfirmed) this.error.set(unconfirmed);
       return;
     }
     this.questionsPending = null;
     this.questions.set([]);
     this.pendingNotice.set(null);
+    if (unconfirmed) this.error.set('');
     if (pending?.pendingQuestions && run && run.state !== 'questions') {
       this.attempts.save({ ...pending, pendingQuestions: undefined, state: run.state === 'failed' ? 'failed' : 'writing' });
     }
@@ -442,6 +455,16 @@ export class LinkedinPostRunComponent {
       this.checkingPending.set(false);
       this.ownRunsSeed.update((snapshot) => (snapshot ? { ...snapshot, runs: [] } : null));
       return;
+    }
+    // After a failed answers POST a record in `writing` says only that the server holds the turn's claim: the answers were
+    // delivered, or the delivery failed after the claim. One notice that is true both ways. Sticky: the page opens the
+    // Document in the same moment, and this line is the only word that the send may have failed.
+    if (unconfirmed && run?.state === 'writing') {
+      this.messages.add({
+        severity: 'warn',
+        summary: 'Your answers may not have reached the agent. If the post does not arrive, start a new one.',
+        sticky: true,
+      });
     }
     this.acceptedRequest.set(request);
     void this.returnToDocument(request, null);
@@ -626,7 +649,7 @@ export class LinkedinPostRunComponent {
   }
   protected onAnswers(answers: MktgRunAnswer[]): void {
     const pending = this.questionsPending;
-    if (!pending?.pendingQuestions || this.answering() || this.runLookupFailed()) return;
+    if (!pending?.pendingQuestions || this.answering() || this.unconfirmedSend() || this.runLookupFailed()) return;
     const version = this.scopeVersion;
     const owner = this.user.user()?.sub;
     const project = this.context.activeContextUid();
@@ -677,9 +700,17 @@ export class LinkedinPostRunComponent {
             void this.returnToDocument(pending.request, null);
             return;
           }
-          this.error.set(
-            extractErrorMessage(error instanceof HttpErrorResponse ? error : undefined, 'Your answers could not be sent. They are kept — try again.')
+          const message = extractErrorMessage(
+            error instanceof HttpErrorResponse ? error : undefined,
+            'Your answers could not be sent. They are kept — try again.'
           );
+          this.error.set(message);
+          // The POST may have failed after the server's claim (the delivery threw). Re-read the record at once and hold the
+          // retry until that read returns, so a claimed turn is never sent a second time; `onRecordedProgress` settles it.
+          const reader = this.recordedProgress();
+          if (!reader) return;
+          this.unconfirmedSend.set(message);
+          reader.recheck();
         },
       });
   }

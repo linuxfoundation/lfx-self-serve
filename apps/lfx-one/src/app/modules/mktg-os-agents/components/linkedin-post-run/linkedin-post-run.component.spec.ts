@@ -1399,6 +1399,59 @@ describe('LinkedIn profile and post surface', () => {
     expect(component['error']()).toContain('kept');
     expect(api.startForDocument).not.toHaveBeenCalled();
   });
+  it.each(['writing', 'questions'] as const)('re-reads the run at once after a 5xx on answers and follows a record in %s', async (state) => {
+    const fixture = await questionsIntake();
+    const component = fixture.componentInstance;
+    const root: HTMLElement = fixture.nativeElement;
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    const notify = vi.spyOn(TestBed.inject(MessageService), 'add');
+    const run = component['serverRun']();
+    if (!run) throw new Error('Missing recorded run');
+    const reread = new Subject<MktgDocumentDetailResponse>();
+    documents.getDocument.mockClear().mockReturnValue(reread);
+    const answers = [{ key: 'tendency', text: 'A clear, technical voice for maintainers.', origin: 'edited' as const }];
+    const http = TestBed.inject(HttpTestingController);
+    const url = LINKEDIN_POST_INTAKE.endpoints.answers ?? '';
+    component['onAnswers'](answers);
+    http.expectOne(url).flush({}, { status: 503, statusText: 'Unavailable' });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    // The record is read again at once, not on the next 10 s questions poll, and the retry waits for that read.
+    expect(documents.getDocument).toHaveBeenCalledTimes(1);
+    expect(component['unconfirmedSend']()).toBe('Your answers could not be sent. They are kept — try again.');
+    component['onAnswers'](answers);
+    http.expectNone(url);
+    expect(root.querySelector('[data-testid="mktg-linkedin-questions"]')).not.toBeNull();
+    reread.next({ ...emptyDetail, runs: [{ ...run, state }] });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(component['unconfirmedSend']()).toBe('');
+    if (state === 'writing') {
+      // The claim stands: the turn is not offered again, and the one notice says the delivery is not proven.
+      expect(notify).toHaveBeenCalledExactlyOnceWith({
+        severity: 'warn',
+        summary: 'Your answers may not have reached the agent. If the post does not arrive, start a new one.',
+        sticky: true,
+      });
+      expect(root.querySelector('[data-testid="mktg-linkedin-questions"]')).toBeNull();
+      expect(component['error']()).toBe('');
+      expect(navigate).toHaveBeenCalledWith(
+        expect.arrayContaining(['documents', LINKEDIN_POST_INTAKE.agentId, run.documentId]),
+        expect.objectContaining({ queryParams: expect.objectContaining({ run: run.runId, generation: null }) })
+      );
+      component['onAnswers'](answers);
+      http.expectNone(url);
+      return;
+    }
+    // The server never took the turn: the stepper and the answers stay, and the next send goes out.
+    expect(notify).not.toHaveBeenCalled();
+    expect(navigate).not.toHaveBeenCalled();
+    expect(root.querySelector('[data-testid="mktg-linkedin-questions"]')).not.toBeNull();
+    expect(component['error']()).toBe('Your answers could not be sent. They are kept — try again.');
+    expect(component['previousAnswers']()).toEqual({ tendency: 'A clear, technical voice for maintainers.' });
+    component['onAnswers'](answers);
+    http.expectOne(url).flush({ success: true });
+  });
   it('shows the safe stale-question server message and keeps the edited answers', async () => {
     const component = (await questionsIntake()).componentInstance;
     component['onAnswers']([{ key: 'tendency', text: 'A clear technical voice.', origin: 'edited' }]);
