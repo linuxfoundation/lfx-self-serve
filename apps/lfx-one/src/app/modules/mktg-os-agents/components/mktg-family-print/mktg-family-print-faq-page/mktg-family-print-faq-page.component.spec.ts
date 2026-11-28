@@ -5,14 +5,8 @@ import { TestBed } from '@angular/core/testing';
 import { MKTG_FAMILY_PRINT_LABELS, MKTG_FAMILY_PRINT_SEP } from '@lfx-one/shared/constants';
 import { FaqGroupView } from '@lfx-one/shared/interfaces';
 import { mktgFamilyPrintFaqGroups } from '@lfx-one/shared/utils';
+import { FAQ_ANSWER_QUESTIONS, FAQ_LIST_ITEMS, FAQ_LIST_LEAD_IN, FAQ_PLAIN_ANSWER, FAQ_PRICE_ANSWER } from '@shared/testing/mktg-faq-answers-test-data';
 import { describe, expect, it } from 'vitest';
-import {
-  FAQ_ANSWER_QUESTIONS,
-  FAQ_LIST_ITEMS,
-  FAQ_LIST_LEAD_IN,
-  FAQ_PLAIN_ANSWER,
-  FAQ_PRICE_ANSWER,
-} from '../../../../../shared/testing/mktg-faq-answers-test-data';
 import { MktgFamilyPrintFaqPageComponent } from './mktg-family-print-faq-page.component';
 
 /** The stored FAQ: an unanswered question BEFORE the answered ones in About, so the stored index and the printed index differ. */
